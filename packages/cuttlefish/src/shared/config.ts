@@ -65,6 +65,10 @@ export function loadConfig(): CuttlefishConfig {
       `Cuttlefish config not found at ${CONFIG_PATH}. Run "cuttlefish setup" first.`
     );
   }
+  // config.yaml stores plaintext connector secrets (Slack/Discord/Telegram
+  // bot/app/proxy tokens), so it must not be group/world-readable. Repair perms
+  // on every load to harden installs created before this was enforced.
+  try { fs.chmodSync(CONFIG_PATH, 0o600); } catch { /* best-effort */ }
   const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
   let parsed: unknown;
   try {
@@ -106,6 +110,8 @@ export function loadConfig(): CuttlefishConfig {
  * `dumpOptions` is forwarded to yaml.dump so call sites keep their formatting.
  */
 export function saveConfigAtomic(config: unknown, dumpOptions?: yaml.DumpOptions): void {
-  // Atomic + fsync-durable + audited (canonical config; hot-reloaded by a watcher).
-  safeWriteYaml(CONFIG_PATH, config, { dumpOptions, audit: { actor: "gateway", op: "config.save" } });
+  // Atomic + fsync-durable + audited (canonical config; hot-reloaded by a
+  // watcher). mode 0o600: the file holds plaintext connector secrets and must
+  // not be group/world-readable.
+  safeWriteYaml(CONFIG_PATH, config, { mode: 0o600, dumpOptions, audit: { actor: "gateway", op: "config.save" } });
 }

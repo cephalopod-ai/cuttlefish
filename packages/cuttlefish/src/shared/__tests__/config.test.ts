@@ -363,4 +363,22 @@ describe("saveConfigAtomic", () => {
     expect(config.connectors).toEqual({});
     expect(config.logging).toEqual({ file: true, stdout: true, level: "info" });
   });
+
+  // config.yaml holds plaintext connector secrets (Slack/Discord/Telegram
+  // tokens) — it must be owner-only (0o600), never group/world-readable.
+  it("writes config.yaml with owner-only (0o600) permissions", () => {
+    const configPath = path.join(tmpHome, "config.yaml");
+    saveConfigAtomic({ connectors: { slack: { botToken: "xoxb-secret" } } });
+    expect(fs.statSync(configPath).mode & 0o777).toBe(0o600);
+  });
+
+  it("repairs an over-permissive existing config.yaml on load", () => {
+    const configPath = path.join(tmpHome, "config.yaml");
+    fs.writeFileSync(configPath, "engines:\n  claude: {}\n");
+    fs.chmodSync(configPath, 0o644); // simulate a pre-hardening world-readable install
+
+    loadConfig();
+
+    expect(fs.statSync(configPath).mode & 0o777).toBe(0o600);
+  });
 });

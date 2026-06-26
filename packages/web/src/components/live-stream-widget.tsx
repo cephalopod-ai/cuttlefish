@@ -138,16 +138,33 @@ export function LiveStreamWidget() {
 
   useEffect(() => {
     if (state !== "expanded") return
+    // The historical fetch is async; live `log` frames can land (and be
+    // appended below) before it resolves. Merge — never destructively replace —
+    // so those live lines survive, and `cancelled` drops a stale fetch from a
+    // prior expand toggle. Historical rows use a `hist-` id namespace disjoint
+    // from live rows' `log-` ids (see logIndexRef) so React keys never collide.
+    let cancelled = false
     api
       .getLogs(50)
       .then((data) => {
-        const parsed = (data.lines ?? []).map(parseLogLine)
-        setEntries(parsed)
+        if (cancelled) return
+        const historical = (data.lines ?? []).map((line, i) => ({
+          ...parseLogLine(line, i),
+          id: `hist-${i}`,
+        }))
+        setEntries((prev) => {
+          const live = prev.filter((e) => e.id.startsWith("log-"))
+          return [...historical, ...live].slice(-MAX_LINES)
+        })
         setError(null)
       })
       .catch((err) => {
+        if (cancelled) return
         setError(err instanceof Error ? err.message : "Failed to load logs")
       })
+    return () => {
+      cancelled = true
+    }
   }, [state])
 
   /* ── Listen for WebSocket events ──────────────────────────── */

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import readline from "node:readline";
 import { assertSafeManagedInstanceHome, loadInstances, saveInstances } from "./instances.js";
+import { probeProcess } from "../shared/pid.js";
 
 const RED = "\x1b[31m";
 const YELLOW = "\x1b[33m";
@@ -18,15 +19,16 @@ function ask(question: string): Promise<string> {
   });
 }
 
-/** Poll until the process is gone (signal 0 throws ESRCH). Returns false on timeout. */
+/**
+ * Poll until the process is definitively gone (ESRCH). Returns false on
+ * timeout. EPERM or an unexpected error is NOT treated as gone — we keep
+ * polling and let the caller time out rather than risk deleting a home
+ * directory while the gateway is still alive.
+ */
 async function waitForPidExit(pid: number, timeoutMs = 10_000): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    try {
-      process.kill(pid, 0);
-    } catch {
-      return true; // process is gone
-    }
+    if (probeProcess(pid) === "not-running") return true;
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
   return false;
@@ -88,14 +90,12 @@ export async function runNuke(name?: string): Promise<void> {
   const pidFile = `${instance.home}/gateway.pid`;
   if (fs.existsSync(pidFile)) {
     const pid = parseInt(fs.readFileSync(pidFile, "utf-8").trim(), 10);
-    let alive = false;
-    try {
-      process.kill(pid, 0);
-      alive = true;
-    } catch {
-      // Process not alive, continue
+    const liveness = probeProcess(pid);
+    if (liveness === "indeterminate") {
+      console.error(`${RED}Error:${RESET} Cannot verify whether instance "${name}" is still running (PID file: ${DIM}${pidFile}${RESET}). Stop it and remove the PID file, then retry. Nothing was deleted.`);
+      process.exit(1);
     }
-    if (alive) {
+    if (liveness === "running") {
       console.log(`\n${YELLOW}Instance "${name}" is running. Stopping it first...${RESET}`);
       process.kill(pid, "SIGTERM");
       // Wait until the process is actually dead — deleting the home directory
@@ -124,14 +124,23 @@ export async function runNuke(name?: string): Promise<void> {
     return;
   }
 
-  // Remove from registry
+  // Delete the home directory BEFORE persisting the registry removal. If the
+  // delete fails (EPERM/EBUSY/EACCES — force only suppresses ENOENT), the
+  // instance must remain in the registry so it stays manageable rather than
+  // becoming an orphaned, half-deleted home that nothing can see.
+  if (fs.existsSync(safeHome)) {
+    try {
+      fs.rmSync(safeHome, { recursive: true, force: true });
+    } catch (err) {
+      console.error(`${RED}Error:${RESET} Failed to delete ${DIM}${homeDisplay}${RESET}: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(`Instance "${name}" was left in the registry so it remains manageable. Resolve the issue and retry.`);
+      process.exit(1);
+    }
+  }
+
+  // Remove from registry only after the filesystem delete succeeded.
   allInstances.splice(index, 1);
   saveInstances(allInstances);
-
-  // Delete home directory
-  if (fs.existsSync(safeHome)) {
-    fs.rmSync(safeHome, { recursive: true, force: true });
-  }
 
   console.log(`\n${RED}Instance "${name}" has been nuked.${RESET} ${DIM}${homeDisplay}${RESET} deleted.`);
 }
