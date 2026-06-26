@@ -13,7 +13,7 @@ Scope used: isolated worktree only. I did **not** read or modify the live Cuttle
 
 ### What I inspected
 
-- `SECURITY_HARDENING_PLAN.md`
+- `2026-06-24-security-hardening-plan.md`
 - Gateway HTTP/API/WS code:
   - `packages/cuttlefish/src/gateway/server.ts`
   - `packages/cuttlefish/src/gateway/api.ts`

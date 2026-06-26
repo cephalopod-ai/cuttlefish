@@ -165,4 +165,4 @@ This work is done only when:
 
 ## Implementation Status
 
-Completed on 2026-06-24 and extended with guided pairing instructions, paired-browser listing, `cuttlefish pair`, split CLI/Web pairing flows, and shared web/CLI unpairing. Verification evidence is recorded in `AUTH_UX_VERIFICATION_PLAN.md`.
+Completed on 2026-06-24 and extended with guided pairing instructions, paired-browser listing, `cuttlefish pair`, split CLI/Web pairing flows, and shared web/CLI unpairing. Verification evidence is recorded in `2026-06-24-auth-ux-verification-plan.md`.

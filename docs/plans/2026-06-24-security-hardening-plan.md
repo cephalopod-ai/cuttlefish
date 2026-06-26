@@ -108,7 +108,7 @@ Expected files:
 
 ## Verification checklist
 
-Track in `SECURITY_HARDENING_VERIFICATION.md`.
+Track in `2026-06-24-security-hardening-verification.md`.
 
 ## Delegation model
 

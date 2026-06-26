@@ -45,7 +45,8 @@ artifacts unless explicitly published.
 
 ## Historical Design And Planning Archives
 
-- `docs/plans/`: early Cuttlefish design and implementation plans.
+- `docs/plans/`: early Cuttlefish design, implementation, auth UX,
+  security-hardening, and chat-redesign planning archives.
 - `docs/superpowers/specs/`: feature design specs.
 - `docs/superpowers/plans/`: detailed implementation plans.
 
