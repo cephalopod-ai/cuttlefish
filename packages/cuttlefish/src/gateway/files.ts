@@ -87,6 +87,10 @@ export async function handleFilesRequest(
       json(res, { error: assessment.reason || "File read blocked by security policy" }, 403);
       return true;
     }
+    if (!isAllowedReadPath(resolvedPath, context)) {
+      json(res, { error: "File path is outside configured fileReadRoots" }, 403);
+      return true;
+    }
     try {
       const c = classifyFile(resolvedPath);
       json(res, {

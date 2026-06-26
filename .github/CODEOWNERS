@@ -1,0 +1,16 @@
+# Default owner for repository-wide changes.
+* @e3742526
+
+# Security-sensitive runtime and release surfaces.
+/.github/workflows/ @e3742526
+/.github/dependabot.yml @e3742526
+/Formula/ @e3742526
+/package.json @e3742526
+/pnpm-lock.yaml @e3742526
+/pnpm-workspace.yaml @e3742526
+/packages/cuttlefish/package.json @e3742526
+/packages/cuttlefish/src/gateway/ @e3742526
+/packages/cuttlefish/src/connectors/ @e3742526
+/packages/cuttlefish/src/engines/ @e3742526
+/packages/cuttlefish/src/shared/ @e3742526
+/SECURITY.md @e3742526

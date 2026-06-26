@@ -24,6 +24,8 @@ export interface ReadJsonBodyOpts extends ReadBodyOpts {
   allowEmpty?: boolean;
 }
 
+export const DEFAULT_JSON_BODY_MAX_BYTES = 1024 * 1024;
+
 export function readBody(req: HttpRequest, opts: ReadBodyOpts = {}): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -65,7 +67,7 @@ export async function readJsonBody(
 ): Promise<{ ok: true; body: unknown } | { ok: false }> {
   let raw: string;
   try {
-    raw = await readBody(req, opts);
+    raw = await readBody(req, { ...opts, maxBytes: opts.maxBytes ?? DEFAULT_JSON_BODY_MAX_BYTES });
   } catch (err) {
     if (err instanceof BodyTooLargeError) {
       errorJson(res, { error: "Payload too large" }, 413);

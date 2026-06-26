@@ -3,6 +3,7 @@ import { withStaticTempCuttlefishHome } from "../../test-utils/cuttlefish-home.j
 import os from "node:os";
 import fs from "node:fs";
 import path from "node:path";
+import { Readable } from "node:stream";
 
 // Point CUTTLEFISH_HOME at a temp dir BEFORE importing the module under test so
 // readPathCandidates resolves the relative-path ordering against it.
@@ -92,6 +93,65 @@ describe("isAllowedReadPath — root policy", () => {
 
   it("allows any path only with the explicit arbitrary-read escape hatch", () => {
     expect(files.isAllowedReadPath("/etc/hosts", ctx({ allowArbitraryFileRead: true }))).toBe(true);
+  });
+});
+
+describe("GET /api/files/read — route root policy", () => {
+  function reqFor(filePath: string): import("node:http").IncomingMessage {
+    const req = Readable.from([]);
+    return Object.assign(req, {
+      url: `/api/files/read?path=${encodeURIComponent(filePath)}`,
+      headers: { host: "localhost" },
+    }) as unknown as import("node:http").IncomingMessage;
+  }
+
+  function resCapture() {
+    const out: { status?: number; body?: unknown } = {};
+    const res = {
+      writeHead(status: number) {
+        out.status = status;
+        return this;
+      },
+      end(body?: string) {
+        out.body = body ? JSON.parse(body) : undefined;
+        return this;
+      },
+    } as unknown as import("node:http").ServerResponse;
+    return { res, out };
+  }
+
+  function ctx(gateway: Record<string, unknown>) {
+    return {
+      getConfig: () => ({ gateway }),
+      emit: () => {},
+      connectors: new Map(),
+      startTime: Date.now(),
+    } as unknown as import("../api.js").ApiContext;
+  }
+
+  it("rejects resolved files outside configured fileReadRoots", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "cuttlefish-read-allowed-"));
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "cuttlefish-read-outside-"));
+    const outside = path.join(outsideDir, "note.txt");
+    fs.writeFileSync(outside, "outside");
+    const { res, out } = resCapture();
+
+    await files.handleFilesRequest(reqFor(outside), res, "/api/files/read", "GET", ctx({ fileReadRoots: [root] }));
+
+    expect(out.status).toBe(403);
+    expect(out.body).toEqual({ error: "File path is outside configured fileReadRoots" });
+  });
+
+  it("allows resolved files inside configured fileReadRoots", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "cuttlefish-read-allowed-"));
+    const inside = path.join(root, "note.txt");
+    fs.writeFileSync(inside, "inside");
+    const { res, out } = resCapture();
+
+    await files.handleFilesRequest(reqFor(inside), res, "/api/files/read", "GET", ctx({ fileReadRoots: [root] }));
+
+    expect(out.status).toBe(200);
+    expect(out.body).toMatchObject({ content: "inside", path: inside });
   });
 });
 
