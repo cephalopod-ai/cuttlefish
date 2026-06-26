@@ -52,13 +52,14 @@ export function titleCase(slug: string | null | undefined): string {
 export function resolveRowIdentity(
   s: Pick<Session, "source" | "sourceRef" | "employee">,
   opts: { portalSlug: string; portalName: string; employeeData: Map<string, Employee> },
-): { avatarName: string; displayName: string } {
+): { avatarName: string; avatar?: string; displayName: string } {
   const { portalSlug, portalName, employeeData } = opts
   if (isDirectSession(s, portalSlug) || !s.employee) {
     return { avatarName: portalSlug, displayName: portalName }
   }
   const emp = s.employee
-  return { avatarName: emp, displayName: employeeData.get(emp)?.displayName || titleCase(emp) }
+  const profile = employeeData.get(emp)
+  return { avatarName: emp, avatar: profile?.avatar, displayName: profile?.displayName || titleCase(emp) }
 }
 
 export function isCronSession(session: Pick<Session, "source" | "sourceRef">): boolean {

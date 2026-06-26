@@ -13,6 +13,7 @@ import type {
 import { CLAUDE_LIMITS_DIR } from "./paths.js";
 import { getModelRegistry } from "./models.js";
 import { resolveBin } from "./resolve-bin.js";
+import { nextKiroCreditResetAt, readKiroCreditLedger } from "./kiro-usage.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -297,6 +298,50 @@ function planWindow(name: string, windowDurationMins: number): EngineLimitWindow
   return { name, windowDurationMins };
 }
 
+function collectKiroLimits(config: CuttlefishConfig): EngineLimitEngineSnapshot {
+  const snap = baseSnapshot(config, "kiro");
+  if (!snap.available) {
+    return { ...snap, status: "unsupported", unsupportedReason: "Kiro CLI is not installed." };
+  }
+  const ledger = readKiroCreditLedger(config);
+  const budget = config.engines.kiro?.creditBudget;
+  const resetsAt = nextKiroCreditResetAt(config);
+  const hasBudget = typeof budget === "number" && Number.isFinite(budget) && budget > 0;
+  const remainingPercent = hasBudget ? Math.max(0, 100 - (ledger.consumed / budget) * 100) : undefined;
+  const credits: EngineLimitCredits = {
+    hasCredits: true,
+    used: ledger.consumed,
+    ...(hasBudget
+      ? {
+          limit: budget,
+          remainingPercent,
+          balance: `${Math.max(0, budget - ledger.consumed).toFixed(2)} est.`,
+        }
+      : {}),
+    resetsAt,
+    resetsAtIso: isoFromSeconds(resetsAt),
+  };
+  const windows: EngineLimitWindow[] = [{
+    name: "billing",
+    ...(typeof remainingPercent === "number"
+      ? { usedPercent: Math.round(Math.max(0, Math.min(100, 100 - remainingPercent))) }
+      : {}),
+    resetsAt,
+    resetsAtIso: isoFromSeconds(resetsAt),
+  }];
+
+  return {
+    ...snap,
+    status: "snapshot",
+    source: "kiro local credit estimate",
+    windows,
+    credits,
+    unsupportedReason: hasBudget
+      ? "Estimated from local Kiro CLI credit footers; not an authoritative provider quota."
+      : "Set engines.kiro.creditBudget to enable the estimated Kiro usage gauge.",
+  };
+}
+
 // Codex writes the same rate-limit snapshot into every `token_count` event of its
 // session rollout JSONL (snake_case), so we can read it from disk exactly like the
 // Claude statusline snapshot — no app-server spawn, no JSON-RPC race.
@@ -422,7 +467,7 @@ function collectUnsupported(config: CuttlefishConfig, engine: string, reason: st
     ...snap,
     status: snap.available ? "unsupported" : "unsupported",
     source: "model-registry",
-    unsupportedReason: reason,
+    unsupportedReason: snap.available ? reason : `${engine} CLI is not installed.`,
   };
 }
 
@@ -480,6 +525,8 @@ export async function collectEngineLimits(
         name,
         "Hermes currently exposes model/session behavior through its CLI, but no stable local quota endpoint is registered.",
       );
+    } else if (name === "kiro") {
+      engines[name] = collectKiroLimits(config);
     } else {
       engines[name] = collectUnsupported(config, name, "No limit collector is registered for this engine.");
     }

@@ -273,12 +273,14 @@ export const SessionRow = React.memo(function SessionRow({
 interface FlatSessionRowProps extends SidebarSharedRowProps {
   session: Session
   avatarName: string
+  avatar?: string
   displayName: string
 }
 
 export const FlatSessionRow = React.memo(function FlatSessionRow({
   session,
   avatarName,
+  avatar,
   displayName,
   selectedId,
   readSessions,
@@ -333,7 +335,7 @@ export const FlatSessionRow = React.memo(function FlatSessionRow({
           className="flex min-w-0 flex-1 items-center gap-3 text-left"
         >
           <div className="relative flex size-9 shrink-0 items-center justify-center">
-            <EmployeeAvatar name={avatarName} size={36} />
+            <EmployeeAvatar name={avatarName} avatar={avatar} size={36} />
             {dot ? (
               <StatusDot
                 color={dot.color}

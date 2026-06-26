@@ -9,8 +9,8 @@ function resolveOceanAvatar(value: string | undefined): string | null {
 
 interface EmployeeAvatarProps {
   name: string
-  /** Ocean avatar id from the employee YAML, e.g. "aquatic:cuttlefish". When set,
-   *  renders a PNG instead of an emoji. Settings overrides still take precedence. */
+  /** Ocean avatar id from the employee YAML, e.g. "nautical:lighthouse". When set,
+   *  renders a PNG instead of a generated emoji. Custom profile images still take precedence. */
   avatar?: string
   size?: number
   className?: string
@@ -27,11 +27,12 @@ export function EmployeeAvatar({
   const { settings } = useSettings()
   const override = name ? settings.employeeOverrides[name] : undefined
 
-  // Resolution order: settings.profileImage > settings.emoji (if ocean avatar) > avatarProp > settings.emoji > emojiForName
+  // Resolution order: custom profile image > explicit org ocean avatar > ocean override > emoji override > generated emoji.
+  // This keeps stale emoji settings from masking the Cuttlefish org's nautical theme.
   const imgSrc =
     resolveOceanAvatar(override?.profileImage) ??
-    resolveOceanAvatar(override?.emoji) ??
-    resolveOceanAvatar(avatarProp)
+    resolveOceanAvatar(avatarProp) ??
+    resolveOceanAvatar(override?.emoji)
 
   const emoji = resolveOceanAvatar(override?.emoji) ? undefined : (override?.emoji || emojiForName(name || ''))
   const fontSize = Math.round(size * 0.6)

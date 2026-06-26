@@ -102,6 +102,7 @@ describe('chat sidebar search row identity', () => {
         'cuttlefish',
         {
           name: 'cuttlefish',
+          avatar: 'nautical:life_ring',
           displayName: 'Cuttlefish Dev',
           department: 'platform',
           rank: 'employee' as const,
@@ -140,7 +141,7 @@ describe('chat sidebar search row identity', () => {
   it('resolves a real employee to its org display name', () => {
     expect(
       resolveRowIdentity({ source: 'web', sourceRef: 'web:2', employee: 'cuttlefish' }, opts),
-    ).toEqual({ avatarName: 'cuttlefish', displayName: 'Cuttlefish Dev' })
+    ).toEqual({ avatarName: 'cuttlefish', avatar: 'nautical:life_ring', displayName: 'Cuttlefish Dev' })
   })
 
   it('title-cases an employee with no org profile rather than crashing', () => {

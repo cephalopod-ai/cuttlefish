@@ -10,8 +10,23 @@ import { PageLayout, ToolbarActions } from "@/components/page-layout"
 import { useBreadcrumbs } from "@/context/breadcrumb-context"
 import { Skeleton } from "@/components/ui/skeleton"
 
-const FEATURED_ENGINES = ["claude", "codex", "grok"]
 const DANGER = 90
+const ENGINE_ORDER = ["claude", "codex", "kiro", "kilo", "antigravity", "ollama", "grok", "hermes", "pi"]
+
+function engineLabel(name: string) {
+  const labels: Record<string, string> = {
+    claude: "Claude",
+    codex: "Codex",
+    kiro: "Kiro",
+    kilo: "Kilo",
+    antigravity: "Antigravity",
+    ollama: "Ollama",
+    grok: "Grok",
+    hermes: "Hermes",
+    pi: "Pi",
+  }
+  return labels[name] ?? name
+}
 
 function formatDuration(minutes?: number) {
   if (!minutes) return ""
@@ -57,11 +72,30 @@ function agoLabel(iso?: string) {
 }
 
 function freshness(engine: EngineLimitEngineSnapshot) {
+  if (!engine.available) return { color: "var(--text-quaternary)", label: "Agent not available" }
   if (engine.status === "error") return { color: "var(--system-red)", label: "Error" }
   if (engine.stale) return { color: "var(--system-orange)", label: `Stale · ${agoLabel(engine.refreshedAt)}` }
   if (engine.status === "live") return { color: "var(--system-green)", label: "Live" }
   if (engine.status === "snapshot") return { color: "var(--text-tertiary)", label: `Updated ${agoLabel(engine.refreshedAt)}` }
+  if (engine.available) return { color: "var(--system-green)", label: "CLI detected" }
   return { color: "var(--text-quaternary)", label: "No data" }
+}
+
+function hasObservedUsage(engine: EngineLimitEngineSnapshot) {
+  return (
+    (engine.windows ?? []).some((window) => typeof window.usedPercent === "number") ||
+    typeof engine.credits?.remainingPercent === "number" ||
+    typeof engine.context?.usedPercent === "number" ||
+    typeof engine.costUsd === "number"
+  )
+}
+
+function sortEngines(engines: EngineLimitEngineSnapshot[]) {
+  return [...engines].sort((a, b) => {
+    const ai = ENGINE_ORDER.indexOf(a.name)
+    const bi = ENGINE_ORDER.indexOf(b.name)
+    return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi) || a.name.localeCompare(b.name)
+  })
 }
 
 function WindowBar({ window }: { window: EngineLimitWindow }) {
@@ -110,7 +144,7 @@ function EngineCard({ engine }: { engine: EngineLimitEngineSnapshot }) {
       <div className="flex items-center justify-between gap-[var(--space-3)]">
         <div className="flex items-center gap-[var(--space-3)] min-w-0">
           <h2 className="text-[length:var(--text-body)] font-[var(--weight-semibold)] text-[var(--text-primary)] capitalize truncate">
-            {engine.name}
+            {engineLabel(engine.name)}
           </h2>
           {engine.accountPlan && (
             <span className="text-[length:var(--text-caption1)] text-[var(--text-tertiary)] truncate">
@@ -152,6 +186,78 @@ function EngineCard({ engine }: { engine: EngineLimitEngineSnapshot }) {
   )
 }
 
+function CliDetectedCard({ engines }: { engines: EngineLimitEngineSnapshot[] }) {
+  if (engines.length === 0) return null
+  return (
+    <section className="rounded-[var(--radius-lg)] bg-[var(--bg-secondary)] border border-[var(--separator)] p-[var(--space-6)]">
+      <div className="mb-[var(--space-4)]">
+        <h2 className="text-[length:var(--text-body)] font-[var(--weight-semibold)] text-[var(--text-primary)]">
+          CLI detected, no usage statistics
+        </h2>
+        <p className="mt-[var(--space-1)] text-[length:var(--text-footnote)] text-[var(--text-secondary)]">
+          These agents are installed, but Cuttlefish does not have an authoritative usage source for them yet.
+        </p>
+      </div>
+      <div className="grid gap-[var(--space-3)]">
+        {engines.map((engine) => (
+          <div key={engine.name} className="flex items-start justify-between gap-[var(--space-4)] border-t border-[var(--separator)] pt-[var(--space-3)] first:border-t-0 first:pt-0">
+            <div className="min-w-0">
+              <div className="text-[length:var(--text-footnote)] font-[var(--weight-semibold)] text-[var(--text-primary)]">
+                {engineLabel(engine.name)}
+              </div>
+              <div className="mt-[2px] text-[length:var(--text-caption1)] text-[var(--text-tertiary)]">
+                {engine.unsupportedReason || "Usage statistics are not available for this CLI."}
+              </div>
+            </div>
+            <span className="shrink-0 text-[length:var(--text-caption1)] text-[var(--system-green)]">
+              CLI detected
+            </span>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function SupportedAgentsCard({ engines }: { engines: EngineLimitEngineSnapshot[] }) {
+  if (engines.length === 0) return null
+  return (
+    <section className="rounded-[var(--radius-lg)] bg-[var(--bg-secondary)] border border-[var(--separator)] p-[var(--space-6)]">
+      <div className="mb-[var(--space-4)]">
+        <h2 className="text-[length:var(--text-body)] font-[var(--weight-semibold)] text-[var(--text-primary)]">
+          Supported agents
+        </h2>
+        <p className="mt-[var(--space-1)] text-[length:var(--text-footnote)] text-[var(--text-secondary)]">
+          Cuttlefish can route to these agents when the matching CLI is installed and configured.
+        </p>
+      </div>
+      <div className="grid gap-[var(--space-3)]">
+        {engines.map((engine) => {
+          const tone = freshness(engine)
+          return (
+            <div key={engine.name} className="flex items-center justify-between gap-[var(--space-4)] border-t border-[var(--separator)] pt-[var(--space-3)] first:border-t-0 first:pt-0">
+              <div className="min-w-0">
+                <div className="text-[length:var(--text-footnote)] font-[var(--weight-semibold)] text-[var(--text-primary)]">
+                  {engineLabel(engine.name)}
+                </div>
+                <div className="mt-[2px] truncate text-[length:var(--text-caption1)] text-[var(--text-tertiary)]">
+                  {engine.available
+                    ? engine.defaultModel || engine.source
+                    : engine.unsupportedReason || "Agent not available. Install the CLI to enable it."}
+                </div>
+              </div>
+              <span className="flex shrink-0 items-center gap-[var(--space-2)] text-[length:var(--text-caption1)] text-[var(--text-secondary)]">
+                <span className="h-2 w-2 rounded-full" style={{ background: tone.color }} />
+                {engine.available ? "Available" : "Agent not available"}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
 export default function LimitsPage() {
   useBreadcrumbs([{ label: 'Limits' }])
   const [data, setData] = useState<EngineLimitsResponse | null>(null)
@@ -176,9 +282,17 @@ export default function LimitsPage() {
     refresh()
   }, [refresh])
 
-  const engines = useMemo(
-    () => FEATURED_ENGINES.map((name) => data?.engines[name]).filter(Boolean) as EngineLimitEngineSnapshot[],
+  const allEngines = useMemo(
+    () => sortEngines(Object.values(data?.engines ?? {})),
     [data],
+  )
+  const usageEngines = useMemo(
+    () => allEngines.filter((engine) => engine.available && hasObservedUsage(engine)),
+    [allEngines],
+  )
+  const detectedNoStats = useMemo(
+    () => allEngines.filter((engine) => engine.available && !hasObservedUsage(engine)),
+    [allEngines],
   )
 
   return (
@@ -208,7 +322,7 @@ export default function LimitsPage() {
         </header>
 
         <main className="flex-1 overflow-y-auto px-[var(--space-6)] pt-[var(--space-5)] pb-[var(--space-8)]">
-          <div className="max-w-[920px] mx-auto">
+          <div className="mx-auto grid max-w-[760px] gap-[var(--space-4)]">
             {error && (
               <div className="mb-[var(--space-5)] px-[var(--space-4)] py-[var(--space-3)] rounded-[var(--radius-md)] border border-[var(--system-red)] text-[length:var(--text-footnote)] text-[var(--system-red)]">
                 {error}
@@ -216,16 +330,18 @@ export default function LimitsPage() {
             )}
 
             {loading ? (
-              <div className="grid gap-[var(--space-4)] md:grid-cols-2">
+              <div className="grid gap-[var(--space-4)]">
                 <Skeleton height={180} className="rounded-[var(--radius-lg)]" />
                 <Skeleton height={180} className="rounded-[var(--radius-lg)]" />
               </div>
             ) : (
-              <div className="grid gap-[var(--space-4)] md:grid-cols-2 items-start">
-                {engines.map((engine) => (
+              <>
+                {usageEngines.map((engine) => (
                   <EngineCard key={engine.name} engine={engine} />
                 ))}
-              </div>
+                <CliDetectedCard engines={detectedNoStats} />
+                <SupportedAgentsCard engines={allEngines} />
+              </>
             )}
           </div>
         </main>

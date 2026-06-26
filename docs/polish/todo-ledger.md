@@ -13,6 +13,7 @@ artifacts, build outputs, lockfiles, and archived planning snippets.
 | POLISH-20260626-001 | verified-not-a-defect | `packages/cuttlefish/src/cli/*.ts` uses `console.log` for command output. | CLI stdout is an intentional user-facing interface, not debug noise. | Preserve unless a structured output redesign is explicitly requested. |
 | POLISH-20260626-002 | deferred-with-risk | `docs/plans/2026-03-06-cuttlefish-implementation.md` contains historical `TODO` examples. | Historical design-plan snippets are archival, not active source debt. | Revisit only during a dedicated docs archival pass. |
 | POLISH-20260626-003 | fixed | `packages/cuttlefish/src/cli/instances.ts` imported `TEMPLATE_DIR` without using it. | Removed the stale import. | `pnpm --filter cuttlefish-cli typecheck` and lint pass. |
+| POLISH-20260626-004 | fixed | Cuttlefish/Jinn side-by-side launch raised concern about legacy port reuse. | Added a regression guard that scans runtime package surfaces for the inherited gateway port. | `paths.test.ts`, typecheck, and lint pass; live status reports port `8888`. |
 
 ## Scan Notes
 

@@ -441,8 +441,8 @@ export function buildVirtualItems({
       if (expandedRooms.has(room.id)) {
         for (const roomSession of room.sessions) {
           const session = roomSession as unknown as Session
-          const { avatarName, displayName } = resolveRowIdentity(session, { portalSlug, portalName, employeeData })
-          list.push({ kind: "flat", row: { session, avatarName, displayName } })
+          const { avatarName, avatar, displayName } = resolveRowIdentity(session, { portalSlug, portalName, employeeData })
+          list.push({ kind: "flat", row: { session, avatarName, avatar, displayName } })
         }
       }
     }

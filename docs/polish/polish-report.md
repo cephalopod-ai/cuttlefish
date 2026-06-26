@@ -36,6 +36,7 @@
 | `docs/polish/todo-ledger.md` | report artifact | Track active polish TODO dispositions. |
 | `docs/polish/polish-report.md` | report artifact | Final polish summary. |
 | `packages/cuttlefish/src/cli/instances.ts` | source polish | Removed a stale import left after single-instance hardening. |
+| `packages/cuttlefish/src/shared/__tests__/paths.test.ts` | regression guard | Added a package-surface scan preventing inherited gateway port reuse. |
 
 ## Naming Changes
 
@@ -74,12 +75,14 @@
 | POLISH-20260626-001 | CLI stdout | verified-not-a-defect | `console.log` in CLI command files is intentional user-facing output. |
 | POLISH-20260626-002 | Historical docs | deferred-with-risk | Archival TODO snippets left for a dedicated docs archival pass. |
 | POLISH-20260626-003 | `instances.ts` | fixed | Removed stale `TEMPLATE_DIR` import. |
+| POLISH-20260626-004 | port isolation | fixed | Added a regression guard against the inherited gateway port in runtime package surfaces. |
 
 ## Architecture/Layout Observations
 
 ### Issues Corrected
 
 - A stale CLI import left after the single-instance hardening was removed.
+- Runtime package surfaces now have a test guard against reintroducing the inherited gateway port.
 
 ### Deferred Observations
 
@@ -93,7 +96,9 @@
 | `pnpm --filter cuttlefish-cli typecheck` | passed | `tsc --noEmit` completed successfully. |
 | `pnpm --filter cuttlefish-cli lint` | passed | ESLint completed with `--max-warnings=0`. |
 | `pnpm --filter cuttlefish-cli test -- src/cli/__tests__/instances-safety.test.ts src/shared/__tests__/paths.test.ts` | passed | Vitest completed with 198 files passed, 1559 tests passed, 1 skipped. |
+| `pnpm --filter cuttlefish-cli test -- src/shared/__tests__/paths.test.ts` | passed | Vitest completed with 198 files passed, 1560 tests passed, 1 skipped after adding the port guard. |
 | `git diff --check` | passed | No whitespace errors. |
+| live Cuttlefish status | passed | Running daemon reports port `8888`; the separate upstream process remains on its inherited port. |
 
 ## Remaining Risks
 

@@ -60,4 +60,36 @@ describe("Cuttlefish runtime paths", () => {
     expect(relay).toContain('path.join(os.homedir(), ".cuttlefish")');
     expect(relay).not.toContain("CUTTLEFISH_INSTANCE");
   });
+
+  it("does not reintroduce the upstream gateway port in runtime package surfaces", () => {
+    const legacyPort = ["77", "77"].join("");
+    const checkedRoots = ["src", "template", "assets"].map((dir) => path.join(PKG, dir));
+    const hits: string[] = [];
+
+    for (const root of checkedRoots) collectLegacyPortHits(root, legacyPort, hits);
+
+    expect(hits).toEqual([]);
+  });
 });
+
+function collectLegacyPortHits(root: string, legacyPort: string, hits: string[]): void {
+  const ignoredDirs = new Set(["dist", "out", "node_modules", ".turbo"]);
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(root, { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  for (const entry of entries) {
+    if (ignoredDirs.has(entry.name)) continue;
+    const full = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      collectLegacyPortHits(full, legacyPort, hits);
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    const text = fs.readFileSync(full, "utf-8");
+    if (text.includes(legacyPort)) hits.push(path.relative(PKG, full));
+  }
+}
