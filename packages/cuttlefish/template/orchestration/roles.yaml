@@ -1,0 +1,63 @@
+# Role definitions: the capability/tool requirements and routing preferences the
+# matrix scheduler uses to match workers (workers.yaml) into a coordinator team.
+# Roles are intentionally provider-neutral — they never name a worker or engine.
+roles:
+  architect:
+    requiredCapabilities:
+      - architecture
+    requiredTools:
+      - filesystem
+    preferredTiers:
+      - frontier
+
+  seniorImplementer:
+    requiredCapabilities:
+      - repo_edit
+      - coding
+    requiredTools:
+      - git
+      - filesystem
+    preferredTiers:
+      - frontier
+
+  # Cross-family review: must be a different family than the implementer so a
+  # provider's blind spots are not reviewed by the same provider.
+  independentReviewer:
+    requiredCapabilities:
+      - code_review
+    requiredTools:
+      - filesystem
+    familyConstraint: opposite_of_implementer
+    preferredCostClasses:
+      - low
+      - medium
+
+  # Adversarial pass for the riskiest changes. Distinct capability set from
+  # independentReviewer so the scheduler resolves it to a different worker.
+  adversarialReviewer:
+    requiredCapabilities:
+      - adversarial_review
+      - bug_hunt
+    requiredTools:
+      - filesystem
+    preferredCostClasses:
+      - low
+      - medium
+
+  qaGate:
+    requiredCapabilities:
+      - validation
+    requiredTools:
+      - shell
+    preferredCostClasses:
+      - near_zero
+      - low
+
+  localTriage:
+    requiredCapabilities:
+      - triage
+    requiredTools:
+      - filesystem
+    preferredCostClasses:
+      - near_zero
+      - low

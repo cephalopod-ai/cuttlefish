@@ -1,0 +1,6 @@
+taskId: matrix-demo-001
+coordinatorId: coord-matrix-demo-001
+coordinatorTemplate: standardImplementation
+priority: normal
+leaseDurationMs: 3600000
+

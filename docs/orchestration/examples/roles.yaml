@@ -1,0 +1,56 @@
+roles:
+  architect:
+    requiredCapabilities:
+      - architecture
+    requiredTools:
+      - filesystem
+    preferredTiers:
+      - frontier
+
+  seniorImplementer:
+    requiredCapabilities:
+      - repo_edit
+      - coding
+    requiredTools:
+      - git
+      - filesystem
+    preferredTiers:
+      - frontier
+
+  independentReviewer:
+    requiredCapabilities:
+      - code_review
+    requiredTools:
+      - filesystem
+    familyConstraint: opposite_of_implementer
+    preferredCostClasses:
+      - low
+      - medium
+
+  qaGate:
+    requiredCapabilities:
+      - validation
+    requiredTools:
+      - shell
+    preferredCostClasses:
+      - near_zero
+      - low
+
+  adversarialReviewer:
+    requiredCapabilities:
+      - adversarial_review
+      - bug_hunt
+    requiredTools:
+      - filesystem
+    preferredCostClasses:
+      - low
+      - medium
+
+  localTriage:
+    requiredCapabilities:
+      - triage
+    requiredTools:
+      - filesystem
+    preferredCostClasses:
+      - near_zero
+      - low

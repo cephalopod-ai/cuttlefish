@@ -1,0 +1,37 @@
+# Coordinator templates: the minimum viable team (set of roles) for a task class.
+# Required roles must all be staffed or the task blocks (blocked_resource);
+# optional roles are best-effort. Run modes map to these templates via
+# `cuttlefish run --mode ...` (see docs/orchestration/README.md).
+coordinatorTemplates:
+  simpleImplementation:
+    purpose: localized code change
+    requiredRoles:
+      - seniorImplementer
+      - qaGate
+    optionalRoles:
+      - independentReviewer
+
+  standardImplementation:
+    purpose: meaningful feature or refactor
+    requiredRoles:
+      - seniorImplementer
+      - independentReviewer
+      - qaGate
+    optionalRoles: []
+
+  architectureChange:
+    purpose: orchestration, runtime, shell, or persistence architecture change
+    requiredRoles:
+      - architect
+      - seniorImplementer
+      - independentReviewer
+      - adversarialReviewer
+      - qaGate
+    optionalRoles: []
+
+  localHeavy:
+    purpose: local/near-zero-cost triage, deduplication, and test-log explanation
+    requiredRoles:
+      - localTriage
+      - qaGate
+    optionalRoles: []

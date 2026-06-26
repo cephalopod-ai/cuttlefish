@@ -1,0 +1,219 @@
+schema_version: "1.0"
+ruleset_version: "2026.04"
+rules:
+  - rule_id: GILES-001
+    title: standard_artifact_invalid
+    description: Central repo-standard or ruleset artifacts are missing or invalid.
+    tier: tier_0
+    severity: fail
+    check_type: schema
+    autofixable: false
+    introduced_in: "1.0.0"
+  - rule_id: GILES-010
+    title: unversioned_repo
+    description: Repo does not declare repo_standard.version and is therefore ungoverned.
+    tier: tier_0
+    severity: warn
+    check_type: structural
+    autofixable: false
+    introduced_in: "1.0.0"
+  - rule_id: TIER0-001
+    title: required_root_missing
+    description: Required root file or directory is missing.
+    tier: tier_0
+    severity: fail
+    check_type: structural
+    autofixable: true
+    introduced_in: "1.0.0"
+  - rule_id: TIER0-002
+    title: governance_object_missing
+    description: Required governance object is missing.
+    tier: tier_0
+    severity: fail
+    check_type: structural
+    autofixable: true
+    introduced_in: "1.0.0"
+  - rule_id: TIER0-003
+    title: forbidden_root_present
+    description: Forbidden top-level root is present without profile authorization.
+    tier: tier_0
+    severity: fail
+    check_type: structural
+    autofixable: false
+    introduced_in: "1.0.0"
+  - rule_id: TIER0-004
+    title: legacy_repo_profile_present
+    description: Both governance/repo_config.yaml and legacy governance/repo_profile.yaml are present.
+    tier: tier_0
+    severity: fail
+    check_type: structural
+    autofixable: true
+    introduced_in: "1.0.0"
+  - rule_id: TIER0-005
+    title: unknown_repo_profile
+    description: Repo manifest declares no recognized repo_profile.
+    tier: tier_0
+    severity: warn
+    check_type: structural
+    autofixable: false
+    introduced_in: "1.0.0"
+  - rule_id: PROFILE-001
+    title: precedence_mode_not_allowed
+    description: Repo manifest declares a source-of-truth mode not allowed by its profile.
+    tier: tier_1
+    severity: fail
+    check_type: profile
+    autofixable: false
+    introduced_in: "1.0.0"
+  - rule_id: PROFILE-002
+    title: profile_extension_forbidden
+    description: Repo declares profile extensions, which are forbidden in standard v1.
+    tier: tier_1
+    severity: fail
+    check_type: profile
+    autofixable: false
+    introduced_in: "1.0.0"
+  - rule_id: AGENT-001
+    title: agent_registry_invalid
+    description: Agent registry is missing required authoritative deny-by-default shape.
+    tier: tier_1
+    severity: fail
+    check_type: structural
+    autofixable: false
+    introduced_in: "1.0.0"
+  - rule_id: AGENT-002
+    title: undeclared_agent_surface_forbidden
+    description: Any file under agent_instructions/ not declared in agent_registry.yaml is a finding.
+    tier: tier_1
+    severity: warn
+    check_type: structural
+    autofixable: false
+    introduced_in: "1.0.0"
+  - rule_id: AGENT-003
+    title: declared_agent_surface_missing
+    description: Required declared agent surface path is missing.
+    tier: tier_1
+    severity: fail
+    check_type: structural
+    autofixable: true
+    introduced_in: "1.0.0"
+  - rule_id: SCHEMA-005
+    title: shared_contract_semver_authority_missing
+    description: Shared-contract schema registry entry lacks semver_authority.
+    tier: tier_1
+    severity: fail
+    check_type: xref
+    autofixable: false
+    introduced_in: "1.0.0"
+  - rule_id: XREF-001
+    title: dangling_governance_reference
+    description: ID or path crossing governance files does not resolve.
+    tier: tier_1
+    severity: fail
+    check_type: xref
+    autofixable: false
+    introduced_in: "1.0.0"
+  - rule_id: EXC-001
+    title: exception_missing_expiry
+    description: Exception record lacks required expires_at.
+    tier: tier_1
+    severity: fail
+    check_type: schema
+    autofixable: false
+    introduced_in: "1.0.0"
+  - rule_id: EXC-002
+    title: exception_missing_mitigations
+    description: Exception covering a fail-severity rule lacks mitigations.
+    tier: tier_1
+    severity: fail
+    check_type: schema
+    autofixable: false
+    introduced_in: "1.0.0"
+  - rule_id: EXC-003
+    title: exception_unknown_rule_id
+    description: Exception references a rule_id not present in the Giles ruleset.
+    tier: tier_1
+    severity: fail
+    check_type: xref
+    autofixable: false
+    introduced_in: "1.0.0"
+  - rule_id: EXC-004
+    title: exception_expired
+    description: Exception expiry is in the past and no longer covers the rule.
+    tier: tier_1
+    severity: fail
+    check_type: lifecycle
+    autofixable: false
+    introduced_in: "1.0.0"
+  - rule_id: EXC-005
+    title: migration_exception_missing_deadline
+    description: Migration-lane exception lacks required migration_deadline.
+    tier: tier_1
+    severity: fail
+    check_type: lifecycle
+    autofixable: false
+    introduced_in: "1.0.0"
+  - rule_id: DEP-001
+    title: deprecation_clock_invalid
+    description: Deprecation record violates 90-day clock semantics or references an unknown rule.
+    tier: tier_1
+    severity: fail
+    check_type: lifecycle
+    autofixable: false
+    introduced_in: "1.0.0"
+  - rule_id: LOG-001
+    title: logging_class_invalid
+    description: Log class lacks positive retention_days.
+    tier: tier_1
+    severity: fail
+    check_type: schema
+    autofixable: false
+    introduced_in: "1.0.0"
+  - rule_id: LOG-002
+    title: logging_archive_root_missing
+    description: logging_schema archive_to uses storage/ but storage/ is missing.
+    tier: tier_1
+    severity: fail
+    check_type: structural
+    autofixable: true
+    introduced_in: "1.0.0"
+  - rule_id: MUNINN-001
+    title: muninn_promotion_log_invalid
+    description: Muninn promotion log is invalid or promotes to a non-canonical surface.
+    tier: tier_1
+    severity: fail
+    check_type: lifecycle
+    autofixable: false
+    introduced_in: "1.0.0"
+  - rule_id: MUNINN-002
+    title: muninn_authority_boundary_missing
+    description: Muninn README must state governed/non-canonical authority boundaries.
+    tier: tier_1
+    severity: fail
+    check_type: documentation
+    autofixable: false
+    introduced_in: "1.0.0"
+  - rule_id: MUNINN-003
+    title: muninn_path_outside_allowed_tree
+    description: Muninn contains a path outside the governed allowed tree.
+    tier: tier_1
+    severity: fail
+    check_type: structural
+    autofixable: false
+    introduced_in: "1.0.0"
+  - rule_id: TIER2-001
+    title: runtime_evidence_missing
+    description: Recent runtime evidence is missing for the profile-bound window.
+    tier: tier_2
+    severity: warn
+    check_type: evidence
+    autofixable: false
+    introduced_in: "1.0.0"
+  - rule_id: TIER3-001
+    title: ci_missing_repo_check
+    description: CI does not appear to run giles repo-check.
+    tier: tier_3
+    severity: warn
+    check_type: ci
+    autofixable: false
+    introduced_in: "1.0.0"

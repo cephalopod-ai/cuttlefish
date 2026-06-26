@@ -1,0 +1,26 @@
+node_modules/
+dist/
+.next/
+.turbo/
+coverage/
+test-results/
+*.tsbuildinfo
+.env
+.env.local
+# npm publish token (cuttlefish-cli) — local only, never commit
+packages/cuttlefish/.npmrc
+.worktrees/
+.DS_Store
+.playwright-mcp/
+
+# Giles and local audit/runtime artifacts. These stay local in this public repo
+# so they do not confuse readers browsing the source tree.
+.giles/
+governance/logs/
+docs/audits/
+docs/logs/
+state/
+logs/
+
+# Superpowers SDD scratch (briefs, reports, ledger, diffs)
+.superpowers/

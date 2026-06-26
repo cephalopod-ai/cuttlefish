@@ -1,0 +1,33 @@
+coordinatorTemplates:
+  simpleImplementation:
+    purpose: localized code change
+    requiredRoles:
+      - seniorImplementer
+      - qaGate
+    optionalRoles:
+      - independentReviewer
+
+  standardImplementation:
+    purpose: meaningful feature or refactor
+    requiredRoles:
+      - seniorImplementer
+      - independentReviewer
+      - qaGate
+    optionalRoles: []
+
+  architectureChange:
+    purpose: orchestration, runtime, shell, or persistence architecture change
+    requiredRoles:
+      - architect
+      - seniorImplementer
+      - independentReviewer
+      - adversarialReviewer
+      - qaGate
+    optionalRoles: []
+
+  localHeavy:
+    purpose: local/near-zero-cost triage, deduplication, and test-log explanation
+    requiredRoles:
+      - localTriage
+      - qaGate
+    optionalRoles: []

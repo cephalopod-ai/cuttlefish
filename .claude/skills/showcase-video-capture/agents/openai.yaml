@@ -1,0 +1,4 @@
+interface:
+  display_name: "Showcase Video Capture"
+  short_description: "Capture polished Cuttlefish showcase GIFs"
+  default_prompt: "Use $showcase-video-capture to create a polished Cuttlefish showcase GIF from an isolated mock instance."

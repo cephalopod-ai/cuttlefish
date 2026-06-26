@@ -1,0 +1,153 @@
+import type { JsonObject } from "./json.js";
+import type { AgentModelPolicy } from "./engine.js";
+
+export type ApprovalDecision = "approved" | "rejected" | "deferred" | "revised";
+export type ApprovalState = "pending" | ApprovalDecision;
+export type CheckpointResultingAction =
+  | "resume_session"
+  | "stay_paused"
+  | "stop_session"
+  | "record_only";
+export type CheckpointOption = ApprovalDecision;
+
+export type CheckpointPayload = JsonObject & {
+  decisionNeeded: string;
+  why: string;
+  affectedFiles?: string[];
+  affectedArtifacts?: string[];
+  affectedActions?: string[];
+  options?: CheckpointOption[];
+  resumePrompt?: string | null;
+  revisePrompt?: string | null;
+};
+
+/**
+ * A human approval gate. Generic from day one so future producers (tool-use,
+ * custom gates) need no schema change — only `fallback` is wired as a producer
+ * today (model fallback that requires operator sign-off before switching engine).
+ */
+export interface Approval {
+  id: string;
+  sessionId: string;
+  type: "fallback" | "tool" | "custom" | "checkpoint";
+  /** Producer-specific. For `fallback`: { from, to, handoffPath, reason }. */
+  payload: JsonObject;
+  state: ApprovalState;
+  createdAt: string;
+  resolvedAt?: string | null;
+  /** Who resolved it (SSO identity / "web-user"). */
+  actor?: string | null;
+  decisionNotes?: string | null;
+  resultingAction?: string | null;
+}
+
+export interface CronJob {
+  id: string;
+  name: string;
+  enabled: boolean;
+  schedule: string;
+  timezone?: string;
+  engine?: string;
+  model?: string;
+  employee?: string;
+  prompt: string;
+  delivery?: CronDelivery;
+}
+
+export type CronRunStatus = "queued" | "running" | "success" | "error" | "skipped_overlap";
+
+export interface CronRunEntry {
+  runId: string;
+  timestamp: string;
+  startedAt?: string;
+  finishedAt?: string;
+  sessionKey?: string;
+  sessionId?: string | null;
+  status: CronRunStatus;
+  trigger: "scheduled" | "manual";
+  durationMs?: number;
+  error?: string | null;
+  resultPreview?: string | null;
+}
+
+export interface CronDelivery {
+  connector: string;
+  channel: string;
+}
+
+export interface Employee {
+  name: string;
+  displayName: string;
+  department: string;
+  rank: "executive" | "manager" | "senior" | "employee";
+  engine: string;
+  model: string;
+  persona: string;
+  /** Emoji icon for this employee (shown in sidebar, org chart, etc.) */
+  emoji?: string;
+  /** Ocean avatar id for this employee, e.g. "aquatic:cuttlefish". Takes precedence
+   *  over `emoji` when the frontend resolves the display avatar. */
+  avatar?: string;
+  /** Extra CLI flags passed to the engine (e.g. ["--chrome"]) */
+  cliFlags?: string[];
+  /** MCP servers this employee needs. true = all global, false = none, string[] = specific servers */
+  mcp?: boolean | string[];
+  /** Max cost in USD for a single session. Overrides global config. */
+  maxCostUsd?: number;
+  /** Default effort level for sessions assigned to this employee */
+  effortLevel?: string;
+  /** Whether to notify the parent session when this employee's child session completes. Default: true */
+  alwaysNotify?: boolean;
+  /** Who this employee reports to. String = single parent. Array = primary + dotted-line (future). */
+  reportsTo?: string | string[];
+  /** Optional policy-driven model fallback/backup chain for this employee. */
+  modelPolicy?: AgentModelPolicy;
+  /** Services this employee provides to the org */
+  provides?: ServiceDeclaration[];
+}
+
+/** A service that an employee can provide to other employees/departments. */
+export interface ServiceDeclaration {
+  name: string;
+  description: string;
+}
+
+/** A node in the resolved org tree. Wraps an Employee with computed hierarchy data. */
+export interface OrgNode {
+  employee: Employee;
+  /** Resolved primary parent name (null = reports to root) */
+  parentName: string | null;
+  /** Names of direct reports */
+  directReports: string[];
+  /** Depth in tree (root = 0, root's reports = 1, etc.) */
+  depth: number;
+  /** Path from root to this node (excluding virtual root), e.g. ["content-lead", "content-writer"] */
+  chain: string[];
+}
+
+/** Warning about a hierarchy issue. */
+export interface OrgWarning {
+  employee: string;
+  type: "broken_ref" | "cycle" | "self_ref" | "cross_department" | "multiple_executives";
+  message: string;
+  /** The invalid reportsTo value that caused this warning */
+  ref?: string;
+}
+
+/** The fully resolved org hierarchy. */
+export interface OrgHierarchy {
+  /** Root node name — executive employee name, or null if no executive YAML exists */
+  root: string | null;
+  /** All nodes keyed by employee name */
+  nodes: Record<string, OrgNode>;
+  /** Ordered list for flat iteration (topological/BFS order, root first) */
+  sorted: string[];
+  /** Any resolution warnings */
+  warnings: OrgWarning[];
+}
+
+export interface Department {
+  name: string;
+  displayName: string;
+  description: string;
+}

@@ -1,0 +1,56 @@
+# Machine-readable mirror of docs/agent/mermaid-diagram-guidance.md.
+# The Giles mermaid_diagram_watcher reads this file for thresholds and
+# finding-code metadata.
+
+policy_id: GDIA
+policy_version: 1
+source: docs/agent/mermaid-diagram-guidance.md
+markdown_source: docs/agent/mermaid-diagram-guidance.md
+
+applies_to:
+  file_patterns:
+    - "**/*.md"
+    - "**/*.mmd"
+  exclude_patterns:
+    - "**/node_modules/**"
+    - "**/.venv/**"
+    - "**/.git/**"
+    - "**/__pycache__/**"
+    - "**/.pytest_cache/**"
+
+repo_requirements:
+  required_when_mermaid_present:
+    local_guidance_md: "docs/agent/mermaid-diagram-guidance.md"
+    local_guidance_yaml: "docs/agent/mermaid-diagram-guidance.yaml"
+    agents_pointer_file: "AGENTS.md"
+    agents_pointer_must_contain:
+      - "docs/agent/mermaid-diagram-guidance.md"
+
+diagram_rules:
+  preferred_system_map_direction: "TB"
+  require_named_layers_for_system_maps: true
+  max_nodes_warning: 14
+  max_edges_warning: 18
+  require_boundary_node_for_many_to_many: true
+  require_render_evidence_for_diagram_edits: false
+  fan_out_boundary_node_examples:
+    - "Persisted outputs"
+    - "Policy decision"
+    - "Provider boundary"
+    - "Report emission"
+    - "State update boundary"
+    - "Validation result"
+
+visual_limits:
+  crossing_detection: "not_supported_without_render_geometry"
+  enforcement_mode: "structural_and_advisory"
+
+finding_codes:
+  GDIA-001: "Mermaid content exists in repo but local guidance file is missing."
+  GDIA-002: "AGENTS.md does not point at the local mermaid guidance file."
+  GDIA-003: "Local guidance template-hash is stale relative to canonical."
+  GDIA-004: "System map lacks named layered subgraphs."
+  GDIA-005: "Likely many-to-many fan-out without a named boundary node."
+  GDIA-006: "Diagram exceeds node/edge complexity threshold."
+  GDIA-007: "Diagram edit lacks render/preview evidence."
+  GDIA-008: "Possible visual clutter; human render review recommended."

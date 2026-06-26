@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>CUTTLEFISH logo</title>
+  <desc>Minimal geometric cuttlefish-inspired adaptive routing logo.</desc>
+  <rect width="1024" height="1024" rx="112.64" fill="#061B49"/>
+  <g id="cuttlefish-icon" transform="" stroke-linecap="round" stroke-linejoin="round">
+    <!-- outer soft system boundary / mantle silhouette -->
+    <path d="M512 172
+             C348 172 244 285 244 432
+             C244 584 358 688 512 688
+             C666 688 780 584 780 432
+             C780 285 676 172 512 172Z"
+          stroke="#FFFFFF" stroke-width="34" fill="none"/>
+
+    <!-- angular cuttlefish mantle points, abstract not literal -->
+    <path d="M330 246 L248 210 L292 315" stroke="#FFFFFF" stroke-width="34" fill="none"/>
+    <path d="M694 246 L776 210 L732 315" stroke="#FFFFFF" stroke-width="34" fill="none"/>
+
+    <!-- internal adaptive routing graph / chromatophore field -->
+    <path d="M512 282 L638 356 L638 504 L512 578 L386 504 L386 356 Z"
+          stroke="#FFFFFF" stroke-width="22" fill="none"/>
+    <path d="M386 356 L512 430 L638 356 M386 504 L512 430 L638 504 M512 282 L512 578"
+          stroke="#FFFFFF" stroke-width="16" fill="none"/>
+    <circle cx="512" cy="430" r="46" stroke="#12B8A6" stroke-width="22" fill="#061B49"/>
+    <circle cx="512" cy="282" r="30" stroke="#1E6BFF" stroke-width="16" fill="#061B49"/>
+    <circle cx="638" cy="356" r="30" stroke="#FFFFFF" stroke-width="16" fill="#061B49"/>
+    <circle cx="638" cy="504" r="30" stroke="#12B8A6" stroke-width="16" fill="#061B49"/>
+    <circle cx="512" cy="578" r="30" stroke="#FFFFFF" stroke-width="16" fill="#061B49"/>
+    <circle cx="386" cy="504" r="30" stroke="#1E6BFF" stroke-width="16" fill="#061B49"/>
+    <circle cx="386" cy="356" r="30" stroke="#FFFFFF" stroke-width="16" fill="#061B49"/>
+
+    <!-- tentacle/output routing lines -->
+    <path d="M430 680 C410 750 350 792 284 814" stroke="#FFFFFF" stroke-width="30"/>
+    <path d="M480 690 C462 766 416 824 360 864" stroke="#12B8A6" stroke-width="24"/>
+    <path d="M544 690 C562 766 608 824 664 864" stroke="#12B8A6" stroke-width="24"/>
+    <path d="M594 680 C614 750 674 792 740 814" stroke="#FFFFFF" stroke-width="30"/>
+    <path d="M512 700 C512 778 512 836 512 888" stroke="#FFFFFF" stroke-width="26"/>
+
+    <!-- small terminal nodes -->
+    <circle cx="284" cy="814" r="18" fill="#FFFFFF"/>
+    <circle cx="360" cy="864" r="16" fill="#12B8A6"/>
+    <circle cx="512" cy="888" r="16" fill="#FFFFFF"/>
+    <circle cx="664" cy="864" r="16" fill="#12B8A6"/>
+    <circle cx="740" cy="814" r="18" fill="#FFFFFF"/>
+  </g>
+  
+</svg>

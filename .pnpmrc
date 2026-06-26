@@ -1,0 +1,5 @@
+# Project-local pnpm runtime controls (kept out of npmrc to avoid npm warnings).
+auto-install-peers=true
+
+# Pin pnpm-managed install/build paths to Node 24.13.0 to avoid ABI-mismatch rebuild issues.
+use-node-version=24.13.0

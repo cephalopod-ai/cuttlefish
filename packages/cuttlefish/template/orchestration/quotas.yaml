@@ -1,0 +1,23 @@
+# Quotas bound the number of simultaneously active leases per provider (engine)
+# and per family (vendor). Sized so the largest default team — architectureChange
+# (2x codex + 1x claude + 1x antigravity + 1x pi) — fits exactly within the caps.
+# Keys are the live engine adapter ids / families used in workers.yaml.
+quotas:
+  providers:
+    codex:
+      maxActiveLeases: 2
+    claude:
+      maxActiveLeases: 2
+    antigravity:
+      maxActiveLeases: 2
+    pi:
+      maxActiveLeases: 4
+  families:
+    openai:
+      maxActiveLeases: 2
+    anthropic:
+      maxActiveLeases: 2
+    google:
+      maxActiveLeases: 2
+    local:
+      maxActiveLeases: 8

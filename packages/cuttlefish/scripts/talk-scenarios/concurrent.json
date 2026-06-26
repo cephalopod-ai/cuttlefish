@@ -1,0 +1,9 @@
+{
+  "fresh": true,
+  "turns": [
+    { "say": "Ask the team to check if Project A's blog cron is enabled. Read-only, one line, change nothing.", "expect": "delegate" },
+    { "say": "Also, separately, have someone report the total employee count. Read-only.", "expect": "delegate" },
+    { "say": "And separately again, have someone name the top-priority department. Read-only, one word.", "expect": "delegate" },
+    { "say": "What's happening right now — how many things are you running for me at the moment?", "expect": "direct" }
+  ]
+}

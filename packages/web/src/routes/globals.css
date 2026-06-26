@@ -1,0 +1,772 @@
+@import "tailwindcss";
+
+/* :where() has zero specificity so shadcn's dark: utilities remain overridable.
+   data-theme is never "system" after JS hydration — ThemeProvider resolves it to dark/light. */
+@custom-variant dark (:where([data-theme="dark"]) &);
+
+@theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--text-primary);
+  --color-card: var(--bg-secondary);
+  --color-card-foreground: var(--text-primary);
+  --color-popover: var(--material-thick);
+  --color-popover-foreground: var(--text-primary);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--accent-contrast);
+  --color-secondary: var(--fill-secondary);
+  --color-secondary-foreground: var(--text-primary);
+  --color-muted: var(--fill-tertiary);
+  --color-muted-foreground: var(--text-tertiary);
+  --color-accent: var(--fill-secondary);
+  --color-accent-foreground: var(--text-primary);
+  --color-destructive: var(--system-red);
+  --color-destructive-foreground: #ffffff;
+  --color-border: var(--separator);
+  --color-input: var(--fill-tertiary);
+  --color-ring: var(--accent);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+}
+
+/* ============================================
+   Tailwind v4 Theme Tokens
+   ============================================ */
+
+/* `static` so every token is emitted to :root even when only referenced via
+   arbitrary values like p-[var(--space-3)] (Tailwind v4 tree-shakes unused
+   @theme tokens otherwise, which silently zeroes out spacing/typography). */
+@theme static {
+  /* Theme-driven font stacks (overridden per [data-theme]; defaults below in :root) */
+  --font-sans: var(--font-ui);
+  --font-serif: var(--font-display);
+  --font-mono: var(--font-code);
+
+  /* Typography Scale — Apple HIG */
+  --text-caption2: 11px;
+  --text-caption1: 12px;
+  --text-footnote: 13px;
+  --text-subheadline: 15px;
+  --text-body: 17px;
+  --text-title3: 20px;
+  --text-title2: 22px;
+  --text-title1: 28px;
+  --text-large-title: 34px;
+
+  /* Leading */
+  --leading-tight: 1.15;
+  --leading-snug: 1.3;
+  --leading-normal: 1.47;
+  --leading-relaxed: 1.65;
+
+  /* Tracking */
+  --tracking-tight: -0.41px;
+  --tracking-normal: -0.24px;
+  --tracking-wide: 0.07em;
+
+  /* Font Weights */
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* Spacing Scale — 4px grid */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Tailwind animation tokens */
+  --animate-fade-in: fadeIn 0.2s ease-out;
+  --animate-slide-in: slideIn 0.2s ease-out;
+  --animate-pulse-red: pulse-red 1.5s ease-in-out infinite;
+  --animate-blink: blink-cursor 1s step-end infinite;
+  --animate-float-hint: float-hint 2s ease-in-out infinite;
+}
+
+/* ============================================
+   Apple Material Design System — Themes
+   ============================================ */
+
+/* Theme-independent layout tokens (safe-area + chat reading measure).
+   Defined once on :root so they cascade to every theme block below. */
+:root {
+  /* iOS safe-area passthroughs (0 on non-notched devices). Compose at the call
+     site, e.g. top-[max(var(--safe-top),12px)] / pb-[max(var(--safe-bottom),var(--space-3))]. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  /* Max reading measure for the assistant text column. Scroller + composer stay
+     full-bleed; only the prose column caps. Single-line tune. */
+  --chat-measure: 64rem;
+  /* Clearance under the floating header pills. The pills now float in the
+     corners (not a solid header), so content only needs a small top gap +
+     safe-area inset — it then scrolls UNDER the translucent top scrim, which
+     fades it. The previous +52px reserved space for the removed solid header
+     and left a dead gap above the first message. */
+  --chat-top-clearance: max(var(--safe-top), 12px);
+}
+
+/* LEDGER DARK — warm charcoal + amber (default) */
+:root, [data-theme="dark"] {
+  --font-ui: "Hanken Grotesk", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-display: "Hanken Grotesk", -apple-system, system-ui, sans-serif;
+  --font-code: "IBM Plex Mono", "SF Mono", Monaco, Menlo, monospace;
+  --bg: #14130F;
+  --bg-secondary: #1E1C16;
+  --bg-tertiary: #2A2720;
+  --material-regular: rgba(30,28,22,0.92);
+  --material-thick: rgba(20,18,15,0.96);
+  --material-thin: rgba(255,255,255,0.05);
+  --material-ultra-thin: rgba(255,255,255,0.03);
+  --fill-primary: rgba(255,255,255,0.10);
+  --fill-secondary: rgba(255,255,255,0.07);
+  --fill-tertiary: rgba(255,255,255,0.05);
+  --fill-quaternary: rgba(255,255,255,0.035);
+  --separator: rgba(255,255,255,0.09);
+  --separator-opaque: #38342B;
+  --text-primary: #E8E4D8;
+  --text-secondary: rgba(232,228,216,0.62);
+  --text-tertiary: rgba(232,228,216,0.38);
+  --text-quaternary: rgba(232,228,216,0.22);
+  --accent: #E0A33C;
+  --accent-fill: rgba(224,163,60,0.14);
+  --accent-contrast: #14130F;
+  --system-blue: #5B9BD5;
+  --system-green: #7DBE6A;
+  --system-red: #E0675A;
+  --system-orange: #E89B45;
+  --system-purple: #B98AD6;
+  --inset-shine: inset 0 1px 0 rgba(255,255,255,0.06);
+  --shadow-subtle: 0 1px 2px rgba(0,0,0,0.30);
+  --shadow-ambient: 0 0 0 0.5px rgba(0,0,0,0.30);
+  --shadow-key: 0 4px 16px rgba(0,0,0,0.50);
+  --shadow-card: 0 0 0 0.5px rgba(0,0,0,0.30), 0 4px 16px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.05);
+  --shadow-overlay: 0 0 0 0.5px rgba(0,0,0,0.40), 0 16px 48px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.05);
+  /* Frosted header-pill material (theme-aware). Dark bumped for legibility — the
+     0.55/0.10 pill nearly vanished on the near-black bg. */
+  --pill-bg: rgba(34,31,24,0.64);
+  --pill-border: rgba(255,255,255,0.14);
+  --code-bg: rgba(255,255,255,0.05);
+  --code-border: rgba(255,255,255,0.09);
+  --code-text: #E8E4D8;
+  /* Tonal staircase (chrome recedes, content leads): Ribbon (lightest chrome)
+     > Chat List (mid) > Thread (--bg, deepest). Quiet ~8 L* steps; no rest
+     hairlines — the only line is the list's scroll-activated header separator. */
+  --ribbon-bg: #232019;
+  --sidebar-bg: #1C1A14;
+  --sidebar-backdrop: blur(40px) saturate(160%);
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-2xl: 24px;
+  --ease-spring: cubic-bezier(0.34,1.56,0.64,1);
+  --ease-smooth: cubic-bezier(0.4,0,0.2,1);
+  --ease-snappy: cubic-bezier(0.2,0,0,1);
+}
+
+/* LEDGER LIGHT — warm paper + ochre */
+[data-theme="light"] {
+  --font-ui: "Hanken Grotesk", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-display: "Hanken Grotesk", -apple-system, system-ui, sans-serif;
+  --font-code: "IBM Plex Mono", "SF Mono", Monaco, Menlo, monospace;
+  --bg: #F4F1E8;
+  --bg-secondary: #FBF9F2;
+  --bg-tertiary: #ECE8DC;
+  --material-regular: rgba(251,249,242,0.94);
+  --material-thick: rgba(244,241,232,0.97);
+  --material-thin: rgba(33,30,22,0.04);
+  --material-ultra-thin: rgba(33,30,22,0.02);
+  --fill-primary: rgba(33,30,22,0.08);
+  --fill-secondary: rgba(33,30,22,0.06);
+  --fill-tertiary: rgba(33,30,22,0.045);
+  --fill-quaternary: rgba(33,30,22,0.028);
+  --separator: rgba(33,30,22,0.14);
+  --separator-opaque: #DED8C7;
+  --text-primary: #211E16;
+  --text-secondary: rgba(33,30,22,0.66);
+  --text-tertiary: rgba(33,30,22,0.56);
+  --text-quaternary: rgba(33,30,22,0.30);
+  --accent: #926516;
+  --accent-fill: rgba(146,101,22,0.14);
+  --accent-contrast: #FBF9F2;
+  --system-blue: #2D6CB5;
+  --system-green: #597648;
+  --system-red: #B23B33;
+  --system-orange: #B5701A;
+  --system-purple: #7A5A9E;
+  --inset-shine: inset 0 1px 0 rgba(255,255,255,0.70);
+  --shadow-subtle: 0 1px 2px rgba(40,34,20,0.06);
+  --shadow-ambient: 0 0 0 0.5px rgba(40,34,20,0.10);
+  --shadow-key: 0 2px 8px rgba(40,34,20,0.10), 0 8px 24px rgba(40,34,20,0.08);
+  --shadow-card: 0 0 0 0.5px rgba(40,34,20,0.08), 0 1px 3px rgba(40,34,20,0.07), 0 4px 12px rgba(40,34,20,0.06), inset 0 1px 0 rgba(255,255,255,0.70);
+  --shadow-overlay: 0 0 0 0.5px rgba(40,34,20,0.10), 0 4px 16px rgba(40,34,20,0.10), 0 16px 48px rgba(40,34,20,0.14), inset 0 1px 0 rgba(255,255,255,0.80);
+  /* Frosted header-pill material (theme-aware) */
+  --pill-bg: rgba(251,249,242,0.72);
+  --pill-border: rgba(33,30,22,0.10);
+  --code-bg: rgba(33,30,22,0.05);
+  --code-border: rgba(33,30,22,0.10);
+  --code-text: #4A4030;
+  /* Tonal staircase (light): Ribbon (greyest chrome) > Chat List (mid) >
+     Thread (--bg, paper-white). Steps step DOWN from the content. */
+  --ribbon-bg: #E4DFD0;
+  --sidebar-bg: #ECE8DC;
+  --sidebar-backdrop: blur(20px) saturate(150%);
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-2xl: 24px;
+  --ease-spring: cubic-bezier(0.34,1.56,0.64,1);
+  --ease-smooth: cubic-bezier(0.4,0,0.2,1);
+  --ease-snappy: cubic-bezier(0.2,0,0,1);
+}
+
+/* SYSTEM: media-query fallback before JS hydration */
+@media (prefers-color-scheme: light) {
+  [data-theme="system"] {
+    --font-ui: "Hanken Grotesk", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --font-display: "Hanken Grotesk", -apple-system, system-ui, sans-serif;
+    --font-code: "IBM Plex Mono", "SF Mono", Monaco, Menlo, monospace;
+    --bg: #F4F1E8;
+    --bg-secondary: #FBF9F2;
+    --bg-tertiary: #ECE8DC;
+    --material-regular: rgba(251,249,242,0.94);
+    --material-thick: rgba(244,241,232,0.97);
+    --material-thin: rgba(33,30,22,0.04);
+    --material-ultra-thin: rgba(33,30,22,0.02);
+    --fill-primary: rgba(33,30,22,0.08);
+    --fill-secondary: rgba(33,30,22,0.06);
+    --fill-tertiary: rgba(33,30,22,0.045);
+    --fill-quaternary: rgba(33,30,22,0.028);
+    --separator: rgba(33,30,22,0.14);
+    --separator-opaque: #DED8C7;
+    --text-primary: #211E16;
+    --text-secondary: rgba(33,30,22,0.66);
+    --text-tertiary: rgba(33,30,22,0.56);
+    --text-quaternary: rgba(33,30,22,0.30);
+    --accent: #B07A1A;
+    --accent-fill: rgba(176,122,26,0.12);
+    --accent-contrast: #FBF9F2;
+    --system-blue: #2D6CB5;
+    --system-green: #597648;
+    --system-red: #B23B33;
+    --system-orange: #B5701A;
+    --system-purple: #7A5A9E;
+    --inset-shine: inset 0 1px 0 rgba(255,255,255,0.70);
+    --shadow-subtle: 0 1px 2px rgba(40,34,20,0.06);
+    --shadow-ambient: 0 0 0 0.5px rgba(40,34,20,0.10);
+    --shadow-key: 0 2px 8px rgba(40,34,20,0.10), 0 8px 24px rgba(40,34,20,0.08);
+    --shadow-card: 0 0 0 0.5px rgba(40,34,20,0.08), 0 1px 3px rgba(40,34,20,0.07), 0 4px 12px rgba(40,34,20,0.06), inset 0 1px 0 rgba(255,255,255,0.70);
+    --shadow-overlay: 0 0 0 0.5px rgba(40,34,20,0.10), 0 4px 16px rgba(40,34,20,0.10), 0 16px 48px rgba(40,34,20,0.14), inset 0 1px 0 rgba(255,255,255,0.80);
+    /* Frosted header-pill material (theme-aware) */
+    --pill-bg: rgba(251,249,242,0.72);
+    --pill-border: rgba(33,30,22,0.10);
+    --code-bg: rgba(33,30,22,0.05);
+    --code-border: rgba(33,30,22,0.10);
+    --code-text: #4A4030;
+    /* Tonal staircase (system → light): mirror [data-theme="light"]. */
+    --ribbon-bg: #E4DFD0;
+    --sidebar-bg: #ECE8DC;
+    --sidebar-backdrop: blur(20px) saturate(150%);
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --radius-xl: 18px;
+    --radius-2xl: 24px;
+    --ease-spring: cubic-bezier(0.34,1.56,0.64,1);
+    --ease-smooth: cubic-bezier(0.4,0,0.2,1);
+    --ease-snappy: cubic-bezier(0.2,0,0,1);
+  }
+}
+@media (prefers-color-scheme: dark) {
+  [data-theme="system"] {
+    --font-ui: "Hanken Grotesk", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --font-display: "Hanken Grotesk", -apple-system, system-ui, sans-serif;
+    --font-code: "IBM Plex Mono", "SF Mono", Monaco, Menlo, monospace;
+    --bg: #14130F;
+    --bg-secondary: #1E1C16;
+    --bg-tertiary: #2A2720;
+    --material-regular: rgba(30,28,22,0.92);
+    --material-thick: rgba(20,18,15,0.96);
+    --material-thin: rgba(255,255,255,0.05);
+    --material-ultra-thin: rgba(255,255,255,0.03);
+    --fill-primary: rgba(255,255,255,0.10);
+    --fill-secondary: rgba(255,255,255,0.07);
+    --fill-tertiary: rgba(255,255,255,0.05);
+    --fill-quaternary: rgba(255,255,255,0.035);
+    --separator: rgba(255,255,255,0.09);
+    --separator-opaque: #38342B;
+    --text-primary: #E8E4D8;
+    --text-secondary: rgba(232,228,216,0.62);
+    --text-tertiary: rgba(232,228,216,0.38);
+    --text-quaternary: rgba(232,228,216,0.22);
+    --accent: #E0A33C;
+    --accent-fill: rgba(224,163,60,0.14);
+    --accent-contrast: #14130F;
+    --system-blue: #5B9BD5;
+    --system-green: #7DBE6A;
+    --system-red: #E0675A;
+    --system-orange: #E89B45;
+    --system-purple: #B98AD6;
+    --inset-shine: inset 0 1px 0 rgba(255,255,255,0.06);
+    --shadow-subtle: 0 1px 2px rgba(0,0,0,0.30);
+    --shadow-ambient: 0 0 0 0.5px rgba(0,0,0,0.30);
+    --shadow-key: 0 4px 16px rgba(0,0,0,0.50);
+    --shadow-card: 0 0 0 0.5px rgba(0,0,0,0.30), 0 4px 16px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.05);
+    --shadow-overlay: 0 0 0 0.5px rgba(0,0,0,0.40), 0 16px 48px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.05);
+    /* Frosted header-pill material (theme-aware). Dark bumped (see :root dark block). */
+    --pill-bg: rgba(34,31,24,0.64);
+    --pill-border: rgba(255,255,255,0.14);
+    --code-bg: rgba(255,255,255,0.05);
+    --code-border: rgba(255,255,255,0.09);
+    --code-text: #E8E4D8;
+    /* Tonal staircase (system → dark): mirror [data-theme="dark"]. */
+    --ribbon-bg: #232019;
+    --sidebar-bg: #1C1A14;
+    --sidebar-backdrop: blur(40px) saturate(160%);
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --radius-xl: 18px;
+    --radius-2xl: 24px;
+    --ease-spring: cubic-bezier(0.34,1.56,0.64,1);
+    --ease-smooth: cubic-bezier(0.4,0,0.2,1);
+    --ease-snappy: cubic-bezier(0.2,0,0,1);
+  }
+}
+
+/* ============================================
+   Base Styles
+   ============================================ */
+
+html, body {
+  /* Lock the page itself so iOS Safari uses inner containers as scroll
+     surfaces. Without this, swipes anywhere rubber-band the whole document
+     instead of scrolling the chat / sidebar internally. */
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* Prevent iOS Safari zoom on input focus (requires font-size >= 16px) */
+@media screen and (max-width: 768px) {
+  input, select, textarea, .apple-input {
+    font-size: 16px !important;
+  }
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--text-body);
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Display typeface for headings (per-theme; default = same UI stack). */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+}
+
+/* Apple-style scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(120,120,128,0.36); border-radius: 4px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: rgba(120,120,128,0.60); border: 2px solid transparent; background-clip: content-box; }
+
+/* Selection */
+::selection { background: var(--accent-fill); color: var(--text-primary); }
+
+/* ============================================
+   Keyframe Animations
+   ============================================ */
+
+@keyframes scaleIn {
+  from { transform: scale(0.94); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(16px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes authReveal {
+  from { opacity: 0; transform: translateY(8px) scale(0.985); filter: blur(4px); }
+  to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes pulse-red {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes blink-cursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes float-hint {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(-3px, -3px); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scaleUp {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Typing dots */
+@keyframes bounce-dot {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-4px); }
+}
+
+/* ============================================
+   Utility Animation Classes
+   ============================================ */
+
+.animate-scale-in { animation: scaleIn 200ms var(--ease-spring); }
+.animate-slide-up { animation: slideUp 250ms var(--ease-spring); }
+.animate-slide-in-right { animation: slideInRight 300ms var(--ease-smooth); }
+.animate-fade-in { animation: fadeIn 200ms var(--ease-smooth); }
+.animate-auth-reveal { animation: authReveal 260ms var(--ease-smooth) both; }
+.animate-slide-in { animation: slideIn 200ms var(--ease-smooth); }
+.animate-error-pulse { animation: pulse-red 1.5s ease-in-out infinite; }
+.animate-blink { animation: blink-cursor 1s step-end infinite; }
+.animate-float-hint { animation: float-hint 2s ease-in-out infinite; }
+
+/* New animation utilities */
+.animate-shimmer { animation: shimmer 1.5s ease-in-out infinite; background-size: 200% 100%; }
+.animate-slide-down { animation: slideDown 250ms var(--ease-smooth) forwards; }
+.animate-slide-up-enter { animation: slideUp 250ms var(--ease-smooth) forwards; }
+.animate-scale-up { animation: scaleUp 200ms var(--ease-spring) forwards; }
+.animate-fade-out { animation: fadeOut 150ms ease forwards; }
+
+/* Panel slide-in from right edge */
+@keyframes panelSlideIn {
+  from { transform: translateX(100%); opacity: 0.8; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.panel-slide-in {
+  animation: panelSlideIn 350ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+/* Backdrop fade (reuses fadeIn timing) */
+.backdrop-fade {
+  animation: fadeIn 200ms ease-out both;
+}
+
+/* ============================================
+   Interactive State Classes
+   ============================================ */
+
+/* Hover lift — card elevation on hover */
+.hover-lift {
+  transition: transform 200ms var(--ease-spring), box-shadow 200ms var(--ease-smooth);
+}
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-key);
+}
+.hover-lift:active {
+  transform: translateY(0) scale(0.98);
+  transition-duration: 100ms;
+}
+
+/* Hover background — subtle fill on hover */
+.hover-bg {
+  transition: background-color 150ms var(--ease-smooth);
+}
+.hover-bg:hover {
+  background-color: var(--fill-secondary);
+}
+.hover-bg:active {
+  background-color: var(--fill-tertiary);
+}
+
+/* Button scale — tactile press */
+.btn-scale {
+  transition: transform 150ms var(--ease-spring), box-shadow 150ms var(--ease-smooth);
+}
+.btn-scale:hover {
+  transform: scale(0.98);
+}
+.btn-scale:active {
+  transform: scale(0.96);
+}
+
+/* Primary CTA — gold glow */
+.btn-primary {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: var(--weight-semibold);
+  border: none;
+  cursor: pointer;
+  transition: all 150ms var(--ease-spring);
+}
+.btn-primary:hover {
+  transform: scale(0.98);
+  box-shadow: 0 0 24px var(--accent-fill);
+}
+.btn-primary:active {
+  transform: scale(0.96);
+}
+.btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Ghost button */
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border: none;
+  cursor: pointer;
+  transition: all 150ms var(--ease-smooth);
+}
+.btn-ghost:hover {
+  background: var(--fill-secondary);
+  color: var(--text-primary);
+}
+
+/* Focus ring — keyboard only */
+.focus-ring:focus-visible {
+  outline: 2px solid var(--system-blue);
+  outline-offset: 2px;
+}
+
+/* Nav item */
+.nav-item {
+  transition: background-color 150ms var(--ease-smooth), color 150ms var(--ease-smooth);
+  border-radius: var(--radius-sm);
+}
+.nav-item:hover {
+  background: var(--fill-secondary);
+}
+.nav-item.active {
+  background: var(--fill-secondary);
+  color: var(--accent);
+}
+
+/* ============================================
+   React Flow Overrides (theme-aware)
+   ============================================ */
+
+.react-flow__background { background: var(--bg) !important; }
+.react-flow__minimap { background: var(--material-regular) !important; border: 1px solid var(--separator); border-radius: var(--radius-md); overflow: hidden; }
+.react-flow__controls { background: var(--material-regular) !important; border: 1px solid var(--separator) !important; border-radius: var(--radius-md) !important; overflow: hidden; box-shadow: var(--shadow-card); }
+.react-flow__controls-button { background: var(--material-regular) !important; border-color: var(--separator) !important; color: var(--text-secondary) !important; }
+.react-flow__controls-button:hover { background: var(--material-thin) !important; color: var(--text-primary) !important; }
+/* Edge stroke/width/opacity are set per-edge inline by the layout seam. */
+.react-flow__node { transition: transform 200ms var(--ease-spring); }
+
+/* Per-department hue (org map group containers). Hue comes from --dept-h set
+   inline on the node; S/L is fixed per theme so it stays low-saturation and
+   in-palette. Amber --accent is reserved for selection, never used here. */
+.org-dept-accent { background-color: hsl(var(--dept-h, 40) 38% 56%); }
+[data-theme="light"] .org-dept-accent { background-color: hsl(var(--dept-h, 40) 42% 40%); }
+
+/* ============================================
+   Apple Card
+   ============================================ */
+
+.apple-card {
+  background: var(--material-thin);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  border: 1px solid var(--separator);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+/* ============================================
+   Apple Input
+   ============================================ */
+
+.apple-input {
+  background: var(--fill-tertiary);
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 11px 16px;
+  font-size: 15px;
+  color: var(--text-primary);
+  outline: none;
+  transition: box-shadow 200ms var(--ease-smooth);
+}
+
+.apple-input::placeholder { color: var(--text-tertiary); }
+.apple-input:focus { box-shadow: 0 0 0 4px var(--accent-fill); }
+
+/* ============================================
+   Apple Buttons
+   ============================================ */
+
+.apple-btn-primary {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 14px 20px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 150ms var(--ease-spring);
+}
+
+.apple-btn-primary:hover { filter: brightness(1.05); transform: scale(0.98); }
+.apple-btn-primary:active { transform: scale(0.96); }
+
+.apple-btn-secondary {
+  background: var(--accent-fill);
+  color: var(--accent);
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 14px 20px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 150ms var(--ease-spring);
+}
+
+.apple-btn-secondary:hover { filter: brightness(1.08); }
+
+/* ============================================
+   Ledger Theme Specifics
+   ============================================ */
+
+/* Org map (react-flow) edges follow the separator token */
+.react-flow__edge-path { stroke: var(--separator-opaque); }
+
+/* ============================================
+   Chat — Typing Dots
+   ============================================ */
+
+.typing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  animation: bounce-dot 1.2s ease-in-out infinite;
+}
+
+/* ============================================
+   Reduced Motion
+   ============================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* xterm.js: .xterm-screen snaps its width to whole cells (e.g. 853px in a
+   ~870px container), so by default the rounding leftover (5–20px) shows as
+   dead bg on the right only. Center the screen inside its parent so the
+   leftover splits evenly left/right and the inset looks symmetric. */
+.xterm-screen {
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+/* xterm.js: let the browser treat the terminal subtree as a vertical pan
+   surface. The actual mobile scroll plumbing lives in cli-terminal.tsx
+   (touchmove → term.scrollLines()), because iOS Safari can't natively scroll
+   xterm's absolutely-positioned overflow viewport. Desktop wheel works via
+   xterm's own wheel listener. */
+.xterm,
+.xterm-viewport {
+  touch-action: pan-y !important;
+}
+.xterm-viewport {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* xterm uses .xterm-helper-textarea as a hidden input proxy for keyboard
+   events. A click anywhere in the terminal focuses this textarea, stealing
+   focus from our sibling ChatInput. With pointer-events: none it can't
+   intercept clicks/taps — selection still works because xterm's selection
+   layer is on a different element. */
+.xterm-helper-textarea {
+  pointer-events: none !important;
+}
+
+/* Explicitly allow text selection in the terminal so users can drag-select on
+   desktop and long-press → Copy on iOS. xterm's defaults usually permit this
+   but inherited rules from our wrapper could break it. */
+.xterm,
+.xterm-screen,
+.xterm-rows {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Any scrollable container in the app should NOT chain its scroll to the page
+   when it hits its top/bottom edge — iOS Safari's default behaviour creates
+   rubber-band on every flick. Use the data-scrollable hook plus the explicit
+   chat-messages-scroll class so existing components automatically benefit. */
+.chat-messages-scroll,
+[data-scrollable] {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}

@@ -1,0 +1,111 @@
+import fs from "node:fs";
+import yaml from "js-yaml";
+import { CONFIG_PATH } from "./paths.js";
+import { safeWriteYaml } from "./safe-write.js";
+import type { BoardWorkerConfig, CuttlefishConfig } from "./types.js";
+import { validateConfigShape } from "./config-schema.js";
+export { validateConfigShape } from "./config-schema.js";
+
+type ClaudeEngineConfig = CuttlefishConfig["engines"]["claude"];
+type NormalizedBoardWorkerConfig = Required<NonNullable<CuttlefishConfig["boardWorker"]>> & {
+  schedule: {
+    weekday: { start: string; end: string };
+    weekend: { start: string; end: string };
+  };
+  usage: { minRemainingPercent: number };
+};
+
+const DEFAULT_BOARD_WORKER_WINDOW = { start: "22:00", end: "04:00" } as const;
+const TIME_OF_DAY_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+function systemTimezone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
+
+function normalizeWindow(
+  raw: { start?: unknown; end?: unknown } | undefined,
+): { start: string; end: string } {
+  if (!raw || typeof raw !== "object") return { ...DEFAULT_BOARD_WORKER_WINDOW };
+  const start = typeof raw.start === "string" && TIME_OF_DAY_RE.test(raw.start)
+    ? raw.start
+    : DEFAULT_BOARD_WORKER_WINDOW.start;
+  const end = typeof raw.end === "string" && TIME_OF_DAY_RE.test(raw.end)
+    ? raw.end
+    : DEFAULT_BOARD_WORKER_WINDOW.end;
+  return { start, end };
+}
+
+function clampMinutes(value: unknown, fallback: number): number {
+  const minutes = typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  return Math.max(0, Math.min(60, Math.floor(minutes)));
+}
+
+export function normalizeClaudeEngineConfig(raw: ClaudeEngineConfig): Required<Pick<ClaudeEngineConfig, "maxLivePtys">> & ClaudeEngineConfig {
+  return {
+    ...raw,
+    maxLivePtys: raw.maxLivePtys ?? 8,
+  };
+}
+
+export function normalizeBoardWorkerConfig(raw: BoardWorkerConfig | undefined): NormalizedBoardWorkerConfig {
+  const weekday = normalizeWindow(raw?.schedule?.weekday);
+  const weekend = normalizeWindow(raw?.schedule?.weekend);
+  return {
+    enabled: raw?.enabled ?? false,
+    idleMinutes: clampMinutes(raw?.idleMinutes, 5),
+    timezone: raw?.timezone ?? systemTimezone(),
+    schedule: { weekday, weekend },
+    usage: { minRemainingPercent: raw?.usage?.minRemainingPercent ?? 15 },
+  };
+}
+
+export function loadConfig(): CuttlefishConfig {
+  if (!fs.existsSync(CONFIG_PATH)) {
+    throw new Error(
+      `Cuttlefish config not found at ${CONFIG_PATH}. Run "cuttlefish setup" first.`
+    );
+  }
+  const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
+  let parsed: unknown;
+  try {
+    parsed = yaml.load(raw);
+  } catch (err) {
+    throw new Error(`Invalid YAML in ${CONFIG_PATH}: ${(err as Error).message}`);
+  }
+  const problems = validateConfigShape(parsed);
+  if (problems.length > 0) {
+    throw new Error(
+      `Invalid config at ${CONFIG_PATH}:\n  - ${problems.join("\n  - ")}`
+    );
+  }
+  const config = parsed as CuttlefishConfig;
+  const gateway = config.gateway as CuttlefishConfig["gateway"] | undefined;
+  config.gateway = {
+    ...(gateway ?? {}),
+    port: gateway?.port ?? 8888,
+    host: gateway?.host ?? "127.0.0.1",
+  };
+  config.engines.default = config.engines.default ?? "claude";
+  config.connectors = config.connectors ?? {};
+  const logging = config.logging as CuttlefishConfig["logging"] | undefined;
+  config.logging = {
+    ...(logging ?? {}),
+    file: logging?.file ?? true,
+    stdout: logging?.stdout ?? true,
+    level: logging?.level ?? "info",
+  };
+  config.engines.claude = normalizeClaudeEngineConfig(config.engines.claude);
+  config.boardWorker = normalizeBoardWorkerConfig(config.boardWorker);
+  return config;
+}
+
+/**
+ * Atomically persist a config object to config.yaml. The live gateway
+ * hot-reloads config.yaml via a file watcher, so a torn write would be
+ * consumed mid-write — write to a tmp file in the same directory, then rename.
+ * `dumpOptions` is forwarded to yaml.dump so call sites keep their formatting.
+ */
+export function saveConfigAtomic(config: unknown, dumpOptions?: yaml.DumpOptions): void {
+  // Atomic + fsync-durable + audited (canonical config; hot-reloaded by a watcher).
+  safeWriteYaml(CONFIG_PATH, config, { dumpOptions, audit: { actor: "gateway", op: "config.save" } });
+}

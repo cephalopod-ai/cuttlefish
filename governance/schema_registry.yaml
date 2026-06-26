@@ -1,0 +1,5 @@
+schema_version: "1.0"
+schemas:
+  - id: "agent_spec.v1"
+    path: "schemas/config/agent_spec.v1.yaml"
+    ownership_mode: "repo_local"

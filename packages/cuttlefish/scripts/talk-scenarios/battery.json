@@ -1,0 +1,12 @@
+{
+  "fresh": true,
+  "turns": [
+    { "say": "Hey AURA, you up?", "expect": "direct" },
+    { "say": "What's the one-line state of the org right now?", "expect": "direct" },
+    { "say": "What did we ship most recently on Cuttlefish Talk?", "expect": "direct" },
+    { "say": "Ask the team to quickly confirm whether the Project A blog cron jobs are enabled. Read-only, one line back, do not change or send anything.", "expect": "delegate", "relay": true, "relaySec": 300 },
+    { "say": "Now also have someone check how many employees are in the org and report just the number. Read-only.", "expect": "delegate", "relay": true, "relaySec": 300 },
+    { "say": "And one more: have the team name the single highest-priority department. Read-only, one word.", "expect": "delegate", "relay": true, "relaySec": 300 },
+    { "say": "So overall, anything I should worry about today?", "expect": "direct" }
+  ]
+}

@@ -1,0 +1,176 @@
+import type Database from 'better-sqlite3';
+
+export const CREATE_TABLE = `
+CREATE TABLE IF NOT EXISTS sessions (
+  id TEXT PRIMARY KEY,
+  engine TEXT NOT NULL,
+  engine_session_id TEXT,
+  source TEXT NOT NULL,
+  source_ref TEXT NOT NULL,
+  connector TEXT,
+  session_key TEXT,
+  reply_context TEXT,
+  message_id TEXT,
+  transport_meta TEXT,
+  employee TEXT,
+  model TEXT,
+  title TEXT,
+  prompt_excerpt TEXT,
+  parent_session_id TEXT,
+  user_id TEXT,
+  status TEXT DEFAULT 'idle',
+  created_at TEXT NOT NULL,
+  last_activity TEXT NOT NULL,
+  last_error TEXT
+)`;
+
+export const CREATE_MESSAGES_TABLE = `
+CREATE TABLE IF NOT EXISTS messages (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  role TEXT NOT NULL,
+  content TEXT NOT NULL,
+  timestamp INTEGER NOT NULL
+)`;
+
+export const CREATE_MESSAGES_INDEX = `
+CREATE INDEX IF NOT EXISTS idx_messages_session ON messages (session_id, timestamp)
+`;
+
+export const CREATE_SESSION_KEY_INDEX = `
+CREATE INDEX IF NOT EXISTS idx_sessions_session_key ON sessions (session_key, last_activity)
+`;
+
+export const CREATE_LAST_ACTIVITY_INDEX = `
+CREATE INDEX IF NOT EXISTS idx_sessions_last_activity ON sessions (last_activity DESC)
+`;
+
+export const CREATE_PARENT_INDEX = `
+CREATE INDEX IF NOT EXISTS idx_sessions_parent ON sessions (parent_session_id)
+`;
+
+export const CREATE_FILES_TABLE = `
+CREATE TABLE IF NOT EXISTS files (
+  id TEXT PRIMARY KEY,
+  filename TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  mimetype TEXT,
+  path TEXT,
+  sha256 TEXT,
+  artifact_kind TEXT NOT NULL DEFAULT 'input',
+  producing_run_id TEXT,
+  source_url TEXT,
+  source_path TEXT,
+  tags TEXT,
+  notes TEXT,
+  created_at TEXT NOT NULL
+)
+`;
+
+export const CREATE_ARCHIVES_TABLE = `
+CREATE TABLE IF NOT EXISTS archives (
+  id TEXT PRIMARY KEY,
+  label TEXT,
+  note TEXT,
+  kind TEXT NOT NULL,
+  source_ref TEXT,
+  created_at TEXT NOT NULL,
+  session_count INTEGER NOT NULL DEFAULT 0,
+  payload TEXT NOT NULL
+)
+`;
+
+export const CREATE_ARCHIVES_CREATED_INDEX = `
+CREATE INDEX IF NOT EXISTS idx_archives_created ON archives (created_at DESC)
+`;
+
+export const CREATE_APPROVALS_TABLE = `
+CREATE TABLE IF NOT EXISTS approvals (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  state TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  resolved_at TEXT,
+  actor TEXT,
+  decision_notes TEXT,
+  resulting_action TEXT
+)
+`;
+
+export const CREATE_APPROVALS_CREATED_INDEX = `
+CREATE INDEX IF NOT EXISTS idx_approvals_created ON approvals (created_at DESC)
+`;
+
+export const CREATE_APPROVALS_SESSION_INDEX = `
+CREATE INDEX IF NOT EXISTS idx_approvals_session ON approvals (session_id)
+`;
+
+export const CREATE_APPROVALS_PENDING_FALLBACK_INDEX = `
+CREATE UNIQUE INDEX IF NOT EXISTS idx_approvals_pending_fallback_session
+ON approvals (session_id, type, state)
+WHERE type = 'fallback' AND state = 'pending'
+`;
+
+export const CREATE_META_TABLE = `
+CREATE TABLE IF NOT EXISTS meta (
+  key TEXT PRIMARY KEY,
+  value TEXT
+)
+`;
+
+export const CREATE_FTS = `
+CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(content, content='messages', content_rowid='rowid', tokenize='unicode61');
+CREATE TRIGGER IF NOT EXISTS messages_fts_ai AFTER INSERT ON messages WHEN new.role IN ('user','assistant') BEGIN
+  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, new.content);
+END;
+CREATE TRIGGER IF NOT EXISTS messages_fts_ad AFTER DELETE ON messages WHEN old.role IN ('user','assistant') BEGIN
+  INSERT INTO messages_fts(messages_fts, rowid, content) VALUES('delete', old.rowid, old.content);
+END;
+CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE ON messages WHEN new.role IN ('user','assistant') BEGIN
+  INSERT INTO messages_fts(messages_fts, rowid, content) VALUES('delete', old.rowid, old.content);
+  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, new.content);
+END;
+`;
+
+export function installBaseSchema(db: Database.Database): void {
+  db.exec(CREATE_TABLE);
+  db.exec(CREATE_MESSAGES_TABLE);
+  db.exec(CREATE_MESSAGES_INDEX);
+  db.exec(CREATE_META_TABLE);
+}
+
+export function installPostMigrationSchema(db: Database.Database): void {
+  db.exec(CREATE_SESSION_KEY_INDEX);
+  db.exec(CREATE_LAST_ACTIVITY_INDEX);
+  db.exec(CREATE_PARENT_INDEX);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS queue_items (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      session_key TEXT NOT NULL,
+      prompt TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      position INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      started_at TEXT,
+      completed_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_queue_session
+      ON queue_items (session_key, status, position);
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS queue_pauses (
+      session_key TEXT PRIMARY KEY,
+      paused_at TEXT NOT NULL
+    );
+  `);
+  db.exec(CREATE_FILES_TABLE);
+  db.exec(CREATE_ARCHIVES_TABLE);
+  db.exec(CREATE_ARCHIVES_CREATED_INDEX);
+  db.exec(CREATE_APPROVALS_TABLE);
+  db.exec(CREATE_APPROVALS_CREATED_INDEX);
+  db.exec(CREATE_APPROVALS_SESSION_INDEX);
+  db.exec(CREATE_APPROVALS_PENDING_FALLBACK_INDEX);
+}

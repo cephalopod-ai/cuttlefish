@@ -1,0 +1,7 @@
+taskId: task-architecture
+coordinatorId: coord-architecture
+coordinatorTemplate: architectureChange
+mode: architecture
+priority: high
+leaseDurationMs: 3600000
+prompt: Review and implement an orchestration architecture change with independent and adversarial review.

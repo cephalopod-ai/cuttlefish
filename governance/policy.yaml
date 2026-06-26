@@ -1,0 +1,13 @@
+schema_version: "1.0"
+policy:
+  agents:
+    config_driven: true
+    registry_mode: "authoritative"
+  compliance:
+    giles_artifacts_advisory: true
+    canonical_log: "governance/logs/giles_compliance_todo.json"
+  validation:
+    required_before_completion:
+      - "pnpm typecheck"
+      - "pnpm test"
+      - "pnpm lint"

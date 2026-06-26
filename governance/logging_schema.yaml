@@ -1,0 +1,14 @@
+schema_version: "1.0"
+log_classes:
+  runtime:
+    retention_days: 14
+    archive_to: "logs/"
+  audit:
+    retention_days: 30
+    archive_to: "docs/audits/"
+  session:
+    retention_days: 30
+    archive_to: "docs/logs/"
+  compliance:
+    retention_days: 30
+    archive_to: "governance/logs/"

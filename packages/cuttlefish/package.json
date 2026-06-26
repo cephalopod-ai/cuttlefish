@@ -1,0 +1,91 @@
+{
+  "name": "cuttlefish-cli",
+  "version": "0.23.3",
+  "description": "Cuttlefish AI gateway daemon orchestrating Claude Code, Codex, Grok, and Antigravity CLI",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "cuttlefish": "./dist/bin/cuttlefish.js"
+  },
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "files": [
+    "dist/",
+    "template/",
+    "assets/"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && mkdir -p dist/src/talk && cp src/talk/*.md src/talk/*.py dist/src/talk/ 2>/dev/null || true && rm -rf dist/web && cp -r ../web/out dist/web 2>/dev/null || true",
+    "dev": "tsc && (tsc --watch &) && node --watch-path=dist dist/bin/cuttlefish.js start",
+    "lint": "eslint \"src/**/*.ts\" --max-warnings=0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@slack/bolt": "^4.3.0",
+    "@whiskeysockets/baileys": "7.0.0-rc.9",
+    "better-sqlite3": "^11.8.0",
+    "busboy": "^1.6.0",
+    "chokidar": "^4.0.0",
+    "commander": "^13.1.0",
+    "discord.js": "^14.25.1",
+    "js-yaml": "^4.1.0",
+    "node-cron": "^3.0.0",
+    "node-pty": "^1.1.0",
+    "node-telegram-bot-api": "^0.67.0",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0",
+    "uuid": "^11.1.0",
+    "ws": "^8.18.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/busboy": "^1.5.4",
+    "@types/js-yaml": "^4.0.0",
+    "@types/node": "^22.0.0",
+    "@types/node-cron": "^3.0.0",
+    "@types/node-telegram-bot-api": "^0.64.14",
+    "@types/qrcode": "^1.5.6",
+    "@types/uuid": "^10.0.0",
+    "@types/ws": "^8.5.0",
+    "@vitest/coverage-v8": "^4.1.0",
+    "typescript": "^5.8.0",
+    "vitest": "^4.1.0"
+  },
+  "keywords": [
+    "ai",
+    "ai-agent",
+    "ai-agents",
+    "ai-gateway",
+    "agent-orchestration",
+    "claude",
+    "claude-code",
+    "codex",
+    "grok",
+    "antigravity",
+    "llm",
+    "anthropic",
+    "coding-agent",
+    "cli",
+    "daemon",
+    "mcp",
+    "cron",
+    "slack"
+  ],
+  "homepage": "https://github.com/e3742526/cuttlefish#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/e3742526/cuttlefish.git",
+    "directory": "packages/cuttlefish"
+  },
+  "bugs": {
+    "url": "https://github.com/e3742526/cuttlefish/issues"
+  }
+}

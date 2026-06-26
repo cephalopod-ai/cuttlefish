@@ -1,0 +1,12 @@
+repo_name: "cuttlefish"
+repo_profile: "service_backend"
+repo_standard:
+  version: "1.0"
+source_of_truth:
+  mode: "code_first"
+  precedence:
+    - "packages"
+    - "schemas"
+    - "governance"
+    - "docs"
+    - "logs"

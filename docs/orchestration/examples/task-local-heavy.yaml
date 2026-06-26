@@ -1,0 +1,7 @@
+taskId: task-local-heavy
+coordinatorId: coord-local-heavy
+coordinatorTemplate: localHeavy
+mode: local_heavy
+priority: low
+leaseDurationMs: 1800000
+prompt: Triage duplicate findings and explain failing validation logs without editing the repository.

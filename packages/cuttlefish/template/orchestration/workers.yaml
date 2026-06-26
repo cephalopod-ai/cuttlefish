@@ -1,0 +1,101 @@
+# Default matrix-orchestration worker pool.
+#
+# Seeded into ~/.cuttlefish/orchestration/ by `cuttlefish setup` so that, when an operator
+# sets `orchestration.enabled: true`, the scheduler has a working default team.
+#
+# Curation notes (see docs/orchestration/README.md "Default config"):
+#   - `provider` is a live Cuttlefish engine adapter id (claude, codex, antigravity, pi)
+#     so the roster maps onto real engines, not abstract vendor labels.
+#   - `family` is the model vendor, used only for cross-family review separation
+#     (an implementer is reviewed by a worker from a different family).
+#   - `tier`/`costClass` are authored, not derived: the phase-1 scheduler is inert
+#     and makes no live provider calls (docs/orchestration/README.md).
+#   - This pool is self-consistent: every role in every coordinators.yaml template
+#     can be staffed by a DISTINCT worker. Enforced by
+#     orchestration/__tests__/template-config.test.ts.
+workers:
+  # Frontier implementer — edits the repo in an isolated worktree.
+  codexImplementer:
+    provider: codex
+    family: openai
+    tier: frontier
+    capabilities:
+      - repo_edit
+      - coding
+      - refactor
+      - validation
+    tools:
+      - git
+      - filesystem
+      - shell
+    maxConcurrentTasks: 1
+    costClass: high
+    workspacePolicy: isolated_worktree
+
+  # Frontier architect — read-only system design for architecture-class changes.
+  # Kept distinct from the implementer so architectureChange can staff both the
+  # `architect` and `seniorImplementer` roles concurrently (a worker is capped at
+  # maxConcurrentTasks within a single allocation).
+  codexArchitect:
+    provider: codex
+    family: openai
+    tier: frontier
+    capabilities:
+      - architecture
+      - system_design
+    tools:
+      - filesystem
+    maxConcurrentTasks: 1
+    costClass: high
+    workspacePolicy: read_only
+
+  # Cheap cross-family independent reviewer (opposite family to the codex
+  # implementer). Small/low-cost — the everyday second pair of eyes.
+  claudeReviewer:
+    provider: claude
+    family: anthropic
+    tier: small
+    capabilities:
+      - code_review
+      - checklist_review
+    tools:
+      - filesystem
+    maxConcurrentTasks: 1
+    costClass: low
+    workspacePolicy: read_only
+
+  # Adversarial reviewer / bug hunter on a THIRD family. Distinct from
+  # claudeReviewer so architectureChange can fill `independentReviewer` and
+  # `adversarialReviewer` with two different workers in one allocation.
+  antigravityReviewer:
+    provider: antigravity
+    family: google
+    tier: frontier
+    capabilities:
+      - code_review
+      - adversarial_review
+      - bug_hunt
+    tools:
+      - filesystem
+    maxConcurrentTasks: 1
+    costClass: medium
+    workspacePolicy: read_only
+
+  # Near-zero-cost local worker (Ollama-backed `pi` engine). Merges the former
+  # localQa + localTriage roster entries: it both gates QA (validation) and runs
+  # triage. maxConcurrentTasks > 1 lets it fill both roles of the localHeavy team.
+  localWorker:
+    provider: pi
+    family: local
+    tier: local
+    capabilities:
+      - validation
+      - triage
+      - test_log_triage
+      - duplicate_detection
+    tools:
+      - filesystem
+      - shell
+    maxConcurrentTasks: 4
+    costClass: near_zero
+    workspacePolicy: shared

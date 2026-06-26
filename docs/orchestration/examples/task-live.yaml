@@ -1,0 +1,8 @@
+taskId: matrix-live-demo-001
+coordinatorId: coord-matrix-live-demo-001
+coordinatorTemplate: standardImplementation
+mode: single_worker
+priority: normal
+leaseDurationMs: 3600000
+prompt: |
+  Make a low-risk, operator-approved change and report the validation performed.

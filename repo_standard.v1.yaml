@@ -1,0 +1,64 @@
+schema_version: "1.0"
+standard_id: "repo_standard.v1"
+standard_version: "1.0.0"
+
+required_roots:
+  - README.md
+  - docs
+  - governance
+  - schemas
+  - logs
+  - tests
+  - src
+
+forbidden_roots:
+  - data
+
+conditional_roots:
+  storage:
+    required_when: "governance/logging_schema.yaml declares archive_to under storage/"
+
+governance_objects:
+  required:
+    - governance/repo_manifest.yaml
+    - governance/repo_config.yaml
+    - governance/policy.yaml
+    - governance/agent_registry.yaml
+    - governance/schema_registry.yaml
+    - governance/logging_schema.yaml
+    - governance/exceptions.yaml
+    - governance/deprecations
+  freeze_set:
+    - repo_standard.v1.yaml
+    - governance/repo_manifest.yaml
+    - governance/repo_config.yaml
+    - governance/policy.yaml
+    - governance/agent_registry.yaml
+    - governance/schema_registry.yaml
+    - governance/giles_ruleset.yaml
+
+profiles:
+  service_backend:
+    precedence_modes: [code_first, contract_first]
+    runtime_evidence_window_days: 14
+  frontend_app:
+    precedence_modes: [code_first]
+    runtime_evidence_window_days: 30
+  library_sdk:
+    precedence_modes: [code_first]
+    runtime_evidence_window_days: 90
+  control_plane:
+    precedence_modes: [governance_first]
+    runtime_evidence_window_days: 7
+  hybrid_runtime:
+    precedence_modes: [contract_first, code_first]
+    runtime_evidence_window_days: 30
+
+precedence_expansions:
+  code_first: [packages, src, schemas, governance, docs, logs]
+  contract_first: [schemas, governance, packages, src, docs, logs]
+  governance_first: [governance, schemas, packages, src, docs, logs]
+
+rules:
+  ruleset_path: governance/giles_ruleset.yaml
+  ruleset_schema_path: schemas/config/giles_ruleset.v1.yaml

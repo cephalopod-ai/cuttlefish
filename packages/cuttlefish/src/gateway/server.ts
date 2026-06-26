@@ -1,0 +1,520 @@
+import { spawn, type ChildProcess } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+import { fileURLToPath } from "node:url";
+import type { Engine, CuttlefishConfig } from "../shared/types.js";
+import { loadConfig, normalizeClaudeEngineConfig } from "../shared/config.js";
+import { seedTrust, cleanupSessionSettings } from "../shared/claude-settings.js";
+import { configureLogger, logger } from "../shared/logger.js";
+import { invalidateModelRegistry, refreshGrokModels, refreshHermesModels, refreshPiModels } from "../shared/models.js";
+import { CLAUDE_SETTINGS_DIR, GATEWAY_INFO_FILE, HOOK_RELAY_SCRIPT, CUTTLEFISH_HOME, ORG_DIR } from "../shared/paths.js";
+import { CodexEngine } from "../engines/codex.js";
+import { CodexInteractiveEngine } from "../engines/codex-interactive.js";
+import { InteractiveClaudeEngine } from "../engines/claude-interactive.js";
+import { GrokEngine } from "../engines/grok.js";
+import { GrokInteractiveEngine } from "../engines/grok-interactive.js";
+import { HermesAcpEngine } from "../engines/hermes-acp.js";
+import { HermesInteractiveEngine } from "../engines/hermes-interactive.js";
+import { KiloEngine } from "../engines/kilo.js";
+import { KiroEngine } from "../engines/kiro.js";
+import { OllamaEngine } from "../engines/ollama.js";
+import { PiEngine } from "../engines/pi.js";
+import { PtyLifecycleManager } from "../engines/pty-lifecycle.js";
+import type { PtyViewEngine } from "../engines/pty-view-engine.js";
+import { AntigravityEngine } from "../engines/antigravity.js";
+import type { OrchestrationRuntime } from "../orchestration/runtime.js";
+import { initDb, clearAllPartialMessages, getInterruptedSessions, getSession, listSessions, recoverStaleQueueItems, recoverStaleSessions, updateSession } from "../sessions/registry.js";
+import { SessionManager } from "../sessions/manager.js";
+import { initStt } from "../stt/stt.js";
+import { loadJobs } from "../cron/jobs.js";
+import { reloadScheduler, startScheduler, stopScheduler } from "../cron/scheduler.js";
+import { startBoardWorker } from "./board-worker.js";
+import { logBoardSummary } from "./board-service.js";
+import { syncBoardForEvent } from "./board-sync.js";
+import { ensureGatewayAuthToken, shouldRequireGatewayAuth, validateGatewayExposure } from "./auth.js";
+import { createGatewayNotificationSink } from "./notification-sink.js";
+import { createGatewayOrchestrationRuntime } from "./orchestration-runtime-factory.js";
+import {
+  refreshDeferredOrchestrationRuntimeIfDrained,
+  refreshOrchestrationRuntimeForOrgReload,
+  swapOrchestrationRuntime,
+  type OrchestrationRuntimeRefreshState,
+} from "./orchestration-runtime-manager.js";
+import { scanOrg } from "./org.js";
+import { reconcileOrphanedTickets } from "./orphaned-ticket-reconciler.js";
+import { startStatusReconciler } from "./status-reconciler.js";
+import { syncExternalTurn } from "./external-turns.js";
+import { HookRegistry } from "./hook-registry.js";
+import { readGatewayInfo, staleGatewayPids, updateGatewayPtyPids, writeGatewayInfo } from "./gateway-info.js";
+import { startWatchers, stopWatchers, syncSkillSymlinks } from "./watcher.js";
+import { cleanupOldUploads, ensureFilesDir } from "./files.js";
+import { handleApiRequest, resumePendingWebQueueItems, type ApiContext } from "./api.js";
+import { startConfiguredConnectors } from "./server/connectors.js";
+import { createGatewayCleanup, type GatewayCleanup } from "./server/cleanup.js";
+import { serveStatic, isAllowedCorsOrigin } from "./server/http-static.js";
+import { bindOrchestrationRuntimeHandlers } from "./server/orchestration.js";
+import { createGatewayTransports } from "./server/transports.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+export { isAllowedCorsOrigin, serveStatic };
+
+export async function startGateway(config: CuttlefishConfig): Promise<GatewayCleanup> {
+  const bootId = randomUUID().slice(0, 8);
+
+  configureLogger({
+    level: config.logging.level,
+    stdout: config.logging.stdout,
+    file: config.logging.file,
+  });
+
+  const gatewayName = config.portal?.portalName || "Cuttlefish";
+  logger.info(`Starting ${gatewayName} gateway (boot ${bootId}, pid ${process.pid})...`);
+
+  initDb();
+  ensureFilesDir();
+  try { cleanupOldUploads(30); } catch { }
+  const uploadCleanupTimer = setInterval(() => {
+    try { cleanupOldUploads(30); } catch { }
+  }, 24 * 60 * 60 * 1000);
+  uploadCleanupTimer.unref?.();
+
+  const recovered = recoverStaleSessions();
+  if (recovered > 0) {
+    logger.info(`Recovered ${recovered} stale session(s) — marked as "interrupted" for resume`);
+  }
+  const resumable = getInterruptedSessions();
+  if (resumable.length > 0) {
+    logger.info(`${resumable.length} interrupted session(s) available for resume:`);
+    for (const s of resumable) {
+      logger.info(`  - ${s.id} (engine: ${s.engine}, employee: ${s.employee || "none"}, engineSessionId: ${s.engineSessionId})`);
+    }
+  }
+  const recoveredQueue = recoverStaleQueueItems();
+  if (recoveredQueue > 0) {
+    logger.info(`Recovered ${recoveredQueue} in-flight queue item(s) from previous run — reset to pending`);
+  }
+  const sweptPartials = clearAllPartialMessages();
+  if (sweptPartials > 0) {
+    logger.info(`Swept ${sweptPartials} stranded mid-turn partial message(s) from previous run`);
+  }
+
+  const port = config.gateway.port || 8888;
+  const host = config.gateway.host || "127.0.0.1";
+  let currentConfig = config;
+
+  const exposure = validateGatewayExposure(config);
+  if (!exposure.ok) throw new Error(exposure.error);
+  const gatewayAuthToken = ensureGatewayAuthToken(CUTTLEFISH_HOME);
+  if (shouldRequireGatewayAuth(config)) logger.info("Gateway auth enabled for privileged API and WebSocket routes");
+
+  const claudeCfg = normalizeClaudeEngineConfig(config.engines.claude);
+  const oldInfo = readGatewayInfo(GATEWAY_INFO_FILE);
+  if (oldInfo) {
+    for (const pid of staleGatewayPids(oldInfo)) {
+      try {
+        process.kill(pid, "SIGTERM");
+        logger.info(`Reaping stale pid ${pid} from prior gateway`);
+      } catch (err: unknown) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code !== "ESRCH") {
+          logger.warn(`Unexpected error reaping stale pid ${pid}: ${err instanceof Error ? err.message : err}`);
+        }
+      }
+    }
+  }
+
+  const gatewayInfo = writeGatewayInfo(GATEWAY_INFO_FILE, { port, host, pid: process.pid, token: gatewayAuthToken });
+  const hookRegistry = new HookRegistry();
+
+  const relayCandidates = [
+    path.join(__dirname, "..", "..", "..", "assets", "hook-relay.mjs"),
+    path.join(__dirname, "..", "..", "assets", "hook-relay.mjs"),
+    path.join(__dirname, "..", "assets", "hook-relay.mjs"),
+  ];
+  try {
+    const relaySrc = relayCandidates.find((candidate) => fs.existsSync(candidate));
+    if (relaySrc) fs.copyFileSync(relaySrc, HOOK_RELAY_SCRIPT);
+    else logger.warn("hook-relay.mjs asset not found in any candidate location; interactive Claude hooks may not work");
+  } catch (err) {
+    logger.warn(`Failed to copy hook-relay.mjs: ${err instanceof Error ? err.message : err}`);
+  }
+
+  try {
+    seedTrust(path.join(os.homedir(), ".claude.json"), CUTTLEFISH_HOME);
+  } catch (err) {
+    logger.warn(`Failed to seed Claude trust: ${err instanceof Error ? err.message : err}`);
+  }
+
+  let codexLifecycle: PtyLifecycleManager | undefined;
+  let antigravityLifecycle: PtyLifecycleManager | undefined;
+  let grokLifecycle: PtyLifecycleManager | undefined;
+  let hermesLifecycle: PtyLifecycleManager | undefined;
+
+  function refreshPtyPids(): void {
+    try {
+      const pids = [
+        ...claudeLifecycle.livePids(),
+        ...(codexLifecycle ? codexLifecycle.livePids() : []),
+        ...(antigravityLifecycle ? antigravityLifecycle.livePids() : []),
+        ...(grokLifecycle ? grokLifecycle.livePids() : []),
+        ...(hermesLifecycle ? hermesLifecycle.livePids() : []),
+      ];
+      updateGatewayPtyPids(GATEWAY_INFO_FILE, pids);
+    } catch {
+    }
+  }
+
+  const claudeLifecycle = new PtyLifecycleManager({
+    maxLivePtys: claudeCfg.maxLivePtys!,
+    onAdopt: () => refreshPtyPids(),
+    onCleanup: (id) => {
+      cleanupSessionSettings(CLAUDE_SETTINGS_DIR, id);
+      hookRegistry.unregister(id);
+      refreshPtyPids();
+    },
+  });
+  const interactiveClaudeEngine = new InteractiveClaudeEngine(claudeLifecycle, hookRegistry);
+  codexLifecycle = new PtyLifecycleManager({
+    maxLivePtys: claudeCfg.maxLivePtys!,
+    onAdopt: () => refreshPtyPids(),
+    onCleanup: () => refreshPtyPids(),
+  });
+  const codexInteractiveEngine = new CodexInteractiveEngine(codexLifecycle);
+  antigravityLifecycle = new PtyLifecycleManager({
+    maxLivePtys: claudeCfg.maxLivePtys!,
+    onAdopt: () => refreshPtyPids(),
+    onCleanup: () => refreshPtyPids(),
+  });
+  const antigravityEngine = new AntigravityEngine(antigravityLifecycle);
+  grokLifecycle = new PtyLifecycleManager({
+    maxLivePtys: claudeCfg.maxLivePtys!,
+    onAdopt: () => refreshPtyPids(),
+    onCleanup: () => refreshPtyPids(),
+  });
+  const grokInteractiveEngine = new GrokInteractiveEngine(grokLifecycle);
+  hermesLifecycle = new PtyLifecycleManager({
+    maxLivePtys: claudeCfg.maxLivePtys!,
+    onAdopt: () => refreshPtyPids(),
+    onCleanup: () => refreshPtyPids(),
+  });
+  const hermesInteractiveEngine = new HermesInteractiveEngine(hermesLifecycle);
+  const piEngine = new PiEngine();
+  const kiroEngine = new KiroEngine({ configProvider: () => currentConfig });
+  const ollamaEngine = new OllamaEngine();
+  const kiloEngine = new KiloEngine();
+  logger.info("Engines initialized: claude (interactive PTY), codex (headless + interactive PTY), antigravity (interactive PTY), grok (headless + interactive PTY), hermes (headless + interactive PTY), pi, kiro (headless), ollama (headless), kilo (headless)");
+
+  const codexEngine = new CodexEngine();
+  const grokEngine = new GrokEngine();
+  const hermesEngine = new HermesAcpEngine();
+  const engines = new Map<string, Engine>();
+  engines.set("claude", interactiveClaudeEngine);
+  logger.info("Claude work turns: INTERACTIVE PTY (cc_entrypoint=cli, Max-subsidized)");
+  engines.set("codex", codexEngine);
+  engines.set("antigravity", antigravityEngine);
+  engines.set("grok", grokEngine);
+  engines.set("hermes", hermesEngine);
+  engines.set("pi", piEngine);
+  engines.set("kiro", kiroEngine);
+  engines.set("ollama", ollamaEngine);
+  engines.set("kilo", kiloEngine);
+
+  const ptyViewEngines: Record<string, Engine & PtyViewEngine> = {
+    claude: interactiveClaudeEngine,
+    codex: codexInteractiveEngine,
+    antigravity: antigravityEngine,
+    grok: grokInteractiveEngine,
+    hermes: hermesInteractiveEngine,
+  };
+
+  const connectorNames: string[] = [];
+  if (config.connectors?.slack?.appToken && config.connectors?.slack?.botToken) connectorNames.push("slack");
+  if (config.connectors?.discord?.botToken || config.connectors?.discord?.proxyVia) connectorNames.push("discord");
+  if (config.connectors?.telegram?.botToken) connectorNames.push("telegram");
+  if (config.connectors?.whatsapp) connectorNames.push("whatsapp");
+
+  const sessionManager = new SessionManager(config, engines, connectorNames);
+  let employeeRegistry = scanOrg();
+  logger.info(`Loaded ${employeeRegistry.size} employee(s) from org directory`);
+
+  const { connectors, connectorMap, reloadConnectorInstances } = startConfiguredConnectors({
+    config,
+    sessionManager,
+    getEmployeeRegistry: () => employeeRegistry,
+  });
+  sessionManager.setConnectorProvider(() => connectorMap);
+
+  const cronJobs = loadJobs();
+  startScheduler(cronJobs, sessionManager, config, connectorMap);
+  logger.info(`Loaded ${cronJobs.length} cron job(s)`);
+
+  const startTime = Date.now();
+  const wsClients = new Set<import("ws").WebSocket>();
+  const emit = (event: string, payload: unknown): void => {
+    const message = JSON.stringify({ event, payload, ts: Date.now() });
+    for (const client of wsClients) {
+      if (client.readyState === 1) {
+        try {
+          client.send(message);
+        } catch (err) {
+          logger.warn(`WebSocket send failed, removing dead client: ${err instanceof Error ? err.message : err}`);
+          wsClients.delete(client);
+        }
+      }
+    }
+    if (
+      event === "session:started" || event === "session:completed" ||
+      event === "session:fallback-required" || event === "approval:resolved"
+    ) {
+      try {
+        syncBoardForEvent(event, payload, {
+          getSession,
+          resolveDepartment: (name) => employeeRegistry.get(name)?.department,
+          orgDir: ORG_DIR,
+          emit,
+        });
+      } catch (err) {
+        logger.warn(`[board-sync] failed for ${event}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  };
+
+  const refreshDynamicModels = (cfg: CuttlefishConfig): void => {
+    void Promise.all([refreshPiModels(cfg), refreshGrokModels(cfg), refreshHermesModels(cfg)])
+      .finally(() => emit("engines:updated", {}));
+  };
+  refreshDynamicModels(currentConfig);
+
+  let orchestrationRuntime: OrchestrationRuntime | undefined;
+  const orchestrationRefreshState: OrchestrationRuntimeRefreshState = { pending: false };
+  let apiContext: ApiContext;
+
+  const reloadOrg = (): void => {
+    employeeRegistry = scanOrg();
+    logger.info(`Org directory changed, reloaded ${employeeRegistry.size} employee(s)`);
+    interactiveClaudeEngine.killIdle();
+    codexInteractiveEngine.killIdle();
+    antigravityEngine.killIdle();
+    grokInteractiveEngine.killIdle();
+    hermesInteractiveEngine.killIdle();
+    orchestrationRuntime = refreshOrchestrationRuntimeForOrgReload(
+      apiContext,
+      currentConfig,
+      orchestrationRuntime,
+      (nextConfig) => createGatewayOrchestrationRuntime(nextConfig, employeeRegistry),
+      { refreshState: orchestrationRefreshState, reason: "org_reload" },
+    );
+    bindOrchestrationRuntimeHandlers(orchestrationRuntime, apiContext);
+    emit("org:changed", {});
+  };
+
+  const backgroundActivity = new Map<string, { activeStreams: number; lastActivityAt: number }>();
+  interactiveClaudeEngine.onBackgroundActivity((sessionId, info) => {
+    if (info) backgroundActivity.set(sessionId, info);
+    else backgroundActivity.delete(sessionId);
+    emit("session:background", {
+      sessionId,
+      backgroundActivity: info
+        ? { activeStreams: info.activeStreams, lastActivityAt: new Date(info.lastActivityAt).toISOString() }
+        : null,
+    });
+  });
+
+  hookRegistry.setUnclaimedHookHandler((cuttlefishSessionId, payload) => {
+    try {
+      syncExternalTurn(cuttlefishSessionId, emit, payload);
+    } catch (err) {
+      logger.warn(`Unclaimed-Stop sync failed for session ${cuttlefishSessionId}: ${err instanceof Error ? err.message : err}`);
+    }
+  });
+
+  apiContext = {
+    config: currentConfig,
+    sessionManager,
+    startTime,
+    getConfig: () => currentConfig,
+    emit,
+    connectors: connectorMap,
+    reloadConnectorInstances,
+    hookRegistry,
+    hookSecret: gatewayInfo.secret,
+    apiToken: gatewayInfo.token,
+    interactiveClaudeEngine,
+    ptyViewEngines,
+    reloadOrg,
+    backgroundActivity,
+    gatewayAuthToken,
+  };
+  const notificationSink = createGatewayNotificationSink(apiContext);
+  apiContext.notificationSink = notificationSink;
+  sessionManager.setNotificationSink(notificationSink);
+  orchestrationRuntime = createGatewayOrchestrationRuntime(currentConfig, employeeRegistry);
+  if (orchestrationRuntime) {
+    bindOrchestrationRuntimeHandlers(orchestrationRuntime, apiContext);
+    apiContext.orchestration = { runtime: orchestrationRuntime };
+  }
+
+  const reloadConfig = (): void => {
+    try {
+      currentConfig = loadConfig();
+      apiContext.config = currentConfig;
+      sessionManager.setConfig(currentConfig);
+      invalidateModelRegistry();
+      refreshDynamicModels(currentConfig);
+      orchestrationRuntime = swapOrchestrationRuntime(
+        apiContext,
+        currentConfig,
+        orchestrationRuntime,
+        (nextConfig) => createGatewayOrchestrationRuntime(nextConfig, employeeRegistry),
+        { refreshState: orchestrationRefreshState, reason: "config_reload" },
+      );
+      bindOrchestrationRuntimeHandlers(orchestrationRuntime, apiContext);
+      logger.info("Config reloaded successfully");
+      logBoardSummary(ORG_DIR, (msg) => logger.info(msg));
+      emit("config:reloaded", {});
+    } catch (err) {
+      logger.error(`Failed to reload config: ${err instanceof Error ? err.message : err}`);
+    }
+  };
+  apiContext.reloadConfig = reloadConfig;
+
+  const replayDeferredOrchestrationRuntimeRefresh = (): void => {
+    if (!orchestrationRefreshState.pending) return;
+    orchestrationRuntime = refreshDeferredOrchestrationRuntimeIfDrained(
+      apiContext,
+      currentConfig,
+      orchestrationRuntime,
+      orchestrationRefreshState,
+      (nextConfig) => createGatewayOrchestrationRuntime(nextConfig, employeeRegistry),
+    );
+    bindOrchestrationRuntimeHandlers(orchestrationRuntime, apiContext);
+  };
+
+  resumePendingWebQueueItems(apiContext);
+  reconcileOrphanedTickets({ engines, orgDir: ORG_DIR, getSession, listSessions, emit, cause: "startup" });
+  logBoardSummary(ORG_DIR, (msg) => logger.info(msg));
+
+  const stopStatusReconciler = startStatusReconciler({
+    engines,
+    emit,
+    notificationSink,
+    onAfterSweep: () => {
+      reconcileOrphanedTickets({ engines, orgDir: ORG_DIR, getSession, listSessions, emit });
+      replayDeferredOrchestrationRuntimeRefresh();
+    },
+  });
+  const stopBoardWorker = startBoardWorker({ context: apiContext, orgDir: ORG_DIR });
+
+  const webDir = path.resolve(__dirname, "..", "..", "web");
+  const authRequiredNow = (): boolean => shouldRequireGatewayAuth(currentConfig);
+  const transports = createGatewayTransports({
+    apiContext,
+    authRequiredNow,
+    gatewayAuthToken,
+    gatewayInfoToken: gatewayInfo.token ?? "",
+    gatewayName: `${gatewayName} (boot ${bootId})`,
+    handleApiRequest: (req, res) => handleApiRequest(req, res, apiContext),
+    host,
+    cuttlefishHome: CUTTLEFISH_HOME,
+    port,
+    ptyViewEngines,
+    getSession,
+    webDir,
+    wsClients,
+  });
+
+  syncSkillSymlinks();
+  try {
+    initStt();
+  } catch (err) {
+    logger.warn(`STT init skipped: ${err instanceof Error ? err.message : err}`);
+  }
+
+  startWatchers({
+    onConfigReload: reloadConfig,
+    onCronReload: () => {
+      const updatedJobs = loadJobs();
+      reloadScheduler(updatedJobs, currentConfig, connectorMap);
+      logger.info(`Cron jobs reloaded (${updatedJobs.length} job(s))`);
+      emit("cron:reloaded", {});
+    },
+    onOrgChange: reloadOrg,
+    onSkillsChange: () => {
+      logger.info("Skills changed, notifying clients");
+      emit("skills:changed", {});
+    },
+  });
+
+  await transports.startListening();
+
+  if (resumable.length > 0) {
+    setTimeout(() => {
+      emit("sessions:interrupted", {
+        count: resumable.length,
+        sessions: resumable.map((s) => ({
+          id: s.id,
+          engine: s.engine,
+          employee: s.employee,
+          title: s.title,
+          lastActivity: s.lastActivity,
+        })),
+      });
+    }, 1000);
+  }
+
+  let caffeinate: ChildProcess | null = null;
+  if (process.platform === "darwin") {
+    caffeinate = spawn("caffeinate", ["-s"], { stdio: "ignore", detached: false });
+    caffeinate.unref();
+    caffeinate.on("error", (err) => {
+      logger.warn(`caffeinate failed to start: ${err.message}`);
+      caffeinate = null;
+    });
+    logger.info("caffeinate started — macOS sleep prevention active");
+  }
+
+  return createGatewayCleanup({
+    caffeinate,
+    claudeLifecycle,
+    connectors,
+    gatewayInfoFile: GATEWAY_INFO_FILE,
+    getRunningSessions: () => listSessions({ status: "running" }),
+    hookRegistry,
+    interruptSession: (sessionId) => {
+      updateSession(sessionId, {
+        status: "interrupted",
+        lastActivity: new Date().toISOString(),
+        lastError: "Interrupted: gateway shutting down gracefully",
+      });
+    },
+    killEngines: () => {
+      interactiveClaudeEngine.killAll();
+      codexEngine.killAll();
+      codexInteractiveEngine.killAll();
+      antigravityEngine.killAll();
+      grokEngine.killAll();
+      grokInteractiveEngine.killAll();
+      hermesEngine.killAll();
+      hermesInteractiveEngine.killAll();
+      piEngine.killAll();
+      kiroEngine.killAll();
+      ollamaEngine.killAll();
+      kiloEngine.killAll();
+    },
+    orchestrationRuntime,
+    ptyWss: transports.ptyWss,
+    server: transports.server,
+    stopBoardWorker,
+    stopScheduler,
+    stopStatusReconciler,
+    stopWatchers,
+    stopWsHeartbeat: transports.stopWsHeartbeat,
+    uploadCleanupTimer,
+    wsClients: transports.wsClients,
+    wss: transports.wss,
+  });
+}

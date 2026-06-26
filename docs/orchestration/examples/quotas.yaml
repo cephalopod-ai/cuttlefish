@@ -1,0 +1,10 @@
+quotas:
+  providers:
+    openai:
+      maxActiveLeases: 2
+    anthropic:
+      maxActiveLeases: 2
+  families:
+    local:
+      maxActiveLeases: 8
+

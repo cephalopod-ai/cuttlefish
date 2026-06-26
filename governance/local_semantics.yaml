@@ -1,0 +1,44 @@
+schema_version: "0.1"
+repo_name: "cuttlefish"
+
+repo_terms:
+  - term: "gateway"
+    meaning: "The packages/cuttlefish daemon that exposes API routes, session orchestration, file handling, scheduling, and CLI integration."
+  - term: "dashboard"
+    meaning: "The packages/web Vite React UI served by the gateway."
+  - term: "engine_cli"
+    meaning: "External professional coding CLIs such as Claude Code, Codex, Antigravity, Kiro, and Hermes that Cuttlefish launches or coordinates."
+  - term: "outputs"
+    meaning: "Generated run evidence and local Giles sidecar outputs. These live under logs/, docs/audits/, docs/logs/, governance/logs/, state/, and .giles/ and are local artifacts unless explicitly published."
+
+authority_classes:
+  - canonical
+  - governing
+  - operational
+  - generated
+  - exploratory
+
+lifecycle_terms:
+  - active_dev
+  - validated
+  - deprecated
+  - archived
+
+local_directory_meanings:
+  packages: "Primary monorepo source. packages/cuttlefish is the gateway daemon and CLI; packages/web is the dashboard."
+  src: "Root service-backend slot marker for Giles; canonical TypeScript source lives under packages/."
+  tests: "Root test slot marker for Giles; executable tests live under packages/* and e2e/."
+  e2e: "Playwright end-to-end test surface for dashboard behavior."
+  docs: "Operator-facing documentation, plans, and local audit/session artifacts."
+  schemas: "Repo-local schemas referenced by governance/schema_registry.yaml."
+  scripts: "Operator helper scripts for smoke checks and maintenance."
+  governance: "Giles and repo governance configuration, policy, exceptions, and generated local compliance logs."
+  control: "Control-layer marker and future repo-control surface; empty until a concrete control file is introduced."
+  state: "Local Giles/runtime state. Generated and non-canonical."
+  logs: "Local generated runtime telemetry and validation evidence. Generated and non-canonical."
+  ".giles": "Giles local sidecar state. .giles/repo.yaml is the advisory manifest; generated .giles artifacts are not canonical."
+
+ontology_notes:
+  - "This is a service_backend monorepo even though source and tests are package-scoped rather than root-scoped."
+  - ".giles/*.yaml artifacts are advisory until validated by a fresh Giles scan; governance/ remains the canonical compliance surface."
+  - "Generated compliance artifacts may be refreshed by Giles and should not be hand-edited as source-of-truth content."
