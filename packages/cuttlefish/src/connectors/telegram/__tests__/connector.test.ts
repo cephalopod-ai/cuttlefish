@@ -269,7 +269,7 @@ describe("TelegramConnector", () => {
       await connector.replyMessage(target, "Reply!");
       expect(mockSendMessage).toHaveBeenCalledWith("12345", "Reply!", {
         parse_mode: "Markdown",
-        reply_to_message_id: 42,
+        reply_parameters: { message_id: 42 },
       });
     });
   });

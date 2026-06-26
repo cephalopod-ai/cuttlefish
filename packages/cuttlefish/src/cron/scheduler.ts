@@ -1,4 +1,5 @@
 import cron from "node-cron";
+import type { ScheduledTask } from "node-cron";
 import crypto from "node:crypto";
 import type {
   CronJob,
@@ -11,7 +12,7 @@ import { logger } from "../shared/logger.js";
 import type { SessionManager } from "../sessions/manager.js";
 import { appendRunLog, loadJobs, saveJobs } from "./jobs.js";
 
-let tasks: cron.ScheduledTask[] = [];
+let tasks: ScheduledTask[] = [];
 let currentSessionManager: SessionManager;
 let currentConfig: CuttlefishConfig;
 let currentConnectors: Map<string, Connector>;
