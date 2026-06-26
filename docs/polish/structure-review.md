@@ -21,7 +21,7 @@
 
 ## Deferred Recommendations
 
-- Consider a future, dedicated report-only pass for whether `.claude/`, `.agents/`, and `.fissure/` should remain public tooling surfaces or move to a documented local-artifact model.
+- Consider a future, dedicated report-only pass for whether `.claude/` and `.agents/` should remain public tooling surfaces or move to a documented local-artifact model. `.fissure/` is local-only tooling and is ignored.
 - Consider a future docs archival pass for old planning/spec docs if public repo noise becomes a concern.
 
 ## Public Path Risks

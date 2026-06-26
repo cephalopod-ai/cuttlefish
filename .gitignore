@@ -11,7 +11,12 @@ test-results/
 packages/cuttlefish/.npmrc
 .worktrees/
 .DS_Store
+.vscode/
+
+# Local agent/tool caches.
 .playwright-mcp/
+.fissure/
+.kilo/
 
 # Giles and local audit/runtime artifacts. These stay local in this public repo
 # so they do not confuse readers browsing the source tree.

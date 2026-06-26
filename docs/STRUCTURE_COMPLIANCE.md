@@ -22,7 +22,7 @@ summaries directly under `docs/`.
 | STRUCT-20260625-002 | Session summary location | `docs/logs/` | drift | medium | B | If the team wants Giles default tracked summaries, update `AGENTS.md` and `.gitignore` together. | human + agent-contract approval |
 | STRUCT-20260625-003 | Audit/session raw detail tracking | `docs/audits/`, `docs/logs/` | compliant with repo contract | low | A | Preserve raw local logs; publish only durable summaries. | none |
 | STRUCT-20260625-004 | Historical docs volume | `docs/plans/`, `docs/superpowers/` | drift | low | C | Consider a future docs archival/indexing pass if public repo noise becomes a problem. | scoped documentation follow-up |
-| STRUCT-20260625-005 | Tooling support dirs | `.claude/`, `.agents/`, `.fissure/` | unknown | low | C | Review as part of a public-tooling surface audit, not inline documentation stewardship. | governance/public-staging follow-up |
+| STRUCT-20260625-005 | Tooling support dirs | `.claude/`, `.agents/` | unknown | low | C | Review as part of a public-tooling surface audit, not inline documentation stewardship. `.fissure/` is local-only tooling and is ignored. | governance/public-staging follow-up |
 
 ## Tier B Routed Items
 

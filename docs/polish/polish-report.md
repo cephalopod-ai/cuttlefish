@@ -86,7 +86,7 @@
 
 ### Deferred Observations
 
-- `.claude/`, `.agents/`, and `.fissure/` are tracked tooling surfaces. They may be intentional, but they deserve a dedicated public-tooling review before any cleanup.
+- `.claude/` and `.agents/` are tracked tooling surfaces. They may be intentional, but they deserve a dedicated public-tooling review before any cleanup. `.fissure/` is local-only tooling and is ignored.
 - Historical docs/specs are extensive and may benefit from a future archival/indexing pass.
 
 ## Validation Commands
@@ -107,7 +107,7 @@
 
 ## Deferred Recommendations
 
-- Run a dedicated public-tooling review for `.claude/`, `.agents/`, and `.fissure/`.
+- Run a dedicated public-tooling review for `.claude/` and `.agents/`.
 - Run a docs archival pass if old planning/spec documents should be made less prominent in the public repo.
 - Avoid repo-wide source headers unless the team deliberately adopts them as a convention.
 

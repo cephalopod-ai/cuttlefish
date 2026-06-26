@@ -99,7 +99,7 @@ different workers in one allocation — `antigravityReviewer` exists so that tea
 satisfiable (the earlier roster had only one review-capable worker and blocked).
 Each worker is also declared as a governed agent surface in
 `governance/agent_registry.yaml` with instructions under
-`agent_instructions/orchestration/`.
+`docs/orchestration/agent-instructions/`.
 
 ## CLI
 

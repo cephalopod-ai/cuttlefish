@@ -102,7 +102,7 @@ operator dashboards.
 
 ## Open Specification Questions
 
-- Should public tooling directories `.claude/`, `.agents/`, and `.fissure/` remain tracked?
+- Should public tooling directories `.claude/` and `.agents/` remain tracked? `.fissure/` is local-only tooling and is ignored.
 - Should the repo adopt Giles default tracked summaries under `docs/logs/session/`, or keep the current repo-local tracked-summary paths?
 
 ## Version History

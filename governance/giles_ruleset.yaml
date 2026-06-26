@@ -83,7 +83,7 @@ rules:
     introduced_in: "1.0.0"
   - rule_id: AGENT-002
     title: undeclared_agent_surface_forbidden
-    description: Any file under agent_instructions/ not declared in agent_registry.yaml is a finding.
+    description: Any file under docs/orchestration/agent-instructions/ not declared in agent_registry.yaml is a finding.
     tier: tier_1
     severity: warn
     check_type: structural
