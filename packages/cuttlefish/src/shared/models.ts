@@ -37,7 +37,7 @@ import {
  */
 
 /** Engines registered in this build (mirrors server.ts engine map). */
-const ENGINE_NAMES = ["claude", "codex", "antigravity", "grok", "pi", "kiro", "hermes", "ollama", "kilo"] as const;
+const ENGINE_NAMES = ["claude", "codex", "antigravity", "grok", "pi", "kiro", "hermes", "ollama", "kilo", "aider"] as const;
 export type EngineName = (typeof ENGINE_NAMES)[number];
 
 /** Binary name probed for each engine's availability (override via engines.<name>.bin). */
@@ -51,6 +51,7 @@ const ENGINE_BIN: Record<EngineName, string> = {
   hermes: "hermes",
   ollama: "ollama",
   kilo: "kilo",
+  aider: "aider",
 };
 
 const EFFORT_MECHANISM: Record<EngineName, EffortMechanism> = {
@@ -63,6 +64,7 @@ const EFFORT_MECHANISM: Record<EngineName, EffortMechanism> = {
   hermes: "none",
   ollama: "none",
   kilo: "none",
+  aider: "none",
 };
 
 export const CODEX_DEFAULT_MODEL = "gpt-5.5";
@@ -80,6 +82,9 @@ const SYNTH_DEFAULTS: Record<EngineName, { supportsEffort: boolean; effortLevels
   hermes: { supportsEffort: false, effortLevels: HERMES_EFFORT_LEVELS, fallbackModel: "openai-codex:gpt-5.5" },
   ollama: { supportsEffort: false, effortLevels: [], fallbackModel: "gemma4" },
   kilo: { supportsEffort: false, effortLevels: [], fallbackModel: "kilo-auto/free" },
+  // Aider auto-detects its model from whichever API key is in env; "default" is a
+  // sentinel meaning "don't pass --model" (the engine omits the flag for it).
+  aider: { supportsEffort: false, effortLevels: [], fallbackModel: "default" },
 };
 
 /** Optional per-engine `bin` override from config. */
@@ -111,6 +116,7 @@ const ENGINE_INSTALL_HINT: Record<EngineName, string> = {
   hermes: "install the Hermes CLI: curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
   ollama: "install Ollama from https://ollama.com/download and pull a model, e.g. `ollama pull gemma4`",
   kilo: "npm install -g @kilocode/cli, then run `kilo` and use /connect to add a provider",
+  aider: "install Aider (`python -m pip install aider-install && aider-install`, or `pipx install aider-chat`), then set an API key (e.g. ANTHROPIC_API_KEY or OPENAI_API_KEY)",
 };
 
 /** Actionable error message for a session blocked by a missing engine binary. */

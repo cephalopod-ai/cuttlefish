@@ -71,7 +71,7 @@
   employee YAML file through the gateway.
 - The create/edit surfaces cover agent id, display name, department, reports-to,
   level (`manager`, `senior`, `junior` mapped to internal `employee` rank),
-  engine/model/effort, including the local `ollama` and `kilo` engine options, optional same-engine fallback model, persona,
+  engine/model/effort, including the local `ollama`, `kilo`, and `aider` engine options, optional same-engine fallback model, persona,
   CLI flags, and always-notify behavior.
 
 ### Settings orchestration controls

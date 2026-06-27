@@ -27,6 +27,8 @@ import { PiEngine } from "../engines/pi.js";
 import { PtyLifecycleManager } from "../engines/pty-lifecycle.js";
 import type { PtyViewEngine } from "../engines/pty-view-engine.js";
 import { AntigravityEngine } from "../engines/antigravity.js";
+import { AiderEngine } from "../engines/aider.js";
+import { AiderInteractiveEngine } from "../engines/aider-interactive.js";
 import type { OrchestrationRuntime } from "../orchestration/runtime.js";
 import { initDb, clearAllPartialMessages, getInterruptedSessions, getSession, listSessions, recoverStaleQueueItems, recoverStaleSessions, updateSession } from "../sessions/registry.js";
 import { SessionManager } from "../sessions/manager.js";
@@ -156,6 +158,7 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
   let antigravityLifecycle: PtyLifecycleManager | undefined;
   let grokLifecycle: PtyLifecycleManager | undefined;
   let hermesLifecycle: PtyLifecycleManager | undefined;
+  let aiderLifecycle: PtyLifecycleManager | undefined;
 
   function refreshPtyPids(): void {
     try {
@@ -165,6 +168,7 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
         ...(antigravityLifecycle ? antigravityLifecycle.livePids() : []),
         ...(grokLifecycle ? grokLifecycle.livePids() : []),
         ...(hermesLifecycle ? hermesLifecycle.livePids() : []),
+        ...(aiderLifecycle ? aiderLifecycle.livePids() : []),
       ];
       updateGatewayPtyPids(GATEWAY_INFO_FILE, pids);
     } catch {
@@ -205,11 +209,18 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
     onCleanup: () => refreshPtyPids(),
   });
   const hermesInteractiveEngine = new HermesInteractiveEngine(hermesLifecycle);
+  aiderLifecycle = new PtyLifecycleManager({
+    maxLivePtys: claudeCfg.maxLivePtys!,
+    onAdopt: () => refreshPtyPids(),
+    onCleanup: () => refreshPtyPids(),
+  });
+  const aiderInteractiveEngine = new AiderInteractiveEngine(aiderLifecycle);
   const piEngine = new PiEngine();
   const kiroEngine = new KiroEngine({ configProvider: () => currentConfig });
   const ollamaEngine = new OllamaEngine();
   const kiloEngine = new KiloEngine();
-  logger.info("Engines initialized: claude (interactive PTY), codex (headless + interactive PTY), antigravity (interactive PTY), grok (headless + interactive PTY), hermes (headless + interactive PTY), pi, kiro (headless), ollama (headless), kilo (headless)");
+  const aiderEngine = new AiderEngine();
+  logger.info("Engines initialized: claude (interactive PTY), codex (headless + interactive PTY), antigravity (interactive PTY), grok (headless + interactive PTY), hermes (headless + interactive PTY), pi, kiro (headless), ollama (headless), kilo (headless), aider (headless + interactive PTY)");
 
   const codexEngine = new CodexEngine();
   const grokEngine = new GrokEngine();
@@ -225,6 +236,7 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
   engines.set("kiro", kiroEngine);
   engines.set("ollama", ollamaEngine);
   engines.set("kilo", kiloEngine);
+  engines.set("aider", aiderEngine);
 
   const ptyViewEngines: Record<string, Engine & PtyViewEngine> = {
     claude: interactiveClaudeEngine,
@@ -232,6 +244,7 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
     antigravity: antigravityEngine,
     grok: grokInteractiveEngine,
     hermes: hermesInteractiveEngine,
+    aider: aiderInteractiveEngine,
   };
 
   const connectorNames: string[] = [];
@@ -304,6 +317,7 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
     antigravityEngine.killIdle();
     grokInteractiveEngine.killIdle();
     hermesInteractiveEngine.killIdle();
+    aiderInteractiveEngine.killIdle();
     orchestrationRuntime = refreshOrchestrationRuntimeForOrgReload(
       apiContext,
       currentConfig,
@@ -528,6 +542,8 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
       kiroEngine.killAll();
       ollamaEngine.killAll();
       kiloEngine.killAll();
+      aiderEngine.killAll();
+      aiderInteractiveEngine.killAll();
     },
     orchestrationRuntime,
     ptyWss: transports.ptyWss,

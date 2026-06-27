@@ -112,6 +112,7 @@ export function GatewayWorkspacesSection({
             { value: "grok", label: "Grok" },
             { value: "ollama", label: "Ollama" },
             { value: "kilo", label: "Kilo" },
+            { value: "aider", label: "Aider" },
           ]}
         />
       </FieldRow>
@@ -320,6 +321,31 @@ export function EngineConfigurationSection({
           ])}
         />
       </FieldRow>
+
+      <div className="border-t border-[var(--separator)] mt-[var(--space-3)] pt-[var(--space-3)]" />
+
+      <div className="text-[length:var(--text-caption1)] font-[var(--weight-semibold)] text-[var(--text-tertiary)] mb-[var(--space-2)]">
+        Aider
+      </div>
+      <FieldRow label="Binary Path">
+        <SettingsInput
+          value={config.engines?.aider?.bin ?? ""}
+          onChange={(v) => updateConfig(["engines", "aider", "bin"], v)}
+          placeholder="aider"
+        />
+      </FieldRow>
+      <FieldRow label="Model">
+        <SettingsInput
+          value={config.engines?.aider?.model ?? ""}
+          onChange={(v) => updateConfig(["engines", "aider", "model"], v)}
+          placeholder="default (auto-detect from API key)"
+        />
+      </FieldRow>
+      <FieldHint>
+        Leave the model as "default" to let aider auto-detect from whichever provider
+        API key (ANTHROPIC_API_KEY, OPENAI_API_KEY, …) is set in the gateway's
+        environment.
+      </FieldHint>
     </Section>
   )
 }
@@ -367,6 +393,7 @@ export function RecoveryFallbacksSection({
             { value: "kiro", label: "Kiro" },
             { value: "ollama", label: "Ollama" },
             { value: "kilo", label: "Kilo" },
+            { value: "aider", label: "Aider" },
           ]}
         />
       </FieldRow>

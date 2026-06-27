@@ -116,7 +116,7 @@ export interface CuttlefishConfig {
     exposeResolvedFilePaths?: boolean;
   };
   engines: {
-    default: "claude" | "codex" | "antigravity" | "grok" | "pi" | "hermes" | "kiro" | "ollama" | "kilo";
+    default: "claude" | "codex" | "antigravity" | "grok" | "pi" | "hermes" | "kiro" | "ollama" | "kilo" | "aider";
     claude: {
       bin: string;
       model: string;
@@ -130,6 +130,9 @@ export interface CuttlefishConfig {
     pi?: { bin?: string; model?: string; effortLevel?: string; childEffortOverride?: string };
     /** Ollama (`ollama` CLI) engine. `bin` optional — PATH-resolved. No effort. */
     ollama?: { bin?: string; model?: string };
+    /** Aider (`aider` CLI) engine. `bin` optional — PATH-resolved. `model` optional —
+     *  omit or set "default" to let aider auto-detect from env API keys. No effort. */
+    aider?: { bin?: string; model?: string };
     /** Kilo (`kilo` CLI) engine. `bin` optional — PATH-resolved. */
     kilo?: { bin?: string; model?: string; effortLevel?: string; childEffortOverride?: string };
     /** Hermes (`hermes` CLI) engine. `bin` optional — PATH-resolved. No effort. */
@@ -155,7 +158,7 @@ export interface CuttlefishConfig {
     maxCostUsd?: number;
     interruptOnNewMessage?: boolean;
     rateLimitStrategy?: "wait" | "fallback";
-    fallbackEngine?: "claude" | "codex" | "antigravity" | "grok" | "pi" | "kiro" | "hermes" | "ollama" | "kilo";
+    fallbackEngine?: "claude" | "codex" | "antigravity" | "grok" | "pi" | "kiro" | "hermes" | "ollama" | "kilo" | "aider";
     autoResumeOnBoot?: boolean;
   };
   boardWorker?: BoardWorkerConfig;

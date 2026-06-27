@@ -282,6 +282,9 @@ engines:
   kilo:
     bin: kilo
     model: kilo-auto/free
+  aider:
+    bin: aider
+    model: default
 # Model + capability registry — single source of truth for the UI selectors.
 # Add a model here (id + label + capability flags); no code change needed.
 # effortLevels gate the effort picker (empty = no effort support). Omit the block
@@ -316,6 +319,11 @@ models:
     effortMechanism: none
     models:
       - { id: kilo-auto/free, label: "Kilo Auto Free", supportsEffort: false, effortLevels: [] }
+  aider:
+    default: default
+    effortMechanism: none
+    models:
+      - { id: default, label: "Aider (auto)", supportsEffort: false, effortLevels: [] }
   antigravity:
     default: "Gemini 3.5 Flash (Medium)"
     effortMechanism: none
@@ -440,11 +448,20 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
     info("Install with: npm install -g @kilocode/cli");
   }
 
+  // 4d. Check for aider binary
+  const aiderPath = whichBin("aider");
+  if (aiderPath) {
+    ok(`aider found at ${aiderPath}`);
+  } else {
+    fail("aider not found");
+    info("Install with: python -m pip install aider-install && aider-install (or: pipx install aider-chat)");
+  }
+
   // 5. Loudly warn if NO engine is installed — the gateway will start, but it
   //     cannot run any session until at least one engine CLI is on PATH.
-  if (!claudePath && !codexPath && !grokPath && !hermesPath && !ollamaPath && !kiloPath) {
+  if (!claudePath && !codexPath && !grokPath && !hermesPath && !ollamaPath && !kiloPath && !aiderPath) {
     console.log("");
-    warn("No AI engine CLI found (claude, codex, grok, hermes, ollama, or kilo).");
+    warn("No AI engine CLI found (claude, codex, grok, hermes, ollama, kilo, or aider).");
     warn("The gateway will start, but sessions will fail until you install one above.");
   }
 
@@ -480,9 +497,14 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
     if (ver) ok(`kilo --version: ${ver}`);
     else warn("kilo --version failed");
   }
+  if (aiderPath) {
+    const ver = runVersion("aider");
+    if (ver) ok(`aider --version: ${ver}`);
+    else warn("aider --version failed");
+  }
   // A successful --version does NOT mean the engine is authenticated — the #1
   // silent fresh-install failure. Nudge the login step explicitly.
-  if (claudePath || codexPath || grokPath || hermesPath || ollamaPath || kiloPath) {
+  if (claudePath || codexPath || grokPath || hermesPath || ollamaPath || kiloPath || aiderPath) {
     warn("A successful --version does NOT mean the engine is logged in.");
     if (claudePath) info("First run? Launch `claude` once and use /login to authenticate.");
     if (codexPath) info("First run? Launch `codex` once and sign in to authenticate.");
@@ -490,6 +512,7 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
     if (hermesPath) info("First run? Launch `hermes` once to authenticate, or configure your API key.");
     if (ollamaPath) info("First run? Ensure Ollama is running and pull a model, e.g. `ollama pull gemma4`.");
     if (kiloPath) info("First run? Launch `kilo` once and use /connect to add a provider and model.");
+    if (aiderPath) info("First run? Set a provider API key for aider, e.g. ANTHROPIC_API_KEY or OPENAI_API_KEY.");
     info("Do this before `cuttlefish start`, or sessions will fail silently.");
   }
 
@@ -518,7 +541,7 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
   const defaultName = "Cuttlefish";
 
   let chosenName = defaultName;
-  type SetupEngine = "claude" | "codex" | "grok" | "hermes" | "ollama" | "kilo";
+  type SetupEngine = "claude" | "codex" | "grok" | "hermes" | "ollama" | "kilo" | "aider";
   let chosenEngine: SetupEngine = "claude";
 
   if (isInteractive) {
@@ -533,6 +556,7 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
     if (hermesPath) engines.push("hermes");
     if (ollamaPath) engines.push("ollama");
     if (kiloPath) engines.push("kilo");
+    if (aiderPath) engines.push("aider");
 
     if (engines.length > 1) {
       const defaultEngine = ["claude", "codex", "grok", "hermes"].find((engine) => engines.includes(engine)) ?? engines[0];
