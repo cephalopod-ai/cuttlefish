@@ -1,17 +1,25 @@
 import fs from "node:fs";
 import path from "node:path";
 import yaml from "js-yaml";
-import { ORG_DIR } from "../shared/paths.js";
+import { ORG_DIR, ORG_RETIRED_DIR } from "../shared/paths.js";
 import { safeWriteYaml } from "../shared/safe-write.js";
-import type { Employee, CuttlefishConfig } from "../shared/types.js";
+import { EMPLOYEE_LIFECYCLES } from "../shared/types.js";
+import type { Employee, EmployeeLifecycle, CuttlefishConfig, OrgChangeType } from "../shared/types.js";
 import { logger } from "../shared/logger.js";
 import { getModelRegistry, effortLevelsForModel } from "../shared/models.js";
 
 /**
+ * Reserved `org/` subdirectories that hold HR / Org-Steward artifacts (change
+ * requests, drafts, retired personas), not active employees. The scan must never
+ * load these as employees — they are surfaced through dedicated APIs instead.
+ */
+export const RESERVED_ORG_DIRS = new Set(["_changes", "_drafts", "_retired"]);
+
+/**
  * Recursively walk `dir`, invoking `visit` for every employee YAML file
- * (.yaml/.yml, skipping department.yaml). Stops early and returns the first
- * non-undefined value `visit` returns; visitors that never return a value
- * walk the whole tree.
+ * (.yaml/.yml, skipping department.yaml and the reserved HR dirs). Stops early
+ * and returns the first non-undefined value `visit` returns; visitors that never
+ * return a value walk the whole tree.
  */
 function walkEmployeeYamls<T>(
   dir: string,
@@ -21,6 +29,7 @@ function walkEmployeeYamls<T>(
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
+      if (RESERVED_ORG_DIRS.has(entry.name)) continue;
       const found = walkEmployeeYamls(fullPath, visit);
       if (found !== undefined) return found;
     } else if (
@@ -34,6 +43,39 @@ function walkEmployeeYamls<T>(
   return undefined;
 }
 
+/** Parse a single employee YAML data object into an Employee (applying defaults),
+ *  or undefined if it lacks the required name/persona. Shared by scanOrg and the
+ *  retired-employee listing. `fullPath` supplies the department fallback. */
+function parseEmployeeData(data: any, fullPath: string): Employee | undefined {
+  if (!data || !data.name || !data.persona) return undefined;
+  return {
+    name: data.name,
+    displayName: data.displayName || data.name,
+    department: data.department || path.basename(path.dirname(fullPath)),
+    rank: data.rank || "employee",
+    engine: data.engine || "claude",
+    model: data.model || "sonnet",
+    persona: data.persona,
+    emoji: typeof data.emoji === "string" ? data.emoji : undefined,
+    avatar: typeof data.avatar === "string" ? data.avatar : undefined,
+    cliFlags: Array.isArray(data.cliFlags) ? data.cliFlags : undefined,
+    effortLevel: typeof data.effortLevel === "string" ? data.effortLevel : undefined,
+    maxCostUsd: typeof data.maxCostUsd === "number" ? data.maxCostUsd : undefined,
+    alwaysNotify: typeof data.alwaysNotify === "boolean" ? data.alwaysNotify : true,
+    reportsTo: data.reportsTo ?? undefined,
+    mcp: data.mcp ?? undefined,
+    modelPolicy: (data.model_policy && typeof data.model_policy === "object") ? data.model_policy : ((data.modelPolicy && typeof data.modelPolicy === "object") ? data.modelPolicy : undefined),
+    provides: Array.isArray(data.provides)
+      ? data.provides.filter((s: unknown) => s && typeof s === "object" && typeof (s as any).name === "string" && typeof (s as any).description === "string")
+        .map((s: any) => ({ name: s.name as string, description: s.description as string }))
+      : undefined,
+    lifecycle:
+      typeof data.lifecycle === "string" && (EMPLOYEE_LIFECYCLES as readonly string[]).includes(data.lifecycle)
+        ? (data.lifecycle as EmployeeLifecycle)
+        : "active",
+  };
+}
+
 export function scanOrg(): Map<string, Employee> {
   const registry = new Map<string, Employee>();
 
@@ -41,34 +83,9 @@ export function scanOrg(): Map<string, Employee> {
 
   walkEmployeeYamls(ORG_DIR, (fullPath) => {
     try {
-      const raw = fs.readFileSync(fullPath, "utf-8");
-      const data = yaml.load(raw) as any;
-      if (data && data.name && data.persona) {
-        const employee: Employee = {
-          name: data.name,
-          displayName: data.displayName || data.name,
-          department:
-            data.department || path.basename(path.dirname(fullPath)),
-          rank: data.rank || "employee",
-          engine: data.engine || "claude",
-          model: data.model || "sonnet",
-          persona: data.persona,
-          emoji: typeof data.emoji === "string" ? data.emoji : undefined,
-          avatar: typeof data.avatar === "string" ? data.avatar : undefined,
-          cliFlags: Array.isArray(data.cliFlags) ? data.cliFlags : undefined,
-          effortLevel: typeof data.effortLevel === "string" ? data.effortLevel : undefined,
-          maxCostUsd: typeof data.maxCostUsd === "number" ? data.maxCostUsd : undefined,
-          alwaysNotify: typeof data.alwaysNotify === "boolean" ? data.alwaysNotify : true,
-          reportsTo: data.reportsTo ?? undefined,
-          mcp: data.mcp ?? undefined,
-          modelPolicy: (data.model_policy && typeof data.model_policy === "object") ? data.model_policy : ((data.modelPolicy && typeof data.modelPolicy === "object") ? data.modelPolicy : undefined),
-          provides: Array.isArray(data.provides)
-            ? data.provides.filter((s: unknown) => s && typeof s === "object" && typeof (s as any).name === "string" && typeof (s as any).description === "string")
-              .map((s: any) => ({ name: s.name as string, description: s.description as string }))
-            : undefined,
-        };
-        registry.set(employee.name, employee);
-      }
+      const data = yaml.load(fs.readFileSync(fullPath, "utf-8")) as any;
+      const employee = parseEmployeeData(data, fullPath);
+      if (employee) registry.set(employee.name, employee);
     } catch (err) {
       logger.warn(`Failed to parse employee file ${fullPath}: ${err}`);
     }
@@ -78,11 +95,28 @@ export function scanOrg(): Map<string, Employee> {
   return registry;
 }
 
+/** List soft-retired employees from `org/_retired/` (excluded from the active scan). */
+export function listRetiredEmployees(): Employee[] {
+  if (!fs.existsSync(ORG_RETIRED_DIR)) return [];
+  const out: Employee[] = [];
+  for (const entry of fs.readdirSync(ORG_RETIRED_DIR)) {
+    if (!entry.endsWith(".yaml") && !entry.endsWith(".yml")) continue;
+    const fullPath = path.join(ORG_RETIRED_DIR, entry);
+    try {
+      const employee = parseEmployeeData(yaml.load(fs.readFileSync(fullPath, "utf-8")), fullPath);
+      if (employee) out.push(employee);
+    } catch (err) {
+      logger.warn(`Failed to parse retired employee file ${fullPath}: ${err}`);
+    }
+  }
+  return out;
+}
+
 /**
  * Find the YAML file for an employee by name.
  * Searches ORG_DIR recursively.
  */
-function findEmployeeYamlPath(name: string): string | undefined {
+export function findEmployeeYamlPath(name: string): string | undefined {
   if (!fs.existsSync(ORG_DIR)) return undefined;
 
   return walkEmployeeYamls(ORG_DIR, (fullPath) => {
@@ -95,6 +129,21 @@ function findEmployeeYamlPath(name: string): string | undefined {
     }
     return undefined;
   });
+}
+
+/**
+ * Read the raw YAML text backing an employee, or null when no file is found.
+ * Used to render the "before" side of a change-request diff without mutating
+ * anything.
+ */
+export function readEmployeeYamlText(name: string): string | null {
+  const filePath = findEmployeeYamlPath(name);
+  if (!filePath) return null;
+  try {
+    return fs.readFileSync(filePath, "utf-8");
+  } catch {
+    return null;
+  }
 }
 
 /** Fields of an employee YAML that may be mutated via the update API.
@@ -110,6 +159,7 @@ export interface EmployeeUpdate {
   reportsTo?: string | string[];
   cliFlags?: string[];
   alwaysNotify?: boolean;
+  lifecycle?: EmployeeLifecycle;
   /** UI convenience field persisted into modelPolicy.fallback_chain[0]. */
   fallbackModel?: string | null;
 }
@@ -126,6 +176,7 @@ export interface EmployeeCreate {
   reportsTo?: string | string[];
   cliFlags?: string[];
   alwaysNotify?: boolean;
+  lifecycle?: EmployeeLifecycle;
   fallbackModel?: string | null;
 }
 
@@ -141,6 +192,7 @@ const WRITABLE_FIELDS = [
   "reportsTo",
   "cliFlags",
   "alwaysNotify",
+  "lifecycle",
 ] as const;
 
 const ACCEPTED_UPDATE_FIELDS = [...WRITABLE_FIELDS, "fallbackModel"] as const;
@@ -314,6 +366,14 @@ export function validateEmployeeUpdate(
     updates.alwaysNotify = body.alwaysNotify;
   }
 
+  // --- lifecycle enum ---
+  if (body.lifecycle !== undefined) {
+    if (typeof body.lifecycle !== "string" || !(EMPLOYEE_LIFECYCLES as readonly string[]).includes(body.lifecycle)) {
+      return { ok: false, error: `invalid lifecycle "${String(body.lifecycle)}" (valid: ${EMPLOYEE_LIFECYCLES.join(", ")})` };
+    }
+    updates.lifecycle = body.lifecycle as EmployeeLifecycle;
+  }
+
   if (body.fallbackModel !== undefined) {
     if (body.fallbackModel === null) {
       updates.fallbackModel = null;
@@ -359,6 +419,7 @@ export function validateEmployeeCreate(
     "reportsTo",
     "cliFlags",
     "alwaysNotify",
+    "lifecycle",
     "fallbackModel",
   ]);
   const unknownKeys = Object.keys(body).filter((key) => !known.has(key));
@@ -415,6 +476,7 @@ export function validateEmployeeCreate(
     reportsTo: body.reportsTo,
     cliFlags: body.cliFlags,
     alwaysNotify: body.alwaysNotify,
+    lifecycle: body.lifecycle,
     fallbackModel: body.fallbackModel,
   });
   if (!updates.ok || !updates.updates) {
@@ -435,6 +497,7 @@ export function validateEmployeeCreate(
       reportsTo: updates.updates.reportsTo,
       cliFlags: updates.updates.cliFlags,
       alwaysNotify: updates.updates.alwaysNotify,
+      lifecycle: updates.updates.lifecycle,
       fallbackModel: updates.updates.fallbackModel,
     },
   };
@@ -458,49 +521,93 @@ export function updateEmployeeYaml(
     const data = yaml.load(raw) as Record<string, unknown>;
     if (!data || typeof data !== "object") return false;
 
-    for (const key of WRITABLE_FIELDS) {
-      const value = (updates as Record<string, unknown>)[key];
-      if (value !== undefined) {
-        data[key] = value;
-      }
-    }
-    const effectiveEngine = String(updates.engine ?? data.engine ?? "claude").trim() || "claude";
-    const rawPolicy = isNonEmptyRecord(data.modelPolicy)
-      ? { ...data.modelPolicy }
-      : isNonEmptyRecord(data.model_policy)
-        ? { ...data.model_policy }
-        : undefined;
-    if (Object.prototype.hasOwnProperty.call(updates, "fallbackModel")) {
-      const fallbackModel = typeof updates.fallbackModel === "string" ? updates.fallbackModel.trim() : "";
-      if (fallbackModel) {
-        const nextPolicy = rawPolicy ?? {};
-        nextPolicy.fallback_chain = [{ engine: effectiveEngine, model: fallbackModel }];
-        data.modelPolicy = nextPolicy;
-      } else if (rawPolicy) {
-        const nextPolicy = { ...rawPolicy };
-        delete nextPolicy.fallback_chain;
-        if (Object.keys(nextPolicy).length > 0) data.modelPolicy = nextPolicy;
-        else delete data.modelPolicy;
-      } else {
-        delete data.modelPolicy;
-      }
-      delete data.model_policy;
-    } else if (updates.engine !== undefined && rawPolicy && Array.isArray(rawPolicy.fallback_chain) && rawPolicy.fallback_chain.length > 0) {
-      const chain = rawPolicy.fallback_chain.map((entry, index) => {
-        if (index !== 0 || !isNonEmptyRecord(entry)) return entry;
-        return { ...entry, engine: effectiveEngine };
-      });
-      data.modelPolicy = { ...rawPolicy, fallback_chain: chain };
-      delete data.model_policy;
-    }
-    // `name` is immutable — never write or rename it, even if present in `updates`.
-
-    safeWriteYaml(filePath, data, { dumpOptions: { lineWidth: -1 }, audit: { actor: "gateway", op: "org.employee.save" } });
+    const merged = mergeEmployeeUpdateData(data, updates);
+    safeWriteYaml(filePath, merged, { dumpOptions: { lineWidth: -1 }, audit: { actor: "gateway", op: "org.employee.save" } });
     return true;
   } catch (err) {
     logger.warn(`Failed to update employee YAML for ${name}: ${err}`);
     return false;
   }
+}
+
+/**
+ * Pure read-merge of an employee update onto a parsed YAML data object. Returns a
+ * NEW object (never mutates `data`). Only WRITABLE_FIELDS are applied and `name`
+ * is never touched (immutable). Shared by `updateEmployeeYaml` (which writes the
+ * result) and the change-request preview (which dumps it), so the human-reviewed
+ * "after" YAML and the actually-applied YAML never drift.
+ */
+export function mergeEmployeeUpdateData(
+  data: Record<string, unknown>,
+  updates: EmployeeUpdate,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...data };
+
+  for (const key of WRITABLE_FIELDS) {
+    const value = (updates as Record<string, unknown>)[key];
+    if (value !== undefined) {
+      next[key] = value;
+    }
+  }
+  const effectiveEngine = String(updates.engine ?? next.engine ?? "claude").trim() || "claude";
+  const rawPolicy = isNonEmptyRecord(next.modelPolicy)
+    ? { ...next.modelPolicy }
+    : isNonEmptyRecord(next.model_policy)
+      ? { ...next.model_policy }
+      : undefined;
+  if (Object.prototype.hasOwnProperty.call(updates, "fallbackModel")) {
+    const fallbackModel = typeof updates.fallbackModel === "string" ? updates.fallbackModel.trim() : "";
+    if (fallbackModel) {
+      const nextPolicy = rawPolicy ?? {};
+      nextPolicy.fallback_chain = [{ engine: effectiveEngine, model: fallbackModel }];
+      next.modelPolicy = nextPolicy;
+    } else if (rawPolicy) {
+      const nextPolicy = { ...rawPolicy };
+      delete nextPolicy.fallback_chain;
+      if (Object.keys(nextPolicy).length > 0) next.modelPolicy = nextPolicy;
+      else delete next.modelPolicy;
+    } else {
+      delete next.modelPolicy;
+    }
+    delete next.model_policy;
+  } else if (updates.engine !== undefined && rawPolicy && Array.isArray(rawPolicy.fallback_chain) && rawPolicy.fallback_chain.length > 0) {
+    const chain = rawPolicy.fallback_chain.map((entry, index) => {
+      if (index !== 0 || !isNonEmptyRecord(entry)) return entry;
+      return { ...entry, engine: effectiveEngine };
+    });
+    next.modelPolicy = { ...rawPolicy, fallback_chain: chain };
+    delete next.model_policy;
+  }
+  // `name` is immutable — never write or rename it, even if present in `updates`.
+  return next;
+}
+
+/**
+ * Build the YAML data object for a new employee. Pure — shared by
+ * `createEmployeeYaml` (which writes it) and the change-request preview (which
+ * dumps it) so the reviewed "after" YAML matches what actually gets written.
+ */
+export function buildEmployeeCreateData(employee: EmployeeCreate): Record<string, unknown> {
+  const data: Record<string, unknown> = {
+    name: employee.name,
+    displayName: employee.displayName,
+    department: employee.department,
+    rank: employee.rank,
+    engine: employee.engine,
+    model: employee.model,
+    persona: employee.persona,
+  };
+  if (employee.effortLevel) data.effortLevel = employee.effortLevel;
+  if (employee.reportsTo) data.reportsTo = employee.reportsTo;
+  if (employee.cliFlags && employee.cliFlags.length > 0) data.cliFlags = employee.cliFlags;
+  if (typeof employee.alwaysNotify === "boolean") data.alwaysNotify = employee.alwaysNotify;
+  if (employee.lifecycle && employee.lifecycle !== "active") data.lifecycle = employee.lifecycle;
+  if (employee.fallbackModel && employee.fallbackModel.trim()) {
+    data.modelPolicy = {
+      fallback_chain: [{ engine: employee.engine, model: employee.fallbackModel.trim() }],
+    };
+  }
+  return data;
 }
 
 export function createEmployeeYaml(employee: EmployeeCreate): boolean {
@@ -510,24 +617,7 @@ export function createEmployeeYaml(employee: EmployeeCreate): boolean {
 
   try {
     fs.mkdirSync(departmentDir, { recursive: true });
-    const data: Record<string, unknown> = {
-      name: employee.name,
-      displayName: employee.displayName,
-      department: employee.department,
-      rank: employee.rank,
-      engine: employee.engine,
-      model: employee.model,
-      persona: employee.persona,
-    };
-    if (employee.effortLevel) data.effortLevel = employee.effortLevel;
-    if (employee.reportsTo) data.reportsTo = employee.reportsTo;
-    if (employee.cliFlags && employee.cliFlags.length > 0) data.cliFlags = employee.cliFlags;
-    if (typeof employee.alwaysNotify === "boolean") data.alwaysNotify = employee.alwaysNotify;
-    if (employee.fallbackModel && employee.fallbackModel.trim()) {
-      data.modelPolicy = {
-        fallback_chain: [{ engine: employee.engine, model: employee.fallbackModel.trim() }],
-      };
-    }
+    const data = buildEmployeeCreateData(employee);
     safeWriteYaml(filePath, data, { dumpOptions: { lineWidth: -1 }, audit: { actor: "gateway", op: "org.employee.create" } });
     return true;
   } catch (err) {
@@ -550,6 +640,78 @@ export function deleteEmployeeYaml(name: string): boolean {
     logger.warn(`Failed to delete employee YAML for ${name}: ${err}`);
     return false;
   }
+}
+
+/**
+ * Soft-retire an employee: stamp `lifecycle: retired` and MOVE the YAML to
+ * `org/_retired/` (excluded from the active scan) instead of hard-deleting it.
+ * Returns false when the employee can't be found/parsed. Callers should run the
+ * same orphan guard the DELETE path uses before retiring.
+ */
+export function retireEmployeeYaml(name: string): boolean {
+  const filePath = findEmployeeYamlPath(name);
+  if (!filePath) return false;
+  try {
+    const raw = fs.readFileSync(filePath, "utf-8");
+    const data = yaml.load(raw) as Record<string, unknown>;
+    if (!data || typeof data !== "object") return false;
+    data.lifecycle = "retired";
+    const retiredPath = path.join(ORG_RETIRED_DIR, `${name}.yaml`);
+    safeWriteYaml(retiredPath, data, { dumpOptions: { lineWidth: -1 }, audit: { actor: "gateway", op: "org.employee.retire" } });
+    fs.unlinkSync(filePath);
+    return true;
+  } catch (err) {
+    logger.warn(`Failed to retire employee YAML for ${name}: ${err}`);
+    return false;
+  }
+}
+
+/**
+ * Whether an employee is assignable. `active`/`probation` employees can take
+ * work; `draft`/`disabled`/`retired` cannot. (Retired personas are normally not
+ * even in the registry — they live under `org/_retired/` — but this guards the
+ * in-place `disabled` case and any straggler.)
+ */
+export function isActiveEmployee(employee: Pick<Employee, "lifecycle">): boolean {
+  const lifecycle = employee.lifecycle ?? "active";
+  return lifecycle === "active" || lifecycle === "probation";
+}
+
+export interface OrgChangeValidationResult {
+  ok: boolean;
+  error?: string;
+}
+
+/**
+ * Dry-run validation of a proposed org change against the live registry + model
+ * registry — NO write, NO IO beyond a fresh `scanOrg`. Backs `POST /api/org/validate`
+ * and is re-checked at apply time (the roster may have shifted). For `create_agent`
+ * it delegates to `validateEmployeeCreate`; every other change type validates the
+ * proposed writable fields against the current employee via `validateEmployeeUpdate`.
+ */
+export function validateOrgChange(
+  config: CuttlefishConfig,
+  input: { changeType: OrgChangeType; employeeName: string; proposed: Record<string, unknown> },
+): OrgChangeValidationResult {
+  const registry = scanOrg();
+  const proposed = input.proposed && typeof input.proposed === "object" ? input.proposed : {};
+
+  if (input.changeType === "create_agent") {
+    const body = { name: input.employeeName, ...proposed };
+    const result = validateEmployeeCreate(config, body, registry.keys());
+    return result.ok ? { ok: true } : { ok: false, error: result.error };
+  }
+
+  const current = registry.get(input.employeeName);
+  if (!current) {
+    return { ok: false, error: `employee "${input.employeeName}" not found` };
+  }
+  // retire/disable carry no writable fields — the employee existing is enough.
+  if (input.changeType === "retire_agent" || input.changeType === "disable_agent") {
+    return { ok: true };
+  }
+  const result = validateEmployeeUpdate(config, current, proposed);
+  return result.ok ? { ok: true } : { ok: false, error: result.error };
 }
 
 export function findEmployee(

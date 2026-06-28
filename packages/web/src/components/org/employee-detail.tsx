@@ -47,6 +47,22 @@ function RankBadge({ rank }: { rank: string }) {
   );
 }
 
+function LifecycleBadge({ lifecycle }: { lifecycle: string }) {
+  // Only non-active states reach here; flag them with a muted/amber/red tone.
+  const tone =
+    lifecycle === "retired" || lifecycle === "disabled"
+      ? { bg: "color-mix(in srgb, var(--system-red) 15%, transparent)", text: "var(--system-red)" }
+      : { bg: "color-mix(in srgb, var(--system-orange) 15%, transparent)", text: "var(--system-orange)" };
+  return (
+    <span
+      className="text-[length:var(--text-caption2)] font-[var(--weight-semibold)] px-[10px] py-[2px] rounded-[10px] uppercase tracking-[0.02em]"
+      style={{ color: tone.text, background: tone.bg }}
+    >
+      {lifecycle}
+    </span>
+  );
+}
+
 export function EmployeeDetail({
   name,
   prefetched,
@@ -180,6 +196,9 @@ export function EmployeeDetail({
           </div>
           <div className="flex items-center gap-[var(--space-2)]">
             <RankBadge rank={rank} />
+            {employee.lifecycle && employee.lifecycle !== "active" && (
+              <LifecycleBadge lifecycle={employee.lifecycle} />
+            )}
             {/* The COO node is injected client-side (no YAML) — not editable. */}
             {rank !== "executive" && (
               <button

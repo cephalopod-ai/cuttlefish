@@ -1,0 +1,22 @@
+[
+  {
+    "id": "hr-weekly-agent-review",
+    "name": "Weekly agent performance review (HR)",
+    "enabled": false,
+    "schedule": "0 9 * * 1",
+    "engine": "claude",
+    "model": "sonnet",
+    "employee": null,
+    "prompt": "Run a weekly HR performance review. Spawn a child session with the hr-manager employee and ask it to review the active roster (GET /api/org and recent sessions): for each employee assess task success rate, cost per successful task, duplicate or overlapping output, reviewer objections, tool misuse, and instruction drift. Have HR file DRAFT org change requests (POST /api/org/change-requests, proposedBy: \"hr-manager\") for any recommendation — revise persona, downgrade/upgrade model, reassign, disable, retire, or split into narrower agents. Do NOT auto-apply anything. Summarize HR's recommendations for me; the drafts wait in the HR / Org Steward panel for my approval."
+  },
+  {
+    "id": "hr-monthly-org-review",
+    "name": "Monthly org structure review (HR)",
+    "enabled": false,
+    "schedule": "0 9 1 * *",
+    "engine": "claude",
+    "model": "sonnet",
+    "employee": null,
+    "prompt": "Run a monthly HR org-structure review. Spawn a child session with the hr-manager employee and ask it to evaluate the whole organization: department balance, manager load, redundant or overlapping agents, stale/disabled/idle agents, expensive models on routine duties, and weak models on critical duties. Have HR file DRAFT org change requests (POST /api/org/change-requests, proposedBy: \"hr-manager\") for any structural recommendation, never auto-applying. Give me a concise org-health report plus the list of drafts awaiting approval in the HR / Org Steward panel."
+  }
+]

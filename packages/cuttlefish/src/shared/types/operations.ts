@@ -29,8 +29,9 @@ export type CheckpointPayload = JsonObject & {
 export interface Approval {
   id: string;
   sessionId: string;
-  type: "fallback" | "tool" | "custom" | "checkpoint";
-  /** Producer-specific. For `fallback`: { from, to, handoffPath, reason }. */
+  type: "fallback" | "tool" | "custom" | "checkpoint" | "org-change";
+  /** Producer-specific. For `fallback`: { from, to, handoffPath, reason }.
+   *  For `org-change`: { changeRequestId, changeType, employeeName, riskLevel }. */
   payload: JsonObject;
   state: ApprovalState;
   createdAt: string;
@@ -104,7 +105,24 @@ export interface Employee {
   modelPolicy?: AgentModelPolicy;
   /** Services this employee provides to the org */
   provides?: ServiceDeclaration[];
+  /**
+   * Lifecycle state managed by the HR / Org Steward flow. Defaults to "active".
+   * `disabled` employees stay in the registry (so the hierarchy and reporting
+   * lines don't break) but are non-assignable; `retired` personas are moved to
+   * `org/_retired/` and excluded from the active scan entirely.
+   */
+  lifecycle?: EmployeeLifecycle;
 }
+
+export type EmployeeLifecycle = "draft" | "active" | "probation" | "disabled" | "retired";
+
+export const EMPLOYEE_LIFECYCLES: readonly EmployeeLifecycle[] = [
+  "draft",
+  "active",
+  "probation",
+  "disabled",
+  "retired",
+];
 
 /** A service that an employee can provide to other employees/departments. */
 export interface ServiceDeclaration {

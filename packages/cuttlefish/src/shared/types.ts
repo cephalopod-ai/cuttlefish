@@ -5,6 +5,7 @@ export * from "./types/connectors.js";
 export * from "./types/sessions.js";
 export * from "./types/archives.js";
 export * from "./types/operations.js";
+export * from "./types/org-change.js";
 export * from "./types/mcp.js";
 export * from "./types/models.js";
 export * from "./types/config.js";

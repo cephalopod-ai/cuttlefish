@@ -649,8 +649,11 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
     warn(`Failed to initialize sessions database: ${err}`);
   }
 
-  // 7. Create cron/jobs.json
-  if (ensureFile(CRON_JOBS, "[]")) created.push(CRON_JOBS);
+  // 7. Create cron/jobs.json (seed the disabled HR performance-review jobs from
+  //    the template when present; they ship disabled so nothing fires by default).
+  const cronTemplate = path.join(TEMPLATE_DIR, "cron", "jobs.json");
+  const cronSeed = fs.existsSync(cronTemplate) ? fs.readFileSync(cronTemplate, "utf-8") : "[]";
+  if (ensureFile(CRON_JOBS, cronSeed)) created.push(CRON_JOBS);
 
   // 8. Create cron/runs/
   if (ensureDir(CRON_RUNS)) created.push(CRON_RUNS);

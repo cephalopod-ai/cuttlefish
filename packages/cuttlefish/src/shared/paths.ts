@@ -27,6 +27,10 @@ export interface CuttlefishPaths {
   APPROVALS_FILE: string;
   CRON_RUNS: string;
   ORG_DIR: string;
+  ORG_CHANGES_DIR: string;
+  ORG_DRAFTS_DIR: string;
+  ORG_RETIRED_DIR: string;
+  ORG_POLICY_FILE: string;
   SKILLS_DIR: string;
   DOCS_DIR: string;
   LOGS_DIR: string;
@@ -66,6 +70,10 @@ function buildCuttlefishPaths(home: string): CuttlefishPaths {
     APPROVALS_FILE: path.join(home, "approvals.json"),
     CRON_RUNS: path.join(home, "cron", "runs"),
     ORG_DIR: path.join(home, "org"),
+    ORG_CHANGES_DIR: path.join(home, "org", "_changes"),
+    ORG_DRAFTS_DIR: path.join(home, "org", "_drafts"),
+    ORG_RETIRED_DIR: path.join(home, "org", "_retired"),
+    ORG_POLICY_FILE: path.join(home, "org", "_policy.json"),
     SKILLS_DIR: path.join(home, "skills"),
     DOCS_DIR: path.join(home, "docs"),
     LOGS_DIR: path.join(home, "logs"),
@@ -103,6 +111,10 @@ function applyRuntimePaths(paths: CuttlefishPaths): void {
   APPROVALS_FILE = paths.APPROVALS_FILE;
   CRON_RUNS = paths.CRON_RUNS;
   ORG_DIR = paths.ORG_DIR;
+  ORG_CHANGES_DIR = paths.ORG_CHANGES_DIR;
+  ORG_DRAFTS_DIR = paths.ORG_DRAFTS_DIR;
+  ORG_RETIRED_DIR = paths.ORG_RETIRED_DIR;
+  ORG_POLICY_FILE = paths.ORG_POLICY_FILE;
   SKILLS_DIR = paths.SKILLS_DIR;
   DOCS_DIR = paths.DOCS_DIR;
   LOGS_DIR = paths.LOGS_DIR;
@@ -161,6 +173,14 @@ export let AUDIT_LOG = initialPaths.AUDIT_LOG;
 export let APPROVALS_FILE = initialPaths.APPROVALS_FILE;
 export let CRON_RUNS = initialPaths.CRON_RUNS;
 export let ORG_DIR = initialPaths.ORG_DIR;
+/** Org change-request files (OrgChangeRequest JSON) authored by the HR / Org Steward flow. */
+export let ORG_CHANGES_DIR = initialPaths.ORG_CHANGES_DIR;
+/** Draft employee YAMLs proposed but not yet activated. Excluded from the active scan. */
+export let ORG_DRAFTS_DIR = initialPaths.ORG_DRAFTS_DIR;
+/** Soft-retired employee YAMLs (moved here instead of hard-deleted). Excluded from the active scan. */
+export let ORG_RETIRED_DIR = initialPaths.ORG_RETIRED_DIR;
+/** Operator override for the org-change permission tiers (org-policy.ts defaults apply when absent). */
+export let ORG_POLICY_FILE = initialPaths.ORG_POLICY_FILE;
 export let SKILLS_DIR = initialPaths.SKILLS_DIR;
 export let DOCS_DIR = initialPaths.DOCS_DIR;
 export let LOGS_DIR = initialPaths.LOGS_DIR;

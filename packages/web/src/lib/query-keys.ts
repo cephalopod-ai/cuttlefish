@@ -12,6 +12,11 @@ export const queryKeys = {
     employee: (name: string) => ['org', 'employees', name] as const,
     board: (dept: string) => ['org', 'departments', dept, 'board'] as const,
   },
+  orgChanges: {
+    all: ['org-changes'] as const,
+    list: (status?: string) => (status ? (['org-changes', status] as const) : (['org-changes'] as const)),
+    detail: (id: string) => ['org-changes', id] as const,
+  },
   cron: {
     all: ['cron'] as const,
     runs: (id: string) => ['cron', id, 'runs'] as const,

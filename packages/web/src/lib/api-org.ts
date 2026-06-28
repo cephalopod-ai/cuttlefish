@@ -1,5 +1,7 @@
 import { del, get, patch, post } from "./api-core"
 
+export type EmployeeLifecycle = "draft" | "active" | "probation" | "disabled" | "retired"
+
 export interface Employee {
   name: string
   displayName: string
@@ -13,6 +15,7 @@ export interface Employee {
   effortLevel?: string
   cliFlags?: string[]
   alwaysNotify?: boolean
+  lifecycle?: EmployeeLifecycle
   reportsTo?: string | string[]
   parentName?: string | null
   directReports?: string[]

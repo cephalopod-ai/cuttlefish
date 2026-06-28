@@ -130,6 +130,18 @@ provides:                    # optional - services this employee offers to the o
 | `senior` | Experienced worker. Can mentor employees. |
 | `employee` | Standard worker. Executes assigned tasks. |
 
+### Org changes go through HR
+
+The **HR / Org Steward** (`hr-manager`) is the gatekeeper for org changes. When
+you act as the COO or an employee, do **not** hand-write or delete employee YAML.
+Instead submit a **change request** (`POST /api/org/change-requests` with
+`{changeType, employeeName, proposed, rationale, proposedBy}`). HR critiques every
+change before it takes effect; anything beyond a cosmetic edit waits for operator
+approval in the HR / Org Steward panel (and the Approvals queue). See the
+**management** skill for recipes. The steward may not modify itself — only the
+human operator can. (The human operator may still edit employees directly via the
+web org form; that is the manual override.)
+
 ### Delegation
 
 - **Advisory**: the hierarchy informs delegation via context prompts but never blocks direct access
@@ -314,6 +326,9 @@ The gateway base URL (host:port) is provided in your session context under "Curr
 | `/api/cron/:id/runs` | GET | Cron run history |
 | `/api/org` | GET | Organization structure (hierarchy, ranks, reporting lines) |
 | `/api/org/employees/:name` | GET | Employee details (full persona) |
+| `/api/org/validate` | POST | Dry-run validate a proposed change (`{changeType, employeeName, proposed}`) |
+| `/api/org/change-requests` | GET / POST | List / submit org change requests (HR critiques + gates them) |
+| `/api/org/change-requests/:id` | GET | Fetch one change request (incl. HR critique + before/after YAML) |
 | `/api/skills` | GET | List skills |
 | `/api/skills/:name` | GET | Skill content |
 | `/api/config` | GET / PUT | Read / update config |

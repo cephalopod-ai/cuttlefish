@@ -26,6 +26,51 @@ org/
     seo-specialist.yaml
 ```
 
+## Org changes flow through HR (mandatory)
+
+Every org change — hiring, firing/retiring, promoting/demoting, reassigning, or
+changing an employee's model/engine/budget — MUST be submitted as a **change
+request** so the **HR / Org Steward** can critique it and (for anything beyond a
+cosmetic edit) the operator can approve it. Do **not** hand-write or delete
+employee YAML directly when acting as the COO or an employee.
+
+Submit a change request:
+
+```bash
+curl -s -X POST <gateway>/api/org/change-requests \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "changeType": "create_agent",
+    "employeeName": "ui-test-reviewer",
+    "proposed": {
+      "displayName": "UI Test Reviewer",
+      "department": "engineering",
+      "rank": "employee",
+      "engine": "claude",
+      "model": "sonnet",
+      "reportsTo": "lead-developer",
+      "persona": "You review UI test failures and file issue-ready findings."
+    },
+    "rationale": "User asked for flaky UI test triage.",
+    "proposedBy": "coo"
+  }'
+```
+
+`changeType` is one of: `create_agent`, `modify_instructions`, `change_model`,
+`change_engine`, `change_budget`, `promote`, `demote`, `reassign_manager`,
+`change_department`, `disable_agent`, `retire_agent`. `proposed` carries the
+fields to apply (a full employee body for `create_agent`; the changed fields
+otherwise). The gateway responds `202` with the change request: HR critiques it
+in the background, then it lands in the **HR / Org Steward** panel's *Org changes*
+tab (and the *Approvals* queue) for the operator to approve or reject. Low-risk
+cosmetic edits apply automatically. Validate a draft first with
+`POST /api/org/validate` (same body, no side effects). The steward may not modify
+itself — those requests are rejected.
+
+The step-by-step recipes below describe the YAML each change produces; build the
+`proposed` body from them and submit it via the change-request API rather than
+writing files.
+
 ## Rank Definitions
 
 - **executive** - Full access. Can see all departments and boards. Can hire and fire anyone across the entire organization.
@@ -80,18 +125,25 @@ Steps:
 1. Confirm the target department exists under `org/`. If not, ask the user whether to create it first.
 2. Choose a kebab-case name for the employee (e.g., `lead-developer`, `seo-specialist`).
 3. Ask the user for displayName, rank, engine, model, and persona if not provided.
-4. Write the YAML file to `org/<department>/<name>.yaml`.
-5. Confirm the hire to the user.
+4. Submit a `create_agent` change request (see "Org changes flow through HR" above)
+   with the fields as the `proposed` body — do NOT write the YAML yourself. HR
+   critiques it and the operator approves it before it is created.
+5. Tell the user you've proposed the hire and that HR is reviewing it; surface
+   HR's critique when it lands.
 
-### Firing an Employee
+### Firing / Retiring an Employee
 
-1. Locate the employee's YAML file under `org/<department>/<name>.yaml`.
+Retirement is a soft delete: the steward moves the persona to `org/_retired/`
+instead of destroying it, so it can be restored.
+
+1. Locate the employee under `org/<department>/<name>.yaml`.
 2. Check if the employee has any active tasks on the department board (`board.json` with status other than `done`). Warn the user if so.
 3. **Check for direct reports**: Call `GET /api/org` and check the employee's `directReports` field.
-   - If they have direct reports: warn "X has N direct reports. They will be reassigned to X's manager (Y)."
-   - On confirmation, update each report's YAML: set `reportsTo` to the fired employee's own `parentName` (their grandparent in the tree).
-   - If the fired employee reported to root (parentName null), remove the `reportsTo` field from each orphaned report (smart defaults will re-resolve).
-4. Delete the YAML file.
+   - If they have direct reports, reassign them FIRST via `reassign_manager`
+     change requests (set each report's `reportsTo` to the retiring employee's own
+     `parentName`), since the gateway refuses to orphan reports.
+4. Submit a `retire_agent` change request for the employee (no `proposed` fields
+   needed). After approval the persona moves to `org/_retired/`.
 5. Remove the employee as assignee from any tasks in `board.json` (set assignee to `unassigned`).
 6. Confirm the removal to the user.
 
@@ -110,10 +162,11 @@ Steps:
 ### Promoting or Demoting an Employee
 
 1. Read the employee's YAML file at `org/<department>/<name>.yaml`.
-2. Update the `rank` field to the new rank.
-3. If promoting to **manager**, add delegation capabilities to their persona (see "Promoting to Manager" below).
-4. Write the updated YAML back to the file.
-5. Confirm the change to the user, stating the old and new rank.
+2. Build the `proposed` body: the new `rank`, plus (if promoting to **manager**)
+   the extended persona with delegation capabilities (see "Promoting to Manager"
+   below).
+3. Submit a `promote` (or `demote`) change request with that `proposed` body.
+4. Confirm the change to the user once approved, stating the old and new rank.
 
 ### Promoting to Manager - Report Reassignment
 

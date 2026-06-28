@@ -10,12 +10,41 @@ import { BoardConflictError, defaultBoardState, readBoardArray, readBoardState, 
 import { resolveBestSessionForTicket, resolveTicketSessionFallbackState, resolveTicketSessionFailureReason, resolveTicketSessionStalled } from "../../ticket-session-resolver.js";
 import { dispatchTicket } from "../../ticket-dispatch.js";
 import { scanOrg } from "../../org.js";
+import { resolveUserHeader } from "../../connector-reply.js";
 import type { ApiContext } from "../context.js";
 import { matchRoute } from "../match-route.js";
 import { badRequest, json, notFound, serverError } from "../responses.js";
 import { loadSessionMessagesForApi } from "../session-query-routes.js";
+import { ORG_CHANGE_TYPES, type OrgChangeType } from "../../../shared/types.js";
 
 const TICKET_SESSION_TAIL_LIMIT = 8;
+
+const VALID_CHANGE_TYPES = new Set<OrgChangeType>(ORG_CHANGE_TYPES);
+
+type ParsedChangeInput =
+  | { ok: true; value: { changeType: OrgChangeType; employeeName: string; proposed: Record<string, unknown> } }
+  | { ok: false; error: string };
+
+/** Validate the shared {changeType, employeeName, proposed} shape used by the
+ *  /api/org/validate and /api/org/change-requests routes. */
+function parseChangeInput(body: unknown): ParsedChangeInput {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return { ok: false, error: "body must be a JSON object" };
+  }
+  const b = body as Record<string, unknown>;
+  if (typeof b.changeType !== "string" || !VALID_CHANGE_TYPES.has(b.changeType as OrgChangeType)) {
+    return { ok: false, error: `invalid changeType (valid: ${[...VALID_CHANGE_TYPES].join(", ")})` };
+  }
+  const employeeName = typeof b.employeeName === "string" ? b.employeeName.trim() : "";
+  if (!employeeName) return { ok: false, error: "employeeName must be a non-empty string" };
+  if (!b.proposed || typeof b.proposed !== "object" || Array.isArray(b.proposed)) {
+    return { ok: false, error: "proposed must be a JSON object" };
+  }
+  return {
+    ok: true,
+    value: { changeType: b.changeType as OrgChangeType, employeeName, proposed: b.proposed as Record<string, unknown> },
+  };
+}
 
 function validateBoardAssigneesForDepartment(department: string, payload: unknown): string | null {
   const tickets = Array.isArray(payload)
@@ -206,6 +235,168 @@ export async function handleOrgRoutes(
     context.reloadOrg?.();
     context.emit("org:updated", { employee: name, action: "deleted" });
     json(res, { status: "ok" });
+    return true;
+  }
+
+  // --- Org change requests (HR / Org Steward) ---------------------------------
+  // Phase 1 is draft-only: validate + create/list/get change requests. The
+  // critique pipeline (pending_critique → pending_approval) and approve→apply
+  // routes are layered on in later phases without changing these surfaces.
+
+  if (method === "POST" && pathname === "/api/org/validate") {
+    const parsed = await readJsonBody(req, res);
+    if (!parsed.ok) return true;
+    const input = parseChangeInput(parsed.body);
+    if (!input.ok) {
+      badRequest(res, input.error);
+      return true;
+    }
+    const { validateOrgChange } = await import("../../org.js");
+    const result = validateOrgChange(context.getConfig(), input.value);
+    json(res, { ok: result.ok, error: result.error ?? null });
+    return true;
+  }
+
+  if (method === "POST" && pathname === "/api/org/change-requests") {
+    const parsed = await readJsonBody(req, res);
+    if (!parsed.ok) return true;
+    const input = parseChangeInput(parsed.body);
+    if (!input.ok) {
+      badRequest(res, input.error);
+      return true;
+    }
+    const body = parsed.body as Record<string, unknown>;
+    const { validateOrgChange } = await import("../../org.js");
+    const validation = validateOrgChange(context.getConfig(), input.value);
+    if (!validation.ok) {
+      badRequest(res, validation.error || "invalid org change");
+      return true;
+    }
+    // Run the full HR pipeline: hard guards → classify → persist pending_critique
+    // → background HR critique → approval gate (or auto-apply for low-risk).
+    const { submitOrgChange } = await import("../../hr-steward.js");
+    const result = await submitOrgChange(
+      {
+        changeType: input.value.changeType,
+        employeeName: input.value.employeeName,
+        proposed: input.value.proposed,
+        rationale: typeof body.rationale === "string" ? body.rationale : "",
+        evidenceRefs: Array.isArray(body.evidenceRefs)
+          ? body.evidenceRefs.filter((x): x is string => typeof x === "string")
+          : [],
+        proposedBy: typeof body.proposedBy === "string" && body.proposedBy.trim() ? body.proposedBy.trim() : "user",
+      },
+      context,
+    );
+    if (result.blocked) {
+      json(res, { status: "blocked", error: result.reason, changeRequest: result.request }, 409);
+      return true;
+    }
+    json(res, { status: "ok", changeRequest: result.request }, 202);
+    return true;
+  }
+
+  if (method === "GET" && pathname === "/api/org/retired") {
+    const { listRetiredEmployees } = await import("../../org.js");
+    const employees = listRetiredEmployees().map(({ persona, ...rest }) => rest);
+    json(res, { employees });
+    return true;
+  }
+
+  if (method === "GET" && pathname === "/api/org/change-requests") {
+    const { listChangeRequests } = await import("../../org-changes.js");
+    const query = new URL(req.url ?? "/", "http://localhost").searchParams;
+    const statusParam = query.get("status");
+    const statuses = statusParam
+      ? statusParam.split(",").map((s) => s.trim()).filter(Boolean)
+      : undefined;
+    const requests = listChangeRequests(statuses ? { status: statuses as never } : undefined);
+    json(res, { changeRequests: requests });
+    return true;
+  }
+
+  params = matchRoute("/api/org/change-requests/:id", pathname);
+  if (method === "GET" && params) {
+    const { getChangeRequest } = await import("../../org-changes.js");
+    const request = getChangeRequest(params.id);
+    if (!request) {
+      notFound(res);
+      return true;
+    }
+    json(res, request);
+    return true;
+  }
+
+  params = matchRoute("/api/org/change-requests/:id/approve", pathname);
+  if (method === "POST" && params) {
+    const { getChangeRequest, updateChangeRequestStatus } = await import("../../org-changes.js");
+    const { applyOrgChange } = await import("../../hr-steward.js");
+    const { resolveApproval } = await import("../../approvals.js");
+    const request = getChangeRequest(params.id);
+    if (!request) {
+      notFound(res);
+      return true;
+    }
+    if (request.status !== "pending_approval" && request.status !== "approved") {
+      json(res, { error: `change is ${request.status}, not awaiting approval` }, 409);
+      return true;
+    }
+    const actor = resolveUserHeader(req.headers, context.getConfig().gateway.userHeader);
+    if (request.approvalId) {
+      try {
+        resolveApproval(request.approvalId, "approved", actor);
+      } catch {
+        /* already resolved — proceed to apply idempotently */
+      }
+    }
+    updateChangeRequestStatus(params.id, "approved");
+    const applied = await applyOrgChange(request, context);
+    if (!applied.ok) {
+      json(res, { status: "error", error: applied.error, changeRequest: getChangeRequest(params.id) }, 400);
+      return true;
+    }
+    json(res, { status: "ok", changeRequest: getChangeRequest(params.id) });
+    return true;
+  }
+
+  params = matchRoute("/api/org/change-requests/:id/reject", pathname);
+  if (method === "POST" && params) {
+    const { getChangeRequest, updateChangeRequestStatus } = await import("../../org-changes.js");
+    const { resolveApproval } = await import("../../approvals.js");
+    const request = getChangeRequest(params.id);
+    if (!request) {
+      notFound(res);
+      return true;
+    }
+    const actor = resolveUserHeader(req.headers, context.getConfig().gateway.userHeader);
+    if (request.approvalId) {
+      try {
+        resolveApproval(request.approvalId, "rejected", actor);
+      } catch {
+        /* already resolved */
+      }
+    }
+    const updated = updateChangeRequestStatus(params.id, "rejected");
+    context.emit("org-change:updated", { id: params.id, status: "rejected" });
+    json(res, { status: "ok", changeRequest: updated });
+    return true;
+  }
+
+  params = matchRoute("/api/org/change-requests/:id/apply", pathname);
+  if (method === "POST" && params) {
+    const { getChangeRequest } = await import("../../org-changes.js");
+    const { applyOrgChange } = await import("../../hr-steward.js");
+    const request = getChangeRequest(params.id);
+    if (!request) {
+      notFound(res);
+      return true;
+    }
+    const applied = await applyOrgChange(request, context);
+    if (!applied.ok) {
+      json(res, { status: "error", error: applied.error, changeRequest: getChangeRequest(params.id) }, 400);
+      return true;
+    }
+    json(res, { status: "ok", changeRequest: getChangeRequest(params.id) });
     return true;
   }
 
