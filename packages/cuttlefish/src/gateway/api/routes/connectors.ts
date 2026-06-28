@@ -9,6 +9,8 @@ import { readJsonBody } from "../../http-helpers.js";
 import type { ApiContext } from "../context.js";
 import { matchRoute } from "../match-route.js";
 import { badRequest, json, notFound } from "../responses.js";
+import type { GatewayPrincipal } from "../../auth.js";
+import { getSession } from "../../../sessions/registry.js";
 
 export async function handleConnectorRoutes(
   method: string,
@@ -140,6 +142,15 @@ export async function handleConnectorRoutes(
     if (!connector) {
       notFound(res);
       return true;
+    }
+    // Session-scoped tokens may only send via the connector bound to their session.
+    const principal = (req as HttpRequest & { cuttlefishPrincipal?: GatewayPrincipal }).cuttlefishPrincipal;
+    if (principal?.kind === "session") {
+      const callerSession = getSession(principal.sessionId);
+      if (!callerSession?.connector || callerSession.connector !== params.name) {
+        json(res, { error: "Session token may only send via its own connector" }, 403);
+        return true;
+      }
     }
     const parsed = await readJsonBody(req, res);
     if (!parsed.ok) return true;

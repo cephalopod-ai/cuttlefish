@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import type { ExternalKnowledgeEnvelope } from "../../shared/types.js";
 import { initDb } from "./core.js";
 
-export type ExternalOutboxStatus = "pending" | "delivered";
+export type ExternalOutboxStatus = "pending" | "sending" | "delivered" | "failed";
 
 export interface ExternalOutboxItem {
   id: string;
@@ -85,6 +85,36 @@ export function listPendingExternalOutboxItems(limit = 25): ExternalOutboxItem[]
   return rows.map(rowToExternalOutboxItem);
 }
 
+export function claimPendingExternalOutboxItems(limit = 25): ExternalOutboxItem[] {
+  const db = initDb();
+  const now = new Date().toISOString();
+  const claim = db.transaction(() => {
+    const rows = db.prepare(`
+      SELECT id FROM external_outbox
+      WHERE status = 'pending'
+        AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+      ORDER BY created_at ASC
+      LIMIT ?
+    `).all(now, limit) as Record<string, unknown>[];
+    for (const row of rows) {
+      db.prepare("UPDATE external_outbox SET status = 'sending' WHERE id = ? AND status = 'pending'").run(row.id);
+    }
+    return rows.map((r) => r.id as string);
+  });
+  const ids = claim();
+  return ids.map((id) => getExternalOutboxItem(id)!).filter(Boolean);
+}
+
+export function releaseExternalOutboxClaims(ids: string[]): void {
+  const db = initDb();
+  const release = db.transaction(() => {
+    for (const id of ids) {
+      db.prepare("UPDATE external_outbox SET status = 'pending' WHERE id = ? AND status = 'sending'").run(id);
+    }
+  });
+  release();
+}
+
 export function markExternalOutboxDelivered(id: string, remoteId?: string | null): ExternalOutboxItem | undefined {
   const db = initDb();
   const now = new Date().toISOString();
@@ -100,17 +130,23 @@ export function markExternalOutboxDelivered(id: string, remoteId?: string | null
   return getExternalOutboxItem(id);
 }
 
+export const EXTERNAL_OUTBOX_MAX_ATTEMPTS = 10;
+
 export function markExternalOutboxFailed(id: string, error: string, nextAttemptAt: string): ExternalOutboxItem | undefined {
   const db = initDb();
   const now = new Date().toISOString();
+  const current = db.prepare("SELECT attempt_count FROM external_outbox WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+  const newCount = (Number(current?.attempt_count ?? 0) + 1);
+  const terminal = newCount >= EXTERNAL_OUTBOX_MAX_ATTEMPTS;
   db.prepare(`
     UPDATE external_outbox
-    SET attempt_count = attempt_count + 1,
+    SET attempt_count = ?,
         last_attempt_at = ?,
         last_error = ?,
-        next_attempt_at = ?
+        next_attempt_at = ?,
+        status = ?
     WHERE id = ?
-  `).run(now, error, nextAttemptAt, id);
+  `).run(newCount, now, error, terminal ? null : nextAttemptAt, terminal ? "failed" : "pending", id);
   return getExternalOutboxItem(id);
 }
 

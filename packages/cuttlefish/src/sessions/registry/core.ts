@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs';
 import Database from 'better-sqlite3';
 import { SESSIONS_DB } from '../../shared/paths.js';
 import { logger } from '../../shared/logger.js';
+import { isSqliteCorruptionError, quarantineCorruptDb } from '../../shared/sqlite-corruption.js';
 import type { JsonObject, ReplyContext, Session } from '../../shared/types.js';
 import { installBaseSchema, installPostMigrationSchema } from './schema.js';
 import { migrateApprovalsSchema, migrateExternalOutboxSchema, migrateFilesSchema, migrateMessagesSchema, migrateSessionsSchema } from './migrations.js';
@@ -66,11 +67,26 @@ export function setMeta(database: Database.Database, key: string, value: string)
     .run(key, value);
 }
 
+function openDb(): Database.Database {
+  mkdirSync(path.dirname(SESSIONS_DB), { recursive: true });
+  try {
+    const database = new Database(SESSIONS_DB, { timeout: 5000 });
+    database.pragma('journal_mode = WAL');
+    return database;
+  } catch (err) {
+    if (isSqliteCorruptionError(err)) {
+      quarantineCorruptDb(SESSIONS_DB);
+      const fresh = new Database(SESSIONS_DB, { timeout: 5000 });
+      fresh.pragma('journal_mode = WAL');
+      return fresh;
+    }
+    throw err;
+  }
+}
+
 export function initDb(): Database.Database {
   if (db) return db;
-  mkdirSync(path.dirname(SESSIONS_DB), { recursive: true });
-  db = new Database(SESSIONS_DB, { timeout: 5000 });
-  db.pragma('journal_mode = WAL');
+  db = openDb();
   installBaseSchema(db);
   migrateMessagesSchema(db);
   migrateFtsSchema(db);

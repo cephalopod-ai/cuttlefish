@@ -9,8 +9,27 @@ import { emailMessageId, getEmailMessage, listEmailInboxHealth, listEmailMessage
 
 /** Default hard cap on a single raw message's size (25 MiB). Overridable per inbox. */
 const DEFAULT_MAX_MESSAGE_BYTES = 25 * 1024 * 1024;
+
+/**
+ * Whether an email sender is allowed to auto-trigger an agent run. Fail-closed:
+ * if the inbox has no `allowFrom`, NO sender auto-ingests (messages are cached
+ * for manual review). Entries match a full address, a bare domain, or `@domain`.
+ */
+export function emailSenderAllowed(allowFrom: string[] | undefined, fromAddress: string | null): boolean {
+  if (!allowFrom || allowFrom.length === 0) return false;
+  if (!fromAddress) return false;
+  const addr = fromAddress.trim().toLowerCase();
+  const domain = addr.includes("@") ? addr.slice(addr.lastIndexOf("@") + 1) : "";
+  return allowFrom.some((raw) => {
+    const entry = raw.trim().toLowerCase();
+    if (!entry) return false;
+    if (entry.startsWith("@")) return domain.length > 0 && domain === entry.slice(1);
+    if (!entry.includes("@")) return domain.length > 0 && domain === entry;
+    return addr === entry;
+  });
+}
 import type { EmailMailboxClient } from "./client.js";
-import { normalizeEmail } from "./normalize.js";
+import { normalizeEmail, MAX_RAW_MESSAGE_BYTES } from "./normalize.js";
 import { insertFile } from "../sessions/registry.js";
 
 export interface EmailServiceDeps {
@@ -35,9 +54,9 @@ async function persistAttachment(messageId: string, attachment: {
   const artifactId = crypto.randomUUID();
   const filename = sanitizeUploadFilename(attachment.filename);
   const dir = path.join(FILES_DIR, artifactId);
-  fs.mkdirSync(dir, { recursive: true });
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   const filePath = path.join(dir, filename);
-  fs.writeFileSync(filePath, attachment.content);
+  fs.writeFileSync(filePath, attachment.content, { mode: 0o600 });
   insertFile({
     id: artifactId,
     filename,
@@ -122,7 +141,7 @@ export class EmailService {
     const checkedAt = new Date().toISOString();
     try {
       const fetched = await this.client.fetchUnread(inbox);
-      const maxBytes = inbox.maxMessageBytes ?? DEFAULT_MAX_MESSAGE_BYTES;
+      const maxBytes = Math.min(inbox.maxMessageBytes ?? DEFAULT_MAX_MESSAGE_BYTES, MAX_RAW_MESSAGE_BYTES);
       const results: EmailMessageRecord[] = [];
       for (const message of fetched) {
         // Resource bound: never parse/persist an oversized raw message — mailparser
@@ -175,7 +194,8 @@ export class EmailService {
         // `dispatching` and `ingested` are already-claimed states that must never be
         // re-dispatched (at-most-once across a crash/replay).
         const alreadyHandled = existing?.status === "ingested" || existing?.status === "dispatching";
-        if (inbox.autoIngest === true && !alreadyHandled && this.onAutoIngest) {
+        const senderAllowed = emailSenderAllowed(inbox.allowFrom, persisted.fromAddress);
+        if (inbox.autoIngest === true && !alreadyHandled && senderAllowed && this.onAutoIngest) {
           // Durable claim written BEFORE dispatch so a replay after a mid-dispatch
           // crash sees `dispatching` and does not re-run the agent.
           persistEmailMessageWithState(
@@ -195,8 +215,13 @@ export class EmailService {
               { status: "error", sessionId: null, error },
             ));
           }
+          // Mark seen after recording (regardless of ingest outcome); errored
+          // messages are left unseen so they can be retried on the next poll.
+          await this.client.markSeen(inbox, message.providerMessageId).catch(() => {});
         } else {
           results.push(persisted);
+          // Mark cached/already-handled messages seen so unread count stays accurate.
+          await this.client.markSeen(inbox, message.providerMessageId).catch(() => {});
         }
       }
       // Reachable but not fully processing — a failed ingest or a claim stuck mid-

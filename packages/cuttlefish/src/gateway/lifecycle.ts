@@ -10,6 +10,7 @@ import { logger } from "../shared/logger.js";
 import type { CuttlefishConfig } from "../shared/types.js";
 import { startGateway } from "./server.js";
 import { loadConfig } from "../shared/config.js";
+import { installProcessErrorHandlers } from "./process-guards.js";
 
 const MIN_NODE_MAJOR = 24;
 
@@ -100,6 +101,7 @@ function fnmCandidates(home: string): string[] {
 }
 
 export async function startForeground(config: CuttlefishConfig): Promise<void> {
+  installProcessErrorHandlers();
   const cleanup = await startGateway(config);
 
   let shuttingDown = false;

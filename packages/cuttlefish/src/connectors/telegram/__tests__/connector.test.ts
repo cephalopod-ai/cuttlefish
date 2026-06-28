@@ -98,9 +98,14 @@ describe("TelegramConnector", () => {
 
   describe("onMessage", () => {
     it("routes incoming messages to the handler", async () => {
+      // Connectors now default-deny: an allowFrom is required for messages to route.
+      const authorizedConnector = new TelegramConnector({
+        botToken: "123456:ABC-DEF",
+        allowFrom: [67890],
+      });
       const handler = vi.fn();
-      connector.onMessage(handler);
-      await connector.start();
+      authorizedConnector.onMessage(handler);
+      await authorizedConnector.start();
 
       // Get the registered message callback
       const messageCallback = mockOn.mock.calls.find(

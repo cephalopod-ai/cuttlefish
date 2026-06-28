@@ -107,6 +107,10 @@ export function useQueryInvalidation() {
             case 'sessions':
               qc.invalidateQueries({ queryKey: queryKeys.sessions.all })
               break
+            case 'approvals':
+              qc.invalidateQueries({ queryKey: queryKeys.approvals.all })
+              qc.invalidateQueries({ queryKey: queryKeys.checkpoints.all })
+              break
             case 'cron':
               qc.invalidateQueries({ queryKey: queryKeys.cron.all })
               break

@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
-import { authenticateGatewayRequest, authRequiredForRequest, isAuthenticatedRequest } from "../auth.js";
+import { authenticateGatewayRequest, authRequiredForRequest, isAuthenticatedRequest, isLoopbackHost, scopedTokenForbidden } from "../auth.js";
 import { logger } from "../../shared/logger.js";
 import type { ApiContext } from "../api.js";
 import { attachPtyWebSocket } from "../pty-ws.js";
@@ -11,6 +11,7 @@ import { startWsHeartbeat, trackHeartbeat } from "../ws-heartbeat.js";
 import type { Engine } from "../../shared/types.js";
 import type { PtyViewEngine } from "../../engines/pty-view-engine.js";
 import { serveStatic, setCorsHeaders } from "./http-static.js";
+import { isBlockedCrossSiteWrite, isHostAllowed, isPtyUpgradeAllowed } from "./request-guards.js";
 
 interface GatewayTransportDeps {
   apiContext: ApiContext;
@@ -43,6 +44,8 @@ export function createGatewayTransports({
   webDir,
   wsClients,
 }: GatewayTransportDeps) {
+  const boundLoopback = isLoopbackHost(host);
+
   const server = http.createServer(async (req, res) => {
     const url = req.url || "/";
     const corsAllowed = setCorsHeaders(req, res);
@@ -59,6 +62,20 @@ export function createGatewayTransports({
       return;
     }
 
+    // DNS-rebinding guard
+    if (!isHostAllowed(boundLoopback, req.headers.host)) {
+      res.writeHead(421, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Misdirected request" }));
+      return;
+    }
+
+    // Defense-in-depth CSRF guard
+    if (isBlockedCrossSiteWrite(req.method, req.headers["sec-fetch-site"] as string | undefined)) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Cross-site write blocked" }));
+      return;
+    }
+
     const pathname = url.split("?")[0];
     if (authRequiredNow() && authRequiredForRequest(req.method, pathname)) {
       const auth = authenticateGatewayRequest(req, gatewayAuthToken, cuttlefishHome);
@@ -66,6 +83,15 @@ export function createGatewayTransports({
         res.writeHead(401, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: auth.reason || "Unauthorized" }));
         return;
+      }
+      if (auth.principal?.kind === "session" && scopedTokenForbidden(req.method, pathname)) {
+        res.writeHead(403, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Forbidden for session-scoped tokens" }));
+        return;
+      }
+      // Attach principal so route handlers can apply per-principal scoping.
+      if (auth.principal) {
+        (req as http.IncomingMessage & { cuttlefishPrincipal?: unknown }).cuttlefishPrincipal = auth.principal;
       }
     }
 
@@ -146,6 +172,19 @@ export function createGatewayTransports({
       try {
         sessionId = decodeURIComponent(ptyMatch[1]);
       } catch {
+        socket.destroy();
+        return;
+      }
+      const queryToken = new URLSearchParams(reqUrl.split("?")[1] ?? "").get("token") ?? "";
+      if (!isPtyUpgradeAllowed({
+        boundLoopback,
+        reqHost: req.headers.host,
+        origin: req.headers.origin,
+        sessionId,
+        token: queryToken,
+        secret: gatewayAuthToken,
+      })) {
+        socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
         socket.destroy();
         return;
       }

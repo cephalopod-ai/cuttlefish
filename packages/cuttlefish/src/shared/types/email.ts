@@ -9,6 +9,8 @@ export interface EmailInboxConfig {
   useTls?: boolean;
   folder?: string;
   autoIngest?: boolean;
+  /** Sender allowlist for auto-ingest. Fail-closed: if omitted, no mail triggers an agent run. */
+  allowFrom?: string[];
   unreadOnly?: boolean;
   maxMessagesPerPoll?: number;
   /** Hard cap on a single raw message's size in bytes. Messages larger than this

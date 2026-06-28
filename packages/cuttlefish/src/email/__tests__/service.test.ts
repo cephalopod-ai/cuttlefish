@@ -51,6 +51,7 @@ describe("EmailService", () => {
         password: "secret",
         imapHost: "imap.example.com",
         autoIngest: true,
+        allowFrom: ["support@example.com"],
       }],
     }, { client, onAutoIngest });
 
@@ -92,6 +93,7 @@ describe("EmailService", () => {
         password: "secret",
         imapHost: "imap.example.com",
         autoIngest: true,
+        allowFrom: ["support@example.com"],
       }],
     }, { client, onAutoIngest });
 

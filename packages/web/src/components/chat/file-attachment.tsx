@@ -1,4 +1,5 @@
 import React from 'react'
+import { safeHttpUrl } from '@/lib/safe-url'
 
 interface FileAttachmentProps {
   name: string
@@ -113,7 +114,7 @@ export function FileAttachment({ name, size, mimeType, url, isUser }: FileAttach
 
       {/* Download button */}
       <a
-        href={url}
+        href={safeHttpUrl(url) ?? undefined}
         download={name}
         aria-label={`Download ${name}`}
         style={{

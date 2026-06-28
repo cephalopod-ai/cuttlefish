@@ -13,6 +13,7 @@ import { tailTranscriptLines, type TranscriptTailer } from "./transcript-tailer.
 import type { PtyControlEvent, PtyIdleSpawnOpts, PtyViewEngine } from "./pty-view-engine.js";
 import { codexCliFlags, extractCodexContextTokens } from "./codex.js";
 import { codexMcpConfigFlagsFromFile } from "../mcp/resolver.js";
+import { buildEngineEnv } from "../shared/engine-env.js";
 
 const CODEX_SESSIONS_DIR = path.join(os.homedir(), ".codex", "sessions");
 const TURN_TIMEOUT_MS = 14 * 24 * 60 * 60 * 1000;
@@ -371,13 +372,7 @@ export class CodexInteractiveEngine implements InterruptibleEngine, PtyViewEngin
   }
 
   private buildEnv(): Record<string, string> {
-    const env: Record<string, string> = {};
-    for (const [k, v] of Object.entries(process.env)) {
-      if (k === "CLAUDECODE" || k.startsWith("CLAUDE_CODE_")) continue;
-      if (v !== undefined) env[k] = v;
-    }
-    env.TERM = "xterm-256color";
-    return env;
+    return buildEngineEnv({ TERM: "xterm-256color" }, { stripPrefixes: ["CLAUDE_CODE_"] });
   }
 
   private buildArgs(opts: EngineRunOpts, prompt?: string, resumeSessionId?: string): string[] {

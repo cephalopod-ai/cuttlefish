@@ -63,6 +63,8 @@ export class DiscordConnector implements Connector {
         Object.entries(this.config.channelRouting).map(([k, v]) => [String(k), v])
       );
     }
+    // Default-deny: without an allowFrom, the bot ignores everyone. Require the
+    // operator to explicitly authorize users.
     this.allowedUserIds = new Set(
       Array.isArray(config.allowFrom)
         ? config.allowFrom
@@ -70,6 +72,9 @@ export class DiscordConnector implements Connector {
         ? [config.allowFrom]
         : [],
     );
+    if (this.allowedUserIds.size === 0) {
+      logger.warn("[discord] No allowFrom configured — ignoring ALL inbound messages. Set connectors.discord.allowFrom to authorize users.");
+    }
     this.client = new Client({
       intents: [
         GatewayIntentBits.Guilds,
@@ -269,8 +274,8 @@ export class DiscordConnector implements Connector {
     // Channel restriction — only respond in a specific channel (+ DMs always allowed)
     if (this.config.channelId && message.channel.id !== this.config.channelId && !message.channel.isDMBased()) return;
 
-    // User allowlist
-    if (this.allowedUserIds.size > 0 && !this.allowedUserIds.has(message.author.id)) return;
+    // User allowlist (default-deny: empty Set blocks all)
+    if (!this.allowedUserIds.has(message.author.id)) return;
 
     if (!this.handler) return;
 

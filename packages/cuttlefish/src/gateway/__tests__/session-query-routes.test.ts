@@ -226,6 +226,52 @@ describe("session query routes", () => {
     expect(dispatchWebSessionRun).toHaveBeenCalledTimes(2);
   });
 
+  it("reuses a legacy hr-manager web session when the singleton session key is absent", async () => {
+    const { api, reg } = await setup();
+    const ctx = makeCtx(api);
+    const config = {
+      gateway: {},
+      engines: {
+        default: "claude",
+        claude: { bin: "claude", model: "sonnet" },
+      },
+      portal: {},
+      models: {
+        claude: {
+          default: "sonnet",
+          models: [{ id: "sonnet", supportsEffort: true, effortLevels: ["low", "medium", "high"] }],
+        },
+      },
+    };
+    ctx.getConfig = () => config as any;
+    ctx.sessionManager = {
+      ...ctx.sessionManager,
+      getEngine: () => ({ isAlive: () => false }),
+    } as any;
+
+    const legacy = reg.createSession({
+      engine: "claude",
+      source: "web",
+      sourceRef: "web:legacy-hr",
+      sessionKey: "web:legacy-hr",
+      employee: "hr-manager",
+      prompt: "legacy session",
+    });
+
+    const cap = makeRes();
+    await api.handleApiRequest(
+      makeJsonReq("POST", "/api/sessions", { prompt: "reuse me", employee: "hr-manager" }),
+      cap.res,
+      ctx,
+    );
+
+    expect(cap.status).toBe(201);
+    expect(cap.body.id).toBe(legacy.id);
+    expect(reg.listSessions().filter((session) => session.employee === "hr-manager")).toHaveLength(1);
+    expect(reg.getMessages(legacy.id).filter((message) => message.role === "user").map((message) => message.content)).toContain("reuse me");
+    expect(dispatchWebSessionRun).toHaveBeenCalledTimes(1);
+  });
+
   it("preserves q/group/offset/limit list behavior for GET /api/sessions", async () => {
     const { api, reg } = await setup();
     const ctx = makeCtx(api);

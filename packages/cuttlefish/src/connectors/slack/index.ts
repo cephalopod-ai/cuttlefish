@@ -17,7 +17,7 @@ export class SlackConnector implements Connector {
   name = "slack";
   private app: App;
   private handler: ((msg: IncomingMessage) => void) | null = null;
-  private readonly allowedUsers: Set<string> | null;
+  private readonly allowedUsers: Set<string>;
   private readonly ignoreOldMessagesOnBoot: boolean;
   private readonly bootTimeMs = Date.now();
   private started = false;
@@ -69,7 +69,12 @@ export class SlackConnector implements Connector {
       : typeof config.allowFrom === "string"
         ? config.allowFrom.split(",").map((value) => value.trim()).filter(Boolean)
         : [];
-    this.allowedUsers = allowFrom.length > 0 ? new Set(allowFrom) : null;
+    // Default-deny: without an allowFrom, the bot ignores everyone. Require the
+    // operator to explicitly authorize users rather than allowing all workspace members.
+    this.allowedUsers = new Set(allowFrom);
+    if (this.allowedUsers.size === 0) {
+      logger.warn("[slack] No allowFrom configured — ignoring ALL inbound messages. Set connectors.slack.allowFrom to authorize users.");
+    }
   }
 
   private async resolveChannelName(channelId: string): Promise<string | undefined> {
@@ -117,7 +122,7 @@ export class SlackConnector implements Connector {
         logger.debug(`Ignoring old Slack message ${(event as any).ts}`);
         return;
       }
-      if (this.allowedUsers && !this.allowedUsers.has((event as any).user)) {
+      if (!this.allowedUsers.has((event as any).user)) {
         logger.debug(`Ignoring Slack message from unauthorized user ${(event as any).user}`);
         return;
       }
@@ -216,7 +221,7 @@ export class SlackConnector implements Connector {
         logger.debug(`Ignoring old Slack mention ${event.ts}`);
         return;
       }
-      if (this.allowedUsers && !this.allowedUsers.has(userId)) {
+      if (!this.allowedUsers.has(userId)) {
         logger.debug(`Ignoring Slack mention from unauthorized user ${userId}`);
         return;
       }
@@ -300,7 +305,7 @@ export class SlackConnector implements Connector {
       if (!this.handler) return;
 
       // Check allowed users
-      if (this.allowedUsers && !this.allowedUsers.has(event.user)) {
+      if (!this.allowedUsers.has(event.user)) {
         logger.debug(`Ignoring reaction from unauthorized user ${event.user}`);
         return;
       }

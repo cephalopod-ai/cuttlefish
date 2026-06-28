@@ -43,7 +43,6 @@ import { createApproval } from "./approvals.js";
 import { logger } from "../shared/logger.js";
 import {
   createSession,
-  getSessionBySessionKey,
   getMessages,
   insertMessage,
   updateSession,
@@ -51,6 +50,7 @@ import {
 import { dispatchWebSessionRun } from "./api/session-dispatch.js";
 import type { ApiContext } from "./api/context.js";
 import type { Employee, OrgChangeRequest, OrgChangeType } from "../shared/types.js";
+import { getReusableHrSession } from "./hr-session.js";
 
 export interface SubmitOrgChangeInput {
   changeType: OrgChangeType;
@@ -168,7 +168,12 @@ async function finishCritique(
       },
     });
     updateChangeRequest(id, { approvalId: approval.id });
-    context.emit("approval:created", { approvalId: approval.id, type: "org-change", changeRequestId: id });
+    context.emit("approval:created", {
+      approvalId: approval.id,
+      sessionId: approval.sessionId,
+      type: "org-change",
+      changeRequestId: id,
+    });
     return;
   }
 
@@ -182,6 +187,31 @@ async function finishCritique(
 export interface ApplyResult {
   ok: boolean;
   error?: string;
+}
+
+export function recordHrDecisionMessage(
+  sessionId: string | null | undefined,
+  request: OrgChangeRequest,
+  opts: { action: "approved" | "rejected" | "applied" | "failed"; actor?: string | null; error?: string | null },
+  context?: Pick<ApiContext, "emit">,
+): void {
+  if (!sessionId) return;
+  const actor = opts.actor?.trim() ? opts.actor.trim() : "operator";
+  const changeLabel = `${request.changeType} for "${request.employeeName}"`;
+  const content =
+    opts.action === "approved"
+      ? `Human approval received from ${actor} for ${changeLabel}. Applying the approved change now.`
+      : opts.action === "rejected"
+        ? `Human approval rejected by ${actor} for ${changeLabel}. No org changes were applied.`
+        : opts.action === "applied"
+          ? `The approved ${changeLabel} has been applied successfully.`
+          : `The approved ${changeLabel} could not be applied: ${opts.error ?? "unknown error"}.`;
+  insertMessage(sessionId, "assistant", content);
+  updateSession(sessionId, {
+    lastActivity: new Date().toISOString(),
+    ...(opts.action === "failed" ? { lastError: opts.error ?? "org change apply failed" } : {}),
+  });
+  context?.emit?.("session:updated", { sessionId });
 }
 
 /**
@@ -273,7 +303,7 @@ async function defaultRunCritique(request: OrgChangeRequest, context: ApiContext
 
   const prompt = buildCritiquePrompt(request, registry);
   const now = new Date().toISOString();
-  const existing = getSessionBySessionKey(HR_SESSION_KEY);
+  const existing = getReusableHrSession();
   const session = existing
     ? (updateSession(existing.id, {
         engine: engineName,

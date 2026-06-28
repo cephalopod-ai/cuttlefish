@@ -8,6 +8,10 @@ import { SettingsProvider } from "@/routes/settings-provider"
 // backend; stub that fetch so the test does no network and stays quiet.
 vi.mock("@/lib/api", () => ({ api: { getOnboarding: () => Promise.resolve({}) } }))
 
+vi.mock("@/hooks/use-approvals", () => ({
+  useApprovals: () => ({ data: [] }),
+}))
+
 function renderRibbon() {
   return render(
     <SettingsProvider>

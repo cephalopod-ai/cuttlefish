@@ -4,6 +4,7 @@ import type { Employee, CuttlefishConfig } from "../shared/types.js";
 import { CUTTLEFISH_HOME, ORG_DIR, CRON_JOBS, DOCS_DIR } from "../shared/paths.js";
 import { gatewayBaseUrl } from "../gateway/gateway-info.js";
 import { getAllParents } from "../gateway/org-hierarchy.js";
+import { INBOUND_MESSAGE_SAFETY_CONTEXT, isUntrustedSource } from "../sessions/untrusted-input.js";
 
 /**
  * Token budget strategy:
@@ -96,6 +97,11 @@ export function buildContext(opts: {
    * Undefined/empty for all normal sessions — section is omitted.
    */
   talkThreads?: TalkThreadSummary[];
+  /**
+   * HMAC-signed token scoped to this session. Embedded in the system prompt so
+   * the agent can authenticate gateway API calls without holding the admin token.
+   */
+  sessionToken?: string;
 }): string {
   const maxChars = opts.config?.context?.maxChars ?? DEFAULT_MAX_CONTEXT_CHARS;
   const sections: Section[] = [];
@@ -190,7 +196,7 @@ export function buildContext(opts: {
     sections.push({
       tier: Tier.ESSENTIAL,
       marker: "## Current configuration",
-      content: buildConfigContext(opts.config, gatewayUrl),
+      content: buildConfigContext(opts.config, gatewayUrl, opts.sessionToken),
       summary: "", // always included
     });
   }
@@ -202,6 +208,16 @@ export function buildContext(opts: {
       marker: "## Internet evidence safety",
       content: buildInternetEvidenceSafetyContext(gatewayUrl),
       summary: "", // always included
+    });
+  }
+
+  // ── ESSENTIAL: Inbound message trust boundary (connector / email sources) ──
+  if (isUntrustedSource(opts.source) || (opts.connectors && opts.connectors.length > 0)) {
+    sections.push({
+      tier: Tier.ESSENTIAL,
+      marker: "## Inbound message safety",
+      content: INBOUND_MESSAGE_SAFETY_CONTEXT,
+      summary: "", // always included — security-critical
     });
   }
 
@@ -257,7 +273,7 @@ export function buildContext(opts: {
     sections.push({
       tier: Tier.STANDARD,
       marker: "## Available connectors",
-      content: buildConnectorContext(opts.connectors, gatewayUrl),
+      content: buildConnectorContext(opts.connectors, gatewayUrl, opts.sessionToken),
       summary: `## Available connectors: ${opts.connectors.join(", ")}\nUse \`curl POST ${gatewayUrl}/api/connectors/<name>/send\` to send messages.`,
     });
   }
@@ -298,7 +314,7 @@ export function buildContext(opts: {
     sections.push({
       tier: Tier.STANDARD,
       marker: `## ${portalName} Gateway API`,
-      content: buildApiReference(gatewayUrl, portalName, opts.employee, supervisesCount),
+      content: buildApiReference(gatewayUrl, portalName, opts.employee, supervisesCount, opts.sessionToken),
       summary: `## ${portalName} Gateway API (${gatewayUrl})\nFull endpoint reference: CLAUDE.md / AGENTS.md.`,
     });
   }
@@ -457,7 +473,7 @@ function buildSessionContext(opts: {
   return ctx;
 }
 
-function buildConfigContext(config: CuttlefishConfig, gatewayUrl: string): string {
+function buildConfigContext(config: CuttlefishConfig, gatewayUrl: string, sessionToken?: string): string {
   const lines: string[] = [`## Current configuration`];
   lines.push(`- Gateway: ${gatewayUrl}`);
   lines.push(`- Default engine: ${config.engines.default}`);
@@ -485,7 +501,11 @@ function buildConfigContext(config: CuttlefishConfig, gatewayUrl: string): strin
   if (config.email?.enabled && config.email.inboxes && config.email.inboxes.length > 0) {
     lines.push(`- Email inboxes: ${config.email.inboxes.map((inbox) => inbox.id).join(", ")}`);
     lines.push(`- Inspect inboxes via \`GET ${gatewayUrl}/api/email/inboxes\`, \`POST ${gatewayUrl}/api/email/inboxes/<id>/check\`, \`GET ${gatewayUrl}/api/email/inboxes/<id>/messages?limit=N\`, and \`GET ${gatewayUrl}/api/email/messages/<messageId>\`.`);
-    lines.push(`- If gateway auth is enabled, read the bearer token from \`~/.cuttlefish/gateway.json\` and send \`Authorization: Bearer <token>\` with those requests.`);
+    if (sessionToken) {
+      lines.push(`- Authenticate these requests with your session token (see the Gateway API section): \`Authorization: Bearer <your session token>\`.`);
+    } else {
+      lines.push(`- If gateway auth is enabled, read the bearer token from \`~/.cuttlefish/gateway.json\` and send \`Authorization: Bearer <token>\` with those requests.`);
+    }
   }
   return lines.join("\n");
 }
@@ -670,10 +690,11 @@ function buildKnowledgeContextUncached(): string | null {
   return lines.join("\n");
 }
 
-function buildConnectorContext(connectors: string[], gatewayUrl: string): string {
+function buildConnectorContext(connectors: string[], gatewayUrl: string, sessionToken?: string): string {
+  const authHeader = sessionToken ? ` -H 'Authorization: Bearer <your session token>'` : "";
   return [
     `## Available connectors: ${connectors.join(", ")}`,
-    `Send a message: \`curl -X POST ${gatewayUrl}/api/connectors/<name>/send -H 'Content-Type: application/json' -d '{"channel":"CHANNEL_ID","text":"message"}'\` (add \`"thread":"THREAD_TS"\` for a threaded reply).`,
+    `Send a message: \`curl -X POST ${gatewayUrl}/api/connectors/<name>/send -H 'Content-Type: application/json'${authHeader} -d '{"channel":"CHANNEL_ID","text":"message"}'\` (add \`"thread":"THREAD_TS"\` for a threaded reply).`,
     `Channel IDs are in \`~/.cuttlefish/config.yaml\`. You may send proactively (completed tasks, errors, status updates). Details: CLAUDE.md / AGENTS.md.`,
   ].join("\n");
 }
@@ -757,9 +778,11 @@ export function buildOnboardingContext(opts: {
  * was pure duplication. What remains dynamic is the live base URL and the
  * short list of calls each audience actually makes.
  */
-function buildApiReference(gatewayUrl: string, portalName: string, employee?: Employee, directReportCount = 0): string {
+function buildApiReference(gatewayUrl: string, portalName: string, employee?: Employee, directReportCount = 0, sessionToken?: string): string {
   const header = `## ${portalName} Gateway API (base URL: ${gatewayUrl})`;
-  const authLine = `Privileged endpoints require local gateway auth; the web UI and built-in delegation tools handle this automatically.`;
+  const authLine = sessionToken
+    ? `Your session token (valid for 30 days): \`${sessionToken}\` — send as \`Authorization: Bearer <token>\` to authenticate API calls. Do not share or log this token.`
+    : `Privileged endpoints require local gateway auth; the web UI and built-in delegation tools handle this automatically.`;
   const attachmentsLine =
     `- Push a file/image into this chat (web view): \`curl -X POST ${gatewayUrl}/api/sessions/<your-session-id>/attachments -H 'Content-Type: application/json' -d '{"path":"/abs/path","text":"caption"}'\``;
   if (!employee) {

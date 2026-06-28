@@ -45,6 +45,12 @@ export interface NormalizedEmailPayload {
   attachments: NormalizedAttachmentPayload[];
 }
 
+export const MAX_RAW_MESSAGE_BYTES = 25 * 1024 * 1024;
+export const MAX_ATTACHMENTS = 20;
+export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+export const MAX_TOTAL_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+export const MAX_TEXT_BODY_CHARS = 200_000;
+
 function cleanAddressList(value: ParsedAddressList | undefined): string[] {
   return value?.value?.map((entry) => entry.address).filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0) ?? [];
 }
@@ -75,14 +81,24 @@ export async function normalizeEmail(
   raw: Buffer,
 ): Promise<NormalizedEmailPayload> {
   const mail = await simpleParser(raw) as ParsedMailLike;
-  const attachments: NormalizedAttachmentPayload[] = mail.attachments.map((attachment, index) => ({
-    id: attachmentId(providerMessageId, index, attachment.filename || `attachment-${index + 1}`),
-    filename: attachment.filename || `attachment-${index + 1}`,
-    contentType: attachment.contentType || "application/octet-stream",
-    size: attachment.size ?? attachment.content.length,
-    content: attachment.content,
-    contentId: attachment.cid ?? null,
-  }));
+  const attachments: NormalizedAttachmentPayload[] = [];
+  let totalAttachmentBytes = 0;
+  for (let index = 0; index < mail.attachments.length; index++) {
+    if (attachments.length >= MAX_ATTACHMENTS) break;
+    const attachment = mail.attachments[index];
+    const size = attachment.size ?? attachment.content.length;
+    if (size > MAX_ATTACHMENT_BYTES) continue;
+    if (totalAttachmentBytes + size > MAX_TOTAL_ATTACHMENT_BYTES) break;
+    totalAttachmentBytes += size;
+    attachments.push({
+      id: attachmentId(providerMessageId, index, attachment.filename || `attachment-${index + 1}`),
+      filename: attachment.filename || `attachment-${index + 1}`,
+      contentType: attachment.contentType || "application/octet-stream",
+      size,
+      content: attachment.content,
+      contentId: attachment.cid ?? null,
+    });
+  }
   const recordId = emailMessageId(inbox.id, providerMessageId);
   const attachmentRecords: EmailAttachmentRecord[] = attachments.map((attachment) => ({
     id: attachment.id,
@@ -107,7 +123,7 @@ export async function normalizeEmail(
       ccAddresses: cleanAddressList(mail.cc),
       subject: mail.subject ?? null,
       receivedAt: mail.date ? mail.date.toISOString() : null,
-      textBody: mail.text ?? "",
+      textBody: (mail.text ?? "").slice(0, MAX_TEXT_BODY_CHARS),
       htmlBody: typeof mail.html === "string" ? mail.html : null,
       headers: headerMap(mail),
       attachments: attachmentRecords,

@@ -56,6 +56,24 @@ function validateStringOrStringArray(problems: string[], path: string, value: un
   if (!valid) problems.push(`${path} must be a string or array of strings`);
 }
 
+
+function hasControlChars(s: string): boolean {
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c <= 0x1f || c === 0x7f) return true;
+  }
+  return false;
+}
+function validateExecString(problems: string[], path: string, value: unknown): void {
+  if (typeof value !== "string") {
+    problems.push(`${path} must be a string (got ${typeof value})`);
+    return;
+  }
+  if (hasControlChars(value)) {
+    problems.push(`${path} must not contain control characters or newlines`);
+  }
+}
+
 function validateWorkspaces(problems: string[], value: unknown): void {
   if (!isPlainObject(value)) {
     problems.push("workspaces must be a mapping");
@@ -114,7 +132,7 @@ function validateEngineConfig(
     return null;
   }
   pushUnknownKeys(problems, value, allowed, path);
-  if (value.bin !== undefined) validateString(problems, `${path}.bin`, value.bin);
+  if (value.bin !== undefined) validateExecString(problems, `${path}.bin`, value.bin);
   if (value.model !== undefined) validateString(problems, `${path}.model`, value.model);
   if (value.effortLevel !== undefined) validateString(problems, `${path}.effortLevel`, value.effortLevel);
   if (value.childEffortOverride !== undefined) validateString(problems, `${path}.childEffortOverride`, value.childEffortOverride);
@@ -384,6 +402,7 @@ function validateEmailInbox(problems: string[], path: string, value: unknown): v
     "useTls",
     "folder",
     "autoIngest",
+    "allowFrom",
     "unreadOnly",
     "maxMessagesPerPoll",
     "maxMessageBytes",
@@ -398,6 +417,7 @@ function validateEmailInbox(problems: string[], path: string, value: unknown): v
   if (value.useTls !== undefined) validateBoolean(problems, `${path}.useTls`, value.useTls);
   if (value.folder !== undefined) validateString(problems, `${path}.folder`, value.folder);
   if (value.autoIngest !== undefined) validateBoolean(problems, `${path}.autoIngest`, value.autoIngest);
+  if (value.allowFrom !== undefined) validateStringArray(problems, `${path}.allowFrom`, value.allowFrom);
   if (value.unreadOnly !== undefined) validateBoolean(problems, `${path}.unreadOnly`, value.unreadOnly);
   if (value.maxMessagesPerPoll !== undefined) validateNumber(problems, `${path}.maxMessagesPerPoll`, value.maxMessagesPerPoll);
   if (value.maxMessageBytes !== undefined) validateNumber(problems, `${path}.maxMessageBytes`, value.maxMessageBytes);
@@ -504,7 +524,7 @@ function validateMcp(
         }
         pushUnknownKeys(problems, server, ["enabled", "command", "args", "env", "type", "url", "headers"], `mcp.custom.${name}`);
         if (server.enabled !== undefined) validateBoolean(problems, `mcp.custom.${name}.enabled`, server.enabled);
-        if (server.command !== undefined) validateString(problems, `mcp.custom.${name}.command`, server.command);
+        if (server.command !== undefined) validateExecString(problems, `mcp.custom.${name}.command`, server.command);
         if (server.args !== undefined) validateStringArray(problems, `mcp.custom.${name}.args`, server.args);
         if (server.type !== undefined) validateString(problems, `mcp.custom.${name}.type`, server.type);
         if (server.url !== undefined) validateString(problems, `mcp.custom.${name}.url`, server.url);

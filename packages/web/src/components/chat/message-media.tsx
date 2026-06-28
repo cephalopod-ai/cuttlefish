@@ -4,6 +4,7 @@ import { FileAttachment } from './file-attachment'
 import { VoiceMessage } from './voice-message'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { safeHttpUrl } from '@/lib/safe-url'
 
 /**
  * Thumbnail image with a shimmer skeleton while it loads/decodes, a cross-fade in
@@ -99,7 +100,7 @@ function ImageLightbox({
       {/* Controls */}
       <div className="absolute top-[var(--space-4)] right-[var(--space-4)] flex gap-[var(--space-2)]">
         <a
-          href={url}
+          href={safeHttpUrl(url) ?? undefined}
           download={name || 'image'}
           aria-label="Download image"
           onClick={(e) => e.stopPropagation()}
@@ -125,7 +126,7 @@ function ImageLightbox({
       </div>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={url}
+        src={safeHttpUrl(url) ?? undefined}
         alt={name || 'Image'}
         onClick={(e) => e.stopPropagation()}
         className="max-h-full max-w-full rounded-[var(--radius-md)] object-contain"
@@ -158,42 +159,54 @@ export function MessageMedia({ media, isUser }: { media: MediaAttachment[]; isUs
               : 'mt-[var(--space-2)] w-full max-w-[var(--chat-media-single,440px)]'
           }
         >
-          {images.map((m, mi) => (
-            <button
-              key={`img-${mi}`}
-              type="button"
-              onClick={() => setLightbox({ url: m.url, name: m.name })}
-              aria-label={`Open ${m.name || 'image'}`}
-              className="block overflow-hidden rounded-[var(--radius-lg)] p-0 border-0 bg-transparent cursor-pointer"
-            >
-              <LoadingImage
-                src={m.url}
-                alt={m.name || 'Image'}
-                variant={images.length > 1 ? 'grid' : 'single'}
-              />
-            </button>
-          ))}
+          {images.map((m, mi) => {
+            const safeUrl = safeHttpUrl(m.url)
+            if (!safeUrl) return null
+            return (
+              <button
+                key={`img-${mi}`}
+                type="button"
+                onClick={() => setLightbox({ url: safeUrl, name: m.name })}
+                aria-label={`Open ${m.name || 'image'}`}
+                className="block overflow-hidden rounded-[var(--radius-lg)] p-0 border-0 bg-transparent cursor-pointer"
+              >
+                <LoadingImage
+                  src={safeUrl}
+                  alt={m.name || 'Image'}
+                  variant={images.length > 1 ? 'grid' : 'single'}
+                />
+              </button>
+            )
+          })}
         </div>
       )}
 
-      {audio.map((m, mi) => (
-        <div key={`audio-${mi}`} className="mt-[var(--space-2)]">
-          <VoiceMessage src={m.url} duration={m.duration || 0} waveform={m.waveform || []} isUser={isUser} />
-        </div>
-      ))}
+      {audio.map((m, mi) => {
+        const safeUrl = safeHttpUrl(m.url)
+        if (!safeUrl) return null
+        return (
+          <div key={`audio-${mi}`} className="mt-[var(--space-2)]">
+            <VoiceMessage src={safeUrl} duration={m.duration || 0} waveform={m.waveform || []} isUser={isUser} />
+          </div>
+        )
+      })}
 
       {files.length > 0 && (
         <div className="mt-[var(--space-2)] flex flex-col gap-[var(--space-2)]">
-          {files.map((m, mi) => (
-            <FileAttachment
-              key={`file-${mi}`}
-              name={m.name || 'File'}
-              size={m.size}
-              mimeType={m.mimeType}
-              url={m.url}
-              isUser={isUser}
-            />
-          ))}
+          {files.map((m, mi) => {
+            const safeUrl = safeHttpUrl(m.url)
+            if (!safeUrl) return null
+            return (
+              <FileAttachment
+                key={`file-${mi}`}
+                name={m.name || 'File'}
+                size={m.size}
+                mimeType={m.mimeType}
+                url={safeUrl}
+                isUser={isUser}
+              />
+            )
+          })}
         </div>
       )}
 

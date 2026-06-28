@@ -50,6 +50,7 @@ const hoisted = vi.hoisted(() => {
       return session;
     }),
     getSessionBySessionKeyMock: vi.fn((sessionKey: string) => sessionsByKey.get(sessionKey)),
+    listSessionsMock: vi.fn(() => [...sessionsById.values()]),
     getMessagesMock: vi.fn(() => []),
     insertMessageMock: vi.fn(),
     updateSessionMock: vi.fn((id: string, updates: Record<string, unknown>) => {
@@ -72,6 +73,7 @@ const createApprovalMock = hoisted.createApprovalMock;
 const dispatchWebSessionRunMock = hoisted.dispatchWebSessionRunMock;
 const createSessionMock = hoisted.createSessionMock;
 const getSessionBySessionKeyMock = hoisted.getSessionBySessionKeyMock;
+const listSessionsMock = hoisted.listSessionsMock;
 const getMessagesMock = hoisted.getMessagesMock;
 const insertMessageMock = hoisted.insertMessageMock;
 const updateSessionMock = hoisted.updateSessionMock;
@@ -79,6 +81,7 @@ const updateSessionMock = hoisted.updateSessionMock;
 vi.mock("../../sessions/registry.js", () => ({
   createSession: hoisted.createSessionMock,
   getSessionBySessionKey: hoisted.getSessionBySessionKeyMock,
+  listSessions: hoisted.listSessionsMock,
   getMessages: hoisted.getMessagesMock,
   insertMessage: hoisted.insertMessageMock,
   updateSession: hoisted.updateSessionMock,
@@ -146,6 +149,7 @@ beforeEach(() => {
   dispatchWebSessionRunMock.mockClear();
   createSessionMock.mockClear();
   getSessionBySessionKeyMock.mockClear();
+  listSessionsMock.mockClear();
   getMessagesMock.mockClear();
   insertMessageMock.mockClear();
   updateSessionMock.mockClear();
@@ -223,6 +227,38 @@ describe("submitOrgChange — critique pipeline", () => {
     expect(updated.hrCritique).toMatch(/recommend/);
     expect(updated.approvalId).toBe("approval-1");
     expect(createApprovalMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("reuses a legacy hr-manager web session even when the singleton key is missing", async () => {
+    writeEmployee("general", "hr-manager", "name: hr-manager\ndisplayName: HR Manager\ndepartment: general\nrank: manager\nengine: claude\nmodel: sonnet\npersona: Review org changes.\n");
+    hoisted.sessionsById.set("legacy-hr", {
+      id: "legacy-hr",
+      employee: "hr-manager",
+      source: "web",
+      sourceRef: "web:legacy-hr",
+      sessionKey: "web:legacy-hr",
+      status: "idle",
+      lastActivity: new Date().toISOString(),
+    });
+    const ctx = {
+      ...(fakeContext() as Record<string, unknown>),
+      sessionManager: { getEngine: () => ({}) },
+    } as never;
+
+    const result = await submitOrgChange(
+      { changeType: "create_agent", employeeName: "ui-test-reviewer", proposed: VALID_HIRE, proposedBy: "user" },
+      ctx,
+    );
+
+    await waitForStatus(result.request.id, "pending_approval");
+
+    expect(createSessionMock).not.toHaveBeenCalled();
+    expect(listSessionsMock).toHaveBeenCalled();
+    expect(updateSessionMock).toHaveBeenCalledWith(
+      "legacy-hr",
+      expect.objectContaining({ status: "running" }),
+    );
+    expect(createApprovalMock).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "legacy-hr" }));
   });
 
   it("auto-applies a low-risk cosmetic edit without an approval gate", async () => {

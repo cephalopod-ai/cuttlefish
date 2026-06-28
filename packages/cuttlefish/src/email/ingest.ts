@@ -1,5 +1,6 @@
 import { getMessages, insertMessage } from "../sessions/registry.js";
 import type { EmailMessageRecord } from "../shared/types.js";
+import { wrapUntrustedMessage } from "../sessions/untrusted-input.js";
 
 /** Stable per-message annotation header. Includes the provider message id so the
  *  same email is identifiable within a thread session (each thread reuses one
@@ -16,7 +17,8 @@ export function buildEmailIngestPrompt(message: EmailMessageRecord): string {
   const subject = nonEmpty(message.subject, "(no subject)");
   const from = nonEmpty(message.fromAddress, "unknown sender");
   const receivedAt = nonEmpty(message.receivedAt, "unknown time");
-  const body = message.textBody.trim() || "[No plain-text body available. Review the attached artifacts and HTML body if needed.]";
+  const rawBody = message.textBody.trim() || "[No plain-text body available. Review the attached artifacts and HTML body if needed.]";
+  const body = wrapUntrustedMessage(rawBody, { source: "email", user: from });
   const attachmentLines = message.attachments.length > 0
     ? message.attachments.map((attachment) => `- ${attachment.filename} (${attachment.contentType}, ${attachment.size} bytes)`).join("\n")
     : "- none";
@@ -54,12 +56,13 @@ export function annotateEmailSession(sessionId: string, message: EmailMessageRec
   if (alreadyAnnotated) return false;
   const subject = nonEmpty(message.subject, "(no subject)");
   const from = nonEmpty(message.fromAddress, "unknown sender");
+  const rawBodyAnnotation = message.textBody.trim() || "[No plain-text body available.]";
   const summary = [
     marker,
     `From: ${from}`,
     `Subject: ${subject}`,
     "",
-    message.textBody.trim() || "[No plain-text body available.]",
+    wrapUntrustedMessage(rawBodyAnnotation, { source: "email", user: from }),
   ].join("\n");
   insertMessage(sessionId, "user", summary);
   return true;

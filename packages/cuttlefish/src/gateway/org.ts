@@ -367,6 +367,10 @@ export function validateEmployeeUpdate(
     if (!Array.isArray(v) || !v.every((x) => typeof x === "string")) {
       return { ok: false, error: "cliFlags must be an array of strings" };
     }
+    const badFlag = (v as string[]).find((f) => /[ -]/.test(f));
+    if (badFlag !== undefined) {
+      return { ok: false, error: "cliFlags entries must not contain control characters or newlines" };
+    }
     updates.cliFlags = v as string[];
   }
 
@@ -499,6 +503,8 @@ export function validateEmployeeCreate(
 
   const department = typeof body.department === "string" ? body.department.trim() : "";
   if (!department) return { ok: false, error: "department must be a non-empty string" };
+  if (path.isAbsolute(department)) return { ok: false, error: "department must not be an absolute path" };
+  if (department.includes("..")) return { ok: false, error: "department must not contain '..' traversal" };
 
   const persona = typeof body.persona === "string" ? body.persona.trim() : "";
   if (!persona) return { ok: false, error: "persona must be a non-empty string" };
@@ -728,6 +734,11 @@ export function buildEmployeeCreateData(employee: EmployeeCreate): Record<string
 
 export function createEmployeeYaml(employee: EmployeeCreate): boolean {
   const departmentDir = path.join(ORG_DIR, employee.department);
+  const resolvedDir = path.resolve(departmentDir);
+  const resolvedOrg = path.resolve(ORG_DIR);
+  if (!resolvedDir.startsWith(resolvedOrg + path.sep) && resolvedDir !== resolvedOrg) {
+    throw new Error(`Department path is outside ORG_DIR`);
+  }
   const filePath = path.join(departmentDir, `${employee.name}.yaml`);
   if (fs.existsSync(filePath)) return false;
 

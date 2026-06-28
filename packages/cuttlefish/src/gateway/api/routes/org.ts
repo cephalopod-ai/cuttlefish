@@ -350,8 +350,8 @@ export async function handleOrgRoutes(
   params = matchRoute("/api/org/change-requests/:id/approve", pathname);
   if (method === "POST" && params) {
     const { getChangeRequest, updateChangeRequestStatus } = await import("../../org-changes.js");
-    const { applyOrgChange } = await import("../../hr-steward.js");
-    const { resolveApproval } = await import("../../approvals.js");
+    const { applyOrgChange, recordHrDecisionMessage } = await import("../../hr-steward.js");
+    const { getApproval, resolveApproval } = await import("../../approvals.js");
     const request = getChangeRequest(params.id);
     if (!request) {
       notFound(res);
@@ -362,19 +362,28 @@ export async function handleOrgRoutes(
       return true;
     }
     const actor = resolveUserHeader(req.headers, context.getConfig().gateway.userHeader);
+    const approvalSessionId = request.approvalId ? (getApproval(request.approvalId)?.sessionId ?? null) : null;
     if (request.approvalId) {
       try {
-        resolveApproval(request.approvalId, "approved", actor);
+        const resolved = resolveApproval(request.approvalId, "approved", actor);
+        context.emit("approval:resolved", {
+          approvalId: resolved.id,
+          sessionId: resolved.sessionId,
+          state: "approved",
+        });
       } catch {
         /* already resolved — proceed to apply idempotently */
       }
     }
+    recordHrDecisionMessage(approvalSessionId, request, { action: "approved", actor }, context);
     updateChangeRequestStatus(params.id, "approved");
     const applied = await applyOrgChange(request, context);
     if (!applied.ok) {
+      recordHrDecisionMessage(approvalSessionId, request, { action: "failed", actor, error: applied.error ?? null }, context);
       json(res, { status: "error", error: applied.error, changeRequest: getChangeRequest(params.id) }, 400);
       return true;
     }
+    recordHrDecisionMessage(approvalSessionId, request, { action: "applied", actor }, context);
     json(res, { status: "ok", changeRequest: getChangeRequest(params.id) });
     return true;
   }
@@ -382,21 +391,29 @@ export async function handleOrgRoutes(
   params = matchRoute("/api/org/change-requests/:id/reject", pathname);
   if (method === "POST" && params) {
     const { getChangeRequest, updateChangeRequestStatus } = await import("../../org-changes.js");
-    const { resolveApproval } = await import("../../approvals.js");
+    const { recordHrDecisionMessage } = await import("../../hr-steward.js");
+    const { getApproval, resolveApproval } = await import("../../approvals.js");
     const request = getChangeRequest(params.id);
     if (!request) {
       notFound(res);
       return true;
     }
     const actor = resolveUserHeader(req.headers, context.getConfig().gateway.userHeader);
+    const approvalSessionId = request.approvalId ? (getApproval(request.approvalId)?.sessionId ?? null) : null;
     if (request.approvalId) {
       try {
-        resolveApproval(request.approvalId, "rejected", actor);
+        const resolved = resolveApproval(request.approvalId, "rejected", actor);
+        context.emit("approval:resolved", {
+          approvalId: resolved.id,
+          sessionId: resolved.sessionId,
+          state: "rejected",
+        });
       } catch {
         /* already resolved */
       }
     }
     const updated = updateChangeRequestStatus(params.id, "rejected");
+    recordHrDecisionMessage(approvalSessionId, request, { action: "rejected", actor }, context);
     context.emit("org-change:updated", { id: params.id, status: "rejected" });
     json(res, { status: "ok", changeRequest: updated });
     return true;

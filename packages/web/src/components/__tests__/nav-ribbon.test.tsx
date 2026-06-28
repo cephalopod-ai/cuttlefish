@@ -1,9 +1,15 @@
-import { describe, it, expect, vi } from "vitest"
+import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, fireEvent } from "@testing-library/react"
 import { within } from "@testing-library/react"
 import { MemoryRouter } from "react-router-dom"
 import { NavRibbon } from "../pill-nav"
 import { NAV_ITEMS } from "@/lib/nav"
+
+const useApprovalsMock = vi.fn<() => { data: Array<{ id: string }> }>(() => ({ data: [] }))
+
+vi.mock("@/hooks/use-approvals", () => ({
+  useApprovals: () => useApprovalsMock(),
+}))
 
 function renderRibbon(props: { listOpen: boolean; path?: string }) {
   return render(
@@ -14,6 +20,10 @@ function renderRibbon(props: { listOpen: boolean; path?: string }) {
 }
 
 describe("NavRibbon", () => {
+  beforeEach(() => {
+    useApprovalsMock.mockReturnValue({ data: [] })
+  })
+
   it("renders a brand-only top slot (no fold toggle) when mounted without list props", () => {
     const { container } = render(
       <MemoryRouter initialEntries={["/org"]}>
@@ -66,6 +76,12 @@ describe("NavRibbon", () => {
     expect(active.className).not.toContain("--accent")
     // A non-active item carries no aria-current.
     expect(screen.getByLabelText("Cron").getAttribute("aria-current")).toBeNull()
+  })
+
+  it("shows a pending-approvals badge on the approvals icon", () => {
+    useApprovalsMock.mockReturnValue({ data: [{ id: "a1" }, { id: "a2" }, { id: "a3" }] })
+    renderRibbon({ listOpen: true, path: "/org" })
+    expect(screen.getByLabelText("3 approvals waiting")).toBeTruthy()
   })
 
   // Chat icon is OPEN-ONLY: reveals a collapsed list while already on /chat,

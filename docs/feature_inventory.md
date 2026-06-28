@@ -67,12 +67,14 @@
 - `packages/web/src/routes/org/page.tsx`
 - `packages/web/src/components/org/employee-create-form.tsx`
 - `packages/web/src/components/org/employee-editor.tsx`
+- `packages/web/src/components/org/employee-node.tsx`
 - `/org` can now open a right-side "Add agent" form that creates a new org
   employee YAML file through the gateway.
 - The create/edit surfaces cover agent id, display name, department, reports-to,
   level (`manager`, `senior`, `junior` mapped to internal `employee` rank),
   engine/model/effort, including the local `ollama`, `kilo`, and `aider` engine options, optional same-engine fallback model, persona,
   CLI flags, and always-notify behavior.
+- Employee, manager, and executive org-map cards also expose a compact quick-chat affordance that opens the main chat workspace, using the existing employee preselection deep-link for non-executive employees.
 
 ### Settings orchestration controls
 - `packages/web/src/routes/settings/page.tsx`

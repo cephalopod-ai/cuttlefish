@@ -7,10 +7,12 @@ import type {
 } from "../shared/types.js";
 import { logger } from "../shared/logger.js";
 import {
+  claimPendingExternalOutboxItems,
   enqueueExternalOutboxItem,
   listPendingExternalOutboxItems,
   markExternalOutboxDelivered,
   markExternalOutboxFailed,
+  releaseExternalOutboxClaims,
 } from "../sessions/registry.js";
 import type { SessionMessage } from "../sessions/registry/messages.js";
 import { buildCheckpointDecisionEnvelope, buildSessionSummaryEnvelope } from "./envelopes.js";
@@ -45,10 +47,18 @@ export async function flushKnowledgeOutboxBatch(input: {
   retryBaseDelayMs: number;
   retryMaxDelayMs: number;
 }): Promise<{ attempted: number; delivered: number; failed: number }> {
-  const items = listPendingExternalOutboxItems(input.batchSize);
+  const items = claimPendingExternalOutboxItems(input.batchSize);
   if (items.length === 0) return { attempted: 0, delivered: 0, failed: 0 };
 
-  const result = await input.sink.emit(items.map((item) => item.envelope));
+  let result: Awaited<ReturnType<KnowledgeSink["emit"]>>;
+  try {
+    result = await input.sink.emit(items.map((item) => item.envelope));
+  } catch (err) {
+    // Sink threw — release all claims back to pending so the next relay can retry.
+    releaseExternalOutboxClaims(items.map((i) => i.id));
+    throw err;
+  }
+
   let delivered = 0;
   let failed = 0;
   for (let index = 0; index < items.length; index += 1) {

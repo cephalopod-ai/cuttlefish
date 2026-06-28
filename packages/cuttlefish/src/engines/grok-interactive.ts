@@ -16,6 +16,7 @@ import {
   parseGrokJsonLine,
   type GrokParsedLine,
 } from "./grok.js";
+import { buildEngineEnv } from "../shared/engine-env.js";
 
 const TURN_TIMEOUT_MS = 14 * 24 * 60 * 60 * 1000;
 const DONE_DEBOUNCE_MS = 60_000;
@@ -336,19 +337,16 @@ export class GrokInteractiveEngine implements InterruptibleEngine, PtyViewEngine
   }
 
   private buildEnv(): Record<string, string> {
-    const env: Record<string, string> = {};
-    for (const [k, v] of Object.entries(process.env)) {
-      if (k === "CLAUDECODE" || k.startsWith("CLAUDE_CODE_")) continue;
-      if (k === "CODEX" || k.startsWith("CODEX_")) continue;
-      if (v !== undefined) env[k] = v;
-    }
-    env.TERM = "xterm-256color";
-    // The TUI blocks prompt execution while inherited MCP compatibility servers
-    // initialize. Cuttlefish exposes its own MCP/connectors; keep the Grok PTY clean
-    // and deterministic unless the operator explicitly opts back in.
-    env.GROK_CLAUDE_MCPS_ENABLED = "false";
-    env.GROK_CURSOR_MCPS_ENABLED = "false";
-    return env;
+    return buildEngineEnv(
+      {
+        TERM: "xterm-256color",
+        // The TUI blocks prompt execution while inherited MCP compatibility servers
+        // initialize. Keep the Grok PTY clean unless the operator explicitly opts in.
+        GROK_CLAUDE_MCPS_ENABLED: "false",
+        GROK_CURSOR_MCPS_ENABLED: "false",
+      },
+      { stripPrefixes: ["CLAUDE_CODE_", "CODEX_"] },
+    );
   }
 
   private spawnParamsChanged(cuttlefishSessionId: string, opts: EngineRunOpts | PtyIdleSpawnOpts, sessionId?: string): boolean {

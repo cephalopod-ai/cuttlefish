@@ -8,6 +8,7 @@ import { THEMES, type ThemeId } from "@/lib/themes"
 import { NAV_ITEMS, applyNavOrder } from "@/lib/nav"
 import { useBreadcrumbs } from "@/context/breadcrumb-context"
 import { cn } from "@/lib/utils"
+import { useApprovals } from "@/hooks/use-approvals"
 
 // ---------------------------------------------------------------------------
 // Frosted pill primitives (mockup _shared.css `.pill` recipe)
@@ -232,6 +233,7 @@ function RibbonRow({
   label,
   isActive,
   href,
+  badgeCount,
   onClick,
   draggable,
   dragging,
@@ -244,6 +246,7 @@ function RibbonRow({
   label: string
   isActive?: boolean
   href?: string
+  badgeCount?: number
   // Receives the click event so a link row can preventDefault a no-op
   // same-route navigation (used by the Chat icon to reveal the list instead).
   onClick?: (e: ReactMouseEvent) => void
@@ -263,6 +266,14 @@ function RibbonRow({
       <span className="flex items-center justify-center transition-transform duration-150 [transition-timing-function:var(--ease-snappy)] motion-safe:group-hover/row:-translate-y-px motion-safe:group-hover/row:scale-110 motion-safe:group-active/row:scale-95 motion-reduce:transform-none group-data-[dragging=true]/ribbon:!transform-none">
         <Icon size={20} className="shrink-0" />
       </span>
+      {typeof badgeCount === "number" && badgeCount > 0 ? (
+        <span
+          aria-label={`${badgeCount} approval${badgeCount === 1 ? "" : "s"} waiting`}
+          className="absolute -right-1.5 -top-1.5 inline-flex min-w-5 items-center justify-center rounded-full border border-[var(--bg-primary)] bg-[var(--system-orange,#ff9500)] px-1 text-[10px] font-[var(--weight-bold)] leading-5 text-white shadow-[var(--shadow-subtle)]"
+        >
+          {badgeCount > 99 ? "99+" : badgeCount}
+        </span>
+      ) : null}
       {/* Piano reveal — floats past the rail edge; flex-centers vertically so the
           inner pill is free to animate on the X axis. */}
       <span aria-hidden className="pointer-events-none absolute inset-y-0 left-full z-50 ml-2 flex items-center group-data-[dragging=true]/ribbon:hidden">
@@ -303,6 +314,7 @@ export function NavRibbon({
   onToggleList?: () => void
 }) {
   const pathname = useLocation().pathname
+  const { data: pendingApprovals = [] } = useApprovals("pending")
   const { theme, setTheme } = useTheme()
   const { settings, setNavOrder } = useSettings()
   const portalName = settings.portalName ?? "Cuttlefish"
@@ -448,6 +460,7 @@ export function NavRibbon({
               label={item.label}
               href={item.href}
               isActive={isNavItemActive(item.href, pathname)}
+              badgeCount={item.href === "/approvals" ? pendingApprovals.length : undefined}
               onClick={item.href === "/" ? onChatIconClick : undefined}
               draggable
               dragging={draggingHref === item.href}

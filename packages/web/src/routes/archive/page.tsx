@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { safeHttpUrl } from '@/lib/safe-url'
 import { Archive, CalendarDays, MessageSquareText, Trash2 } from 'lucide-react'
 import { PageLayout } from '@/components/page-layout'
 import { useBreadcrumbs } from '@/context/breadcrumb-context'
@@ -57,15 +58,19 @@ function MessageBubble({ message }: { message: ArchivedMessage }) {
         ) : null}
         {message.media && message.media.length > 0 ? (
           <div className="mt-2 flex flex-col gap-1 text-xs">
-            {message.media.map((media, index) => (
-              <a
-                key={`${media.url}-${index}`}
-                href={media.url}
-                className={cn('underline-offset-2 hover:underline', isUser ? 'text-primary-foreground' : 'text-foreground')}
-              >
-                {media.name || media.url}
-              </a>
-            ))}
+            {message.media.map((media, index) => {
+              const safeUrl = safeHttpUrl(media.url)
+              return (
+                <a
+                  key={`${media.url}-${index}`}
+                  href={safeUrl ?? undefined}
+                  rel="noopener noreferrer"
+                  className={cn('underline-offset-2 hover:underline', isUser ? 'text-primary-foreground' : 'text-foreground')}
+                >
+                  {media.name || media.url}
+                </a>
+              )
+            })}
           </div>
         ) : null}
       </div>

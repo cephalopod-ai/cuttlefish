@@ -38,12 +38,15 @@ export {
   type MessageSearchResult,
 } from './registry/search.js';
 export {
+  EXTERNAL_OUTBOX_MAX_ATTEMPTS,
+  claimPendingExternalOutboxItems,
   enqueueExternalOutboxItem,
   getExternalOutboxItem,
   listExternalOutboxItems,
   listPendingExternalOutboxItems,
   markExternalOutboxDelivered,
   markExternalOutboxFailed,
+  releaseExternalOutboxClaims,
   type ExternalOutboxItem,
   type ExternalOutboxStatus,
 } from "./registry/external-outbox.js";

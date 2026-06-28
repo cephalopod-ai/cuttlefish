@@ -1,4 +1,6 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react"
+import { MessageSquare } from "lucide-react"
+import { Link } from "react-router-dom"
 import type { Employee } from "@/lib/api"
 import { EmployeeAvatar } from "@/components/ui/employee-avatar"
 import { deptHue } from "@/components/org/layout/dept-color"
@@ -13,6 +15,8 @@ function roleLabel(emp: EmployeeNodeData): string {
 export function EmployeeNode({ data, selected }: NodeProps) {
   const employee = data as EmployeeNodeData
   const isExec = employee.rank === "executive"
+  const employeeLabel = employee.displayName || employee.name
+  const chatTarget = isExec ? "/" : `/?employee=${encodeURIComponent(employee.name)}`
 
   return (
     <div
@@ -26,6 +30,20 @@ export function EmployeeNode({ data, selected }: NodeProps) {
             : "var(--shadow-subtle)",
       }}
     >
+      <Link
+        to={chatTarget}
+        aria-label={`Chat with ${employeeLabel}`}
+        className="nodrag nopan absolute right-[6px] top-[6px] z-10 flex h-7 w-7 items-center justify-center rounded-full border border-[var(--separator)] bg-[color-mix(in_srgb,var(--material-regular)_90%,transparent)] text-[var(--text-tertiary)] transition-colors duration-150 hover:text-[var(--accent)] hover:border-[color-mix(in_srgb,var(--accent)_35%,var(--separator))] hover:bg-[var(--fill-secondary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg)]"
+        onPointerDown={(event) => {
+          event.stopPropagation()
+        }}
+        onClick={(event) => {
+          event.stopPropagation()
+        }}
+      >
+        <MessageSquare size={14} aria-hidden />
+      </Link>
+
       {/* COO accent stripe — the only chromatic emphasis on a node */}
       {isExec && (
         <span
@@ -40,7 +58,7 @@ export function EmployeeNode({ data, selected }: NodeProps) {
         <div
           className={`${isExec ? "text-[length:var(--text-body)] font-[var(--weight-bold)] tracking-[var(--tracking-tight)]" : "text-[length:var(--text-subheadline)] font-[var(--weight-semibold)]"} text-[var(--text-primary)] whitespace-nowrap overflow-hidden text-ellipsis leading-[var(--leading-tight)]`}
         >
-          {employee.displayName || employee.name}
+          {employeeLabel}
         </div>
         <div className="text-[length:var(--text-caption1)] text-[var(--text-tertiary)] whitespace-nowrap overflow-hidden text-ellipsis">
           {roleLabel(employee)}

@@ -197,8 +197,8 @@ export function getQueuePauseStateFromDb(db: Database.Database): QueuePauseState
       pauseReason: typeof parsed.pauseReason === "string" ? parsed.pauseReason : null,
     };
   } catch {
-    logger.warn("orchestration DB has corrupt queue pause metadata; treating queue as unpaused");
-    return { queuePaused: false, pausedAt: null, pauseReason: null };
+    logger.warn("orchestration DB has corrupt queue pause metadata; failing closed (treating as paused)");
+    return { queuePaused: true, pausedAt: null, pauseReason: "corrupt pause metadata (failed closed)" };
   }
 }
 

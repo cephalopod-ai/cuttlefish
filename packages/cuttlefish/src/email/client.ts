@@ -8,11 +8,13 @@ export interface EmailFetchResult {
 
 export interface EmailMailboxClient {
   fetchUnread(inbox: EmailInboxConfig): Promise<EmailFetchResult[]>;
+  markSeen(inbox: EmailInboxConfig, providerMessageId: string): Promise<void>;
 }
 
 export class FakeEmailMailboxClient implements EmailMailboxClient {
   private readonly messages = new Map<string, EmailFetchResult[]>();
   private readonly failures = new Set<string>();
+  readonly seenIds: string[] = [];
 
   setMessages(inboxId: string, messages: EmailFetchResult[]): void {
     this.messages.set(inboxId, [...messages]);
@@ -25,6 +27,10 @@ export class FakeEmailMailboxClient implements EmailMailboxClient {
   async fetchUnread(inbox: EmailInboxConfig): Promise<EmailFetchResult[]> {
     if (this.failures.has(inbox.id)) throw new Error(`simulated inbox failure for ${inbox.id}`);
     return [...(this.messages.get(inbox.id) ?? [])];
+  }
+
+  async markSeen(_inbox: EmailInboxConfig, providerMessageId: string): Promise<void> {
+    this.seenIds.push(providerMessageId);
   }
 }
 
@@ -61,6 +67,27 @@ export class ImapEmailMailboxClient implements EmailMailboxClient {
         });
       }
       return out;
+    } finally {
+      await client.logout().catch(() => {});
+    }
+  }
+
+  async markSeen(inbox: EmailInboxConfig, providerMessageId: string): Promise<void> {
+    // providerMessageId is encoded as "${uidValidity}:${uid}"
+    const colonIdx = providerMessageId.indexOf(":");
+    if (colonIdx < 0) return;
+    const uid = providerMessageId.slice(colonIdx + 1);
+    if (!uid) return;
+    const client = new ImapFlow({
+      host: inbox.imapHost,
+      port: inbox.imapPort ?? 993,
+      secure: inbox.useTls !== false,
+      auth: { user: inbox.username, pass: inbox.password },
+    });
+    await client.connect();
+    try {
+      await client.mailboxOpen(inbox.folder || "INBOX");
+      await client.messageFlagsAdd({ uid: Number(uid) }, ["\\Seen"]);
     } finally {
       await client.logout().catch(() => {});
     }

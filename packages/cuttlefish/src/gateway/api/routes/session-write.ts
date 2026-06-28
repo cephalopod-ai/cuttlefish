@@ -12,7 +12,6 @@ import {
   enqueueQueueItem,
   getQueueItems,
   getSession,
-  getSessionBySessionKey,
   insertMessage,
   type UpdateSessionFields,
   updateSession,
@@ -47,6 +46,7 @@ import {
   redispatchPendingWebQueueItemsForSessionKey,
 } from "../session-dispatch.js";
 import { HR_EMPLOYEE_NAME, HR_SESSION_KEY } from "../../org-policy.js";
+import { getReusableHrSession } from "../../hr-session.js";
 import { acknowledgeLeaderAck } from "../../../sessions/leader-ack.js";
 
 function combinedResourceSpecs(body: Record<string, unknown>): unknown[] {
@@ -457,7 +457,7 @@ export async function handleSessionWriteRoutes(
     const singletonSessionKey = singletonEmployeeSessionKey(employeeName);
     const sessionKey = singletonSessionKey ?? `web:${Date.now()}`;
     const userId = resolveUserHeader(req.headers, config.gateway.userHeader);
-    const existingSingletonSession = singletonSessionKey ? getSessionBySessionKey(singletonSessionKey) : undefined;
+    const existingSingletonSession = singletonSessionKey ? getReusableHrSession() : undefined;
     let session = existingSingletonSession
       ? maybeRevertEngineOverride(existingSingletonSession)
       : createSession({

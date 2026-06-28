@@ -11,7 +11,7 @@ import { isSessionLiveRunning } from "../serialize-session.js";
 
 function checkInstanceHealth(port: number): Promise<boolean> {
   return new Promise((resolve) => {
-    const req = http.request({ hostname: "localhost", port, path: "/api/status", timeout: 2000 }, (res) => {
+    const req = http.request({ hostname: "localhost", port, path: "/api/healthz", timeout: 2000 }, (res) => {
       resolve(res.statusCode === 200);
       res.resume();
     });
@@ -32,6 +32,10 @@ export async function handleStatusRoutes(
   res: ServerResponse,
   context: ApiContext,
 ): Promise<boolean> {
+  if (method === "GET" && pathname === "/api/healthz") {
+    json(res, { status: "ok", uptime: process.uptime() });
+    return true;
+  }
   if (method === "GET" && pathname === "/api/status") {
     const config = context.getConfig();
     const checks: Array<{ name: string; status: "ok" | "degraded" | "error"; detail?: string }> = [];

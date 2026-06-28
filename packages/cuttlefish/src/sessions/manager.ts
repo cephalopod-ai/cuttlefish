@@ -45,6 +45,8 @@ import {
   rateLimitWaitingNotice,
 } from "./rate-limit-handler.js";
 import { finalizeManagedSessionTurn, maybeRevertEngineOverride, mergeTransportMeta } from "./manager-helpers.js";
+import { isUntrustedSource, wrapUntrustedMessage } from "./untrusted-input.js";
+import { createScopedSessionToken } from "../gateway/auth.js";
 export { mergeTransportMeta } from "./manager-helpers.js";
 
 export type RouteOptions = {
@@ -61,15 +63,18 @@ export class SessionManager {
   private connectorProvider: () => Map<string, Connector> = () => new Map();
   private notificationSink: SessionNotificationSink | undefined;
   private knowledgeSink: KnowledgeSink | undefined;
+  private apiToken: string | undefined;
 
   constructor(
     config: CuttlefishConfig,
     engines: Map<string, Engine>,
     connectorNames: string[] = [],
+    apiToken?: string,
   ) {
     this.config = config;
     this.engines = engines;
     this.connectorNames = connectorNames;
+    this.apiToken = apiToken;
   }
   setConnectorProvider(provider: () => Map<string, Connector>): void {
     this.connectorProvider = provider;
@@ -242,6 +247,7 @@ export class SessionManager {
         connectors: this.connectorNames,
         config: this.config,
         sessionId: session.id,
+        sessionToken: this.apiToken ? createScopedSessionToken(session.id, this.apiToken) : undefined,
         channelName: (msg.transportMeta?.channelName as string) || undefined,
         hierarchy,
       });
@@ -280,7 +286,9 @@ export class SessionManager {
       // If we previously switched engines while rate-limited, inject a sync transcript
       // so the original engine can resume with full context when it comes back online.
       const syncSinceIso = (session.transportMeta as any)?.claudeSyncSince;
-      let promptToRun = msg.text;
+      let promptToRun = isUntrustedSource(session.source)
+        ? wrapUntrustedMessage(msg.text, { source: session.source, user: msg.user })
+        : msg.text;
       const syncSinceMs = typeof syncSinceIso === "string" ? new Date(syncSinceIso).getTime() : NaN;
       const syncRequested = session.engine === "claude" && typeof syncSinceIso === "string" && Number.isFinite(syncSinceMs);
       if (syncRequested) {

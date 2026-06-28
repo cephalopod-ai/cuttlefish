@@ -5,6 +5,7 @@ import { appendRunLog } from "./jobs.js";
 import { scanOrg, findEmployee } from "../gateway/org.js";
 import { CronConnector } from "../connectors/cron/index.js";
 import type { SessionManager } from "../sessions/manager.js";
+import { getSession } from "../sessions/registry.js";
 
 export async function runCronJob(
   job: CronJob,
@@ -87,27 +88,48 @@ export async function runCronJob(
 
     const durationMs = Date.now() - startTime;
     const finishedAt = new Date().toISOString();
+    // Derive true status from the session's terminal state — route() resolving
+    // does not mean the turn succeeded; engine errors are recorded on the session.
+    const finalSessionId = routeResult?.sessionId ?? null;
+    const finalSession = finalSessionId ? getSession(finalSessionId) : undefined;
+    const sessionFailed = finalSession?.status === "error" || Boolean(finalSession?.lastError);
     const finalEntry: CronRunEntry = {
       runId,
       timestamp: finishedAt,
       startedAt,
       finishedAt,
       sessionKey,
-      sessionId: routeResult?.sessionId ?? null,
-      status: "success",
+      sessionId: finalSessionId,
+      status: sessionFailed ? "error" : "success",
       trigger,
       durationMs,
-      error: null,
+      error: sessionFailed ? (finalSession?.lastError ?? "session ended in error") : null,
       resultPreview: null,
     };
     appendRunLog(job.id, finalEntry);
-    logger.info(`Cron job "${job.name}" completed in ${durationMs}ms`);
+    if (sessionFailed) {
+      logger.error(`Cron job "${job.name}" failed (session error) in ${durationMs}ms: ${finalEntry.error}`);
+    } else {
+      logger.info(`Cron job "${job.name}" completed in ${durationMs}ms`);
+    }
 
+    const alertConnector = config.cron?.alertConnector;
+    const alertChannel = config.cron?.alertChannel;
+    // Send failure alert if session ended in error
+    if (sessionFailed && alertConnector && alertChannel) {
+      const alertTarget = connectors.get(alertConnector);
+      if (alertTarget) {
+        await alertTarget.sendMessage(
+          { channel: alertChannel },
+          `Cron job "${job.name}" failed (session error):\n${String(finalEntry.error).slice(0, 500)}`,
+        ).catch((alertErr) => {
+          logger.error(`Failed to send cron failure alert: ${alertErr instanceof Error ? alertErr.message : alertErr}`);
+        });
+      }
+    }
     // Latency alert: warn if job exceeded threshold
     const thresholdMs = config.cron?.alertThresholdMs;
     if (thresholdMs && durationMs > thresholdMs) {
-      const alertConnector = config.cron?.alertConnector;
-      const alertChannel = config.cron?.alertChannel;
       if (alertConnector && alertChannel) {
         const alertTarget = connectors.get(alertConnector);
         if (alertTarget) {
@@ -115,7 +137,7 @@ export async function runCronJob(
           const threshMins = (thresholdMs / 60_000).toFixed(1);
           await alertTarget.sendMessage(
             { channel: alertChannel },
-            `🐢 Cron latency alert: "${job.name}" (${job.id}) exceeded threshold — took ${mins}min (threshold: ${threshMins}min). Session: ${routeResult?.sessionId ?? "unknown"}`,
+            `Cron latency alert: "${job.name}" (${job.id}) exceeded threshold — took ${mins}min (threshold: ${threshMins}min). Session: ${finalSessionId ?? "unknown"}`,
           ).catch((alertErr) => {
             logger.error(`Failed to send latency alert: ${alertErr instanceof Error ? alertErr.message : alertErr}`);
           });

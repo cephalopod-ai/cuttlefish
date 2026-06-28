@@ -5,6 +5,7 @@ import { logger } from "../shared/logger.js";
 import { resolveBin } from "../shared/resolve-bin.js";
 import { HermesRpc } from "./hermes-jsonrpc.js";
 import { mapSessionUpdate, extractPromptText } from "./hermes-protocol.js";
+import { buildEngineEnv } from "../shared/engine-env.js";
 
 const TURN_TIMEOUT_MS = 14 * 24 * 60 * 60 * 1000;
 const HANDSHAKE_TIMEOUT_MS = 60_000;
@@ -38,7 +39,7 @@ export class HermesAcpEngine implements InterruptibleEngine {
       stdio: ["pipe", "pipe", "ignore"],
       cwd,
       detached: process.platform !== "win32",
-      env: { ...process.env, HERMES_YOLO_MODE: "1", HERMES_ACCEPT_HOOKS: "1" },
+      env: buildEngineEnv({ HERMES_YOLO_MODE: "1", HERMES_ACCEPT_HOOKS: "1" }),
     });
     const rpc = new HermesRpc(child.stdin!, child.stdout!);
     return {
