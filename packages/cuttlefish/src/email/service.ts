@@ -8,7 +8,7 @@ import { sanitizeUploadFilename } from "../gateway/files/storage.js";
 import { getEmailIngestState, getEmailMessage, listEmailInboxHealth, listEmailMessages, setEmailInboxHealth, upsertEmailIngestState, upsertEmailMessage } from "./store.js";
 import type { EmailMailboxClient } from "./client.js";
 import { normalizeEmail } from "./normalize.js";
-import { getFile, insertFile } from "../sessions/registry.js";
+import { insertFile } from "../sessions/registry.js";
 
 export interface EmailServiceDeps {
   client: EmailMailboxClient;
@@ -30,17 +30,6 @@ async function persistAttachment(messageId: string, attachment: {
   contentId?: string | null;
 }): Promise<EmailAttachmentRecord> {
   const artifactId = crypto.randomUUID();
-  const existing = getFile(artifactId);
-  if (existing) {
-    return {
-      id: attachment.id,
-      filename: existing.filename,
-      contentType: existing.mimetype ?? attachment.contentType,
-      size: existing.size,
-      artifactId: existing.id,
-      contentId: attachment.contentId ?? null,
-    };
-  }
   const filename = sanitizeUploadFilename(attachment.filename);
   const dir = path.join(FILES_DIR, artifactId);
   fs.mkdirSync(dir, { recursive: true });

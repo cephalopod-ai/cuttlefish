@@ -209,6 +209,46 @@ describe("validateConfigShape", () => {
     expect(problems.some((p) => p.includes("unknown connectors.slack config keys: extra"))).toBe(true);
   });
 
+  it("accepts a valid email inbox configuration", () => {
+    expect(validateConfigShape({
+      engines: { claude: { bin: "claude", model: "opus" } },
+      email: {
+        enabled: true,
+        pollIntervalSeconds: 60,
+        inboxes: [{
+          id: "support",
+          label: "Support",
+          address: "support@example.com",
+          username: "support@example.com",
+          password: "app-password",
+          imapHost: "imap.example.com",
+          imapPort: 993,
+          useTls: true,
+          folder: "INBOX",
+          autoIngest: true,
+          unreadOnly: true,
+          maxMessagesPerPoll: 10,
+        }],
+      },
+    })).toEqual([]);
+  });
+
+  it("rejects duplicate inbox ids and more than three inboxes", () => {
+    const problems = validateConfigShape({
+      engines: { claude: { bin: "claude", model: "opus" } },
+      email: {
+        inboxes: [
+          { id: "ops", address: "ops1@example.com", username: "ops1", password: "pw", imapHost: "imap.example.com" },
+          { id: "ops", address: "ops2@example.com", username: "ops2", password: "pw", imapHost: "imap.example.com" },
+          { id: "finance", address: "finance@example.com", username: "finance", password: "pw", imapHost: "imap.example.com" },
+          { id: "sales", address: "sales@example.com", username: "sales", password: "pw", imapHost: "imap.example.com" },
+        ],
+      },
+    });
+    expect(problems).toContain("email.inboxes must contain at most 3 inboxes");
+    expect(problems).toContain("duplicate email inbox id: ops");
+  });
+
   it("rejects missing engines / engines.claude", () => {
     expect(validateConfigShape({})[0]).toContain("engines");
     const problems = validateConfigShape({ engines: { default: "codex" } });

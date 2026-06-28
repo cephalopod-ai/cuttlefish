@@ -46,7 +46,7 @@ export class ImapEmailMailboxClient implements EmailMailboxClient {
       const query = inbox.unreadOnly === false ? { all: true } : { seen: false };
       const limit = Math.max(1, Math.min(100, inbox.maxMessagesPerPoll ?? 10));
       const ranges = await client.search(query);
-      const selected = ranges.slice(-limit).reverse();
+      const selected = Array.isArray(ranges) ? ranges.slice(-limit).reverse() : [];
       const out: EmailFetchResult[] = [];
       for await (const message of client.fetch(selected, { uid: true, source: true })) {
         if (!message.source) continue;

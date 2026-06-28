@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isSensitiveConfigKey, sanitizeConfigForApi } from "../api.js";
+import { deepMerge, isSensitiveConfigKey, sanitizeConfigForApi } from "../api.js";
 
 describe("GET /api/config redaction", () => {
   it("recognizes common secret-bearing key names", () => {
@@ -36,5 +36,34 @@ describe("GET /api/config redaction", () => {
     expect(sanitized.mcp.servers.search.env.SAFE_VALUE).toBe("kept");
     expect(sanitized.remotes[0].token).toBe("***");
     expect(sanitized.remotes[0].url).toBe("http://127.0.0.1:8888");
+  });
+
+  it("redacts email passwords and preserves them across *** round-trips", () => {
+    const original = {
+      email: {
+        inboxes: [{
+          id: "ops",
+          password: "imap-secret",
+          username: "ops@example.com",
+          address: "ops@example.com",
+          imapHost: "imap.example.com",
+        }],
+      },
+    };
+    const sanitized = sanitizeConfigForApi(original);
+    expect(sanitized.email.inboxes[0].password).toBe("***");
+
+    const merged = deepMerge(original, {
+      email: {
+        inboxes: [{
+          id: "ops",
+          password: "***",
+          username: "ops@example.com",
+          address: "ops@example.com",
+          imapHost: "imap.example.com",
+        }],
+      },
+    });
+    expect((merged.email as { inboxes: Array<{ password: string }> }).inboxes[0].password).toBe("imap-secret");
   });
 });

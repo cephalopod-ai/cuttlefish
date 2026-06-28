@@ -81,6 +81,13 @@
   the enable toggle plus config/db/worktree paths, max worktrees, same-family
   reviewer fallback, and empirical routing.
 
+### Settings email inbox controls
+- `packages/web/src/routes/settings/page.tsx`
+- `packages/web/src/routes/settings/settings-config-sections.tsx`
+- `/settings` now exposes operator configuration for up to 3 IMAP inboxes,
+  including host/port/TLS, credentials, folder, polling cadence, unread-only,
+  and auto-ingest toggles.
+
 ## CLI
 
 ### Provider-neutral matrix orchestration dry-runs and observe surfaces
@@ -127,6 +134,25 @@
   - The `/orchestration` dashboard exposes failed-continuation retry, explicit dual-lane selection and apply, global and per-task queue pause/resume, raw artifact viewing, holds, recovery requeue, and strict running-lease stop.
 
 ## API
+
+### Email inbox inspection and COO auto-ingest
+- `packages/cuttlefish/src/email/*`
+- `packages/cuttlefish/src/gateway/api.ts`
+- `packages/cuttlefish/src/gateway/api/routes/status.ts`
+- Cuttlefish now supports inbound IMAP inbox polling for up to 3 configured
+  inboxes.
+- New mail is normalized into a cached email store, attachments are persisted
+  through the existing artifact/file registry, and auto-ingest opens or reuses
+  a COO-owned session keyed by inbox/thread identity.
+- `GET /api/email/inboxes` lists configured inboxes plus health.
+- `POST /api/email/inboxes/:id/check` performs an immediate authenticated poll
+  for one inbox.
+- `GET /api/email/inboxes/:id/messages?limit=N` lists cached messages for one
+  inbox.
+- `GET /api/email/messages/:messageId` returns one cached normalized message.
+- This is inbound-only in the current implementation. SMTP send/reply,
+  threading replies back to providers, and mailbox mutation are not part of the
+  shipped surface.
 
 ### Artifact registry routes
 - `packages/cuttlefish/src/gateway/api/routes/artifacts.ts`

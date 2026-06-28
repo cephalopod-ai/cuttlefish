@@ -21,6 +21,7 @@ import {
   ConfigFeedback,
   ConfigLoadState,
   CronSection,
+  EmailSettingsSection,
   EngineConfigurationSection,
   GatewayWorkspacesSection,
   LoggingSection,
@@ -245,6 +246,11 @@ export default function SettingsPage() {
           {!configLoading && !configError && (
             <>
               <GatewayWorkspacesSection
+                config={config}
+                updateConfig={updateConfig}
+                updateNumberConfig={updateNumberConfig}
+              />
+              <EmailSettingsSection
                 config={config}
                 updateConfig={updateConfig}
                 updateNumberConfig={updateNumberConfig}

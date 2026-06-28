@@ -177,7 +177,7 @@ Every department also has a **board**. Assign tickets to employees, watch work m
 - **🧩 Real delegation** - parent/child sessions with completion callbacks and a COO-review pattern that filters noise before it reaches you.
 - **⏰ Cron scheduling** - hot-reloadable background jobs with run history and optional failure alerts.
 - **📦 Skills** - reusable markdown playbooks auto-synced into the underlying CLIs; install community skills with one command.
-- **💬 Connectors** - Slack (threads + ✅ reaction approvals), Discord, Telegram (with voice notes), WhatsApp.
+- **💬 Connectors** - Slack (threads + ✅ reaction approvals), Discord, Telegram (with voice notes), WhatsApp, and inbound IMAP inbox polling/inspection.
 - **🌐 Web dashboard** - chat, interactive org map, kanban boards, cron visualizer, usage & limits, activity logs, skills catalog, settings.
 - **🖥️ Chat or raw terminal** - toggle any session between rendered chat and a live `xterm` view of the engine.
 - **📎 Attachments** - drag, drop, or paste files and images into chat; passed through to the engine and rendered inline.
@@ -266,7 +266,7 @@ Everything is human-readable files you own - `cat` it, edit it, commit it.
 Cuttlefish is in active development. Shipped recently: ten-engine support, file attachments, in-app file viewer, agent-to-agent messaging, shared memory, mobile UI, live streaming. On deck:
 
 - **Engines** - deeper local-model support (llama.cpp and richer local-agent adapters), engine fallback chains.
-- **Connectors** - iMessage, email (IMAP/SMTP), generic webhooks.
+- **Connectors** - iMessage, outbound email/reply workflows, generic webhooks.
 - **Dashboard** - approve/reject agent actions from the UI, per-employee cost analytics.
 - **Platform** - installable plugins, REST API auth, multi-user roles, Docker image.
 - **Skills** - community marketplace, versioning, scaffolding templates.

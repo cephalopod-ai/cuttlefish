@@ -1,8 +1,34 @@
 import crypto from "node:crypto";
 import { simpleParser } from "mailparser";
-import type { ParsedMail } from "mailparser";
 import type { EmailAttachmentRecord, EmailInboxConfig, EmailMessageRecord } from "../shared/types.js";
 import { emailMessageId } from "./store.js";
+
+interface ParsedAddressList {
+  value?: Array<{ address?: string | null }>;
+}
+
+interface ParsedAttachment {
+  filename?: string | null;
+  contentType?: string | null;
+  size?: number | null;
+  content: Buffer;
+  cid?: string | null;
+}
+
+interface ParsedMailLike {
+  references?: string[];
+  inReplyTo?: string | null;
+  messageId?: string | null;
+  from?: ParsedAddressList;
+  to?: ParsedAddressList;
+  cc?: ParsedAddressList;
+  subject?: string | null;
+  date?: Date | null;
+  text?: string | null;
+  html?: string | false;
+  attachments: ParsedAttachment[];
+  headers: Iterable<[string, unknown]>;
+}
 
 export interface NormalizedAttachmentPayload {
   id: string;
@@ -19,11 +45,11 @@ export interface NormalizedEmailPayload {
   attachments: NormalizedAttachmentPayload[];
 }
 
-function cleanAddressList(value: ParsedMail["to"] | ParsedMail["cc"]): string[] {
+function cleanAddressList(value: ParsedAddressList | undefined): string[] {
   return value?.value?.map((entry) => entry.address).filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0) ?? [];
 }
 
-function headerMap(mail: ParsedMail): Record<string, string> {
+function headerMap(mail: ParsedMailLike): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [key, value] of mail.headers) {
     if (typeof value === "string") out[key] = value;
@@ -31,7 +57,7 @@ function headerMap(mail: ParsedMail): Record<string, string> {
   return out;
 }
 
-function threadKey(mail: ParsedMail, providerMessageId: string): string {
+function threadKey(mail: ParsedMailLike, providerMessageId: string): string {
   const refs = mail.references?.map((entry) => entry.trim()).filter(Boolean) ?? [];
   const inReplyTo = typeof mail.inReplyTo === "string" ? mail.inReplyTo.trim() : "";
   const messageId = typeof mail.messageId === "string" ? mail.messageId.trim() : "";
@@ -48,7 +74,7 @@ export async function normalizeEmail(
   providerMessageId: string,
   raw: Buffer,
 ): Promise<NormalizedEmailPayload> {
-  const mail = await simpleParser(raw);
+  const mail = await simpleParser(raw) as ParsedMailLike;
   const attachments: NormalizedAttachmentPayload[] = mail.attachments.map((attachment, index) => ({
     id: attachmentId(providerMessageId, index, attachment.filename || `attachment-${index + 1}`),
     filename: attachment.filename || `attachment-${index + 1}`,

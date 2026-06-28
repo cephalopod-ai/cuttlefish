@@ -817,6 +817,7 @@ export function validateConfigShape(config: unknown): string[] {
     "engines",
     "models",
     "connectors",
+    "email",
     "logging",
     "mcp",
     "modelFallback",

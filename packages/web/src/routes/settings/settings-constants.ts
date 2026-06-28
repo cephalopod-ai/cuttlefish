@@ -30,6 +30,24 @@ export const WHISPER_LANGUAGES: Record<string, string> = {
 
 // Config type (gateway API)
 export interface Config {
+  email?: {
+    enabled?: boolean
+    pollIntervalSeconds?: number
+    inboxes?: Array<{
+      id?: string
+      label?: string
+      address?: string
+      username?: string
+      password?: string
+      imapHost?: string
+      imapPort?: number
+      useTls?: boolean
+      folder?: string
+      autoIngest?: boolean
+      unreadOnly?: boolean
+      maxMessagesPerPoll?: number
+    }>
+  }
   workspaces?: {
     roots?: string[]
     defaultCwd?: string
