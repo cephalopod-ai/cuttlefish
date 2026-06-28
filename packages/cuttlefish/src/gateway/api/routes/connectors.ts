@@ -11,6 +11,7 @@ import { matchRoute } from "../match-route.js";
 import { badRequest, json, notFound } from "../responses.js";
 import type { GatewayPrincipal } from "../../auth.js";
 import { getSession } from "../../../sessions/registry.js";
+import { isUntrustedSource } from "../../../sessions/untrusted-input.js";
 
 export async function handleConnectorRoutes(
   method: string,
@@ -143,12 +144,21 @@ export async function handleConnectorRoutes(
       notFound(res);
       return true;
     }
-    // Session-scoped tokens may only send via the connector bound to their session.
+    // Session-scoped tokens may only send via the connector bound to their session,
+    // and only when the session originated from a trusted source (web/cron).
+    // Untrusted-source sessions (email, slack, discord, telegram, whatsapp) are
+    // blocked from the outbound send path entirely to prevent confused-deputy
+    // injection attacks: a malicious inbound message cannot steer the model into
+    // sending authenticated outbound messages on the operator's behalf.
     const principal = (req as HttpRequest & { cuttlefishPrincipal?: GatewayPrincipal }).cuttlefishPrincipal;
     if (principal?.kind === "session") {
       const callerSession = getSession(principal.sessionId);
       if (!callerSession?.connector || callerSession.connector !== params.name) {
         json(res, { error: "Session token may only send via its own connector" }, 403);
+        return true;
+      }
+      if (isUntrustedSource(callerSession.source)) {
+        json(res, { error: "Sessions originating from external connectors or email may not send outbound messages" }, 403);
         return true;
       }
     }

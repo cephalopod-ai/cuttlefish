@@ -18,3 +18,17 @@ export function safeHttpUrl(url: string | undefined | null): string | null {
   if (DANGEROUS_SCHEME.test(normalized)) return null
   return trimmed
 }
+
+/**
+ * Returns true for URLs that will cause the browser to issue an outbound
+ * network request to a third-party host — i.e. absolute http(s) URLs.
+ * Relative paths (/api/files/...) and blob: URLs resolve to the same origin
+ * and are NOT considered remote.
+ *
+ * Used to gate click-to-load for assistant-supplied media so that a model
+ * cannot silently exfiltrate data via an auto-fetched tracking pixel embedded
+ * in model output.
+ */
+export function isRemoteUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url.trim())
+}

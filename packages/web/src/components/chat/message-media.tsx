@@ -4,12 +4,48 @@ import { FileAttachment } from './file-attachment'
 import { VoiceMessage } from './voice-message'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
-import { safeHttpUrl } from '@/lib/safe-url'
+import { isRemoteUrl, safeHttpUrl } from '@/lib/safe-url'
+
+/**
+ * Placeholder shown instead of auto-loading remote images supplied by the
+ * model. The operator must click to consent to the outbound fetch, preventing
+ * silent exfiltration via tracking pixels in model output.
+ */
+function RemoteImagePlaceholder({
+  onReveal,
+  variant,
+}: {
+  onReveal: () => void
+  variant: 'single' | 'grid'
+}) {
+  const isGrid = variant === 'grid'
+  return (
+    <div
+      className={cn(
+        'flex flex-col items-center justify-center gap-[var(--space-2)] rounded-[var(--radius-lg)] bg-[var(--fill-secondary)] text-[var(--text-tertiary)] cursor-pointer hover:bg-[var(--fill-tertiary)] transition-colors',
+        isGrid ? 'h-[130px] w-full' : 'h-[140px] w-full',
+      )}
+      role="button"
+      tabIndex={0}
+      aria-label="Click to load external image"
+      onClick={onReveal}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onReveal() }}
+    >
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+        <circle cx="9" cy="9" r="2" />
+        <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+      </svg>
+      <span className="text-xs">Click to load external image</span>
+    </div>
+  )
+}
 
 /**
  * Thumbnail image with a shimmer skeleton while it loads/decodes, a cross-fade in
  * on `onLoad`, and a graceful broken-image fallback on error (never an infinite
  * skeleton). The skeleton overlays the reserved slot so there's no layout shift.
+ * Remote (third-party) URLs require an explicit click before the fetch fires.
  */
 function LoadingImage({
   src,
@@ -20,8 +56,18 @@ function LoadingImage({
   alt: string
   variant: 'single' | 'grid'
 }) {
+  const [revealed, setRevealed] = useState(!isRemoteUrl(src))
   const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>('loading')
   const isGrid = variant === 'grid'
+
+  if (!revealed) {
+    return (
+      <RemoteImagePlaceholder
+        variant={variant}
+        onReveal={() => setRevealed(true)}
+      />
+    )
+  }
 
   if (status === 'error') {
     return (
