@@ -5,6 +5,7 @@ import { handleTalkApi } from "../talk/routes.js";
 import { handleFilesRequest } from "./files.js";
 import { readJsonBody } from "./http-helpers.js";
 import { handleHookPost, isLoopback } from "./hook-endpoint.js";
+import { openSecurityCheckpoint } from "./security-review.js";
 import type { ApiContext } from "./api/context.js";
 import { json, notFound, serverError } from "./api/responses.js";
 import { handleSessionQueryRoutes } from "./api/session-query-routes.js";
@@ -97,7 +98,12 @@ export async function handleApiRequest(
       if (!parsed.ok) return;
       const hookBody = parsed.body as { cuttlefishSessionId?: string; hook?: import("./hook-registry.js").HookPayload };
       const result = handleHookPost(
-        { reg: context.hookRegistry, secret: context.hookSecret, remoteAddress: remote },
+        {
+          reg: context.hookRegistry,
+          secret: context.hookSecret,
+          remoteAddress: remote,
+          onSecurityReview: (input) => openSecurityCheckpoint(input, context),
+        },
         req.headers["x-cuttlefish-hook-secret"] as string | undefined,
         hookBody,
       );

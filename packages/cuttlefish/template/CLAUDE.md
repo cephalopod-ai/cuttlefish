@@ -142,6 +142,14 @@ approval in the HR / Org Steward panel (and the Approvals queue). See the
 human operator can. (The human operator may still edit employees directly via the
 web org form; that is the manual override.)
 
+### Risky Bash actions can hard-stop on security review
+
+Employees may declare `approvalPolicy: checkpoint`, `reviewTriggers`, and
+`securityReviewer` in their YAML. When a Claude Bash tool action matches an
+enabled risk trigger, the gateway opens a human checkpoint before the command is
+allowed to proceed and generates review context for the
+`senior-security-officer` (or the employee named in `securityReviewer`).
+
 ### Delegation
 
 - **Advisory**: the hierarchy informs delegation via context prompts but never blocks direct access

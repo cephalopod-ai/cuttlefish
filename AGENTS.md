@@ -26,6 +26,29 @@ monorepo**. It declares `family: application`, `repo_type: service`,
   subscription / interactive-PTY billing path (see README "How the Claude engine
   works"), or committing secrets / `~/.cuttlefish` runtime state.
 
+
+<!-- GILES:FEATURE-LEDGER:START -->
+## Giles feature ledger requirement
+
+Before making implementation, refactor, config, test, or documentation changes, identify the active feature or task.
+
+For each feature-level change, append or update the repo-local Giles feature ledger under:
+
+`.giles/feature-ledger/`
+
+Each ledger entry must record:
+
+- feature id
+- short action summary
+- touched files
+- validation run
+- remaining open items
+- provenance
+
+Do not claim completion unless the ledger and validation results are updated.
+Do not overwrite prior ledger entries.
+If reconstructing history from archive/session/audit logs, mark provenance as reconstructed or inferred.
+<!-- GILES:FEATURE-LEDGER:END -->
 <!-- GILES:DOCS-GOVERNANCE:START -->
 ## Giles Compliance
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { handleHookPost, isLoopback, type HookEndpointCtx } from "../hook-endpoint.js";
 import { HookRegistry } from "../hook-registry.js";
 
@@ -91,6 +91,26 @@ describe("handleHookPost", () => {
       "sek", { cuttlefishSessionId: "s1", hook: { hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "rm -rf /" } } });
     expect(res.status).toBe(451);
     expect(seen).toEqual([]);
+  });
+
+  it("opens a security review instead of delivering a review-gated Bash command", () => {
+    const reg = makeReg();
+    const onSecurityReview = vi.fn();
+    const res = handleHookPost(
+      { reg, secret: "sek", remoteAddress: "127.0.0.1", onSecurityReview },
+      "sek",
+      {
+        cuttlefishSessionId: "s1",
+        hook: { hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "sudo systemctl restart nginx" } },
+      },
+    );
+    expect(res.status).toBe(451);
+    expect(onSecurityReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "s1",
+        command: "sudo systemctl restart nginx",
+      }),
+    );
   });
 
   it("returns 401 when the server secret is empty (defense-in-depth)", () => {

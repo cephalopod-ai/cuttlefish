@@ -106,6 +106,16 @@ export interface Employee {
   /** Services this employee provides to the org */
   provides?: ServiceDeclaration[];
   /**
+   * Hard-gate policy for risky tool actions intercepted by the gateway. `none`
+   * disables the checkpoint gate for this employee; `checkpoint` requires a
+   * human checkpoint before matching Bash actions may proceed.
+   */
+  approvalPolicy?: EmployeeApprovalPolicy;
+  /** Risk categories that should trigger the hard security gate. */
+  reviewTriggers?: SecurityReviewTrigger[];
+  /** Employee name to route security-review context to. */
+  securityReviewer?: string;
+  /**
    * Lifecycle state managed by the HR / Org Steward flow. Defaults to "active".
    * `disabled` employees stay in the registry (so the hierarchy and reporting
    * lines don't break) but are non-assignable; `retired` personas are moved to
@@ -115,6 +125,13 @@ export interface Employee {
 }
 
 export type EmployeeLifecycle = "draft" | "active" | "probation" | "disabled" | "retired";
+export type EmployeeApprovalPolicy = "none" | "checkpoint";
+export type SecurityReviewTrigger =
+  | "destructive_shell"
+  | "privileged_shell"
+  | "secret_access"
+  | "external_network"
+  | "prompt_injection_risk";
 
 export const EMPLOYEE_LIFECYCLES: readonly EmployeeLifecycle[] = [
   "draft",
@@ -122,6 +139,19 @@ export const EMPLOYEE_LIFECYCLES: readonly EmployeeLifecycle[] = [
   "probation",
   "disabled",
   "retired",
+];
+
+export const EMPLOYEE_APPROVAL_POLICIES: readonly EmployeeApprovalPolicy[] = [
+  "none",
+  "checkpoint",
+];
+
+export const SECURITY_REVIEW_TRIGGERS: readonly SecurityReviewTrigger[] = [
+  "destructive_shell",
+  "privileged_shell",
+  "secret_access",
+  "external_network",
+  "prompt_injection_risk",
 ];
 
 /** A service that an employee can provide to other employees/departments. */

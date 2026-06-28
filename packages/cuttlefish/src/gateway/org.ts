@@ -3,8 +3,15 @@ import path from "node:path";
 import yaml from "js-yaml";
 import { ORG_DIR, ORG_RETIRED_DIR } from "../shared/paths.js";
 import { safeWriteYaml } from "../shared/safe-write.js";
-import { EMPLOYEE_LIFECYCLES } from "../shared/types.js";
-import type { Employee, EmployeeLifecycle, CuttlefishConfig, OrgChangeType } from "../shared/types.js";
+import { EMPLOYEE_APPROVAL_POLICIES, EMPLOYEE_LIFECYCLES, SECURITY_REVIEW_TRIGGERS } from "../shared/types.js";
+import type {
+  Employee,
+  EmployeeApprovalPolicy,
+  EmployeeLifecycle,
+  SecurityReviewTrigger,
+  CuttlefishConfig,
+  OrgChangeType,
+} from "../shared/types.js";
 import { logger } from "../shared/logger.js";
 import { getModelRegistry, effortLevelsForModel } from "../shared/models.js";
 
@@ -69,6 +76,18 @@ function parseEmployeeData(data: any, fullPath: string): Employee | undefined {
       ? data.provides.filter((s: unknown) => s && typeof s === "object" && typeof (s as any).name === "string" && typeof (s as any).description === "string")
         .map((s: any) => ({ name: s.name as string, description: s.description as string }))
       : undefined,
+    approvalPolicy:
+      typeof data.approvalPolicy === "string" &&
+      (EMPLOYEE_APPROVAL_POLICIES as readonly string[]).includes(data.approvalPolicy)
+        ? (data.approvalPolicy as EmployeeApprovalPolicy)
+        : undefined,
+    reviewTriggers: Array.isArray(data.reviewTriggers)
+      ? data.reviewTriggers
+        .filter((trigger: unknown): trigger is SecurityReviewTrigger =>
+          typeof trigger === "string" && (SECURITY_REVIEW_TRIGGERS as readonly string[]).includes(trigger),
+        )
+      : undefined,
+    securityReviewer: typeof data.securityReviewer === "string" ? data.securityReviewer : undefined,
     lifecycle:
       typeof data.lifecycle === "string" && (EMPLOYEE_LIFECYCLES as readonly string[]).includes(data.lifecycle)
         ? (data.lifecycle as EmployeeLifecycle)
@@ -160,6 +179,9 @@ export interface EmployeeUpdate {
   cliFlags?: string[];
   alwaysNotify?: boolean;
   lifecycle?: EmployeeLifecycle;
+  approvalPolicy?: EmployeeApprovalPolicy;
+  reviewTriggers?: SecurityReviewTrigger[];
+  securityReviewer?: string;
   /** UI convenience field persisted into modelPolicy.fallback_chain[0]. */
   fallbackEngine?: string | null;
   /** UI convenience field persisted into modelPolicy.fallback_chain[0]. */
@@ -184,6 +206,9 @@ export interface EmployeeCreate {
   cliFlags?: string[];
   alwaysNotify?: boolean;
   lifecycle?: EmployeeLifecycle;
+  approvalPolicy?: EmployeeApprovalPolicy;
+  reviewTriggers?: SecurityReviewTrigger[];
+  securityReviewer?: string;
   fallbackEngine?: string | null;
   fallbackModel?: string | null;
   avatar?: string;
@@ -203,6 +228,9 @@ const WRITABLE_FIELDS = [
   "cliFlags",
   "alwaysNotify",
   "lifecycle",
+  "approvalPolicy",
+  "reviewTriggers",
+  "securityReviewer",
 ] as const;
 
 // `avatar`/`emoji` are accepted but not in WRITABLE_FIELDS — like `fallbackModel`,
@@ -390,6 +418,42 @@ export function validateEmployeeUpdate(
     updates.lifecycle = body.lifecycle as EmployeeLifecycle;
   }
 
+  if (body.approvalPolicy !== undefined) {
+    if (
+      typeof body.approvalPolicy !== "string" ||
+      !(EMPLOYEE_APPROVAL_POLICIES as readonly string[]).includes(body.approvalPolicy)
+    ) {
+      return {
+        ok: false,
+        error: `invalid approvalPolicy "${String(body.approvalPolicy)}" (valid: ${EMPLOYEE_APPROVAL_POLICIES.join(", ")})`,
+      };
+    }
+    updates.approvalPolicy = body.approvalPolicy as EmployeeApprovalPolicy;
+  }
+
+  if (body.reviewTriggers !== undefined) {
+    if (
+      !Array.isArray(body.reviewTriggers) ||
+      body.reviewTriggers.length === 0 ||
+      !body.reviewTriggers.every(
+        (value) => typeof value === "string" && (SECURITY_REVIEW_TRIGGERS as readonly string[]).includes(value),
+      )
+    ) {
+      return {
+        ok: false,
+        error: `reviewTriggers must be a non-empty array drawn from: ${SECURITY_REVIEW_TRIGGERS.join(", ")}`,
+      };
+    }
+    updates.reviewTriggers = [...new Set(body.reviewTriggers as SecurityReviewTrigger[])];
+  }
+
+  if (body.securityReviewer !== undefined) {
+    if (typeof body.securityReviewer !== "string" || !body.securityReviewer.trim()) {
+      return { ok: false, error: "securityReviewer must be a non-empty string" };
+    }
+    updates.securityReviewer = body.securityReviewer.trim();
+  }
+
   if (body.fallbackEngine !== undefined) {
     if (body.fallbackEngine === null) {
       updates.fallbackEngine = null;
@@ -454,6 +518,12 @@ export function validateEmployeeUpdate(
     return { ok: false, error: "no recognized fields to update" };
   }
 
+  const effectiveApprovalPolicy = updates.approvalPolicy ?? current.approvalPolicy;
+  const effectiveReviewTriggers = updates.reviewTriggers ?? current.reviewTriggers;
+  if (effectiveReviewTriggers && effectiveReviewTriggers.length > 0 && effectiveApprovalPolicy !== "checkpoint") {
+    return { ok: false, error: "reviewTriggers require approvalPolicy \"checkpoint\"" };
+  }
+
   return { ok: true, updates };
 }
 
@@ -479,6 +549,9 @@ export function validateEmployeeCreate(
     "cliFlags",
     "alwaysNotify",
     "lifecycle",
+    "approvalPolicy",
+    "reviewTriggers",
+    "securityReviewer",
     "fallbackEngine",
     "fallbackModel",
     "avatar",
@@ -539,12 +612,15 @@ export function validateEmployeeCreate(
     persona,
     reportsTo: body.reportsTo,
     cliFlags: body.cliFlags,
-      alwaysNotify: body.alwaysNotify,
-      lifecycle: body.lifecycle,
-      fallbackEngine: body.fallbackEngine,
-      fallbackModel: body.fallbackModel,
-      avatar: body.avatar,
-      emoji: body.emoji,
+    alwaysNotify: body.alwaysNotify,
+    lifecycle: body.lifecycle,
+    approvalPolicy: body.approvalPolicy,
+    reviewTriggers: body.reviewTriggers,
+    securityReviewer: body.securityReviewer,
+    fallbackEngine: body.fallbackEngine,
+    fallbackModel: body.fallbackModel,
+    avatar: body.avatar,
+    emoji: body.emoji,
   });
   if (!updates.ok || !updates.updates) {
     return { ok: false, error: updates.error || "invalid employee body" };
@@ -565,6 +641,9 @@ export function validateEmployeeCreate(
       cliFlags: updates.updates.cliFlags,
       alwaysNotify: updates.updates.alwaysNotify,
       lifecycle: updates.updates.lifecycle,
+      approvalPolicy: updates.updates.approvalPolicy,
+      reviewTriggers: updates.updates.reviewTriggers,
+      securityReviewer: updates.updates.securityReviewer,
       fallbackEngine: updates.updates.fallbackEngine,
       fallbackModel: updates.updates.fallbackModel,
       avatar: updates.updates.avatar,

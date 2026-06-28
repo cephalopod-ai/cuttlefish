@@ -1,12 +1,19 @@
 import { timingSafeEqual } from "node:crypto";
 import type { HookRegistry, HookPayload } from "./hook-registry.js";
 import { evaluateCommandPolicy } from "../shared/command-policy.js";
+import type { SecurityReviewTrigger } from "../shared/types.js";
 
 export interface HookEndpointCtx {
   reg: HookRegistry;
   secret: string;
   remoteAddress: string | undefined;
   now?: () => number;
+  onSecurityReview?: (input: {
+    sessionId: string;
+    command: string;
+    triggers: SecurityReviewTrigger[];
+    reason: string;
+  }) => void;
 }
 
 const HOOK_REPLAY_WINDOW_MS = 5 * 60 * 1000;
@@ -80,6 +87,15 @@ export function handleHookPost(
     const decision = evaluateCommandPolicy(command);
     if (decision.action === "block") {
       return { status: 451, body: decision.reason || "Command blocked by Cuttlefish security policy" };
+    }
+    if (decision.action === "review") {
+      ctx.onSecurityReview?.({
+        sessionId: body.cuttlefishSessionId,
+        command,
+        triggers: decision.triggers ?? [],
+        reason: decision.reason || "Security review required before executing this Bash command",
+      });
+      return { status: 451, body: decision.reason || "Security review required before executing this Bash command" };
     }
   }
   ctx.reg.deliver(body.cuttlefishSessionId, body.hook);

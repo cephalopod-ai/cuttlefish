@@ -31,6 +31,9 @@ persona: |
 | `model` | string | no | Model override (default from config) |
 | `reportsTo` | string or string[] | no | Explicit manager/parent override. If omitted, hierarchy is inferred from rank within the department. |
 | `persona` | string | yes | System prompt defining personality and behavior |
+| `approvalPolicy` | string | no | `checkpoint` requires a human checkpoint before matching risky Bash actions can proceed; `none` disables the hard gate for that employee |
+| `reviewTriggers` | string[] | no | Risk categories that trigger the security gate: `destructive_shell`, `privileged_shell`, `secret_access`, `external_network`, `prompt_injection_risk` |
+| `securityReviewer` | string | no | Employee name to receive the generated security-review context for gated actions |
 
 ## Departments
 
@@ -98,6 +101,8 @@ Canonical task fields: `id`, `title`, `assignee`, `status` (`backlog`, `todo`, `
 
 - `parliamentarian.yaml` — a `manager` for governance, policy, and routing work
 - `assistant.yaml` — a `senior` generalist with `reportsTo: parliamentarian`
+- `hr-manager.yaml` — a `manager` that critiques org changes and gates risky org mutations
+- `senior-security-officer.yaml` — a `senior` reviewer seeded with the default hard security gate triggers
 
 That gives fresh installs a manager-first lane for cross-cutting guidance work
 without forcing delivery departments into existence up front. `{{portalName}}`

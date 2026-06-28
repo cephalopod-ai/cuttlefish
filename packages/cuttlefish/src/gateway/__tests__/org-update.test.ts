@@ -612,6 +612,28 @@ describe("validateEmployeeUpdate", () => {
     expect(validateEmployeeUpdate(testConfig, emp(), { reportsTo: ["a", "b"] }).ok).toBe(true);
   });
 
+  it("accepts machine-readable security gate fields", () => {
+    const result = validateEmployeeUpdate(testConfig, emp(), {
+      approvalPolicy: "checkpoint",
+      reviewTriggers: ["privileged_shell", "external_network"],
+      securityReviewer: "senior-security-officer",
+    });
+    expect(result.ok).toBe(true);
+    expect(result.updates).toMatchObject({
+      approvalPolicy: "checkpoint",
+      reviewTriggers: ["privileged_shell", "external_network"],
+      securityReviewer: "senior-security-officer",
+    });
+  });
+
+  it("rejects reviewTriggers without checkpoint approvalPolicy", () => {
+    const result = validateEmployeeUpdate(testConfig, emp(), {
+      reviewTriggers: ["privileged_shell"],
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/approvalPolicy/i);
+  });
+
   it("accepts string avatar/emoji including the empty-string clear signal", () => {
     expect(validateEmployeeUpdate(testConfig, emp(), { avatar: "nautical:anchor" }).ok).toBe(true);
     expect(validateEmployeeUpdate(testConfig, emp(), { emoji: "🦊" }).ok).toBe(true);
@@ -640,11 +662,15 @@ describe("validateEmployeeUpdate", () => {
       model: "sonnet",
       fallbackModel: "opus",
       persona: "Review changes.",
+      approvalPolicy: "checkpoint",
+      reviewTriggers: ["destructive_shell"],
+      securityReviewer: "senior-security-officer",
     }, []);
     expect(result.ok).toBe(true);
     expect(result.employee).toMatchObject({
       name: "reviewer",
       fallbackModel: "opus",
+      approvalPolicy: "checkpoint",
     });
   });
 

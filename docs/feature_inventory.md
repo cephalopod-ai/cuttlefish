@@ -73,7 +73,9 @@
 - The create/edit surfaces cover agent id, display name, department, reports-to,
   level (`manager`, `senior`, `junior` mapped to internal `employee` rank),
   engine/model/effort, including the local `ollama`, `kilo`, and `aider` engine options, optional same-engine fallback model, persona,
-  CLI flags, and always-notify behavior.
+  CLI flags, always-notify behavior, and backend support for the machine-readable
+  security gate fields `approvalPolicy`, `reviewTriggers`, and
+  `securityReviewer`.
 - Employee, manager, and executive org-map cards also expose a compact quick-chat affordance that opens the main chat workspace, using the existing employee preselection deep-link for non-executive employees.
 
 ### Settings orchestration controls
@@ -220,6 +222,11 @@
 - `POST /api/checkpoints/:id/decision` records a human decision and either
   keeps the run paused, stops it, records the outcome only, or resumes the
   session with a stored or supplied prompt.
+- Claude interactive Bash `PreToolUse` hooks now reuse this checkpoint flow for
+  risky commands. Commands that are review-gated are denied at hook time,
+  recorded as durable checkpoints with the blocked command and trigger
+  categories, and generate review context for `senior-security-officer` by
+  default.
 - Existing fallback approvals continue to work through `/api/approvals/*`, but
   the underlying store now captures decision notes and resulting actions for the
   broader checkpoint model too.
