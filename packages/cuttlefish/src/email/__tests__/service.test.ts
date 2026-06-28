@@ -70,6 +70,50 @@ describe("EmailService", () => {
     expect(reg.listFiles()).toHaveLength(1);
   });
 
+  it("keeps message and ingest-state status consistent on ingest failure and reports degraded health", async () => {
+    const reg = await import("../../sessions/registry.js");
+    const store = await import("../store.js");
+    const { FakeEmailMailboxClient } = await import("../client.js");
+    const { EmailService } = await import("../service.js");
+
+    reg.initDb();
+    const client = new FakeEmailMailboxClient();
+    client.setMessages("ops", [{ providerMessageId: "uid-err", raw: RAW_EMAIL }]);
+    const onAutoIngest = vi.fn(async () => {
+      throw new Error("engine unavailable");
+    });
+
+    const service = new EmailService({
+      enabled: true,
+      inboxes: [{
+        id: "ops",
+        address: "ops@example.com",
+        username: "ops@example.com",
+        password: "secret",
+        imapHost: "imap.example.com",
+        autoIngest: true,
+      }],
+    }, { client, onAutoIngest });
+
+    const first = await service.checkInbox("ops");
+    expect(first.messages[0].status).toBe("error");
+
+    // Both status tables agree (no error -> cached downgrade, no divergence).
+    const message = service.listMessages("ops", 10)[0];
+    expect(message.status).toBe("error");
+    expect(store.getEmailIngestState("ops", "uid-err")?.status).toBe("error");
+
+    // A reachable inbox with a failed ingest is degraded, not healthy.
+    expect(service.listInboxes().find((i) => i.id === "ops")?.health?.status).toBe("degraded");
+
+    // Re-poll retries the failed ingest (still not "ingested") without downgrading.
+    const second = await service.checkInbox("ops");
+    expect(second.messages[0].status).toBe("error");
+    expect(onAutoIngest).toHaveBeenCalledTimes(2);
+    expect(service.listMessages("ops", 10)[0].status).toBe("error");
+    expect(store.getEmailIngestState("ops", "uid-err")?.status).toBe("error");
+  });
+
   it("continues polling healthy inboxes when one inbox fails", async () => {
     const reg = await import("../../sessions/registry.js");
     const { FakeEmailMailboxClient } = await import("../client.js");

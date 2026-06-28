@@ -42,7 +42,12 @@ export class ImapEmailMailboxClient implements EmailMailboxClient {
 
     await client.connect();
     try {
-      await client.mailboxOpen(inbox.folder || "INBOX");
+      const mailbox = await client.mailboxOpen(inbox.folder || "INBOX");
+      // IMAP UIDs are only unique within a UIDVALIDITY generation. Namespace the
+      // dedup identity by uidValidity so a UID reused after the mailbox is
+      // recreated is not mistaken for an already-ingested message (which would
+      // silently skip new mail).
+      const uidValidity = mailbox && mailbox.uidValidity !== undefined ? String(mailbox.uidValidity) : "0";
       const query = inbox.unreadOnly === false ? { all: true } : { seen: false };
       const limit = Math.max(1, Math.min(100, inbox.maxMessagesPerPoll ?? 10));
       const ranges = await client.search(query);
@@ -51,7 +56,7 @@ export class ImapEmailMailboxClient implements EmailMailboxClient {
       for await (const message of client.fetch(selected, { uid: true, source: true })) {
         if (!message.source) continue;
         out.push({
-          providerMessageId: String(message.uid),
+          providerMessageId: `${uidValidity}:${String(message.uid)}`,
           raw: Buffer.isBuffer(message.source) ? message.source : Buffer.from(message.source),
         });
       }

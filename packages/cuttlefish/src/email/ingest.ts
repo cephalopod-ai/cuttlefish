@@ -1,5 +1,12 @@
-import { insertMessage } from "../sessions/registry.js";
+import { getMessages, insertMessage } from "../sessions/registry.js";
 import type { EmailMessageRecord } from "../shared/types.js";
+
+/** Stable per-message annotation header. Includes the provider message id so the
+ *  same email is identifiable within a thread session (each thread reuses one
+ *  session, so the thread key alone is not unique per message). */
+function emailAnnotationMarker(message: EmailMessageRecord): string {
+  return `[Email ${message.inboxId}/${message.threadKey} #${message.providerMessageId}]`;
+}
 
 function nonEmpty(value: string | null | undefined, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
@@ -33,15 +40,27 @@ export function buildEmailIngestPrompt(message: EmailMessageRecord): string {
   ].join("\n");
 }
 
-export function annotateEmailSession(sessionId: string, message: EmailMessageRecord): void {
+/**
+ * Append the email as a user annotation to its session. Idempotent: if this exact
+ * message was already annotated into the session — e.g. the ingest is replayed after
+ * a failed/torn durable write, since the message is re-fetched until it reaches
+ * `ingested` — it is not appended again. Returns true if a new annotation was added.
+ */
+export function annotateEmailSession(sessionId: string, message: EmailMessageRecord): boolean {
+  const marker = emailAnnotationMarker(message);
+  const alreadyAnnotated = getMessages(sessionId).some(
+    (entry) => entry.role === "user" && typeof entry.content === "string" && entry.content.startsWith(marker),
+  );
+  if (alreadyAnnotated) return false;
   const subject = nonEmpty(message.subject, "(no subject)");
   const from = nonEmpty(message.fromAddress, "unknown sender");
   const summary = [
-    `[Email ${message.inboxId}/${message.threadKey}]`,
+    marker,
     `From: ${from}`,
     `Subject: ${subject}`,
     "",
     message.textBody.trim() || "[No plain-text body available.]",
   ].join("\n");
   insertMessage(sessionId, "user", summary);
+  return true;
 }

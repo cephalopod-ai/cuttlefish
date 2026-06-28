@@ -279,6 +279,20 @@ emoji: "🧩"
     expect(data.avatar).toBeUndefined();
   });
 
+  it("resolves an out-of-contract both-icons-set update to avatar (precedence)", () => {
+    writeYaml("platform", "icon.yaml", `
+name: icon
+persona: Both sent
+`);
+    // Direct-API caller sends both non-empty; avatar must win (matching read/create),
+    // not the previous order-dependent emoji-wins.
+    updateEmployeeYaml("icon", { avatar: "aquatic:octopus", emoji: "🦊" });
+
+    const data = readYaml("platform", "icon.yaml");
+    expect(data.avatar).toBe("aquatic:octopus");
+    expect(data.emoji).toBeUndefined();
+  });
+
   it("preserves an existing avatar when a non-icon field is updated", () => {
     writeYaml("platform", "icon.yaml", `
 name: icon

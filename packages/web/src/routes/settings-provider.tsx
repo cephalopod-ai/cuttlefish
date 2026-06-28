@@ -2,7 +2,6 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import {
   type CuttlefishSettings,
-  type EmployeeOverride,
   DEFAULTS,
   DEFAULT_PORTAL_ICON,
   loadSettings,
@@ -11,12 +10,6 @@ import {
   hexToContrastText,
 } from '@/lib/settings'
 import { api } from '@/lib/api'
-
-interface EmployeeDisplay {
-  emoji: string
-  profileImage?: string
-  emojiOnly?: boolean
-}
 
 interface SettingsContextValue {
   settings: CuttlefishSettings
@@ -29,9 +22,6 @@ interface SettingsContextValue {
   setEmojiOnly: (emojiOnly: boolean) => void
   setOperatorName: (name: string | null) => void
   setLanguage: (language: string) => void
-  setEmployeeOverride: (employeeId: string, override: EmployeeOverride) => void
-  clearEmployeeOverride: (employeeId: string) => void
-  getEmployeeDisplay: (employee: { name: string; emoji: string; id: string }) => EmployeeDisplay
   resetAll: () => void
 }
 
@@ -46,9 +36,6 @@ const SettingsContext = createContext<SettingsContextValue>({
   setEmojiOnly: () => {},
   setOperatorName: () => {},
   setLanguage: () => {},
-  setEmployeeOverride: () => {},
-  clearEmployeeOverride: () => {},
-  getEmployeeDisplay: (employee) => ({ emoji: employee.emoji }),
   resetAll: () => {},
 })
 
@@ -166,44 +153,6 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     [update],
   )
 
-  const setEmployeeOverride = useCallback(
-    (employeeId: string, override: EmployeeOverride) => {
-      update((prev) => {
-        const existing = prev.employeeOverrides[employeeId] || {}
-        return {
-          ...prev,
-          employeeOverrides: {
-            ...prev.employeeOverrides,
-            [employeeId]: { ...existing, ...override },
-          },
-        }
-      })
-    },
-    [update],
-  )
-
-  const clearEmployeeOverride = useCallback(
-    (employeeId: string) => {
-      update((prev) => {
-        const { [employeeId]: _, ...rest } = prev.employeeOverrides
-        return { ...prev, employeeOverrides: rest }
-      })
-    },
-    [update],
-  )
-
-  const getEmployeeDisplay = useCallback(
-    (employee: { name: string; emoji: string; id: string }): EmployeeDisplay => {
-      const override = settings.employeeOverrides[employee.id]
-      return {
-        emoji: override?.emoji || employee.emoji,
-        profileImage: override?.profileImage,
-        emojiOnly: settings.emojiOnly,
-      }
-    },
-    [settings.employeeOverrides, settings.emojiOnly],
-  )
-
   const resetAll = useCallback(() => {
     update(() => ({
       accentColor: null,
@@ -232,9 +181,6 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         setEmojiOnly,
         setOperatorName,
         setLanguage,
-        setEmployeeOverride,
-        clearEmployeeOverride,
-        getEmployeeDisplay,
         resetAll,
       }}
     >

@@ -576,16 +576,25 @@ export function mergeEmployeeUpdateData(
   }
   // Canonical icon: exactly one of avatar/emoji persists. An explicit "" clears
   // that key; setting one to a non-empty value clears the sibling so legacy YAML
-  // carrying both fields normalizes to a single field on save.
-  for (const key of ["avatar", "emoji"] as const) {
-    if (!Object.prototype.hasOwnProperty.call(updates, key)) continue;
-    const raw = (updates as Record<string, unknown>)[key];
-    const value = typeof raw === "string" ? raw.trim() : "";
-    if (value) {
-      next[key] = value;
-      delete next[key === "avatar" ? "emoji" : "avatar"];
+  // carrying both fields normalizes to a single field on save. When both are sent
+  // non-empty (out-of-contract input), `avatar` wins — matching the read precedence
+  // (parseEmployeeData / Employee.avatar) and the create path (buildEmployeeCreateData),
+  // rather than the previous order-dependent last-write-wins.
+  const hasAvatar = Object.prototype.hasOwnProperty.call(updates, "avatar");
+  const hasEmoji = Object.prototype.hasOwnProperty.call(updates, "emoji");
+  if (hasAvatar || hasEmoji) {
+    const avatarValue = hasAvatar && typeof updates.avatar === "string" ? updates.avatar.trim() : "";
+    const emojiValue = hasEmoji && typeof updates.emoji === "string" ? updates.emoji.trim() : "";
+    if (avatarValue) {
+      next.avatar = avatarValue;
+      delete next.emoji;
+    } else if (emojiValue) {
+      next.emoji = emojiValue;
+      delete next.avatar;
     } else {
-      delete next[key];
+      // Only the provided field(s) are cleared; an unmentioned field is untouched.
+      if (hasAvatar) delete next.avatar;
+      if (hasEmoji) delete next.emoji;
     }
   }
   const effectiveEngine = String(updates.engine ?? next.engine ?? "claude").trim() || "claude";

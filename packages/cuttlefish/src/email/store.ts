@@ -166,6 +166,32 @@ export function upsertEmailIngestState(input: {
   );
 }
 
+/**
+ * Persist an email message and its dedup/ingest state as a single atomic unit.
+ * The message status and the ingest-state status are written in one transaction
+ * so the two tables can never diverge (the gate trusts `email_ingest_state` while
+ * the UI reads `email_messages`). Returns the stored message.
+ */
+export function persistEmailMessageWithState(
+  message: Omit<EmailMessageRecord, "createdAt" | "updatedAt">,
+  ingest: { status: "cached" | "ingested" | "error"; sessionId?: string | null; error?: string | null },
+): EmailMessageRecord {
+  const db = initDb();
+  const apply = db.transaction(() => {
+    upsertEmailMessage(message);
+    upsertEmailIngestState({
+      inboxId: message.inboxId,
+      providerMessageId: message.providerMessageId,
+      emailMessageId: message.id,
+      status: ingest.status,
+      sessionId: ingest.sessionId ?? null,
+      error: ingest.error ?? null,
+    });
+  });
+  apply();
+  return getEmailMessage(message.id)!;
+}
+
 export function getEmailIngestState(inboxId: string, providerMessageId: string): {
   inboxId: string;
   providerMessageId: string;

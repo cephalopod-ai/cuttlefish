@@ -5,7 +5,7 @@ import type { EmailAttachmentRecord, EmailConfig, EmailInboxConfig, EmailInboxHe
 import { FILES_DIR } from "../shared/paths.js";
 import { logger } from "../shared/logger.js";
 import { sanitizeUploadFilename } from "../gateway/files/storage.js";
-import { getEmailIngestState, getEmailMessage, listEmailInboxHealth, listEmailMessages, setEmailInboxHealth, upsertEmailIngestState, upsertEmailMessage } from "./store.js";
+import { getEmailIngestState, getEmailMessage, listEmailInboxHealth, listEmailMessages, persistEmailMessageWithState, setEmailInboxHealth } from "./store.js";
 import type { EmailMailboxClient } from "./client.js";
 import { normalizeEmail } from "./normalize.js";
 import { insertFile } from "../sessions/registry.js";
@@ -127,58 +127,45 @@ export class EmailService {
         const persistedAttachments: EmailAttachmentRecord[] = existingMessage?.attachments?.length
           ? existingMessage.attachments
           : await Promise.all(normalized.attachments.map((attachment) => persistAttachment(normalized.record.id, attachment)));
-        const persisted = upsertEmailMessage({
+        // Preserve the prior lifecycle status (never downgrade error -> cached) and
+        // write the message + its ingest/dedup state atomically so the two tables
+        // cannot diverge.
+        const baseStatus = existing?.status ?? normalized.record.status;
+        const persisted = persistEmailMessageWithState({
           ...normalized.record,
           attachments: persistedAttachments,
-          status: existing?.status === "ingested" ? "ingested" : normalized.record.status,
+          status: baseStatus,
           sessionId: existing?.sessionId ?? null,
           error: existing?.error ?? null,
-        });
-        upsertEmailIngestState({
-          inboxId: inbox.id,
-          providerMessageId: message.providerMessageId,
-          emailMessageId: persisted.id,
-          status: existing?.status ?? "cached",
-          sessionId: existing?.sessionId ?? null,
-          error: existing?.error ?? null,
-        });
+        }, { status: baseStatus, sessionId: existing?.sessionId ?? null, error: existing?.error ?? null });
         if (inbox.autoIngest !== false && existing?.status !== "ingested" && this.onAutoIngest) {
           try {
             const sessionId = await this.onAutoIngest(persisted);
-            upsertEmailMessage({ ...persisted, status: "ingested", sessionId, error: null });
-            upsertEmailIngestState({
-              inboxId: inbox.id,
-              providerMessageId: message.providerMessageId,
-              emailMessageId: persisted.id,
-              status: "ingested",
-              sessionId,
-              error: null,
-            });
-            results.push(getEmailMessage(persisted.id) ?? persisted);
+            results.push(persistEmailMessageWithState(
+              { ...persisted, status: "ingested", sessionId, error: null },
+              { status: "ingested", sessionId, error: null },
+            ));
           } catch (err) {
             const error = err instanceof Error ? err.message : String(err);
-            upsertEmailMessage({ ...persisted, status: "error", error });
-            upsertEmailIngestState({
-              inboxId: inbox.id,
-              providerMessageId: message.providerMessageId,
-              emailMessageId: persisted.id,
-              status: "error",
-              sessionId: null,
-              error,
-            });
-            results.push(getEmailMessage(persisted.id) ?? persisted);
+            results.push(persistEmailMessageWithState(
+              { ...persisted, status: "error", sessionId: null, error },
+              { status: "error", sessionId: null, error },
+            ));
           }
         } else {
           results.push(persisted);
         }
       }
+      // A successful fetch where one or more messages failed to ingest is degraded,
+      // not healthy — the inbox is reachable but not fully processing.
+      const anyError = results.some((entry) => entry.status === "error");
       setEmailInboxHealth({
         inboxId: inbox.id,
-        status: "ok",
-        detail: null,
+        status: anyError ? "degraded" : "ok",
+        detail: anyError ? "one or more messages failed to ingest" : null,
         lastCheckedAt: checkedAt,
         lastSuccessAt: checkedAt,
-        lastErrorAt: null,
+        lastErrorAt: anyError ? checkedAt : null,
       });
       return { inboxId: inbox.id, checked: fetched.length, messages: results };
     } catch (err) {
