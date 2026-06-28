@@ -2,10 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { ChatEmployeePicker } from '../chat-employee-picker'
 
-// Mock EmployeeAvatar since it depends on settings context
+// Mock EmployeeAvatar and surface the canonical icon props so we can assert
+// that the picker forwards them.
 vi.mock('@/components/ui/employee-avatar', () => ({
-  EmployeeAvatar: ({ name, size }: { name: string; size?: number }) => (
-    <span data-testid={`avatar-${name}`} style={{ width: size, height: size }}>
+  EmployeeAvatar: ({ name, size, avatar, emoji }: { name: string; size?: number; avatar?: string; emoji?: string }) => (
+    <span data-testid={`avatar-${name}`} data-avatar={avatar} data-emoji={emoji} style={{ width: size, height: size }}>
       {name.charAt(0).toUpperCase()}
     </span>
   ),
@@ -335,6 +336,22 @@ describe('ChatEmployeePicker', () => {
     )
     expect(screen.getByTestId('avatar-lead-developer')).toBeDefined()
     expect(screen.getByTestId('avatar-content-lead')).toBeDefined()
+  })
+
+  it('forwards the canonical avatar/emoji to each employee avatar', () => {
+    render(
+      <ChatEmployeePicker
+        employees={[
+          { name: 'finned', displayName: 'Finned', department: 'platform', rank: 'senior' as const, avatar: 'nautical:anchor' },
+          { name: 'emojied', displayName: 'Emojied', department: 'platform', rank: 'senior' as const, emoji: '🦊' },
+        ]}
+        selectedEmployee={null}
+        onSelect={onChange}
+        portalName="Cuttlefish"
+      />
+    )
+    expect(screen.getByTestId('avatar-finned').getAttribute('data-avatar')).toBe('nautical:anchor')
+    expect(screen.getByTestId('avatar-emojied').getAttribute('data-emoji')).toBe('🦊')
   })
 
   // --- Keyboard navigation ---

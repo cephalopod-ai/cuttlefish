@@ -34,7 +34,7 @@ export function EmployeeNode({ data, selected }: NodeProps) {
         />
       )}
 
-      <EmployeeAvatar name={employee.name} avatar={employee.avatar as string | undefined} size={isExec ? 28 : 22} />
+      <EmployeeAvatar name={employee.name} avatar={employee.avatar as string | undefined} emoji={employee.emoji as string | undefined} size={isExec ? 28 : 22} />
 
       <div className="flex-1 min-w-0">
         <div

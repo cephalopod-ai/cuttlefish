@@ -14,6 +14,9 @@ import {
 import { ModelSelectorRow, type SelectorValue } from "@/components/chat/model-selector-row"
 import { EmployeeFallbackModelSelect } from "@/components/org/employee-fallback-model-select"
 import { ReportsToField, normalizeReportsTo, serializeReportsTo } from "@/components/org/reports-to-field"
+import { EmployeeAvatar } from "@/components/ui/employee-avatar"
+import { EmojiPicker } from "@/components/ui/emoji-picker"
+import { canonicalIcon, iconPatchFromPickerValue } from "@/lib/employee-icon"
 
 const LEVEL_OPTIONS = [
   { value: "manager", label: "Manager" },
@@ -65,6 +68,9 @@ export function EmployeeEditor({
   const [alwaysNotify, setAlwaysNotify] = useState(employee.alwaysNotify ?? true)
   const [cliFlags, setCliFlags] = useState((employee.cliFlags ?? []).join(" "))
   const [fallbackModel, setFallbackModel] = useState(fallbackModelOf(employee))
+  // Canonical icon: an ocean avatar id ("kind:id") or a plain emoji, "" for none.
+  const [icon, setIcon] = useState(canonicalIcon(employee))
+  const [showIconPicker, setShowIconPicker] = useState(false)
   const [selector, setSelector] = useState<SelectorValue>({
     engine: employee.engine,
     model: employee.model,
@@ -106,8 +112,14 @@ export function EmployeeEditor({
     if (selector.engine !== employee.engine) p.engine = selector.engine
     if (selector.model !== employee.model) p.model = selector.model
     if (selector.effortLevel !== employee.effortLevel) p.effortLevel = selector.effortLevel
+    // Icon: send both fields so the backend XOR-normalizes (one canonical icon).
+    if (icon !== canonicalIcon(employee)) {
+      const { avatar, emoji } = iconPatchFromPickerValue(icon)
+      p.avatar = avatar
+      p.emoji = emoji
+    }
     return p
-  }, [displayName, department, rank, reportsTo, persona, alwaysNotify, cliFlags, fallbackModel, selector, employee])
+  }, [displayName, department, rank, reportsTo, persona, alwaysNotify, cliFlags, fallbackModel, selector, icon, employee])
 
   const dirty = Object.keys(patch).length > 0
 
@@ -152,9 +164,30 @@ export function EmployeeEditor({
       onKeyDown={onKeyDown}
     >
       <div className="flex items-center justify-between">
-        <h2 className="text-[length:var(--text-headline)] font-[var(--weight-bold)] text-[var(--text-primary)] m-0">
-          Edit employee
-        </h2>
+        <div className="flex items-center gap-[var(--space-3)]">
+          <div className="relative">
+            <EmployeeAvatar
+              name={employee.name}
+              avatar={iconPatchFromPickerValue(icon).avatar}
+              emoji={iconPatchFromPickerValue(icon).emoji}
+              size={36}
+              onClick={() => setShowIconPicker((v) => !v)}
+            />
+            {showIconPicker && (
+              <EmojiPicker
+                current={icon}
+                onSelect={(value) => {
+                  setIcon(value)
+                  setShowIconPicker(false)
+                }}
+                onClose={() => setShowIconPicker(false)}
+              />
+            )}
+          </div>
+          <h2 className="text-[length:var(--text-headline)] font-[var(--weight-bold)] text-[var(--text-primary)] m-0">
+            Edit employee
+          </h2>
+        </div>
         <span className="text-[length:var(--text-caption2)] font-[family-name:var(--font-mono)] text-[var(--text-tertiary)]">
           {employee.name}
         </span>

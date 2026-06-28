@@ -225,6 +225,72 @@ emoji: "🧩"
     expect(data.engine).toBe("claude");
     expect(data.model).toBe("opus");
   });
+
+  it("persists avatar and clears any existing emoji (XOR)", () => {
+    writeYaml("platform", "icon.yaml", `
+name: icon
+persona: Has an emoji
+emoji: "🧩"
+`);
+    updateEmployeeYaml("icon", { avatar: "nautical:life_ring", emoji: "" });
+
+    const data = readYaml("platform", "icon.yaml");
+    expect(data.avatar).toBe("nautical:life_ring");
+    expect(data.emoji).toBeUndefined();
+  });
+
+  it("persists emoji and clears any existing avatar (XOR)", () => {
+    writeYaml("platform", "icon.yaml", `
+name: icon
+persona: Has an avatar
+avatar: aquatic:octopus
+`);
+    updateEmployeeYaml("icon", { avatar: "", emoji: "🦊" });
+
+    const data = readYaml("platform", "icon.yaml");
+    expect(data.emoji).toBe("🦊");
+    expect(data.avatar).toBeUndefined();
+  });
+
+  it("clears both icon fields when both are blank", () => {
+    writeYaml("platform", "icon.yaml", `
+name: icon
+persona: Has an avatar
+avatar: aquatic:octopus
+`);
+    updateEmployeeYaml("icon", { avatar: "", emoji: "" });
+
+    const data = readYaml("platform", "icon.yaml");
+    expect(data.avatar).toBeUndefined();
+    expect(data.emoji).toBeUndefined();
+  });
+
+  it("normalizes legacy YAML carrying both avatar and emoji on save", () => {
+    writeYaml("platform", "icon.yaml", `
+name: icon
+persona: Legacy both
+avatar: aquatic:octopus
+emoji: "🧩"
+`);
+    updateEmployeeYaml("icon", { avatar: "", emoji: "🦊" });
+
+    const data = readYaml("platform", "icon.yaml");
+    expect(data.emoji).toBe("🦊");
+    expect(data.avatar).toBeUndefined();
+  });
+
+  it("preserves an existing avatar when a non-icon field is updated", () => {
+    writeYaml("platform", "icon.yaml", `
+name: icon
+persona: Keep my avatar
+avatar: nautical:lighthouse
+`);
+    updateEmployeeYaml("icon", { alwaysNotify: false });
+
+    const data = readYaml("platform", "icon.yaml");
+    expect(data.avatar).toBe("nautical:lighthouse");
+    expect(data.alwaysNotify).toBe(false);
+  });
 });
 
 describe("scanOrg maxCostUsd mapping (G2)", () => {
@@ -282,6 +348,60 @@ describe("createEmployeeYaml", () => {
     expect(data.name).toBe("platform-lead");
     expect(data.displayName).toBe("Platform Lead");
     expect(data.modelPolicy.fallback_chain).toEqual([{ engine: "claude", model: "opus" }]);
+  });
+
+  it("writes a chosen ocean avatar and no emoji", () => {
+    expect(createEmployeeYaml({
+      name: "icon-a",
+      displayName: "Icon A",
+      department: "platform",
+      rank: "senior",
+      engine: "claude",
+      model: "sonnet",
+      persona: "Has an avatar.",
+      avatar: "nautical:anchor",
+      emoji: "",
+    })).toBe(true);
+
+    const data = readYaml("platform", "icon-a.yaml");
+    expect(data.avatar).toBe("nautical:anchor");
+    expect(data.emoji).toBeUndefined();
+  });
+
+  it("writes a chosen plain emoji and no avatar", () => {
+    expect(createEmployeeYaml({
+      name: "icon-b",
+      displayName: "Icon B",
+      department: "platform",
+      rank: "senior",
+      engine: "claude",
+      model: "sonnet",
+      persona: "Has an emoji.",
+      avatar: "",
+      emoji: "🦊",
+    })).toBe(true);
+
+    const data = readYaml("platform", "icon-b.yaml");
+    expect(data.emoji).toBe("🦊");
+    expect(data.avatar).toBeUndefined();
+  });
+
+  it("writes neither icon field when both are blank", () => {
+    expect(createEmployeeYaml({
+      name: "icon-c",
+      displayName: "Icon C",
+      department: "platform",
+      rank: "senior",
+      engine: "claude",
+      model: "sonnet",
+      persona: "No icon.",
+      avatar: "",
+      emoji: "",
+    })).toBe(true);
+
+    const data = readYaml("platform", "icon-c.yaml");
+    expect(data.avatar).toBeUndefined();
+    expect(data.emoji).toBeUndefined();
   });
 });
 
@@ -420,6 +540,19 @@ describe("validateEmployeeUpdate", () => {
   it("accepts reportsTo as a string or string array", () => {
     expect(validateEmployeeUpdate(testConfig, emp(), { reportsTo: "lead" }).ok).toBe(true);
     expect(validateEmployeeUpdate(testConfig, emp(), { reportsTo: ["a", "b"] }).ok).toBe(true);
+  });
+
+  it("accepts string avatar/emoji including the empty-string clear signal", () => {
+    expect(validateEmployeeUpdate(testConfig, emp(), { avatar: "nautical:anchor" }).ok).toBe(true);
+    expect(validateEmployeeUpdate(testConfig, emp(), { emoji: "🦊" }).ok).toBe(true);
+    const cleared = validateEmployeeUpdate(testConfig, emp(), { avatar: "", emoji: "🦊" });
+    expect(cleared.ok).toBe(true);
+    expect(cleared.updates).toMatchObject({ avatar: "", emoji: "🦊" });
+  });
+
+  it("rejects non-string avatar/emoji", () => {
+    expect(validateEmployeeUpdate(testConfig, emp(), { avatar: 123 as any }).ok).toBe(false);
+    expect(validateEmployeeUpdate(testConfig, emp(), { emoji: {} as any }).ok).toBe(false);
   });
 
   it("rejects an empty update with no recognized fields", () => {

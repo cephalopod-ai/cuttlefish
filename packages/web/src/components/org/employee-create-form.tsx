@@ -13,6 +13,9 @@ import {
 } from "@/components/ui/select"
 import { ModelSelectorRow, type SelectorValue } from "@/components/chat/model-selector-row"
 import { ReportsToField, serializeReportsTo } from "@/components/org/reports-to-field"
+import { EmployeeAvatar } from "@/components/ui/employee-avatar"
+import { EmojiPicker } from "@/components/ui/emoji-picker"
+import { iconPatchFromPickerValue } from "@/lib/employee-icon"
 
 const LEVEL_OPTIONS = [
   { value: "manager", label: "Manager" },
@@ -65,6 +68,9 @@ export function EmployeeCreateForm({
   const [alwaysNotify, setAlwaysNotify] = useState(true)
   const [cliFlags, setCliFlags] = useState("")
   const [fallbackModel, setFallbackModel] = useState("")
+  // Canonical icon: an ocean avatar id ("kind:id") or a plain emoji, "" for none.
+  const [icon, setIcon] = useState("")
+  const [showIconPicker, setShowIconPicker] = useState(false)
   const [selector, setSelector] = useState<SelectorValue>({
     engine: "claude",
     model: "sonnet",
@@ -105,6 +111,7 @@ export function EmployeeCreateForm({
         cliFlags: cliFlags.split(/\s+/).filter(Boolean),
         alwaysNotify,
         fallbackModel: fallbackModel.trim() || null,
+        ...(icon ? iconPatchFromPickerValue(icon) : {}),
       }
       const res = await api.createEmployee(payload)
       if (res.employee) onCreated(res.employee)
@@ -127,9 +134,30 @@ export function EmployeeCreateForm({
       onKeyDown={onKeyDown}
     >
       <div className="flex items-center justify-between">
-        <h2 className="text-[length:var(--text-headline)] font-[var(--weight-bold)] text-[var(--text-primary)] m-0">
-          Add agent
-        </h2>
+        <div className="flex items-center gap-[var(--space-3)]">
+          <div className="relative">
+            <EmployeeAvatar
+              name={name}
+              avatar={iconPatchFromPickerValue(icon).avatar}
+              emoji={iconPatchFromPickerValue(icon).emoji}
+              size={36}
+              onClick={() => setShowIconPicker((v) => !v)}
+            />
+            {showIconPicker && (
+              <EmojiPicker
+                current={icon}
+                onSelect={(value) => {
+                  setIcon(value)
+                  setShowIconPicker(false)
+                }}
+                onClose={() => setShowIconPicker(false)}
+              />
+            )}
+          </div>
+          <h2 className="text-[length:var(--text-headline)] font-[var(--weight-bold)] text-[var(--text-primary)] m-0">
+            Add agent
+          </h2>
+        </div>
       </div>
 
       <Field label="Display name">

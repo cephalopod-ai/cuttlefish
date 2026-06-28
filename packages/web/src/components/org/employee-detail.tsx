@@ -2,9 +2,6 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { Employee } from "@/lib/api";
 import { EmployeeAvatar } from "@/components/ui/employee-avatar";
-import { useSettings } from "@/routes/settings-provider";
-import { emojiForName } from "@/lib/emoji-pool";
-import { EmojiPicker } from "@/components/ui/emoji-picker";
 import { EmployeeEditor } from "@/components/org/employee-editor";
 
 interface SessionData {
@@ -79,9 +76,7 @@ export function EmployeeDetail({
   const [loading, setLoading] = useState(!prefetched);
   const [error, setError] = useState<string | null>(null);
   const [personaExpanded, setPersonaExpanded] = useState(false);
-  const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const [editing, setEditing] = useState(false);
-  const { settings, setEmployeeOverride } = useSettings();
 
   useEffect(() => {
     setPersonaExpanded(false);
@@ -151,7 +146,7 @@ export function EmployeeDetail({
 
   const rank = employee.rank || "employee";
   const persona = employee.persona || "";
-  const currentEmoji = settings.employeeOverrides[employee.name]?.emoji || emojiForName(employee.name);
+  const editable = rank !== "executive";
   const truncatedPersona =
     persona.length > 200 && !personaExpanded
       ? persona.slice(0, 200) + "..."
@@ -163,28 +158,13 @@ export function EmployeeDetail({
       <div className="rounded-[var(--radius-lg,16px)] border border-[var(--separator)] bg-[var(--material-regular)] p-[var(--space-6)]">
         <div className="flex items-start justify-between mb-[var(--space-4)]">
           <div className="flex items-center gap-[var(--space-3)]">
-            <div className="relative">
-              <EmployeeAvatar
-                name={employee.name}
-                avatar={employee.avatar}
-                size={36}
-                onClick={() => setShowAvatarPicker(!showAvatarPicker)}
-              />
-              {showAvatarPicker && (
-                <EmojiPicker
-                  current={currentEmoji}
-                  onSelect={(emoji) => {
-                    setEmployeeOverride(employee.name, { emoji: emoji === emojiForName(employee.name) ? undefined : emoji, profileImage: undefined });
-                    setShowAvatarPicker(false);
-                  }}
-                  onSelectImage={(url) => {
-                    setEmployeeOverride(employee.name, { profileImage: url });
-                    setShowAvatarPicker(false);
-                  }}
-                  onClose={() => setShowAvatarPicker(false)}
-                />
-              )}
-            </div>
+            <EmployeeAvatar
+              name={employee.name}
+              avatar={employee.avatar}
+              emoji={employee.emoji}
+              size={36}
+              onClick={editable ? () => setEditing(true) : undefined}
+            />
             <div>
               <h2 className="text-[length:var(--text-title2)] font-[var(--weight-bold)] tracking-[var(--tracking-tight)] text-[var(--text-primary)] m-0">
                 {employee.displayName || employee.name}
@@ -200,7 +180,7 @@ export function EmployeeDetail({
               <LifecycleBadge lifecycle={employee.lifecycle} />
             )}
             {/* The COO node is injected client-side (no YAML) — not editable. */}
-            {rank !== "executive" && (
+            {editable && (
               <button
                 onClick={() => setEditing(true)}
                 aria-label="Edit employee"

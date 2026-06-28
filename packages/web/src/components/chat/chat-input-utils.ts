@@ -7,6 +7,7 @@ export interface Employee {
   rank?: string
   engine?: string
   avatar?: string
+  emoji?: string
 }
 
 export interface SlashCommand {

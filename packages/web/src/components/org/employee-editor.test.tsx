@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, fireEvent, waitFor } from "@testing-library/react"
 import type { Employee } from "@/lib/api"
+import { emojiForName } from "@/lib/emoji-pool"
 
 // ModelSelectorRow has its own tests + needs the model registry; stub it here so
 // this test focuses on the editor's own behavior (validation, diffing, save).
@@ -93,6 +94,23 @@ describe("EmployeeEditor", () => {
 
     await waitFor(() => expect(updateEmployee).toHaveBeenCalledWith("content-writer", {
       fallbackModel: "claude-sonnet-4-6",
+    }))
+  })
+
+  it("sends the chosen ocean avatar (and clears emoji) when the icon changes", async () => {
+    const onSaved = vi.fn()
+    updateEmployee.mockResolvedValue({ status: "ok", employee: { ...EMP, avatar: "nautical:anchor" } })
+    render(<EmployeeEditor employee={EMP} onCancel={() => {}} onSaved={onSaved} />)
+
+    // The header avatar opens the icon picker; "content-writer" has no icon yet,
+    // so it renders its deterministic fallback emoji.
+    fireEvent.click(screen.getByText(emojiForName("content-writer")))
+    fireEvent.click(screen.getByRole("button", { name: "Anchor" }))
+    fireEvent.click(saveBtn())
+
+    await waitFor(() => expect(updateEmployee).toHaveBeenCalledWith("content-writer", {
+      avatar: "nautical:anchor",
+      emoji: "",
     }))
   })
 

@@ -193,6 +193,8 @@ export function ChatPane({
         engine: emp.engine,
         model: emp.model,
         effortLevel: emp.effortLevel,
+        avatar: emp.avatar,
+        emoji: emp.emoji,
       }))
     : []
   // Reset the employee picker when there is no session (the live read pipeline

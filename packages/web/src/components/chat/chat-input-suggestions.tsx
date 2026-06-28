@@ -56,7 +56,7 @@ export function MentionSuggestions({ employees, highlightedIndex, itemRefs, onSe
             onClick={() => onSelect(emp.name)}
             className={`w-full text-left py-[var(--space-2)] px-[var(--space-3)] text-[length:var(--text-footnote)] ${isHighlighted ? 'bg-[var(--fill-secondary)]' : 'bg-transparent'} border-none cursor-pointer flex items-center gap-[var(--space-2)] text-[var(--text-primary)]`}
           >
-            <EmployeeAvatar name={emp.name} avatar={emp.avatar} size={20} />
+            <EmployeeAvatar name={emp.name} avatar={emp.avatar} emoji={emp.emoji} size={20} />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-[var(--space-2)]">
                 <span className="font-[var(--weight-semibold)]">{emp.displayName || emp.name}</span>

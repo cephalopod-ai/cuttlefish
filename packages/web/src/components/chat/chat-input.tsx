@@ -161,6 +161,7 @@ export function ChatInput({
           rank: emp.rank,
           engine: emp.engine,
           avatar: emp.avatar,
+          emoji: emp.emoji,
         })))
       })
       .catch(() => {})
