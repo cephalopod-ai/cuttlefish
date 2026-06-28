@@ -1,7 +1,6 @@
 import { Copy, MoreHorizontal, Search, Share2, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ViewMode } from '@/lib/view-mode'
-import { shareDebugLog, clearDebugLog } from '@/lib/debug-log'
 
 interface SessionMeta {
   engine?: string
@@ -22,8 +21,10 @@ interface ChatMoreMenuProps {
   onSetViewMode: (mode: ViewMode) => void
   onOpenGlobalSearch: () => void
   onDuplicate: (id: string) => void
-  onDelete: (id: string) => void
+  onRequestDelete: (id: string) => void
   onCopy: (text: string, field: string) => void
+  onShareDebugLog: () => void
+  onClearDebugLog: () => void
 }
 
 export function ChatMoreMenu({
@@ -40,8 +41,10 @@ export function ChatMoreMenu({
   onSetViewMode,
   onOpenGlobalSearch,
   onDuplicate,
-  onDelete,
+  onRequestDelete,
   onCopy,
+  onShareDebugLog,
+  onClearDebugLog,
 }: ChatMoreMenuProps) {
   return (
     <div data-more-menu className="relative">
@@ -124,14 +127,14 @@ export function ChatMoreMenu({
                 </button>
               )}
               <button
-                onClick={() => { onClose(); shareDebugLog() }}
+                onClick={() => { onClose(); onShareDebugLog() }}
                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-accent"
               >
                 <Share2 className="size-3.5" />
                 <span className="flex-1">Share debug log</span>
               </button>
               <button
-                onClick={() => { onClose(); clearDebugLog() }}
+                onClick={() => { onClose(); onClearDebugLog() }}
                 className="block w-full px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:bg-accent"
               >
                 Clear debug log
@@ -139,7 +142,7 @@ export function ChatMoreMenu({
 
               <div className="my-0.5 border-t border-border" />
               <button
-                onClick={() => { onClose(); if (window.confirm('Delete this session?')) onDelete(selectedId) }}
+                onClick={() => { onClose(); onRequestDelete(selectedId) }}
                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--system-red)] transition-colors hover:bg-accent"
               >
                 <Trash2 className="size-3.5" />

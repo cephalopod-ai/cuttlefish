@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { Zap } from "lucide-react";
 import { useSettings } from "@/routes/settings-provider";
+import { useToast } from "@/components/ui/toast";
 
 interface Skill {
   name: string;
@@ -29,6 +30,7 @@ export default function SkillsPage() {
   useBreadcrumbs([{ label: 'Skills' }])
   const { settings } = useSettings();
   const portalName = settings.portalName ?? "Cuttlefish";
+  const { pushToast } = useToast();
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -84,9 +86,10 @@ export default function SkillsPage() {
           </div>
           <button
             onClick={() =>
-              alert(
-                `To create a new skill, chat with ${portalName} and ask to learn something new.`,
-              )
+              pushToast({
+                title: "Create a skill from chat",
+                description: `Chat with ${portalName} and ask it to learn something new.`,
+              })
             }
             className="py-[var(--space-2)] px-[var(--space-4)] rounded-[var(--radius-md,12px)] text-[var(--accent)] border-none cursor-pointer text-[length:var(--text-body)] font-[var(--weight-medium)]"
             style={{
@@ -113,7 +116,7 @@ export default function SkillsPage() {
         )}
 
         {loading ? (
-          <div className="text-center p-[var(--space-8)] text-[var(--text-tertiary)] text-[length:var(--text-body)]">
+          <div role="status" aria-live="polite" className="text-center p-[var(--space-8)] text-[var(--text-tertiary)] text-[length:var(--text-body)]">
             Loading...
           </div>
         ) : skills.length === 0 && !error ? (

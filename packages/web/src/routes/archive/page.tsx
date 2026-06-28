@@ -16,6 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useArchive, useArchives, useDeleteArchive } from '@/hooks/use-archives'
 import type { ArchivedMessage, ArchivedSessionSnapshot, ProjectArchive } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 
 function formatDate(value: string): string {
   const date = new Date(value)
@@ -138,6 +139,7 @@ export default function ArchivePage() {
   useBreadcrumbs([{ label: 'Archive' }])
   const { data: archives, isLoading, error: archivesError } = useArchives()
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
   const activeId = selectedId ?? archives?.[0]?.id ?? null
   const { data: detail, isLoading: detailLoading, error: detailError } = useArchive(activeId)
   const deleteArchive = useDeleteArchive()
@@ -159,10 +161,9 @@ export default function ArchivePage() {
 
   async function handleDeleteArchive() {
     if (!activeId) return
-    const title = detail ? archiveTitle(detail) : 'this archive'
-    if (!window.confirm(`Permanently delete "${title}"?`)) return
     await deleteArchive.mutateAsync(activeId)
     setSelectedId(nextAfterDelete)
+    setConfirmDeleteOpen(false)
   }
 
   return (
@@ -177,7 +178,7 @@ export default function ArchivePage() {
             <Button
               variant="destructive"
               size="sm"
-              onClick={handleDeleteArchive}
+              onClick={() => setConfirmDeleteOpen(true)}
               disabled={deleteArchive.isPending}
             >
               <Trash2 />
@@ -185,6 +186,19 @@ export default function ArchivePage() {
             </Button>
           ) : null}
         </div>
+
+        <ConfirmDialog
+          open={confirmDeleteOpen}
+          title="Delete archive?"
+          description={`Permanently delete "${detail ? archiveTitle(detail) : "this archive"}"?`}
+          confirmLabel={deleteArchive.isPending ? 'Deleting...' : 'Delete'}
+          destructive
+          busy={deleteArchive.isPending}
+          onOpenChange={setConfirmDeleteOpen}
+          onConfirm={() => {
+            void handleDeleteArchive()
+          }}
+        />
 
         <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[340px_1fr]">
           <div className="min-h-0 overflow-y-auto">

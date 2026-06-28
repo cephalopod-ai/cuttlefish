@@ -17,6 +17,9 @@ import { useSettings } from '@/routes/settings-provider'
 import { useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/lib/query-keys'
 import { writeViewMode, type ViewMode } from '@/lib/view-mode'
+import { useToast } from '@/components/ui/toast'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { clearDebugLog, shareDebugLog } from '@/lib/debug-log'
 import { ChatErrorBoundary } from './chat-page-error-boundary'
 import { ChatMoreMenu } from './chat-more-menu'
 import { ChatPageShell } from './chat-page-shell'
@@ -106,6 +109,8 @@ function ChatPage() {
   const sessionsQuery = useSessions()
   const { data: orgData } = useOrg()
   const qc = useQueryClient()
+  const { pushToast } = useToast()
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
 
   const roomSessions = useMemo(
     () => (sessionsQuery.data ?? []) as unknown as RoomSession[],
@@ -357,9 +362,13 @@ function ChatPage() {
         qc.invalidateQueries({ queryKey: queryKeys.sessions.all })
       }
     } catch (err: any) {
-      window.alert(`Duplicate failed: ${err.message || 'Unknown error'}`)
+      pushToast({
+        tone: 'error',
+        title: 'Duplicate failed',
+        description: err?.message || 'Unknown error',
+      })
     }
-  }, [chatTabs, duplicateSessionMutation, qc])
+  }, [chatTabs, duplicateSessionMutation, pushToast, qc])
 
   const handleDuplicateFromSidebar = useCallback((newSessionId: string) => {
     chatTabs.openTab({ sessionId: newSessionId, label: 'Duplicated Chat', status: 'idle', unread: false, pinned: true })
@@ -450,8 +459,8 @@ function ChatPage() {
     { key: 'j', category: 'Navigation', description: 'Next session', action: () => navigateSession(1) },
     { key: 'k', category: 'Navigation', description: 'Previous session', action: () => navigateSession(-1) },
     { key: 'e', category: 'Navigation', description: 'Next employee', action: cycleEmployee },
-    { key: 'Backspace', category: 'Actions', description: 'Delete session', action: () => { if (selectedId && window.confirm('Delete this session?')) handleDeleteSession(selectedId) }, enabled: !!selectedId },
-    { key: 'Delete', category: 'Actions', description: 'Delete session', action: () => { if (selectedId && window.confirm('Delete this session?')) handleDeleteSession(selectedId) }, enabled: !!selectedId },
+    { key: 'Backspace', category: 'Actions', description: 'Delete session', action: () => { if (selectedId) setDeleteTargetId(selectedId) }, enabled: !!selectedId },
+    { key: 'Delete', category: 'Actions', description: 'Delete session', action: () => { if (selectedId) setDeleteTargetId(selectedId) }, enabled: !!selectedId },
     { key: 'c', category: 'Actions', description: 'Copy chat', action: copyChat, enabled: !!selectedId },
     { key: 'Escape', category: 'Navigation', description: 'Close overlay', action: () => {
       if (showShortcutOverlay) setShowShortcutOverlay(false)
@@ -523,8 +532,22 @@ function ChatPage() {
       onSetViewMode={setAndPersistViewMode}
       onOpenGlobalSearch={openGlobalSearch}
       onDuplicate={handleDuplicate}
-      onDelete={handleDeleteSession}
+      onRequestDelete={setDeleteTargetId}
       onCopy={copyToClipboard}
+      onShareDebugLog={async () => {
+        const result = await shareDebugLog()
+        pushToast({
+          title: result === 'shared' ? 'Debug log shared' : 'Debug log copied',
+          description:
+            result === 'shared'
+              ? 'The native share sheet handled the debug log.'
+              : 'The debug log was copied to your clipboard.',
+        })
+      }}
+      onClearDebugLog={() => {
+        clearDebugLog()
+        pushToast({ title: 'Debug log cleared' })
+      }}
     />
   )
 
@@ -533,47 +556,65 @@ function ChatPage() {
   const onMobileList = mobileView === 'sidebar'
 
   return (
-    <ChatPageShell
-      openFile={openFile}
-      listOpen={listOpen}
-      onToggleList={toggleList}
-      selectedId={selectedId}
-      selectedRoomId={selectedRoomId}
-      selectedRoom={selectedRoom}
-      roomSessionsById={roomSessionsById}
-      employees={(orgData?.employees ?? []) as RoomEmployee[]}
-      mobileView={mobileView}
-      onMobileList={onMobileList}
-      headerTitle={headerTitle}
-      moreMenu={moreMenu}
-      copiedField={copiedField}
-      activeTab={chatTabs.activeTab}
-      pendingEmployee={pendingEmployee}
-      pendingUserMessage={pendingUserMessage}
-      portalName={portalName}
-      subscribe={subscribe}
-      connectionSeq={connectionSeq}
-      skillsVersion={skillsVersion}
-      events={events}
-      effectiveViewMode={effectiveViewMode}
-      focusTrigger={focusTrigger}
-      shortcuts={shortcuts}
-      showShortcutOverlay={showShortcutOverlay}
-      onSelect={handleSelect}
-      onNewChat={handleNewChat}
-      onDeleteSession={handleDeleteSession}
-      onDuplicateFromSidebar={handleDuplicateFromSidebar}
-      onSessionsLoaded={handleSessionsLoaded}
-      onEmployeeSessionsAvailable={handleEmployeeSessionsAvailable}
-      onOrderComputed={handleOrderComputed}
-      onContactEmployee={contactEmployee}
-      onFileBack={handleFileBack}
-      onSessionCreated={handleSessionCreated}
-      onSessionMetaChange={handleSessionMetaChange}
-      onRefresh={handleRefresh}
-      onOpenShortcuts={() => setShowShortcutOverlay(true)}
-      onCloseShortcuts={() => setShowShortcutOverlay(false)}
-      onBackToList={backToList}
-    />
+    <>
+      <ChatPageShell
+        openFile={openFile}
+        listOpen={listOpen}
+        onToggleList={toggleList}
+        selectedId={selectedId}
+        selectedRoomId={selectedRoomId}
+        selectedRoom={selectedRoom}
+        roomSessionsById={roomSessionsById}
+        employees={(orgData?.employees ?? []) as RoomEmployee[]}
+        mobileView={mobileView}
+        onMobileList={onMobileList}
+        headerTitle={headerTitle}
+        moreMenu={moreMenu}
+        copiedField={copiedField}
+        activeTab={chatTabs.activeTab}
+        pendingEmployee={pendingEmployee}
+        pendingUserMessage={pendingUserMessage}
+        portalName={portalName}
+        subscribe={subscribe}
+        connectionSeq={connectionSeq}
+        skillsVersion={skillsVersion}
+        events={events}
+        effectiveViewMode={effectiveViewMode}
+        focusTrigger={focusTrigger}
+        shortcuts={shortcuts}
+        showShortcutOverlay={showShortcutOverlay}
+        onSelect={handleSelect}
+        onNewChat={handleNewChat}
+        onDeleteSession={handleDeleteSession}
+        onDuplicateFromSidebar={handleDuplicateFromSidebar}
+        onSessionsLoaded={handleSessionsLoaded}
+        onEmployeeSessionsAvailable={handleEmployeeSessionsAvailable}
+        onOrderComputed={handleOrderComputed}
+        onContactEmployee={contactEmployee}
+        onFileBack={handleFileBack}
+        onSessionCreated={handleSessionCreated}
+        onSessionMetaChange={handleSessionMetaChange}
+        onRefresh={handleRefresh}
+        onOpenShortcuts={() => setShowShortcutOverlay(true)}
+        onCloseShortcuts={() => setShowShortcutOverlay(false)}
+        onBackToList={backToList}
+      />
+
+      <ConfirmDialog
+        open={!!deleteTargetId}
+        title="Delete this session?"
+        description="This permanently removes the session and all of its messages."
+        confirmLabel="Delete"
+        destructive
+        onOpenChange={(open) => {
+          if (!open) setDeleteTargetId(null)
+        }}
+        onConfirm={() => {
+          if (!deleteTargetId) return
+          void handleDeleteSession(deleteTargetId)
+          setDeleteTargetId(null)
+        }}
+      />
+    </>
   )
 }

@@ -1,6 +1,8 @@
 import { Check, RotateCcw, Trash2 } from "lucide-react"
+import { useState } from "react"
 import { EmojiPicker } from "@/components/ui/emoji-picker"
 import { RemoteAccessPanel } from "@/components/auth/remote-access-panel"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { THEMES } from "@/lib/themes"
 import type { ThemeId } from "@/lib/themes"
 import { api } from "@/lib/api"
@@ -365,6 +367,8 @@ interface ResetSectionProps {
 }
 
 export function ResetSection({ resetAll, navOrderCustomized, resetNavOrder }: ResetSectionProps) {
+  const [confirmResetOpen, setConfirmResetOpen] = useState(false)
+
   return (
     <Section title="Reset">
       <div className="flex items-center justify-center gap-[var(--space-3)] flex-wrap">
@@ -388,20 +392,27 @@ export function ResetSection({ resetAll, navOrderCustomized, resetNavOrder }: Re
           Re-run Onboarding Wizard
         </button>
         <button
-          onClick={() => {
-            if (window.confirm("Reset all settings to defaults?")) {
-              localStorage.removeItem("cuttlefish-settings")
-              localStorage.removeItem("cuttlefish-theme")
-              resetAll()
-              window.location.reload()
-            }
-          }}
+          onClick={() => setConfirmResetOpen(true)}
           className="px-[var(--space-5)] py-[var(--space-2)] rounded-[var(--radius-md)] bg-[var(--system-red)] text-white border-none cursor-pointer text-[length:var(--text-footnote)] font-[var(--weight-semibold)] transition-all duration-150 ease-[var(--ease-spring)] inline-flex items-center gap-[var(--space-2)]"
         >
           <Trash2 size={14} />
           Reset All Settings
         </button>
       </div>
+      <ConfirmDialog
+        open={confirmResetOpen}
+        title="Reset all settings?"
+        description="This clears your saved settings and reloads the app with defaults."
+        confirmLabel="Reset settings"
+        destructive
+        onOpenChange={setConfirmResetOpen}
+        onConfirm={() => {
+          localStorage.removeItem("cuttlefish-settings")
+          localStorage.removeItem("cuttlefish-theme")
+          resetAll()
+          window.location.reload()
+        }}
+      />
     </Section>
   )
 }

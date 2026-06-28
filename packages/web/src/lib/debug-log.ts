@@ -33,7 +33,7 @@ export function clearDebugLog(): void {
 }
 
 /** Share or copy the accumulated log. iOS Safari → native Share sheet; other → clipboard. */
-export async function shareDebugLog(): Promise<void> {
+export async function shareDebugLog(): Promise<"shared" | "copied"> {
   const text = getDebugLog();
   const ua = `\n\n--- UA: ${navigator.userAgent}\nViewport: ${window.innerWidth}x${window.innerHeight} dpr=${window.devicePixelRatio}`;
   const payload = text + ua;
@@ -42,16 +42,17 @@ export async function shareDebugLog(): Promise<void> {
   try {
     if (typeof navigator.share === "function") {
       await navigator.share({ title: "Cuttlefish debug log", text: payload });
-      return;
+      return "shared";
     }
   } catch {
     // user cancelled or share failed — fall through to clipboard
   }
   try {
     await navigator.clipboard.writeText(payload);
-    alert(`Debug log copied to clipboard (${buf.length} entries)`);
+    return "copied";
   } catch {
     // Last resort: dump into a textarea and tell the user to copy manually
     prompt("Copy this log:", payload.slice(0, 4000));
+    return "copied";
   }
 }

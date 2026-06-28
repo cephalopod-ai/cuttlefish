@@ -64,7 +64,7 @@ interface ChatPageShellProps {
 export function ChatPageShell(props: ChatPageShellProps) {
   return (
     <FileOpenContext.Provider value={props.openFile}>
-      <PageLayout chromeless>
+      <PageLayout chromeless mainLabel="Chat">
         <div className="flex overflow-hidden h-full">
           <div className="group/sidebar hidden h-full shrink-0 lg:flex">
             <NavRibbon listOpen={props.listOpen} onToggleList={props.onToggleList} />

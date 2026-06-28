@@ -1,6 +1,7 @@
 import type React from "react"
 import { RotateCcw, Trash2 } from "lucide-react"
 import { api } from "@/lib/api"
+import { useToast } from "@/components/ui/toast"
 import type { Config } from "./settings-constants"
 
 interface SectionProps {
@@ -68,6 +69,7 @@ export function SettingsConnectorsSection({
   SettingsSelect,
   ToggleSwitch,
 }: SettingsConnectorsSectionProps) {
+  const { pushToast } = useToast()
   const instances = config.connectors?.instances || []
 
   return (
@@ -167,7 +169,7 @@ export function SettingsConnectorsSection({
           <img
             src={waQr}
             alt="WhatsApp QR Code"
-            className="w-[200px] h-[200px] rounded-[var(--radius-md)] border border-[var(--separator)] bg-white p-[8px]"
+            className="h-[200px] w-[200px] max-w-full rounded-[var(--radius-md)] border border-[var(--separator)] bg-white p-[8px]"
           />
           <div
             className="text-[length:var(--text-caption2)] text-[var(--text-tertiary)]"
@@ -199,9 +201,16 @@ export function SettingsConnectorsSection({
                 if (result.stopped.length) parts.push(`Stopped: ${result.stopped.join(", ")}`)
                 if (result.started.length) parts.push(`Started: ${result.started.join(", ")}`)
                 if (result.errors.length) parts.push(`Errors: ${result.errors.join(", ")}`)
-                alert(parts.length ? parts.join("\n") : "No connector instances to reload")
+                pushToast({
+                  title: "Connector reload finished",
+                  description: parts.length ? parts.join(" ") : "No connector instances to reload.",
+                  tone: result.errors.length ? "error" : "success",
+                })
               } catch {
-                alert("Failed to reload connectors")
+                pushToast({
+                  tone: "error",
+                  title: "Failed to reload connectors",
+                })
               }
             }}
           >

@@ -10,6 +10,7 @@ import { EmojiFavicon } from '@/components/emoji-favicon'
 import { GatewayProvider } from '@/hooks/use-gateway'
 import { TalkProvider } from '@/routes/talk/talk-provider'
 import { AuthGate, AuthProvider } from "@/routes/auth-provider"
+import { ToastProvider } from "@/components/ui/toast"
 
 function QueryInvalidationBridge() {
   useQueryInvalidation()
@@ -28,12 +29,14 @@ export function ClientProviders({ children }: { children: ReactNode }) {
                   {/* TalkProvider lifts the voice-loop state above the router so it
                       survives / ↔ /talk navigation. It stays dormant until a page
                       calls activate() (TalkPage does, on mount). */}
-                  <TalkProvider>
-                    {children}
-                    <DocumentTitle />
-                    <EmojiFavicon />
-                    <QueryInvalidationBridge />
-                  </TalkProvider>
+                  <ToastProvider>
+                    <TalkProvider>
+                      {children}
+                      <DocumentTitle />
+                      <EmojiFavicon />
+                      <QueryInvalidationBridge />
+                    </TalkProvider>
+                  </ToastProvider>
                 </GatewayProvider>
               </SettingsProvider>
             </AuthGate>

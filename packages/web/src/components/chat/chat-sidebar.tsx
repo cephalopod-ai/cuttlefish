@@ -1,6 +1,7 @@
 import React, { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { useVirtualizer } from "@tanstack/react-virtual"
+import { useToast } from "@/components/ui/toast"
 import { Search, X } from "lucide-react"
 import { api, type Employee, type SessionsResponse } from "@/lib/api"
 import { useOrg } from "@/hooks/use-employees"
@@ -89,6 +90,7 @@ export function ChatSidebar({
   onOrderComputed,
   onContactEmployee,
 }: ChatSidebarProps) {
+  const { pushToast } = useToast()
   const { settings } = useSettings()
   const portalName = settings.portalName ?? "Cuttlefish"
   const portalSlug = portalEmployeeSlug(portalName)
@@ -407,9 +409,13 @@ export function ChatSidebar({
         renameCancelledRef.current = false
       }
     } catch (err: any) {
-      window.alert(`Duplicate failed: ${err.message || "Unknown error"}`)
+      pushToast({
+        tone: "error",
+        title: "Duplicate failed",
+        description: err?.message || "Unknown error",
+      })
     }
-  }, [duplicateSessionMutation, onDuplicate, onSelect])
+  }, [duplicateSessionMutation, onDuplicate, onSelect, pushToast])
 
   const sharedRowProps = useMemo<SidebarSharedRowProps>(() => ({
     selectedId,

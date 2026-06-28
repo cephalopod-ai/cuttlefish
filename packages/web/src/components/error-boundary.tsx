@@ -18,6 +18,15 @@ interface State {
   error: Error | null
 }
 
+const DEFAULT_FALLBACK = (
+  <div
+    role="alert"
+    className="rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--system-red)_30%,transparent)] bg-[color-mix(in_srgb,var(--system-red)_10%,transparent)] px-[var(--space-4)] py-[var(--space-3)] text-[length:var(--text-footnote)] text-[var(--system-red)]"
+  >
+    Something went wrong.
+  </div>
+)
+
 /**
  * Minimal error boundary. Used to fence off the Talk card deck so one malformed
  * card payload degrades to a small "card failed" fallback instead of unmounting
@@ -42,7 +51,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   render() {
-    if (this.state.error) return this.props.fallback ?? null
+    if (this.state.error) return this.props.fallback ?? DEFAULT_FALLBACK
     return this.props.children
   }
 }

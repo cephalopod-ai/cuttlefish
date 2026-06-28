@@ -321,7 +321,7 @@ export default function LimitsPage() {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto px-[var(--space-6)] pt-[var(--space-5)] pb-[var(--space-8)]">
+        <div className="flex-1 overflow-y-auto px-[var(--space-6)] pt-[var(--space-5)] pb-[var(--space-8)]">
           <div className="mx-auto grid max-w-[760px] gap-[var(--space-4)]">
             {error && (
               <div className="mb-[var(--space-5)] px-[var(--space-4)] py-[var(--space-3)] rounded-[var(--radius-md)] border border-[var(--system-red)] text-[length:var(--text-footnote)] text-[var(--system-red)]">
@@ -344,7 +344,7 @@ export default function LimitsPage() {
               </>
             )}
           </div>
-        </main>
+        </div>
       </div>
     </PageLayout>
   )

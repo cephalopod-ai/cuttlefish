@@ -3,6 +3,7 @@ import { lazy, Suspense } from "react"
 import { NavRibbon, PillNav } from "./pill-nav"
 import { MobileTabBar } from "./chat/mobile-tab-bar"
 import { cn } from "@/lib/utils"
+import { useBreadcrumbs } from "@/context/breadcrumb-context"
 
 const GlobalSearch = lazy(() => import("./global-search").then(m => ({ default: m.GlobalSearch })))
 const LiveStreamWidget = lazy(() => import("./live-stream-widget").then(m => ({ default: m.LiveStreamWidget })))
@@ -30,7 +31,20 @@ export function ToolbarActions({ children }: { children?: React.ReactNode }) {
  * supplies one (none do today — pages own their actions inline via
  * ToolbarActions — but the capability is preserved).
  */
-export function PageLayout({ children, headerActions, chromeless }: { children: React.ReactNode; headerActions?: React.ReactNode; chromeless?: boolean }) {
+export function PageLayout({
+  children,
+  headerActions,
+  chromeless,
+  mainLabel,
+}: {
+  children: React.ReactNode
+  headerActions?: React.ReactNode
+  chromeless?: boolean
+  mainLabel?: string
+}) {
+  const { items } = useBreadcrumbs()
+  const landmarkLabel = mainLabel ?? items.at(-1)?.label ?? "Main content"
+
   return (
     <div className="flex h-dvh overflow-hidden bg-background">
       <Suspense fallback={null}>
@@ -39,7 +53,7 @@ export function PageLayout({ children, headerActions, chromeless }: { children: 
       {/* Global desktop nav rail (hidden < lg from inside NavRibbon). Sibling of
           <main> so its per-icon label pills can escape rightward over content. */}
       {!chromeless && <NavRibbon />}
-      <main className="relative flex flex-1 flex-col overflow-hidden">
+      <main role="main" aria-label={landmarkLabel} className="relative flex flex-1 flex-col overflow-hidden">
         {/* Mobile-only legacy chrome: title pill + hamburger popover (the only
             path to long-tail pages on phones). Desktop nav is the rail above. */}
         {!chromeless && (
