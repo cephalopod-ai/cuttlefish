@@ -664,6 +664,46 @@ function validateNotifications(problems: string[], value: unknown): void {
   if (value.channel !== undefined) validateString(problems, "notifications.channel", value.channel);
 }
 
+function collectConfiguredConnectorIds(config: Record<string, unknown>): Set<string> {
+  const ids = new Set<string>();
+  if (!isPlainObject(config.connectors)) return ids;
+
+  const connectors = config.connectors;
+  if (isPlainObject(connectors.slack) && typeof connectors.slack.appToken === "string" && typeof connectors.slack.botToken === "string") {
+    ids.add("slack");
+  }
+  if (isPlainObject(connectors.whatsapp)) {
+    ids.add("whatsapp");
+  }
+  if (!Array.isArray(connectors.instances)) return ids;
+
+  for (const instance of connectors.instances) {
+    if (!isPlainObject(instance)) continue;
+    if (typeof instance.id !== "string" || !instance.id.trim()) continue;
+    if (instance.type !== "slack" && instance.type !== "whatsapp") continue;
+    ids.add(instance.id);
+  }
+  return ids;
+}
+
+function validateNotificationConnectorReference(problems: string[], config: Record<string, unknown>): void {
+  if (!isPlainObject(config.notifications)) return;
+
+  const channel = config.notifications.channel;
+  if (channel === undefined || typeof channel !== "string" || !channel.trim()) return;
+
+  const connectorName = config.notifications.connector;
+  const effectiveConnector = typeof connectorName === "string" && connectorName.trim() ? connectorName : "slack";
+  const supportedConnectors = collectConfiguredConnectorIds(config);
+  if (supportedConnectors.has(effectiveConnector)) return;
+
+  const available = [...supportedConnectors].sort();
+  const detail = available.length > 0
+    ? `available connectors: ${available.join(", ")}`
+    : "no supported connectors are configured";
+  problems.push(`notifications.connector must reference a configured connector; got "${effectiveConnector}" (${detail})`);
+}
+
 function validatePortal(problems: string[], value: unknown): void {
   if (!isPlainObject(value)) {
     problems.push("portal must be a mapping");
@@ -803,6 +843,7 @@ export function validateConfigShape(config: unknown): string[] {
   if (c.talk !== undefined) validateTalk(problems, c.talk);
   if (c.knowledge !== undefined) validateKnowledge(problems, c.knowledge, { pushUnknownKeys, validateString, validateNumber });
   if (c.remotes !== undefined) validateRemotes(problems, c.remotes);
+  validateNotificationConnectorReference(problems, c);
 
   return problems;
 }

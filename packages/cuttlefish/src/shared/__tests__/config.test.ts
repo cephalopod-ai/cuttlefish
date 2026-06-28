@@ -119,6 +119,40 @@ describe("validateConfigShape", () => {
     expect(validateConfigShape({ engines: { claude: {} } })).toEqual([]);
   });
 
+  it("rejects notifications.connector values that are not configured connectors", () => {
+    const problems = validateConfigShape({
+      engines: { claude: {} },
+      notifications: { connector: "discord", channel: "alerts" },
+      connectors: {
+        slack: { appToken: "xapp-1", botToken: "xoxb-1" },
+      },
+    });
+
+    expect(problems).toContain('notifications.connector must reference a configured connector; got "discord" (available connectors: slack)');
+  });
+
+  it("rejects notifications.channel when the effective default connector is unavailable", () => {
+    const problems = validateConfigShape({
+      engines: { claude: {} },
+      notifications: { channel: "alerts" },
+      connectors: {},
+    });
+
+    expect(problems).toContain('notifications.connector must reference a configured connector; got "slack" (no supported connectors are configured)');
+  });
+
+  it("accepts notifications.connector when it targets a configured connector instance", () => {
+    expect(validateConfigShape({
+      engines: { claude: {} },
+      notifications: { connector: "ops-slack", channel: "alerts" },
+      connectors: {
+        instances: [
+          { id: "ops-slack", type: "slack", appToken: "xapp-1", botToken: "xoxb-1" },
+        ],
+      },
+    })).toEqual([]);
+  });
+
   it("rejects null / empty files", () => {
     expect(validateConfigShape(null)).toHaveLength(1);
     expect(validateConfigShape(undefined)).toHaveLength(1);
