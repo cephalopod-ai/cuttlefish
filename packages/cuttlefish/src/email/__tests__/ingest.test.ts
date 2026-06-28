@@ -58,3 +58,34 @@ describe("annotateEmailSession", () => {
     expect(reg.getMessages(session.id).filter((m) => m.role === "user")).toHaveLength(2);
   });
 });
+
+describe("markEmailMessageRunFailed", () => {
+  it("downgrades an ingested message to error and leaves both status tables consistent", async () => {
+    const reg = await import("../../sessions/registry.js");
+    const store = await import("../store.js");
+    reg.initDb();
+
+    const msg = emailRecord({ id: "email-rf", providerMessageId: "100:77" });
+    store.persistEmailMessageWithState({ ...msg, status: "ingested", sessionId: "s1" }, { status: "ingested", sessionId: "s1" });
+
+    store.markEmailMessageRunFailed("email-rf", "agent crashed");
+
+    expect(store.getEmailMessage("email-rf")?.status).toBe("error");
+    expect(store.getEmailMessage("email-rf")?.error).toBe("agent crashed");
+    expect(store.getEmailIngestState("ops", "100:77")?.status).toBe("error");
+  });
+
+  it("is a no-op when the message is not in the ingested state (compare-and-set)", async () => {
+    const reg = await import("../../sessions/registry.js");
+    const store = await import("../store.js");
+    reg.initDb();
+
+    const msg = emailRecord({ id: "email-cached", providerMessageId: "100:78" });
+    store.persistEmailMessageWithState({ ...msg, status: "cached" }, { status: "cached" });
+
+    store.markEmailMessageRunFailed("email-cached", "should not apply");
+
+    expect(store.getEmailMessage("email-cached")?.status).toBe("cached");
+    expect(store.getEmailMessage("email-cached")?.error).toBeNull();
+  });
+});

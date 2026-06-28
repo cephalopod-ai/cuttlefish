@@ -32,6 +32,7 @@ import { AiderInteractiveEngine } from "../engines/aider-interactive.js";
 import { buildEmailIngestPrompt, annotateEmailSession } from "../email/ingest.js";
 import { ImapEmailMailboxClient } from "../email/client.js";
 import { EmailService } from "../email/service.js";
+import { markEmailMessageRunFailed } from "../email/store.js";
 import type { OrchestrationRuntime } from "../orchestration/runtime.js";
 import { initDb, clearAllPartialMessages, createSession, getInterruptedSessions, getSession, getSessionBySessionKey, listSessions, recoverStaleQueueItems, recoverStaleSessions, updateSession } from "../sessions/registry.js";
 import { SessionManager } from "../sessions/manager.js";
@@ -400,7 +401,15 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
         currentConfig,
         apiContext,
         { attachments: message.attachments.map((attachment) => attachment.artifactId).filter((id): id is string => typeof id === "string" && id.length > 0) },
-      );
+      ).then(() => {
+        // Reflect a failed agent run back onto the email record so `ingested` is not a
+        // silent false-success: the run is dispatched fire-and-forget and records its
+        // outcome on the session, so mirror a session error onto the email message.
+        const finished = getSession(runningSession.id);
+        if (finished?.status === "error") {
+          markEmailMessageRunFailed(message.id, finished.lastError ?? "agent run failed");
+        }
+      }).catch(() => { /* dispatch already records failures on the session */ });
       return runningSession.id;
     },
   });

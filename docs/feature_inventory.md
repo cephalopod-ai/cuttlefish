@@ -144,6 +144,12 @@
 - New mail is normalized into a cached email store, attachments are persisted
   through the existing artifact/file registry, and auto-ingest opens or reuses
   a COO-owned session keyed by inbox/thread identity.
+- Auto-ingest is **fail-closed**: an inbox drives an agent run only when it sets
+  `autoIngest: true` explicitly (untrusted external mail must be opted in, not
+  defaulted on). A per-inbox `maxMessageBytes` caps raw message size. The message
+  lifecycle is `cached -> dispatching -> ingested | error`, where `dispatching` is a
+  durable pre-dispatch claim so a crash/replay never re-runs the agent (at-most-once);
+  a message stuck in `dispatching` surfaces as degraded inbox health.
 - `GET /api/email/inboxes` lists configured inboxes plus health.
 - `POST /api/email/inboxes/:id/check` performs an immediate authenticated poll
   for one inbox.

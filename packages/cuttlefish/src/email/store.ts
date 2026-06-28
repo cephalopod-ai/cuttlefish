@@ -138,7 +138,7 @@ export function upsertEmailIngestState(input: {
   inboxId: string;
   providerMessageId: string;
   emailMessageId: string;
-  status: "cached" | "ingested" | "error";
+  status: "cached" | "dispatching" | "ingested" | "error";
   sessionId?: string | null;
   error?: string | null;
 }): void {
@@ -174,7 +174,7 @@ export function upsertEmailIngestState(input: {
  */
 export function persistEmailMessageWithState(
   message: Omit<EmailMessageRecord, "createdAt" | "updatedAt">,
-  ingest: { status: "cached" | "ingested" | "error"; sessionId?: string | null; error?: string | null },
+  ingest: { status: "cached" | "dispatching" | "ingested" | "error"; sessionId?: string | null; error?: string | null },
 ): EmailMessageRecord {
   const db = initDb();
   const apply = db.transaction(() => {
@@ -196,7 +196,7 @@ export function getEmailIngestState(inboxId: string, providerMessageId: string):
   inboxId: string;
   providerMessageId: string;
   emailMessageId: string;
-  status: "cached" | "ingested" | "error";
+  status: "cached" | "dispatching" | "ingested" | "error";
   sessionId: string | null;
   error: string | null;
 } | undefined {
@@ -209,10 +209,50 @@ export function getEmailIngestState(inboxId: string, providerMessageId: string):
     inboxId: row.inbox_id as string,
     providerMessageId: row.provider_message_id as string,
     emailMessageId: row.email_message_id as string,
-    status: (row.status as "cached" | "ingested" | "error") ?? "cached",
+    status: (row.status as "cached" | "dispatching" | "ingested" | "error") ?? "cached",
     sessionId: (row.session_id as string) ?? null,
     error: (row.error as string) ?? null,
   };
+}
+
+/**
+ * Resolve dedup/ingest state for a fetched message, with a one-time fallback to the
+ * legacy bare-UID key. Before the UIDVALIDITY-namespaced identity shipped, the dedup
+ * key was the bare UID; afterwards keys are `<uidvalidity>:<uid>`. Without this
+ * fallback the very deploy that carries the new identity would re-ingest the entire
+ * backlog (every already-handled message keyed by its old bare UID). The fallback is
+ * deterministic (keyed on the client-controlled UID, not a spoofable header) and only
+ * fires when no new-format row exists yet.
+ */
+export function resolveEmailIngestState(inboxId: string, providerMessageId: string): ReturnType<typeof getEmailIngestState> {
+  const exact = getEmailIngestState(inboxId, providerMessageId);
+  if (exact) return exact;
+  const colon = providerMessageId.indexOf(":");
+  if (colon < 0) return undefined; // already legacy-shaped; nothing to fall back to
+  const legacyKey = providerMessageId.slice(colon + 1);
+  return getEmailIngestState(inboxId, legacyKey);
+}
+
+/**
+ * Reflect an asynchronous agent-run failure back onto the email record. The run is
+ * dispatched fire-and-forget, so a run that fails after `ingested` was written would
+ * otherwise leave the email as a silent false-success. Only downgrades `ingested` ->
+ * `error` (compare-and-set) so it cannot race a later poll or clobber another state.
+ */
+export function markEmailMessageRunFailed(emailMessageId: string, error: string): void {
+  const db = initDb();
+  const timestamp = nowIso();
+  const apply = db.transaction(() => {
+    const changed = db.prepare(
+      "UPDATE email_messages SET status = 'error', error = ?, updated_at = ? WHERE id = ? AND status = 'ingested'",
+    ).run(error, timestamp, emailMessageId).changes;
+    if (changed > 0) {
+      db.prepare(
+        "UPDATE email_ingest_state SET status = 'error', error = ?, updated_at = ? WHERE email_message_id = ? AND status = 'ingested'",
+      ).run(error, timestamp, emailMessageId);
+    }
+  });
+  apply();
 }
 
 export function setEmailInboxHealth(input: Omit<EmailInboxHealth, "cachedCount">): void {

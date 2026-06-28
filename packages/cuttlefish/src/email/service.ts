@@ -5,7 +5,10 @@ import type { EmailAttachmentRecord, EmailConfig, EmailInboxConfig, EmailInboxHe
 import { FILES_DIR } from "../shared/paths.js";
 import { logger } from "../shared/logger.js";
 import { sanitizeUploadFilename } from "../gateway/files/storage.js";
-import { getEmailIngestState, getEmailMessage, listEmailInboxHealth, listEmailMessages, persistEmailMessageWithState, setEmailInboxHealth } from "./store.js";
+import { emailMessageId, getEmailMessage, listEmailInboxHealth, listEmailMessages, persistEmailMessageWithState, resolveEmailIngestState, setEmailInboxHealth } from "./store.js";
+
+/** Default hard cap on a single raw message's size (25 MiB). Overridable per inbox. */
+const DEFAULT_MAX_MESSAGE_BYTES = 25 * 1024 * 1024;
 import type { EmailMailboxClient } from "./client.js";
 import { normalizeEmail } from "./normalize.js";
 import { insertFile } from "../sessions/registry.js";
@@ -119,9 +122,39 @@ export class EmailService {
     const checkedAt = new Date().toISOString();
     try {
       const fetched = await this.client.fetchUnread(inbox);
+      const maxBytes = inbox.maxMessageBytes ?? DEFAULT_MAX_MESSAGE_BYTES;
       const results: EmailMessageRecord[] = [];
       for (const message of fetched) {
-        const existing = getEmailIngestState(inbox.id, message.providerMessageId);
+        // Resource bound: never parse/persist an oversized raw message — mailparser
+        // would load the whole buffer into memory. Record it as a visible error.
+        if (message.raw.length > maxBytes) {
+          const id = emailMessageId(inbox.id, message.providerMessageId);
+          const reason = `message exceeds size limit (${message.raw.length} > ${maxBytes} bytes)`;
+          results.push(persistEmailMessageWithState({
+            id,
+            inboxId: inbox.id,
+            providerMessageId: message.providerMessageId,
+            messageIdHeader: null,
+            threadKey: id,
+            fromAddress: null,
+            toAddresses: [],
+            ccAddresses: [],
+            subject: null,
+            receivedAt: null,
+            textBody: "",
+            htmlBody: null,
+            headers: {},
+            attachments: [],
+            status: "error",
+            sessionId: null,
+            error: reason,
+          }, { status: "error", sessionId: null, error: reason }));
+          continue;
+        }
+
+        // Dedup with a fallback to the legacy bare-UID key so the deploy that
+        // introduced the UIDVALIDITY-namespaced identity does not re-ingest the backlog.
+        const existing = resolveEmailIngestState(inbox.id, message.providerMessageId);
         const existingMessage = existing?.emailMessageId ? getEmailMessage(existing.emailMessageId) : undefined;
         const normalized = await normalizeEmail(inbox, message.providerMessageId, message.raw);
         const persistedAttachments: EmailAttachmentRecord[] = existingMessage?.attachments?.length
@@ -138,7 +171,17 @@ export class EmailService {
           sessionId: existing?.sessionId ?? null,
           error: existing?.error ?? null,
         }, { status: baseStatus, sessionId: existing?.sessionId ?? null, error: existing?.error ?? null });
-        if (inbox.autoIngest !== false && existing?.status !== "ingested" && this.onAutoIngest) {
+        // Fail-closed: auto-ingest of untrusted external mail requires explicit opt-in.
+        // `dispatching` and `ingested` are already-claimed states that must never be
+        // re-dispatched (at-most-once across a crash/replay).
+        const alreadyHandled = existing?.status === "ingested" || existing?.status === "dispatching";
+        if (inbox.autoIngest === true && !alreadyHandled && this.onAutoIngest) {
+          // Durable claim written BEFORE dispatch so a replay after a mid-dispatch
+          // crash sees `dispatching` and does not re-run the agent.
+          persistEmailMessageWithState(
+            { ...persisted, status: "dispatching", error: null },
+            { status: "dispatching", sessionId: persisted.sessionId, error: null },
+          );
           try {
             const sessionId = await this.onAutoIngest(persisted);
             results.push(persistEmailMessageWithState(
@@ -156,16 +199,16 @@ export class EmailService {
           results.push(persisted);
         }
       }
-      // A successful fetch where one or more messages failed to ingest is degraded,
-      // not healthy — the inbox is reachable but not fully processing.
-      const anyError = results.some((entry) => entry.status === "error");
+      // Reachable but not fully processing — a failed ingest or a claim stuck mid-
+      // dispatch (crash) — is degraded, not healthy.
+      const degraded = results.some((entry) => entry.status === "error" || entry.status === "dispatching");
       setEmailInboxHealth({
         inboxId: inbox.id,
-        status: anyError ? "degraded" : "ok",
-        detail: anyError ? "one or more messages failed to ingest" : null,
+        status: degraded ? "degraded" : "ok",
+        detail: degraded ? "one or more messages failed to ingest or are stuck dispatching" : null,
         lastCheckedAt: checkedAt,
         lastSuccessAt: checkedAt,
-        lastErrorAt: anyError ? checkedAt : null,
+        lastErrorAt: degraded ? checkedAt : null,
       });
       return { inboxId: inbox.id, checked: fetched.length, messages: results };
     } catch (err) {
