@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState, type ComponentType, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react"
 import { Link, useLocation } from "react-router-dom"
-import { Menu, Sun, Moon, Palette, ArrowLeftRight, PanelLeft } from "lucide-react"
+import { Menu, Sun, Moon, Palette, Waves, ArrowLeftRight, PanelLeft } from "lucide-react"
 import { useTheme } from "@/routes/providers"
 import { useSettings } from "@/routes/settings-provider"
 import { DEFAULT_PORTAL_ICON } from "@/lib/settings"
@@ -111,6 +111,7 @@ export function NavList({
 function ThemeIcon({ theme }: { theme: ThemeId }) {
   if (theme === "light") return <Sun size={18} />
   if (theme === "dark") return <Moon size={18} />
+  if (theme === "cuttlefish") return <Waves size={18} />
   return <Palette size={18} />
 }
 
@@ -481,6 +482,7 @@ export function NavRibbon({
 function themeGlyph(theme: ThemeId): ComponentType<{ size?: number | string; className?: string }> {
   if (theme === "light") return Sun
   if (theme === "dark") return Moon
+  if (theme === "cuttlefish") return Waves
   return Palette
 }
 
