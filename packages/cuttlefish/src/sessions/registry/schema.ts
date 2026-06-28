@@ -149,6 +149,65 @@ CREATE INDEX IF NOT EXISTS idx_external_outbox_pending
 ON external_outbox (status, next_attempt_at, created_at)
 `;
 
+export const CREATE_EMAIL_MESSAGES_TABLE = `
+CREATE TABLE IF NOT EXISTS email_messages (
+  id TEXT PRIMARY KEY,
+  inbox_id TEXT NOT NULL,
+  provider_message_id TEXT NOT NULL,
+  message_id_header TEXT,
+  thread_key TEXT NOT NULL,
+  from_address TEXT,
+  to_addresses TEXT NOT NULL,
+  cc_addresses TEXT NOT NULL,
+  subject TEXT,
+  received_at TEXT,
+  text_body TEXT NOT NULL,
+  html_body TEXT,
+  headers_json TEXT NOT NULL,
+  attachments_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'cached',
+  session_id TEXT,
+  error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+)
+`;
+
+export const CREATE_EMAIL_DEDUPE_TABLE = `
+CREATE TABLE IF NOT EXISTS email_ingest_state (
+  inbox_id TEXT NOT NULL,
+  provider_message_id TEXT NOT NULL,
+  email_message_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  session_id TEXT,
+  error TEXT,
+  first_seen_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (inbox_id, provider_message_id)
+)
+`;
+
+export const CREATE_EMAIL_HEALTH_TABLE = `
+CREATE TABLE IF NOT EXISTS email_inbox_health (
+  inbox_id TEXT PRIMARY KEY,
+  status TEXT NOT NULL,
+  detail TEXT,
+  last_checked_at TEXT,
+  last_success_at TEXT,
+  last_error_at TEXT
+)
+`;
+
+export const CREATE_EMAIL_MESSAGES_INBOX_INDEX = `
+CREATE INDEX IF NOT EXISTS idx_email_messages_inbox_received
+ON email_messages (inbox_id, received_at DESC, created_at DESC)
+`;
+
+export const CREATE_EMAIL_MESSAGES_THREAD_INDEX = `
+CREATE INDEX IF NOT EXISTS idx_email_messages_thread
+ON email_messages (inbox_id, thread_key, received_at DESC)
+`;
+
 export const CREATE_FTS = `
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(content, content='messages', content_rowid='rowid', tokenize='unicode61');
 CREATE TRIGGER IF NOT EXISTS messages_fts_ai AFTER INSERT ON messages WHEN new.role IN ('user','assistant') BEGIN
@@ -205,4 +264,9 @@ export function installPostMigrationSchema(db: Database.Database): void {
   db.exec(CREATE_EXTERNAL_OUTBOX_TABLE);
   db.exec(CREATE_EXTERNAL_OUTBOX_IDEMPOTENCY_INDEX);
   db.exec(CREATE_EXTERNAL_OUTBOX_PENDING_INDEX);
+  db.exec(CREATE_EMAIL_MESSAGES_TABLE);
+  db.exec(CREATE_EMAIL_DEDUPE_TABLE);
+  db.exec(CREATE_EMAIL_HEALTH_TABLE);
+  db.exec(CREATE_EMAIL_MESSAGES_INBOX_INDEX);
+  db.exec(CREATE_EMAIL_MESSAGES_THREAD_INDEX);
 }

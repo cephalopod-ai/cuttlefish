@@ -10,6 +10,7 @@ import type { GlobalModelFallbackConfig } from "./engine.js";
 import type { McpGlobalConfig } from "./mcp.js";
 import type { ModelConfigEntry, ModelsConfig, PortalConfig } from "./models.js";
 import type { CronDelivery } from "./operations.js";
+import type { EmailConfig } from "./email.js";
 
 export interface BoardWorkerScheduleWindow {
   start: string;
@@ -149,6 +150,7 @@ export interface CuttlefishConfig {
     whatsapp?: WhatsAppConnectorConfig;
     instances?: ConnectorInstance[];
   };
+  email?: EmailConfig;
   logging: { file: boolean; stdout: boolean; level: string };
   mcp?: McpGlobalConfig;
   modelFallback?: GlobalModelFallbackConfig;

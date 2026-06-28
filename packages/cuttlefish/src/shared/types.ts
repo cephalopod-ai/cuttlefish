@@ -9,3 +9,4 @@ export * from "./types/mcp.js";
 export * from "./types/models.js";
 export * from "./types/config.js";
 export * from "./types/knowledge.js";
+export * from "./types/email.js";

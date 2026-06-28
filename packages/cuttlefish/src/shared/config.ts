@@ -121,6 +121,7 @@ export function loadConfig(): CuttlefishConfig {
   };
   config.engines.default = config.engines.default ?? "claude";
   config.connectors = config.connectors ?? {};
+  config.email = config.email ?? {};
   const logging = config.logging as CuttlefishConfig["logging"] | undefined;
   config.logging = {
     ...(logging ?? {}),
@@ -131,6 +132,11 @@ export function loadConfig(): CuttlefishConfig {
   config.engines.claude = normalizeClaudeEngineConfig(config.engines.claude);
   config.boardWorker = normalizeBoardWorkerConfig(config.boardWorker);
   config.knowledge = normalizeKnowledgeConfig(config.knowledge);
+  config.email = {
+    enabled: config.email.enabled ?? false,
+    pollIntervalSeconds: config.email.pollIntervalSeconds ?? 60,
+    inboxes: config.email.inboxes ?? [],
+  };
   return config;
 }
 

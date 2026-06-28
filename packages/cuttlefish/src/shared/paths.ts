@@ -47,6 +47,7 @@ export interface CuttlefishPaths {
   MIGRATIONS_DIR: string;
   KNOWLEDGE_DIR: string;
   KNOWLEDGE_OUTBOX_JSONL: string;
+  EMAIL_DIR: string;
 }
 
 function buildCuttlefishPaths(home: string): CuttlefishPaths {
@@ -85,6 +86,7 @@ function buildCuttlefishPaths(home: string): CuttlefishPaths {
     MIGRATIONS_DIR: path.join(home, "migrations"),
     KNOWLEDGE_DIR: path.join(home, "knowledge"),
     KNOWLEDGE_OUTBOX_JSONL: path.join(home, "knowledge", "outbox.jsonl"),
+    EMAIL_DIR: path.join(home, "email"),
   };
 }
 
@@ -121,6 +123,7 @@ function applyRuntimePaths(paths: CuttlefishPaths): void {
   MIGRATIONS_DIR = paths.MIGRATIONS_DIR;
   KNOWLEDGE_DIR = paths.KNOWLEDGE_DIR;
   KNOWLEDGE_OUTBOX_JSONL = paths.KNOWLEDGE_OUTBOX_JSONL;
+  EMAIL_DIR = paths.EMAIL_DIR;
 }
 
 export function getCuttlefishPaths(env: NodeJS.ProcessEnv = process.env): CuttlefishPaths {
@@ -183,6 +186,7 @@ export let RUN_BUNDLES_DIR = initialPaths.RUN_BUNDLES_DIR;
 export let MIGRATIONS_DIR = initialPaths.MIGRATIONS_DIR;
 export let KNOWLEDGE_DIR = initialPaths.KNOWLEDGE_DIR;
 export let KNOWLEDGE_OUTBOX_JSONL = initialPaths.KNOWLEDGE_OUTBOX_JSONL;
+export let EMAIL_DIR = initialPaths.EMAIL_DIR;
 
 export const TEMPLATE_DIR = path.join(__dirname, "..", "..", "..", "template");
 export const TEMPLATE_MIGRATIONS_DIR = path.join(TEMPLATE_DIR, "migrations");
