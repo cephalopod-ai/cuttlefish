@@ -20,7 +20,7 @@ import {
   insertMessage,
   updateSession,
 } from "./registry.js";
-import { notifyParentSession, notifyRateLimited, notifyRateLimitResumed, notifyDiscordChannel } from "./callbacks.js";
+import { notifyConnectorNotification, notifyParentSession, notifyRateLimited, notifyRateLimitResumed } from "./callbacks.js";
 import type { SessionNotificationSink } from "./notification-sink.js";
 import { buildContext } from "./context.js";
 import { SessionQueue } from "./queue.js";
@@ -424,7 +424,7 @@ export class SessionManager {
                 ? resumeAt.toLocaleString("en-GB", { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
                 : null;
 
-              notifyDiscordChannel(
+              notifyConnectorNotification(
                 `⚠️ ${rateLimitSummary(originalEngine)} reached. Session ${session.id}${session.employee ? ` (${session.employee})` : ""} switching to ${fallbackName}.`,
                 { sink: this.notificationSink },
               );
@@ -477,7 +477,7 @@ export class SessionManager {
                 : null;
 
               // Send a deterministic Discord notification — does not depend on the LLM
-              notifyDiscordChannel(
+              notifyConnectorNotification(
                 `⚠️ ${rateLimitSummary(sourceEngine)} reached. Session ${session.id}${session.employee ? ` (${session.employee})` : ""} paused${resumeText ? ` until ${resumeText}` : ""}.`,
                 { sink: this.notificationSink },
               );
@@ -558,7 +558,7 @@ export class SessionManager {
               });
               if (retryUpdated) {
                 notifyRateLimitResumed(retryUpdated, { sink: this.notificationSink });
-                notifyDiscordChannel(
+                notifyConnectorNotification(
                   `✅ ${rateLimitSummary(sourceEngine)} cleared. Session ${session.id}${session.employee ? ` (${session.employee})` : ""} resumed.`,
                   { sink: this.notificationSink },
                 );
@@ -567,7 +567,7 @@ export class SessionManager {
             },
             onTimeout: async () => {
               const timeoutError = rateLimitTimeoutError(sourceEngine);
-              notifyDiscordChannel(
+              notifyConnectorNotification(
                 `❌ ${timeoutError}. Session ${session.id}${session.employee ? ` (${session.employee})` : ""} has been stopped.`,
                 { sink: this.notificationSink },
               );

@@ -164,6 +164,7 @@ CREATE TABLE IF NOT EXISTS email_messages (
   text_body TEXT NOT NULL,
   html_body TEXT,
   headers_json TEXT NOT NULL,
+  auth_results TEXT,
   attachments_json TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'cached',
   session_id TEXT,
@@ -265,6 +266,11 @@ export function installPostMigrationSchema(db: Database.Database): void {
   db.exec(CREATE_EXTERNAL_OUTBOX_IDEMPOTENCY_INDEX);
   db.exec(CREATE_EXTERNAL_OUTBOX_PENDING_INDEX);
   db.exec(CREATE_EMAIL_MESSAGES_TABLE);
+  try {
+    db.exec("ALTER TABLE email_messages ADD COLUMN auth_results TEXT");
+  } catch {
+    // Column already exists on upgraded homes.
+  }
   db.exec(CREATE_EMAIL_DEDUPE_TABLE);
   db.exec(CREATE_EMAIL_HEALTH_TABLE);
   db.exec(CREATE_EMAIL_MESSAGES_INBOX_INDEX);

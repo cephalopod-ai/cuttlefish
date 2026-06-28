@@ -126,6 +126,7 @@ export async function normalizeEmail(
       textBody: (mail.text ?? "").slice(0, MAX_TEXT_BODY_CHARS),
       htmlBody: typeof mail.html === "string" ? mail.html : null,
       headers: headerMap(mail),
+      authResults: headerMap(mail)["authentication-results"] ?? null,
       attachments: attachmentRecords,
       status: "cached",
       sessionId: null,

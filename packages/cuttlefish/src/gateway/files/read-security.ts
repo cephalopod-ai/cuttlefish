@@ -110,8 +110,8 @@ export function isAllowedReadPath(
   if (gateway.allowArbitraryFileRead === true) return true;
   const roots = gateway.fileReadRoots;
   if (!Array.isArray(roots) || roots.length === 0) return true;
-  const resolved = path.resolve(absPath);
-  return roots.some((root) => isInsidePath(resolved, root));
+  const resolved = realpathOrResolved(absPath);
+  return roots.some((root) => isInsidePath(resolved, realpathOrResolved(root)));
 }
 
 export interface FileClassification {

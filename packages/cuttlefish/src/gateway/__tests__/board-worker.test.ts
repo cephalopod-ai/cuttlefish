@@ -77,7 +77,7 @@ describe("board worker idle gate", () => {
       isChatIdle(
         [
           { source: "cron", lastActivity: "2026-06-22T11:59:00.000Z" },
-          { source: "discord", lastActivity: "2026-06-22T11:59:00.000Z" },
+          { source: "whatsapp", lastActivity: "2026-06-22T11:59:00.000Z" },
         ],
         0,
         now,

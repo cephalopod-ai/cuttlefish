@@ -256,8 +256,6 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
 
   const connectorNames: string[] = [];
   if (config.connectors?.slack?.appToken && config.connectors?.slack?.botToken) connectorNames.push("slack");
-  if (config.connectors?.discord?.botToken || config.connectors?.discord?.proxyVia) connectorNames.push("discord");
-  if (config.connectors?.telegram?.botToken) connectorNames.push("telegram");
   if (config.connectors?.whatsapp) connectorNames.push("whatsapp");
 
   const sessionManager = new SessionManager(config, engines, connectorNames, gatewayAuthToken);

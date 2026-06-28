@@ -135,4 +135,53 @@ describe("org approval routes", () => {
     );
     expect(ctx.emit).toHaveBeenCalledWith("session:updated", { sessionId: hrSession.id });
   });
+
+  it("rejects applying a request that is not pending approval", async () => {
+    const api = await import("../api.js");
+    const reg = await import("../../sessions/registry.js");
+    const changes = await import("../org-changes.js");
+
+    reg.initDb();
+
+    const ctx = {
+      getConfig: () => ({
+        gateway: { userHeader: "x-user" },
+        engines: { default: "claude", claude: { bin: "claude", model: "sonnet" } },
+        portal: {},
+        models: { claude: { default: "sonnet", models: [{ id: "sonnet", supportsEffort: true, effortLevels: ["low", "medium", "high"] }] } },
+      }),
+      connectors: new Map(),
+      startTime: Date.now(),
+      emit: vi.fn(),
+      reloadOrg: vi.fn(),
+      sessionManager: { getEngine: () => undefined },
+    } as any;
+
+    const request = changes.createChangeRequest({
+      changeType: "create_agent",
+      employeeName: "draft-hire",
+      proposed: {
+        displayName: "Draft Hire",
+        department: "engineering",
+        rank: "employee",
+        engine: "claude",
+        model: "sonnet",
+        persona: "Draft persona.",
+      },
+      status: "rejected",
+      proposedBy: "operator",
+      riskLevel: "high",
+      requiresHumanApproval: true,
+    });
+
+    const cap = makeRes();
+    await api.handleApiRequest(
+      makeReq("POST", `/api/org/change-requests/${request.id}/apply`, { "x-user": "Alice" }),
+      cap.res,
+      ctx,
+    );
+
+    expect(cap.status).toBe(409);
+    expect(cap.body).toEqual({ error: "Change request is 'rejected' and cannot be applied" });
+  });
 });

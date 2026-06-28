@@ -27,15 +27,23 @@ function todayBucket(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function realpathOrResolved(p: string): string {
+  try {
+    return fs.realpathSync.native(path.resolve(p));
+  } catch {
+    return path.resolve(p);
+  }
+}
+
 export function uploadDir(sessionId: string, date?: string): string {
   const bucket = date || todayBucket();
   return path.join(UPLOADS_DIR, bucket, sanitizeSessionId(sessionId));
 }
 
 export function isServablePath(absPath: string): boolean {
-  const resolved = path.resolve(absPath);
+  const resolved = realpathOrResolved(absPath);
   return [FILES_DIR, UPLOADS_DIR].some((root) => {
-    const r = path.resolve(root);
+    const r = realpathOrResolved(root);
     return resolved === r || resolved.startsWith(r + path.sep);
   });
 }

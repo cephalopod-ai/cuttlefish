@@ -58,7 +58,7 @@ describe("deliverConnectorReply", () => {
   });
 
   it("does not throw and does not call when connector missing from map", async () => {
-    const session = makeSession({ connector: "telegram", source: "telegram" });
+    const session = makeSession({ connector: "whatsapp", source: "whatsapp" });
     await expect(deliverConnectorReply(session, "hi", map)).resolves.toBeUndefined();
     expect(slack.replyMessage).not.toHaveBeenCalled();
   });

@@ -3,10 +3,7 @@ import { loadConfig } from "../../shared/config.js";
 import { logger } from "../../shared/logger.js";
 import type { RouteOptions } from "../../sessions/manager.js";
 import type { SessionManager } from "../../sessions/manager.js";
-import { DiscordConnector, type DiscordConnectorConfig } from "../../connectors/discord/index.js";
-import { RemoteDiscordConnector } from "../../connectors/discord/remote.js";
 import { SlackConnector } from "../../connectors/slack/index.js";
-import { TelegramConnector } from "../../connectors/telegram/index.js";
 import { WhatsAppConnector } from "../../connectors/whatsapp/index.js";
 
 interface ConnectorLifecycle {
@@ -49,11 +46,6 @@ function buildInstanceConnector(
 ): Connector | null {
   const { id, type, employee, ...typeConfig } = instance;
   switch (type) {
-    case "discord": {
-      const connector = new DiscordConnector({ ...typeConfig, id } as DiscordConnectorConfig);
-      routeConnectorMessage(sessionManager, getEmployeeRegistry, employee, connector, id);
-      return connector;
-    }
     case "slack": {
       const connector = new SlackConnector({ ...typeConfig, id } as never);
       routeConnectorMessage(sessionManager, getEmployeeRegistry, employee, connector, id);
@@ -61,11 +53,6 @@ function buildInstanceConnector(
     }
     case "whatsapp": {
       const connector = new WhatsAppConnector({ ...typeConfig } as never);
-      routeConnectorMessage(sessionManager, getEmployeeRegistry, employee, connector, id);
-      return connector;
-    }
-    case "telegram": {
-      const connector = new TelegramConnector({ ...typeConfig, id, stt: config.stt } as never);
       routeConnectorMessage(sessionManager, getEmployeeRegistry, employee, connector, id);
       return connector;
     }
@@ -103,33 +90,6 @@ export function startConfiguredConnectors({
     });
     routeConnectorMessage(sessionManager, getEmployeeRegistry, config.connectors.slack?.employee, connector, "Slack");
     registerAndStart("slack", connector);
-  }
-
-  if (config.connectors?.discord?.proxyVia) {
-    const discordConfig = config.connectors.discord;
-    const connector = new RemoteDiscordConnector({
-      proxyVia: discordConfig.proxyVia!,
-      apiToken: discordConfig.proxyToken,
-      channelId: discordConfig.channelId,
-    });
-    routeConnectorMessage(sessionManager, getEmployeeRegistry, config.connectors.discord?.employee, connector, "remote Discord");
-    registerAndStart("discord", connector, "Discord remote connector starting");
-  } else if (config.connectors?.discord?.botToken) {
-    const connector = new DiscordConnector(config.connectors.discord as DiscordConnectorConfig);
-    routeConnectorMessage(sessionManager, getEmployeeRegistry, config.connectors.discord?.employee, connector, "Discord");
-    registerAndStart("discord", connector, "Discord connector starting");
-  }
-
-  if (config.connectors?.telegram?.botToken) {
-    const telegramConfig = config.connectors.telegram;
-    const connector = new TelegramConnector({
-      botToken: telegramConfig.botToken,
-      allowFrom: telegramConfig.allowFrom,
-      ignoreOldMessagesOnBoot: telegramConfig.ignoreOldMessagesOnBoot,
-      stt: config.stt,
-    });
-    routeConnectorMessage(sessionManager, getEmployeeRegistry, config.connectors.telegram?.employee, connector, "Telegram");
-    registerAndStart("telegram", connector);
   }
 
   if (config.connectors?.whatsapp) {

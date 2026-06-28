@@ -13,6 +13,7 @@ import { loadConfig } from "../shared/config.js";
 import { installProcessErrorHandlers } from "./process-guards.js";
 
 const MIN_NODE_MAJOR = 24;
+const DAEMON_LOCK_FILE = path.join(CUTTLEFISH_HOME, "daemon.lock");
 
 /**
  * Return a Node.js executable that satisfies the minimum required major version.
@@ -50,11 +51,55 @@ function resolveNodeExecutable(): string {
     }
   }
 
-  logger.warn(
+  logger.error(
     `Could not find Node.js >= ${MIN_NODE_MAJOR} — daemon may crash (current execPath is Node ${nodeMajor(current)}). ` +
-    `Install Node ${MIN_NODE_MAJOR}+ and add it to PATH.`,
+    `Install Node.js 24+ from https://nodejs.org or set CUTTLEFISH_NODE_PATH.`,
   );
   return current;
+}
+
+function pidIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code !== "ESRCH";
+  }
+}
+
+function acquireDaemonLock(): () => void {
+  fs.mkdirSync(CUTTLEFISH_HOME, { recursive: true });
+  const writeLock = (pid: number) => {
+    const fd = fs.openSync(DAEMON_LOCK_FILE, "wx");
+    fs.writeFileSync(fd, `${pid}\n`, "utf8");
+    fs.closeSync(fd);
+  };
+
+  try {
+    writeLock(process.pid);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+    const stalePid = Number.parseInt(fs.readFileSync(DAEMON_LOCK_FILE, "utf8").trim(), 10);
+    if (Number.isFinite(stalePid) && pidIsAlive(stalePid)) {
+      throw new Error(`Another cuttlefish daemon is already running (pid ${stalePid}). Stop it before starting a second instance.`);
+    }
+    fs.rmSync(DAEMON_LOCK_FILE, { force: true });
+    writeLock(process.pid);
+  }
+
+  const release = () => {
+    try {
+      const recordedPid = Number.parseInt(fs.readFileSync(DAEMON_LOCK_FILE, "utf8").trim(), 10);
+      if (!Number.isFinite(recordedPid) || recordedPid === process.pid) {
+        fs.rmSync(DAEMON_LOCK_FILE, { force: true });
+      }
+    } catch {
+      fs.rmSync(DAEMON_LOCK_FILE, { force: true });
+    }
+  };
+
+  process.once("exit", release);
+  return release;
 }
 
 function nodeMajor(bin: string): number {
@@ -102,6 +147,7 @@ function fnmCandidates(home: string): string[] {
 
 export async function startForeground(config: CuttlefishConfig): Promise<void> {
   installProcessErrorHandlers();
+  const releaseDaemonLock = acquireDaemonLock();
   const cleanup = await startGateway(config);
 
   let shuttingDown = false;
@@ -121,6 +167,7 @@ export async function startForeground(config: CuttlefishConfig): Promise<void> {
     forceTimer.unref();
 
     await cleanup();
+    releaseDaemonLock();
     process.exit(0);
   };
 

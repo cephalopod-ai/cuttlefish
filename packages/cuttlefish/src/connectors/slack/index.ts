@@ -201,7 +201,11 @@ export class SlackConnector implements Connector {
         },
       };
 
-      this.handler(msg);
+      try {
+        this.handler(msg);
+      } catch (err) {
+        logger.error(`[slack] Uncaught handler error: ${err instanceof Error ? err.message : String(err)}`);
+      }
     });
 
     // Handle @mentions in channels
@@ -279,7 +283,11 @@ export class SlackConnector implements Connector {
         },
       };
 
-      this.handler(msg);
+      try {
+        this.handler(msg);
+      } catch (err) {
+        logger.error(`[slack] Uncaught handler error: ${err instanceof Error ? err.message : String(err)}`);
+      }
     });
 
     // In channels, only process thread replies (continuing a conversation).
@@ -399,7 +407,11 @@ export class SlackConnector implements Connector {
         },
       };
 
-      this.handler(msg);
+      try {
+        this.handler(msg);
+      } catch (err) {
+        logger.error(`[slack] Uncaught handler error: ${err instanceof Error ? err.message : String(err)}`);
+      }
     });
 
     await this.app.start();

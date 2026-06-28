@@ -11,7 +11,7 @@ export function createGatewayNotificationSink(context: ApiContext): SessionNotif
 
     async sendConnectorNotification(message) {
       const config = context.getConfig();
-      const connectorName = config.notifications?.connector || "discord";
+      const connectorName = config.notifications?.connector || "slack";
       const channel = config.notifications?.channel;
       if (!channel) {
         logger.debug("[callbacks] No notifications.channel configured — skipping connector notification");

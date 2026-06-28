@@ -23,7 +23,7 @@ function context(overrides: Partial<ApiContext> = {}): ApiContext {
     config: { engines: { claude: {} } } as any,
     sessionManager: {} as any,
     startTime: 0,
-    getConfig: () => ({ engines: { claude: {} }, notifications: { connector: "discord", channel: "alerts" } } as any),
+    getConfig: () => ({ engines: { claude: {} }, notifications: { connector: "slack", channel: "alerts" } } as any),
     emit: vi.fn(),
     connectors: new Map(),
     ...overrides,
@@ -43,7 +43,7 @@ describe("createGatewayNotificationSink", () => {
   it("sends connector notifications through the running connector", async () => {
     const sendMessage = vi.fn().mockResolvedValue(undefined);
     const sink = createGatewayNotificationSink(context({
-      connectors: new Map([["discord", { sendMessage } as any]]),
+      connectors: new Map([["slack", { sendMessage } as any]]),
     }));
 
     await sink.sendConnectorNotification("hello");

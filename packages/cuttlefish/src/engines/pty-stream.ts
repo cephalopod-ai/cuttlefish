@@ -10,7 +10,7 @@ type SpawnPtyOptions = Parameters<typeof NodePty.spawn>[2];
 const require = createRequire(import.meta.url);
 let ptyModule: typeof NodePty | null = null;
 
-function loadPtyModule(): typeof NodePty {
+export function loadPtyModule(): typeof NodePty {
   ptyModule ??= require("node-pty") as typeof NodePty;
   return ptyModule;
 }

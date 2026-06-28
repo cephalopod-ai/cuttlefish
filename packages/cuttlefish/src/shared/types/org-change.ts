@@ -27,6 +27,7 @@ export type OrgChangeStatus =
   | "pending_approval" // critique attached; awaiting human sign-off
   | "approved" // human approved; apply in progress / queued
   | "rejected" // human rejected; never applied
+  | "error" // critique or apply pipeline failed and needs operator attention
   | "applied" // written to org/ and hot-reloaded
   | "rolled_back"; // a previously-applied change was reverted
 

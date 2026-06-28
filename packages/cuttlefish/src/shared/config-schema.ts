@@ -231,72 +231,6 @@ function validateSlackConnector(problems: string[], path: string, value: unknown
   if (value.shareSessionInChannel !== undefined) validateBoolean(problems, `${path}.shareSessionInChannel`, value.shareSessionInChannel);
 }
 
-function validateDiscordConnector(problems: string[], path: string, value: unknown): void {
-  if (!isPlainObject(value)) {
-    problems.push(`${path} must be a mapping`);
-    return;
-  }
-  pushUnknownKeys(problems, value, [
-    "id",
-    "employee",
-    "botToken",
-    "allowFrom",
-    "ignoreOldMessagesOnBoot",
-    "guildId",
-    "channelId",
-    "channelRouting",
-    "proxyVia",
-    "proxyToken",
-  ], path);
-  if (value.id !== undefined) validateString(problems, `${path}.id`, value.id);
-  if (value.employee !== undefined) validateString(problems, `${path}.employee`, value.employee);
-  if (value.botToken !== undefined) validateString(problems, `${path}.botToken`, value.botToken);
-  if (value.allowFrom !== undefined) validateStringOrStringArray(problems, `${path}.allowFrom`, value.allowFrom);
-  if (value.ignoreOldMessagesOnBoot !== undefined) validateBoolean(problems, `${path}.ignoreOldMessagesOnBoot`, value.ignoreOldMessagesOnBoot);
-  if (value.guildId !== undefined) validateString(problems, `${path}.guildId`, value.guildId);
-  if (value.channelId !== undefined) validateString(problems, `${path}.channelId`, value.channelId);
-  if (value.proxyVia !== undefined) validateString(problems, `${path}.proxyVia`, value.proxyVia);
-  if (value.proxyToken !== undefined) validateString(problems, `${path}.proxyToken`, value.proxyToken);
-  if (value.channelRouting !== undefined) {
-    if (!isPlainObject(value.channelRouting)) {
-      problems.push(`${path}.channelRouting must be a mapping`);
-    } else {
-      for (const [routeKey, routeValue] of Object.entries(value.channelRouting)) {
-        if (typeof routeValue === "string") continue;
-        if (!isPlainObject(routeValue)) {
-          problems.push(`${path}.channelRouting.${routeKey} must be a string or mapping`);
-          continue;
-        }
-        pushUnknownKeys(problems, routeValue, ["url", "token"], `${path}.channelRouting.${routeKey}`);
-        if (routeValue.url === undefined) {
-          problems.push(`${path}.channelRouting.${routeKey}.url is required`);
-        } else {
-          validateString(problems, `${path}.channelRouting.${routeKey}.url`, routeValue.url);
-        }
-        if (routeValue.token !== undefined) validateString(problems, `${path}.channelRouting.${routeKey}.token`, routeValue.token);
-      }
-    }
-  }
-}
-
-function validateTelegramConnector(problems: string[], path: string, value: unknown): void {
-  if (!isPlainObject(value)) {
-    problems.push(`${path} must be a mapping`);
-    return;
-  }
-  pushUnknownKeys(problems, value, ["id", "employee", "botToken", "allowFrom", "ignoreOldMessagesOnBoot", "stt"], path);
-  if (value.id !== undefined) validateString(problems, `${path}.id`, value.id);
-  if (value.employee !== undefined) validateString(problems, `${path}.employee`, value.employee);
-  if (value.botToken !== undefined) validateString(problems, `${path}.botToken`, value.botToken);
-  if (value.allowFrom !== undefined) {
-    if (!Array.isArray(value.allowFrom) || value.allowFrom.some((entry) => typeof entry !== "number")) {
-      problems.push(`${path}.allowFrom must be an array of numbers`);
-    }
-  }
-  if (value.ignoreOldMessagesOnBoot !== undefined) validateBoolean(problems, `${path}.ignoreOldMessagesOnBoot`, value.ignoreOldMessagesOnBoot);
-  if (value.stt !== undefined) validateStt(problems, value.stt, `${path}.stt`);
-}
-
 function validateWhatsAppConnector(problems: string[], path: string, value: unknown): void {
   if (!isPlainObject(value)) {
     problems.push(`${path} must be a mapping`);
@@ -328,11 +262,8 @@ function validateConnectorInstance(
   const type = value.type;
   const baseKeys = ["id", "type", "employee", "ignoreOldMessagesOnBoot"];
   const keysByType: Record<string, string[]> = {
-    discord: [...baseKeys, "botToken", "allowFrom", "guildId", "channelId", "channelRouting", "proxyVia", "proxyToken"],
-    "discord-remote": [...baseKeys, "botToken", "allowFrom", "guildId", "channelId", "channelRouting", "proxyVia", "proxyToken"],
     slack: [...baseKeys, "appToken", "botToken", "allowFrom"],
     whatsapp: [...baseKeys, "authDir", "allowFrom"],
-    telegram: [...baseKeys, "botToken", "allowFrom", "stt"],
   };
   if (!keysByType[type]) {
     problems.push(`${path}.type must be one of: ${Object.keys(keysByType).join(", ")}`);
@@ -342,25 +273,11 @@ function validateConnectorInstance(
   if (value.employee !== undefined) validateString(problems, `${path}.employee`, value.employee);
   if (value.ignoreOldMessagesOnBoot !== undefined) validateBoolean(problems, `${path}.ignoreOldMessagesOnBoot`, value.ignoreOldMessagesOnBoot);
   if (value.allowFrom !== undefined) {
-    if (type === "telegram") {
-      if (!Array.isArray(value.allowFrom) || value.allowFrom.some((entry) => typeof entry !== "number")) {
-        problems.push(`${path}.allowFrom must be an array of numbers`);
-      }
-    } else {
-      validateStringOrStringArray(problems, `${path}.allowFrom`, value.allowFrom);
-    }
+    validateStringOrStringArray(problems, `${path}.allowFrom`, value.allowFrom);
   }
   if (value.botToken !== undefined) validateString(problems, `${path}.botToken`, value.botToken);
   if (value.appToken !== undefined) validateString(problems, `${path}.appToken`, value.appToken);
   if (value.authDir !== undefined) validateString(problems, `${path}.authDir`, value.authDir);
-  if (value.guildId !== undefined) validateString(problems, `${path}.guildId`, value.guildId);
-  if (value.channelId !== undefined) validateString(problems, `${path}.channelId`, value.channelId);
-  if (value.proxyVia !== undefined) validateString(problems, `${path}.proxyVia`, value.proxyVia);
-  if (value.proxyToken !== undefined) validateString(problems, `${path}.proxyToken`, value.proxyToken);
-  if (value.channelRouting !== undefined && !isPlainObject(value.channelRouting)) {
-    problems.push(`${path}.channelRouting must be a mapping`);
-  }
-  if (value.stt !== undefined) validateStt(problems, value.stt, `${path}.stt`);
 }
 
 function validateConnectors(
@@ -371,11 +288,9 @@ function validateConnectors(
     problems.push("connectors must be a mapping");
     return;
   }
-  pushUnknownKeys(problems, value, ["web", "slack", "discord", "telegram", "whatsapp", "instances"], "connectors");
+  pushUnknownKeys(problems, value, ["web", "slack", "whatsapp", "instances"], "connectors");
   if (value.web !== undefined && !isPlainObject(value.web)) problems.push("connectors.web must be a mapping");
   if (value.slack !== undefined) validateSlackConnector(problems, "connectors.slack", value.slack);
-  if (value.discord !== undefined) validateDiscordConnector(problems, "connectors.discord", value.discord);
-  if (value.telegram !== undefined) validateTelegramConnector(problems, "connectors.telegram", value.telegram);
   if (value.whatsapp !== undefined) validateWhatsAppConnector(problems, "connectors.whatsapp", value.whatsapp);
   if (value.instances !== undefined) {
     if (!Array.isArray(value.instances)) {

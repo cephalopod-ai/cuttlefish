@@ -57,6 +57,7 @@ function rowToEmailMessage(row: EmailMessageRow): EmailMessageRecord {
     textBody: (row.text_body as string) ?? "",
     htmlBody: (row.html_body as string) ?? null,
     headers: parseHeaders(row.headers_json),
+    authResults: (row.auth_results as string) ?? null,
     attachments: parseAttachments(row.attachments_json),
     status: (row.status as EmailMessageRecord["status"]) ?? "cached",
     sessionId: (row.session_id as string) ?? null,
@@ -78,8 +79,8 @@ export function upsertEmailMessage(input: Omit<EmailMessageRecord, "createdAt" |
     INSERT INTO email_messages (
       id, inbox_id, provider_message_id, message_id_header, thread_key, from_address,
       to_addresses, cc_addresses, subject, received_at, text_body, html_body,
-      headers_json, attachments_json, status, session_id, error, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      headers_json, auth_results, attachments_json, status, session_id, error, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       message_id_header = excluded.message_id_header,
       thread_key = excluded.thread_key,
@@ -91,6 +92,7 @@ export function upsertEmailMessage(input: Omit<EmailMessageRecord, "createdAt" |
       text_body = excluded.text_body,
       html_body = excluded.html_body,
       headers_json = excluded.headers_json,
+      auth_results = excluded.auth_results,
       attachments_json = excluded.attachments_json,
       status = excluded.status,
       session_id = excluded.session_id,
@@ -110,6 +112,7 @@ export function upsertEmailMessage(input: Omit<EmailMessageRecord, "createdAt" |
     input.textBody,
     input.htmlBody,
     JSON.stringify(input.headers),
+    input.authResults,
     JSON.stringify(input.attachments),
     input.status,
     input.sessionId,

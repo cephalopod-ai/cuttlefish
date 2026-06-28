@@ -217,35 +217,35 @@ function _clean(text: string, max: number): string {
 }
 
 /**
- * Send a hardcoded notification to the configured Discord channel.
+ * Send a hardcoded notification to the configured notifications connector.
  * Used for rate-limit alerts that must not depend on the LLM.
  * Fire-and-forget — errors are logged but never rethrown.
  */
-export function notifyDiscordChannel(message: string, options?: SessionNotificationOptions): void {
-  _sendDiscordNotification(message, options?.sink).catch((err) => {
-    logger.warn(`[callbacks] Failed to send Discord notification: ${err instanceof Error ? err.message : String(err)}`);
+export function notifyConnectorNotification(message: string, options?: SessionNotificationOptions): void {
+  _sendConnectorNotification(message, options?.sink).catch((err) => {
+    logger.warn(`[callbacks] Failed to send connector notification: ${err instanceof Error ? err.message : String(err)}`);
   });
 }
 
-async function _sendDiscordNotification(message: string, sink?: SessionNotificationSink): Promise<void> {
+async function _sendConnectorNotification(message: string, sink?: SessionNotificationSink): Promise<void> {
   if (sink) {
     await sink.sendConnectorNotification(message);
     return;
   }
-  let connector = "discord";
+  let connector = "slack";
   let channel: string | undefined;
   const gateway = internalGatewayConnection();
 
   try {
     const config = loadConfig();
-    connector = config.notifications?.connector || "discord";
+    connector = config.notifications?.connector || "slack";
     channel = config.notifications?.channel;
   } catch {
     // Use defaults if config is unavailable
   }
 
   if (!channel) {
-    logger.debug("[callbacks] No notifications.channel configured — skipping Discord notification");
+    logger.debug("[callbacks] No notifications.channel configured — skipping connector notification");
     return;
   }
 

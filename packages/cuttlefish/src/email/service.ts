@@ -28,6 +28,14 @@ export function emailSenderAllowed(allowFrom: string[] | undefined, fromAddress:
     return addr === entry;
   });
 }
+
+function failedEmailAuth(authResults: string | null): string | null {
+  if (!authResults) return null;
+  const normalized = authResults.toLowerCase();
+  if (normalized.includes("spf=fail")) return "SPF";
+  if (normalized.includes("dkim=fail")) return "DKIM";
+  return null;
+}
 import type { EmailMailboxClient } from "./client.js";
 import { normalizeEmail, MAX_RAW_MESSAGE_BYTES } from "./normalize.js";
 import { insertFile } from "../sessions/registry.js";
@@ -52,6 +60,7 @@ async function persistAttachment(messageId: string, attachment: {
   contentId?: string | null;
 }): Promise<EmailAttachmentRecord> {
   const artifactId = crypto.randomUUID();
+  // Sanitize attachment names before persisting because inbound MIME filenames are untrusted.
   const filename = sanitizeUploadFilename(attachment.filename);
   const dir = path.join(FILES_DIR, artifactId);
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -163,6 +172,7 @@ export class EmailService {
             textBody: "",
             htmlBody: null,
             headers: {},
+            authResults: null,
             attachments: [],
             status: "error",
             sessionId: null,
@@ -195,7 +205,14 @@ export class EmailService {
         // re-dispatched (at-most-once across a crash/replay).
         const alreadyHandled = existing?.status === "ingested" || existing?.status === "dispatching";
         const senderAllowed = emailSenderAllowed(inbox.allowFrom, persisted.fromAddress);
-        if (inbox.autoIngest === true && !alreadyHandled && senderAllowed && this.onAutoIngest) {
+        if (inbox.autoIngest === true && (!inbox.allowFrom || inbox.allowFrom.length === 0)) {
+          logger.warn(`[email] Inbox "${inbox.id}" has autoIngest enabled but no allowFrom — all mail cached, none auto-ingested`);
+        }
+        const failedAuth = failedEmailAuth(persisted.authResults);
+        if (failedAuth) {
+          logger.warn(`[email] Skipping auto-ingest for inbox "${inbox.id}" because Authentication-Results reported ${failedAuth} failure`);
+        }
+        if (inbox.autoIngest === true && !alreadyHandled && senderAllowed && !failedAuth && this.onAutoIngest) {
           // Durable claim written BEFORE dispatch so a replay after a mid-dispatch
           // crash sees `dispatching` and does not re-run the agent.
           persistEmailMessageWithState(
@@ -203,7 +220,7 @@ export class EmailService {
             { status: "dispatching", sessionId: persisted.sessionId, error: null },
           );
           try {
-            const sessionId = await this.onAutoIngest(persisted);
+            const sessionId = await Promise.resolve().then(() => this.onAutoIngest!(persisted));
             results.push(persistEmailMessageWithState(
               { ...persisted, status: "ingested", sessionId, error: null },
               { status: "ingested", sessionId, error: null },

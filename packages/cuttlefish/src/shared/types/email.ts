@@ -47,6 +47,7 @@ export interface EmailMessageRecord {
   textBody: string;
   htmlBody: string | null;
   headers: Record<string, string>;
+  authResults: string | null;
   attachments: EmailAttachmentRecord[];
   // Lifecycle: cached (stored, not yet handed off) -> dispatching (a durable claim
   // written before the agent run is dispatched, so a crash/replay cannot re-run) ->

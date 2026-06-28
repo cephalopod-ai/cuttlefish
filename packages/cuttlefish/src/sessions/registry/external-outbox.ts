@@ -125,7 +125,7 @@ export function markExternalOutboxDelivered(id: string, remoteId?: string | null
         remote_id = ?,
         last_error = NULL,
         next_attempt_at = NULL
-    WHERE id = ?
+    WHERE id = ? AND status = 'sending'
   `).run(now, remoteId ?? null, id);
   return getExternalOutboxItem(id);
 }
@@ -134,20 +134,24 @@ export const EXTERNAL_OUTBOX_MAX_ATTEMPTS = 10;
 
 export function markExternalOutboxFailed(id: string, error: string, nextAttemptAt: string): ExternalOutboxItem | undefined {
   const db = initDb();
-  const now = new Date().toISOString();
-  const current = db.prepare("SELECT attempt_count FROM external_outbox WHERE id = ?").get(id) as Record<string, unknown> | undefined;
-  const newCount = (Number(current?.attempt_count ?? 0) + 1);
-  const terminal = newCount >= EXTERNAL_OUTBOX_MAX_ATTEMPTS;
-  db.prepare(`
-    UPDATE external_outbox
-    SET attempt_count = ?,
-        last_attempt_at = ?,
-        last_error = ?,
-        next_attempt_at = ?,
-        status = ?
-    WHERE id = ?
-  `).run(newCount, now, error, terminal ? null : nextAttemptAt, terminal ? "failed" : "pending", id);
-  return getExternalOutboxItem(id);
+  const fail = db.transaction((): ExternalOutboxItem | undefined => {
+    const now = new Date().toISOString();
+    const current = db.prepare("SELECT attempt_count, status FROM external_outbox WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    if (!current || current.status !== "sending") return getExternalOutboxItem(id);
+    const newCount = Number(current.attempt_count ?? 0) + 1;
+    const terminal = newCount >= EXTERNAL_OUTBOX_MAX_ATTEMPTS;
+    db.prepare(`
+      UPDATE external_outbox
+      SET attempt_count = ?,
+          last_attempt_at = ?,
+          last_error = ?,
+          next_attempt_at = ?,
+          status = ?
+      WHERE id = ? AND status = 'sending'
+    `).run(newCount, now, error, terminal ? null : nextAttemptAt, terminal ? "failed" : "pending", id);
+    return getExternalOutboxItem(id);
+  });
+  return fail();
 }
 
 export function getExternalOutboxItem(id: string): ExternalOutboxItem | undefined {

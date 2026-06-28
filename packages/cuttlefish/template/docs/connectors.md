@@ -66,7 +66,6 @@ Reactions provide visual feedback during processing:
 ## Future Connectors
 
 The connector interface is designed for additional platforms:
-- **Discord**: Bot integration via discord.js
 - **iMessage**: macOS-only via AppleScript bridge
 - **Web UI**: Built-in, served by the HTTP server
 - **CLI**: Direct terminal input/output

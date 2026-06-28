@@ -137,6 +137,41 @@ describe("EmailService", () => {
     expect(result.messages[0].status).toBe("cached");
   });
 
+  it("skips auto-ingest when Authentication-Results reports SPF failure", async () => {
+    const reg = await import("../../sessions/registry.js");
+    const { FakeEmailMailboxClient } = await import("../client.js");
+    const { EmailService } = await import("../service.js");
+    reg.initDb();
+
+    const client = new FakeEmailMailboxClient();
+    client.setMessages("ops", [{
+      providerMessageId: "uid-auth",
+      raw: Buffer.from(RAW_EMAIL.toString("utf-8").replace(
+        "MIME-Version: 1.0",
+        "MIME-Version: 1.0\r\nAuthentication-Results: mx.example; spf=fail smtp.mailfrom=support@example.com",
+      )),
+    }]);
+    const onAutoIngest = vi.fn(async () => "session-x");
+
+    const service = new EmailService({
+      enabled: true,
+      inboxes: [{
+        id: "ops",
+        address: "ops@example.com",
+        username: "ops@example.com",
+        password: "secret",
+        imapHost: "imap.example.com",
+        autoIngest: true,
+        allowFrom: ["support@example.com"],
+      }],
+    }, { client, onAutoIngest });
+
+    const result = await service.checkInbox("ops");
+    expect(onAutoIngest).not.toHaveBeenCalled();
+    expect(result.messages[0].status).toBe("cached");
+    expect(result.messages[0].authResults).toContain("spf=fail");
+  });
+
   it("records an oversized message as an error without parsing or ingesting it", async () => {
     const reg = await import("../../sessions/registry.js");
     const { FakeEmailMailboxClient } = await import("../client.js");

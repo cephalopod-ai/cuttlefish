@@ -9,7 +9,7 @@ import type { Session, Connector } from "../shared/types.js";
 
 /**
  * Sources that are NOT backed by an external chat connector. Anything else
- * (slack, telegram, discord, whatsapp, …) is connector-sourced and its turn
+ * (slack, whatsapp, …) is connector-sourced and its turn
  * results must be relayed back to the originating channel.
  */
 const NON_CONNECTOR_SOURCES = new Set(["web", "talk", "cron"]);

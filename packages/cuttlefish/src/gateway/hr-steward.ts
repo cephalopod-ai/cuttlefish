@@ -52,6 +52,8 @@ import type { ApiContext } from "./api/context.js";
 import type { Employee, OrgChangeRequest, OrgChangeType } from "../shared/types.js";
 import { getReusableHrSession } from "./hr-session.js";
 
+let hrSessionPromise: Promise<ReturnType<typeof createSession> | NonNullable<ReturnType<typeof updateSession>>> | null = null;
+
 export interface SubmitOrgChangeInput {
   changeType: OrgChangeType;
   employeeName: string;
@@ -138,8 +140,11 @@ export async function submitOrgChange(
     .then((result) => finishCritique(request.id, result, tier.requiresHumanApproval, context))
     .catch((err) => {
       logger.warn(`HR critique failed for ${request.id}: ${err instanceof Error ? err.message : String(err)}`);
-      // Don't strand the change: advance it with no critique attached.
-      finishCritique(request.id, { critique: null }, tier.requiresHumanApproval, context).catch(() => {});
+      updateChangeRequest(request.id, {
+        status: "error",
+        hrCritique: `critique failed: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      context.emit("org-change:updated", { id: request.id, status: "error" });
     });
 
   return { request, blocked: false };
@@ -220,6 +225,9 @@ export function recordHrDecisionMessage(
  * dispatches to the existing org writers, hot-reloads, and records `applied`.
  */
 export async function applyOrgChange(request: OrgChangeRequest, context: ApiContext): Promise<ApplyResult> {
+  if (!["pending_approval", "approved"].includes(request.status)) {
+    return { ok: false, error: `Change request is '${request.status}' and cannot be applied` };
+  }
   const config = context.getConfig();
   const registry = scanOrg();
   const guardInput = {
@@ -303,32 +311,54 @@ async function defaultRunCritique(request: OrgChangeRequest, context: ApiContext
 
   const prompt = buildCritiquePrompt(request, registry);
   const now = new Date().toISOString();
-  const existing = getReusableHrSession();
-  const session = existing
-    ? (updateSession(existing.id, {
-        engine: engineName,
-        model: hr.model ?? null,
-        effortLevel: hr.effortLevel ?? null,
-        status: "running",
-        lastActivity: now,
-        lastError: null,
-      }) ?? existing)
-    : createSession({
-        engine: engineName,
-        source: "web",
-        sourceRef: HR_SESSION_KEY,
-        connector: "web",
-        sessionKey: HR_SESSION_KEY,
-        replyContext: { source: "web" },
-        employee: HR_EMPLOYEE_NAME,
-        model: hr.model,
-        effortLevel: hr.effortLevel,
-        prompt,
-        portalName: config.portal?.portalName,
-      });
+  const session = await getOrCreateHrSession({
+    engineName,
+    hr,
+    now,
+    prompt,
+    portalName: config.portal?.portalName,
+  });
   insertMessage(session.id, "user", prompt);
   await dispatchWebSessionRun(session, prompt, engine, config, context);
   return { critique: readLastAssistantMessage(session.id), sessionId: session.id };
+}
+
+async function getOrCreateHrSession(input: {
+  engineName: string;
+  hr: Employee;
+  now: string;
+  prompt: string;
+  portalName: string | undefined;
+}) {
+  if (hrSessionPromise) return hrSessionPromise;
+  hrSessionPromise = Promise.resolve().then(() => {
+    const existing = getReusableHrSession();
+    return existing
+      ? (updateSession(existing.id, {
+          engine: input.engineName,
+          model: input.hr.model ?? null,
+          effortLevel: input.hr.effortLevel ?? null,
+          status: "running",
+          lastActivity: input.now,
+          lastError: null,
+        }) ?? existing)
+      : createSession({
+          engine: input.engineName,
+          source: "web",
+          sourceRef: HR_SESSION_KEY,
+          connector: "web",
+          sessionKey: HR_SESSION_KEY,
+          replyContext: { source: "web" },
+          employee: HR_EMPLOYEE_NAME,
+          model: input.hr.model,
+          effortLevel: input.hr.effortLevel,
+          prompt: input.prompt,
+          portalName: input.portalName,
+        });
+  }).finally(() => {
+    hrSessionPromise = null;
+  });
+  return hrSessionPromise;
 }
 
 function readLastAssistantMessage(sessionId: string): string | null {

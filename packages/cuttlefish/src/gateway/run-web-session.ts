@@ -19,7 +19,7 @@ import {
   rateLimitTimeoutError,
   rateLimitWaitingNotice,
 } from "../sessions/rate-limit-handler.js";
-import { notifyParentSession, notifyRateLimited, notifyRateLimitResumed, notifyDiscordChannel } from "../sessions/callbacks.js";
+import { notifyConnectorNotification, notifyParentSession, notifyRateLimited, notifyRateLimitResumed } from "../sessions/callbacks.js";
 import { markTranscriptSyncedThrough } from "./external-turns.js";
 import { getOrchestratorPersona } from "../talk/orchestrator-persona.js";
 import { feedTalkText, flushTalkSpeech, discardTalkSpeech } from "../talk/tts-stream.js";
@@ -494,7 +494,9 @@ export async function runWebSession(
         const labelled = `(recovered — this supersedes the earlier reported failure)\n\n${lateText}`;
         if (recovered) {
           notifyParentSession(recovered, { result: labelled, error: null }, { alwaysNotify: employee?.alwaysNotify, sink: context.notificationSink });
-          void deliverConnectorReply(recovered, labelled, context.connectors, { emit: context.emit });
+          void deliverConnectorReply(recovered, labelled, context.connectors, { emit: context.emit }).catch((err) => {
+            logger.warn(`Failed to deliver connector reply for session ${recovered.id}: ${err instanceof Error ? err.message : String(err)}`);
+          });
         }
         context.emit("session:completed", {
           sessionId: currentSession.id,
@@ -545,7 +547,9 @@ export async function runWebSession(
       maybeEmitTalkGraph(currentSession.id, "completed", { getSession, emit: context.emit });
       if (stalledSession) {
         notifyParentSession(stalledSession, { error: errMsg }, { alwaysNotify: employee?.alwaysNotify, sink: context.notificationSink });
-        void deliverConnectorReply(stalledSession, `⛔ ${errMsg}`, context.connectors, { emit: context.emit });
+        void deliverConnectorReply(stalledSession, `⛔ ${errMsg}`, context.connectors, { emit: context.emit }).catch((err) => {
+          logger.warn(`Failed to deliver connector reply for session ${stalledSession.id}: ${err instanceof Error ? err.message : String(err)}`);
+        });
       }
       return;
     }
@@ -602,7 +606,7 @@ export async function runWebSession(
             const notificationText = rateLimitFallbackNotice(originalEngine, fallbackName, resumeText);
             insertMessage(currentSession.id, "notification", notificationText);
 
-            notifyDiscordChannel(
+            notifyConnectorNotification(
               `⚠️ ${rateLimitSummary(originalEngine)} reached. Session ${currentSession.id}${currentSession.employee ? ` (${currentSession.employee})` : ""} switching to ${fallbackName}.`,
               { sink: context.notificationSink },
             );
@@ -625,7 +629,11 @@ export async function runWebSession(
             });
             if (completedFallback) {
               notifyParentSession(completedFallback, { result: fallbackResult.result, error: fallbackResult.error ?? null, cost: fallbackResult.cost, durationMs: fallbackResult.durationMs }, { alwaysNotify: employee?.alwaysNotify, sink: context.notificationSink });
-              if (fallbackResult.result) void deliverConnectorReply(completedFallback, fallbackResult.result, context.connectors, { emit: context.emit });
+              if (fallbackResult.result) {
+                void deliverConnectorReply(completedFallback, fallbackResult.result, context.connectors, { emit: context.emit }).catch((err) => {
+                  logger.warn(`Failed to deliver connector reply for session ${completedFallback.id}: ${err instanceof Error ? err.message : String(err)}`);
+                });
+              }
             }
 
             context.emit("session:completed", {
@@ -645,7 +653,7 @@ export async function runWebSession(
               : null;
             const sourceEngine = currentSession.engine;
 
-            notifyDiscordChannel(
+            notifyConnectorNotification(
               `⚠️ ${rateLimitSummary(sourceEngine)} reached. Session ${currentSession.id}${currentSession.employee ? ` (${currentSession.employee})` : ""} paused${resumeText ? ` until ${resumeText}` : ""}.`,
               { sink: context.notificationSink },
             );
@@ -686,12 +694,16 @@ export async function runWebSession(
 
             if (completedAfterRetry) {
               notifyRateLimitResumed(completedAfterRetry, { sink: context.notificationSink });
-              notifyDiscordChannel(
+              notifyConnectorNotification(
                 `✅ ${rateLimitSummary(sourceEngine)} cleared. Session ${currentSession.id}${currentSession.employee ? ` (${currentSession.employee})` : ""} resumed.`,
                 { sink: context.notificationSink },
               );
               notifyParentSession(completedAfterRetry, { result: retryResult.result, error: retryResult.error ?? null, cost: retryResult.cost, durationMs: retryResult.durationMs }, { alwaysNotify: employee?.alwaysNotify, sink: context.notificationSink });
-              if (retryResult.result) void deliverConnectorReply(completedAfterRetry, retryResult.result, context.connectors, { emit: context.emit });
+              if (retryResult.result) {
+                void deliverConnectorReply(completedAfterRetry, retryResult.result, context.connectors, { emit: context.emit }).catch((err) => {
+                  logger.warn(`Failed to deliver connector reply for session ${completedAfterRetry.id}: ${err instanceof Error ? err.message : String(err)}`);
+                });
+              }
             }
 
             context.emit("session:completed", {
@@ -708,7 +720,7 @@ export async function runWebSession(
           onTimeout: () => {
             const sourceEngine = currentSession.engine;
             const timeoutError = rateLimitTimeoutError(sourceEngine);
-            notifyDiscordChannel(
+            notifyConnectorNotification(
               `❌ ${timeoutError}. Session ${currentSession.id}${currentSession.employee ? ` (${currentSession.employee})` : ""} has been stopped.`,
               { sink: context.notificationSink },
             );

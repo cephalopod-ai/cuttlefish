@@ -42,6 +42,8 @@ export interface Approval {
   resultingAction?: string | null;
 }
 
+export type ListableApprovalType = Exclude<Approval["type"], "checkpoint">;
+
 export interface CronJob {
   id: string;
   name: string;

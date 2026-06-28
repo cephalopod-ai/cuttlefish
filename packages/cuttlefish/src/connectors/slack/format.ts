@@ -55,7 +55,8 @@ export async function downloadAttachment(
     throw new Error(`Failed to download attachment: ${response.status} ${response.statusText}`);
   }
 
-  // Generate unique filename preserving extension from URL if possible
+  // Use a random disk filename so the saved path never trusts user-controlled names.
+  // Preserve only the extension inferred from the Slack URL.
   const urlPath = new URL(url).pathname;
   const ext = path.extname(urlPath) || "";
   const filename = `${randomUUID()}${ext}`;

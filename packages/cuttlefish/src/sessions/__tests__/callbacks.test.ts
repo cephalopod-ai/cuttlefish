@@ -30,7 +30,7 @@ vi.mock("../../gateway/gateway-info.js", async (importOriginal) => ({
   })),
 }));
 
-import { notifyDiscordChannel, notifyParentSession, notifyRateLimitResumed } from "../callbacks.js";
+import { notifyConnectorNotification, notifyParentSession, notifyRateLimitResumed } from "../callbacks.js";
 import { getSession, listSessionsBySource } from "../registry.js";
 import { loadConfig } from "../../shared/config.js";
 import { attach, __resetAttachmentsForTest } from "../../talk/attachments.js";
@@ -592,7 +592,7 @@ describe("notifyParentSession — attached talk-session wakes", () => {
   });
 });
 
-describe("notifyDiscordChannel", () => {
+describe("notifyConnectorNotification", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     globalThis.fetch = originalFetch as typeof fetch;
@@ -607,7 +607,7 @@ describe("notifyDiscordChannel", () => {
       sendConnectorNotification: vi.fn().mockResolvedValue(undefined),
     };
 
-    notifyDiscordChannel("usage limit reached", { sink });
+    notifyConnectorNotification("usage limit reached", { sink });
     await new Promise((r) => setTimeout(r, 50));
 
     expect(sink.sendConnectorNotification).toHaveBeenCalledWith("usage limit reached");

@@ -42,7 +42,11 @@ export function createAuthToken(): string {
 }
 
 export function ensureGatewayAuthToken(cuttlefishHome: string): string {
-  fs.mkdirSync(cuttlefishHome, { recursive: true });
+  try {
+    fs.mkdirSync(cuttlefishHome, { recursive: true });
+  } catch (err) {
+    throw new Error(`Cannot create CUTTLEFISH_HOME (${cuttlefishHome}): ${err instanceof Error ? err.message : String(err)}. Check filesystem permissions.`);
+  }
   const file = path.join(cuttlefishHome, "gateway.json");
   let existing: Record<string, unknown> = {};
   try {

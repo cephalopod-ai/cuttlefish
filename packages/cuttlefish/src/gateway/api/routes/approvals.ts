@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { IncomingMessage as HttpRequest, ServerResponse } from "node:http";
-import type { JsonObject } from "../../../shared/types.js";
+import type { JsonObject, ListableApprovalType, Approval } from "../../../shared/types.js";
 import { getApproval, listApprovals, resolveApproval } from "../../approvals.js";
 import { getSession, insertMessage, patchSessionTransportMeta, updateSession, deletePartialMessages } from "../../../sessions/registry.js";
 import { CUTTLEFISH_HOME } from "../../../shared/paths.js";
@@ -24,7 +24,8 @@ export async function handleApprovalRoutes(
     const stateParam = (url.searchParams.get("state") ?? "pending") as
       | "pending" | "approved" | "rejected" | "all";
     const sessionId = url.searchParams.get("sessionId") ?? undefined;
-    json(res, listApprovals({ state: stateParam, sessionId }).filter((approval) => approval.type !== "checkpoint"));
+    // checkpoint approvals are served via /api/checkpoints/:id/decision
+    json(res, listApprovals({ state: stateParam, sessionId }).filter((approval): approval is Approval & { type: ListableApprovalType } => approval.type !== "checkpoint"));
     return true;
   }
 

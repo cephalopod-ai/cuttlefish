@@ -292,6 +292,7 @@ export class WhatsAppConnector implements Connector {
         const ext = message.message?.imageMessage ? "jpg"
           : message.message?.audioMessage ? "ogg"
           : "bin";
+        // WhatsApp media uses the platform-generated message id, not a sender filename.
         const filename = `wa-attachment-${message.key.id}.${ext}`;
         const tmpDir = path.join(CUTTLEFISH_HOME, "tmp");
         const localPath = path.join(tmpDir, filename);

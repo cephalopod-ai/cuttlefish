@@ -35,7 +35,7 @@ type ParsedChangeInput =
 async function reconcileDepartmentBoardView(department: string, context: ApiContext): Promise<void> {
   const { reconcileDepartmentOrphanedTickets } = await import("../../orphaned-ticket-reconciler.js");
   reconcileDepartmentOrphanedTickets(department, {
-    engines: context.sessionManager.getEngines(),
+    engines: context.sessionManager?.getEngines?.() ?? new Map(),
     orgDir: ORG_DIR,
     getSession,
     listSessions,
@@ -438,6 +438,10 @@ export async function handleOrgRoutes(
     const request = getChangeRequest(params.id);
     if (!request) {
       notFound(res);
+      return true;
+    }
+    if (!["pending_approval", "approved"].includes(request.status)) {
+      json(res, { error: `Change request is '${request.status}' and cannot be applied` }, 409);
       return true;
     }
     const applied = await applyOrgChange(request, context);

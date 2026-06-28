@@ -135,6 +135,12 @@ export async function saveFile(result: UploadResult, context: ApiContext): Promi
   });
 
   if (customPath) {
+    try {
+      await fs.promises.access(customPath);
+      throw new FileRequestError("file already exists at custom path; use a different path or delete the existing file");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    }
     await fs.promises.mkdir(path.dirname(customPath), { recursive: true });
     await fs.promises.writeFile(customPath, result.buffer);
   }

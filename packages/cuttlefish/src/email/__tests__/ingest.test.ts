@@ -19,6 +19,7 @@ function emailRecord(overrides: Partial<EmailMessageRecord> = {}): EmailMessageR
     textBody: "Please investigate.",
     htmlBody: null,
     headers: {},
+    authResults: null,
     attachments: [],
     status: "cached",
     sessionId: null,

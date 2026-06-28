@@ -1,8 +1,6 @@
 import type {
   ConnectorInstance,
-  DiscordConnectorConfig,
   SlackConnectorConfig,
-  TelegramConnectorConfig,
   WebConnectorConfig,
   WhatsAppConnectorConfig,
 } from "./connectors.js";
@@ -149,8 +147,6 @@ export interface CuttlefishConfig {
   connectors: Record<string, any> & {
     web?: WebConnectorConfig;
     slack?: SlackConnectorConfig;
-    telegram?: TelegramConnectorConfig;
-    discord?: DiscordConnectorConfig;
     whatsapp?: WhatsAppConnectorConfig;
     instances?: ConnectorInstance[];
   };

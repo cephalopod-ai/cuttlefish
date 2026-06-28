@@ -33,7 +33,7 @@ You've already installed the best agent CLIs. Cuttlefish turns that pile of term
 - **🏢 An AI org you design in YAML.** Named employees with personas, ranks, and departments - and a reporting hierarchy of any depth. A COO delegates work to managers, managers to their reports. Real chain of command, not a flat pool of anonymous agents.
 - **💸 Runs on your subscription, not a token meter.** Cuttlefish drives the *official* Claude Code CLI inside a real terminal, so Claude turns bill against your flat-rate Max/Pro subscription - a whole org grinding all day is a fixed monthly cost, not a surprise API invoice.
 - **⏰ Works while you sleep.** Hot-reloadable cron schedules background research, content, monitoring, and support - output routed through your COO for review, then to you on Slack.
-- **📦 Skills, connectors, and memory - shared across the org.** Reusable markdown playbooks every engine follows natively, Slack/WhatsApp/Discord/Telegram connectors, and git-backed shared knowledge. The institutional layer a lone agent can't keep.
+- **📦 Skills, connectors, and memory - shared across the org.** Reusable markdown playbooks every engine follows natively, Slack/WhatsApp connectors, and git-backed shared knowledge. The institutional layer a lone agent can't keep.
 
 <p align="center">
   <img src="assets/chat.png" alt="Cuttlefish chat - an engineering agent diagnosing and fixing a flaky test" width="840" />
@@ -177,7 +177,7 @@ Every department also has a **board**. Assign tickets to employees, watch work m
 - **🧩 Real delegation** - parent/child sessions with completion callbacks and a COO-review pattern that filters noise before it reaches you.
 - **⏰ Cron scheduling** - hot-reloadable background jobs with run history and optional failure alerts.
 - **📦 Skills** - reusable markdown playbooks auto-synced into the underlying CLIs; install community skills with one command.
-- **💬 Connectors** - Slack (threads + ✅ reaction approvals), Discord, Telegram (with voice notes), WhatsApp, and inbound IMAP inbox polling/inspection.
+- **💬 Connectors** - Slack (threads + ✅ reaction approvals), WhatsApp, and inbound IMAP inbox polling/inspection.
 - **🌐 Web dashboard** - chat, interactive org map, kanban boards, cron visualizer, usage & limits, activity logs, skills catalog, settings.
 - **🖥️ Chat or raw terminal** - toggle any session between rendered chat and a live `xterm` view of the engine.
 - **📎 Attachments** - drag, drop, or paste files and images into chat; passed through to the engine and rendered inline.

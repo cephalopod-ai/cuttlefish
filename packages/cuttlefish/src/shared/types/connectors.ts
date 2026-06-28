@@ -75,42 +75,6 @@ export interface SlackConnectorConfig {
   ignoreOldMessagesOnBoot?: boolean;
 }
 
-export interface DiscordConnectorConfig {
-  /** Unique instance identifier (e.g. "discord-vox") */
-  id?: string;
-  /** Employee to handle messages from this connector instance */
-  employee?: string;
-  botToken?: string;
-  allowFrom?: string | string[];
-  ignoreOldMessagesOnBoot?: boolean;
-  guildId?: string;
-  /** Only respond to messages in this channel */
-  channelId?: string;
-  /** Route messages from specific channels to remote Cuttlefish instances */
-  channelRouting?: Record<string, string | { url: string; token?: string }>;
-  /** URL of the primary Cuttlefish instance to proxy Discord I/O through (secondary/remote mode) */
-  proxyVia?: string;
-  /** API token for the primary Cuttlefish instance when proxyVia targets an authenticated gateway. */
-  proxyToken?: string;
-}
-
-export interface TelegramConnectorConfig {
-  /** Unique instance identifier (e.g. "telegram-support") */
-  id?: string;
-  /** Employee to handle messages from this connector instance */
-  employee?: string;
-  botToken: string;
-  allowFrom?: number[];
-  ignoreOldMessagesOnBoot?: boolean;
-  /** Speech-to-text settings forwarded from top-level `config.stt` */
-  stt?: {
-    enabled?: boolean;
-    model?: string;
-    language?: string;
-    languages?: string[];
-  };
-}
-
 export interface WhatsAppConnectorConfig {
   /** Unique instance identifier (e.g. "whatsapp-main") */
   id?: string;
@@ -127,7 +91,7 @@ export interface ConnectorInstance {
   /** Unique instance ID */
   id: string;
   /** Connector type */
-  type: "discord" | "discord-remote" | "slack" | "whatsapp" | "telegram";
+  type: "slack" | "whatsapp";
   /** Employee to bind to this connector */
   employee?: string;
   /** Type-specific configuration */

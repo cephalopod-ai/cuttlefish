@@ -74,4 +74,15 @@ describe("isServablePath (download scoping guard)", () => {
   it("rejects traversal that escapes an allowed dir", () => {
     expect(files.isServablePath(path.join(paths.UPLOADS_DIR, "..", "..", "etc", "passwd"))).toBe(false);
   });
+
+  it("rejects symlinks that escape managed storage", () => {
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "cuttlefish-upload-outside-"));
+    const outside = path.join(outsideDir, "secret.txt");
+    const link = path.join(paths.UPLOADS_DIR, "2026-05-30", "s", "secret-link.txt");
+    fs.mkdirSync(path.dirname(link), { recursive: true });
+    fs.writeFileSync(outside, "secret");
+    fs.symlinkSync(outside, link);
+
+    expect(files.isServablePath(link)).toBe(false);
+  });
 });

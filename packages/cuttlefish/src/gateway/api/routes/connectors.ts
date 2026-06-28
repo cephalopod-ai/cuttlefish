@@ -1,8 +1,7 @@
 import fs from "node:fs";
 import type { IncomingMessage as HttpRequest, ServerResponse } from "node:http";
 import QRCode from "qrcode";
-import type { IncomingMessage, Target } from "../../../shared/types.js";
-import { TMP_DIR } from "../../../shared/paths.js";
+import type { Target } from "../../../shared/types.js";
 import { redactText } from "../../../shared/redact.js";
 import { WhatsAppConnector } from "../../../connectors/whatsapp/index.js";
 import { readJsonBody } from "../../http-helpers.js";
@@ -20,61 +19,9 @@ export async function handleConnectorRoutes(
   res: ServerResponse,
   context: ApiContext,
 ): Promise<boolean> {
-  let params = matchRoute("/api/connectors/:id/incoming", pathname);
+  let params = matchRoute("/api/connectors/:id/proxy", pathname);
   if (method === "POST" && params && params.id) {
-    const connector = context.connectors.get(params.id) ?? (params.id === "discord" ? context.connectors.get("discord") : undefined);
-    if (!connector) {
-      notFound(res);
-      return true;
-    }
-    if (!("deliverMessage" in connector)) {
-      json(res, { error: "Discord connector is not in remote mode" }, 400);
-      return true;
-    }
-
-    const parsed = await readJsonBody(req, res);
-    if (!parsed.ok) return true;
-    const body = parsed.body as any;
-
-    const { downloadAttachment } = await import("../../../connectors/discord/format.js");
-    const attachments = await Promise.all(
-      (body.attachments || []).map(async (att: { name: string; url: string; mimeType: string }) => {
-        if (att.url) {
-          try {
-            const localPath = await downloadAttachment(att.url, TMP_DIR, att.name);
-            return { name: att.name, url: att.url, mimeType: att.mimeType, localPath };
-          } catch {
-            return { name: att.name, url: att.url, mimeType: att.mimeType };
-          }
-        }
-        return att;
-      }),
-    );
-
-    const incomingMsg: IncomingMessage = {
-      connector: params.id,
-      source: "discord",
-      sessionKey: body.sessionKey,
-      channel: body.channel,
-      thread: body.thread,
-      user: body.user,
-      userId: body.userId,
-      text: body.text,
-      messageId: body.messageId,
-      attachments,
-      replyContext: body.replyContext || {},
-      transportMeta: body.transportMeta,
-      raw: body,
-    };
-
-    (connector as any).deliverMessage(incomingMsg);
-    json(res, { status: "delivered" });
-    return true;
-  }
-
-  params = matchRoute("/api/connectors/:id/proxy", pathname);
-  if (method === "POST" && params && params.id) {
-    const connector = context.connectors.get(params.id) ?? (params.id === "discord" ? context.connectors.get("discord") : undefined);
+    const connector = context.connectors.get(params.id);
     if (!connector) {
       notFound(res);
       return true;
@@ -146,7 +93,7 @@ export async function handleConnectorRoutes(
     }
     // Session-scoped tokens may only send via the connector bound to their session,
     // and only when the session originated from a trusted source (web/cron).
-    // Untrusted-source sessions (email, slack, discord, telegram, whatsapp) are
+    // Untrusted-source sessions (email, slack, whatsapp) are
     // blocked from the outbound send path entirely to prevent confused-deputy
     // injection attacks: a malicious inbound message cannot steer the model into
     // sending authenticated outbound messages on the operator's behalf.

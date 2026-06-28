@@ -94,6 +94,17 @@ describe("isAllowedReadPath — root policy", () => {
   it("allows any path only with the explicit arbitrary-read escape hatch", () => {
     expect(files.isAllowedReadPath("/etc/hosts", ctx({ allowArbitraryFileRead: true }))).toBe(true);
   });
+
+  it("rejects symlinks that point outside configured roots", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "cuttlefish-read-root-"));
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "cuttlefish-read-outside-"));
+    const outside = path.join(outsideDir, "secret.txt");
+    const link = path.join(root, "secret-link.txt");
+    fs.writeFileSync(outside, "secret");
+    fs.symlinkSync(outside, link);
+
+    expect(files.isAllowedReadPath(link, ctx({ fileReadRoots: [root] }))).toBe(false);
+  });
 });
 
 describe("GET /api/files/read — route root policy", () => {
