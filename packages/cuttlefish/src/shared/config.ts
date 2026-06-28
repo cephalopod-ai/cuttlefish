@@ -41,6 +41,31 @@ function clampMinutes(value: unknown, fallback: number): number {
   return Math.max(0, Math.min(60, Math.floor(minutes)));
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function stripLegacyConnectorConfig(raw: unknown): unknown {
+  if (!isPlainRecord(raw)) return raw;
+  const config = structuredClone(raw);
+  if (!isPlainRecord(config.connectors)) return config;
+
+  const connectors = config.connectors;
+  delete connectors.discord;
+  delete connectors.telegram;
+
+  if (Array.isArray(connectors.instances)) {
+    const instances = connectors.instances.filter((entry) => {
+      if (!isPlainRecord(entry)) return true;
+      return entry.type !== "discord" && entry.type !== "discord-remote" && entry.type !== "telegram";
+    });
+    if (instances.length > 0) connectors.instances = instances;
+    else delete connectors.instances;
+  }
+
+  return config;
+}
+
 export function normalizeClaudeEngineConfig(raw: ClaudeEngineConfig): Required<Pick<ClaudeEngineConfig, "maxLivePtys">> & ClaudeEngineConfig {
   return {
     ...raw,
@@ -95,8 +120,8 @@ export function loadConfig(): CuttlefishConfig {
       `Cuttlefish config not found at ${CONFIG_PATH}. Run "cuttlefish setup" first.`
     );
   }
-  // config.yaml stores plaintext connector secrets (Slack/Discord/Telegram
-  // bot/app/proxy tokens), so it must not be group/world-readable. Repair perms
+  // config.yaml stores plaintext connector secrets, so it must not be
+  // group/world-readable. Repair perms
   // on every load to harden installs created before this was enforced.
   try { fs.chmodSync(CONFIG_PATH, 0o600); } catch { /* best-effort */ }
   const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
@@ -106,6 +131,7 @@ export function loadConfig(): CuttlefishConfig {
   } catch (err) {
     throw new Error(`Invalid YAML in ${CONFIG_PATH}: ${(err as Error).message}`);
   }
+  parsed = stripLegacyConnectorConfig(parsed);
   const problems = validateConfigShape(parsed);
   if (problems.length > 0) {
     throw new Error(

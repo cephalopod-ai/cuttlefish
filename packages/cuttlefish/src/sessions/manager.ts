@@ -476,7 +476,7 @@ export class SessionManager {
                 ? resumeAt.toLocaleString("en-GB", { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
                 : null;
 
-              // Send a deterministic Discord notification — does not depend on the LLM
+              // Send a deterministic connector notification — does not depend on the LLM
               notifyConnectorNotification(
                 `⚠️ ${rateLimitSummary(sourceEngine)} reached. Session ${session.id}${session.employee ? ` (${session.employee})` : ""} paused${resumeText ? ` until ${resumeText}` : ""}.`,
                 { sink: this.notificationSink },

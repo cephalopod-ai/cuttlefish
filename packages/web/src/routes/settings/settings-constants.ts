@@ -97,17 +97,6 @@ export interface Config {
       allowFrom?: string | string[]
       ignoreOldMessagesOnBoot?: boolean
     }
-    discord?: {
-      botToken?: string
-      allowFrom?: string | string[]
-      guildId?: string
-      channelId?: string
-    }
-    telegram?: {
-      botToken?: string
-      allowFrom?: number[]
-      ignoreOldMessagesOnBoot?: boolean
-    }
     whatsapp?: {
       authDir?: string
       allowFrom?: string[]
@@ -115,15 +104,12 @@ export interface Config {
     web?: Record<string, never>
     instances?: Array<{
       id: string
-      type: "discord" | "discord-remote" | "slack" | "whatsapp" | "telegram"
+      type: "slack" | "whatsapp"
       employee?: string
       botToken?: string
       allowFrom?: string | string[]
-      guildId?: string
-      channelId?: string
       appToken?: string
       authDir?: string
-      ignoreOldMessagesOnBoot?: boolean
       [key: string]: unknown
     }>
   }

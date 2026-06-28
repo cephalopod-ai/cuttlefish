@@ -6,7 +6,9 @@ and historical planning ideas unless they have been re-opened for Cuttlefish
 with current evidence and exit criteria.
 
 Sources: 2026-06-28 six-lens structural audit (STT/PIP/NEG/FSR/ARC/INV prefixes);
-2026-06-28 Gemini input/output-path audit (IOP prefix).
+2026-06-28 Gemini input/output-path audit (IOP prefix);
+2026-06-28 connector-removal verification audit (CON prefix);
+2026-06-28 connector-removal follow-up audit (CRF prefix, merged into CON IDs below).
 
 | ID | Status | Priority | Area | Brief Description | Evidence | Opened |
 |---|---|---|---|---|---|---|
@@ -34,3 +36,7 @@ Sources: 2026-06-28 six-lens structural audit (STT/PIP/NEG/FSR/ARC/INV prefixes)
 | NEG-CF-003 | closed | low | operator-ux | Email polling now warns when auto-ingest is enabled without any allowlist. | `email/service.ts` | 2026-06-28 |
 | NEG-CF-005 | closed | low | reliability | Daemon startup now probes `node-pty` and logs a clear warning when PTY support is unavailable. | `gateway/daemon-entry.ts`, `engines/pty-stream.ts` | 2026-06-28 |
 | ARC-CF-004 | deferred | low | architecture | Deferred to a dedicated architecture refactor campaign. | `gateway/api/routes/connectors.ts`, `docs/DECISION_LOG.md` | 2026-06-28 |
+| CON-CF-001 | closed | P1 | connector-cleanup | Discord and Telegram sections were removed from the web settings UI, defaults were retargeted to Slack, and the regression test was updated. | `packages/web/src/routes/settings/settings-connectors-section.tsx`, `packages/web/src/routes/settings/settings-constants.ts`, `packages/web/src/routes/settings/settings-connectors-section.test.tsx` | 2026-06-28 |
+| CON-CF-002 | closed | P1 | compatibility | Legacy `connectors.discord`/`connectors.telegram` config keys are now stripped during config load so startup continues with supported connectors only. | `packages/cuttlefish/src/shared/config.ts`, `packages/cuttlefish/src/shared/__tests__/config.test.ts` | 2026-06-28 |
+| CON-CF-003 | closed | P2 | connector-cleanup | Stale Discord/Telegram comments and dead type references were removed from backend session helpers and the web sidebar/settings surfaces. | `packages/cuttlefish/src/sessions/manager.ts`, `packages/cuttlefish/src/sessions/rate-limit-handler.ts`, `packages/cuttlefish/src/shared/config.ts`, `packages/web/src/components/chat/sidebar-session-helpers.ts`, `packages/web/src/routes/settings/settings-constants.ts` | 2026-06-28 |
+| INV-CF-CRF-003 | open | P2 | invariants | Validate `notifications.connector` against the supported connector inventory at startup; migrate or reject stale names like `discord` instead of silently dropping notifications at send time. | `shared/config-schema.ts`, `gateway/notification-sink.ts` | 2026-06-28 |

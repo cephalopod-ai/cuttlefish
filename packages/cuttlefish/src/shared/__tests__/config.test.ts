@@ -476,8 +476,32 @@ describe("saveConfigAtomic", () => {
     });
   });
 
-  // config.yaml holds plaintext connector secrets (Slack/Discord/Telegram
-  // tokens) — it must be owner-only (0o600), never group/world-readable.
+  it("strips legacy Discord and Telegram connector config on load", () => {
+    const configPath = path.join(tmpHome, "config.yaml");
+    fs.writeFileSync(configPath, yaml.dump({
+      engines: { claude: {} },
+      connectors: {
+        slack: { botToken: "xoxb-secret" },
+        discord: { botToken: "discord-secret" },
+        telegram: { botToken: "telegram-secret" },
+        instances: [
+          { id: "discord-1", type: "discord", botToken: "discord-secret" },
+          { id: "slack-1", type: "slack", appToken: "xapp-1", botToken: "xoxb-1" },
+          { id: "telegram-1", type: "telegram", botToken: "telegram-secret" },
+        ],
+      },
+    }));
+
+    const config = loadConfig();
+
+    expect(config.connectors).toEqual({
+      slack: { botToken: "xoxb-secret" },
+      instances: [{ id: "slack-1", type: "slack", appToken: "xapp-1", botToken: "xoxb-1" }],
+    });
+  });
+
+  // config.yaml holds plaintext connector secrets, so it must be owner-only
+  // (0o600), never group/world-readable.
   it("writes config.yaml with owner-only (0o600) permissions", () => {
     const configPath = path.join(tmpHome, "config.yaml");
     saveConfigAtomic({ connectors: { slack: { botToken: "xoxb-secret" } } });

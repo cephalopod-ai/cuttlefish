@@ -78,9 +78,9 @@ export function isDirectSession(
   return !!portalSlug && session.employee.toLowerCase() === portalSlug
 }
 
-// Sources the sidebar renders (others, e.g. slack/telegram, are shown elsewhere).
+// Sources the sidebar renders directly in the main chat list.
 export function isVisibleSource(s: Session): boolean {
-  return s.source === "web" || s.source === "cron" || s.source === "whatsapp" || s.source === "discord" || !s.source
+  return s.source === "web" || s.source === "cron" || s.source === "whatsapp" || !s.source
 }
 
 export function getSessionActivity(session: Session): string {

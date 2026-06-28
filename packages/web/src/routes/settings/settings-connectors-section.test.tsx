@@ -118,15 +118,20 @@ describe("SettingsConnectorsSection", () => {
     render(<Harness />)
 
     fireEvent.click(screen.getByRole("button", { name: /\+ add instance/i }))
-    expect(screen.getByDisplayValue("discord-1")).toBeTruthy()
-    expect(screen.getByDisplayValue("Discord")).toBeTruthy()
+    expect(screen.getByDisplayValue("slack-1")).toBeTruthy()
+    expect(screen.queryByText("Discord")).toBeNull()
+    expect(screen.queryByText("Telegram")).toBeNull()
+    expect(screen.getByDisplayValue("Slack")).toBeTruthy()
 
-    fireEvent.change(screen.getByDisplayValue("discord-1"), { target: { value: "slack-ops" } })
+    fireEvent.change(screen.getByDisplayValue("slack-1"), { target: { value: "slack-ops" } })
     expect(screen.getByDisplayValue("slack-ops")).toBeTruthy()
 
     const selects = screen.getAllByRole("combobox")
+    fireEvent.change(selects[0], { target: { value: "whatsapp" } })
+    expect(screen.getByDisplayValue("WhatsApp")).toBeTruthy()
+    expect(screen.getAllByPlaceholderText("Default: ~/.cuttlefish/.whatsapp-auth")).toHaveLength(2)
+
     fireEvent.change(selects[0], { target: { value: "slack" } })
-    expect(screen.getByDisplayValue("Slack")).toBeTruthy()
     expect(screen.getAllByPlaceholderText("xapp-...")).toHaveLength(2)
     expect(screen.getAllByPlaceholderText("xoxb-...")).toHaveLength(2)
 

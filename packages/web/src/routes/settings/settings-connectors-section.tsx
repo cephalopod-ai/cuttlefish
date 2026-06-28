@@ -123,86 +123,6 @@ export function SettingsConnectorsSection({
       <div
         className="border-t border-[var(--separator)] mt-[var(--space-3)] pt-[var(--space-3)]"
       />
-
-      <div
-        className="text-[length:var(--text-caption1)] font-[var(--weight-semibold)] text-[var(--text-tertiary)] mb-[var(--space-2)]"
-      >
-        Discord
-      </div>
-      <FieldRow label="Bot Token">
-        <SettingsInput
-          type="password"
-          value={config.connectors?.discord?.botToken ?? ""}
-          onChange={(v) => updateConfig(["connectors", "discord", "botToken"], v)}
-          placeholder="Bot token..."
-        />
-      </FieldRow>
-      <FieldRow label="Allow From">
-        <SettingsInput
-          value={Array.isArray(config.connectors?.discord?.allowFrom)
-            ? config.connectors?.discord?.allowFrom?.join(", ")
-            : config.connectors?.discord?.allowFrom ?? ""}
-          onChange={(v) =>
-            updateConfig(
-              ["connectors", "discord", "allowFrom"],
-              v.trim() ? v.split(",").map((entry) => entry.trim()).filter(Boolean) : undefined,
-            )
-          }
-          placeholder="User IDs, comma-separated (optional)"
-        />
-      </FieldRow>
-      <FieldRow label="Guild ID">
-        <SettingsInput
-          value={config.connectors?.discord?.guildId ?? ""}
-          onChange={(v) => updateConfig(["connectors", "discord", "guildId"], v.trim() || undefined)}
-          placeholder="Server/Guild ID (optional)"
-        />
-      </FieldRow>
-      <FieldRow label="Channel ID">
-        <SettingsInput
-          value={config.connectors?.discord?.channelId ?? ""}
-          onChange={(v) => updateConfig(["connectors", "discord", "channelId"], v.trim() || undefined)}
-          placeholder="Restrict to this channel (right-click → Copy Channel ID)"
-        />
-      </FieldRow>
-
-      <div
-        className="border-t border-[var(--separator)] mt-[var(--space-3)] pt-[var(--space-3)]"
-      />
-      <div
-        className="text-[length:var(--text-caption1)] font-[var(--weight-semibold)] text-[var(--text-tertiary)] mb-[var(--space-2)]"
-      >
-        Telegram
-      </div>
-      <FieldRow label="Bot Token">
-        <SettingsInput
-          type="password"
-          value={config.connectors?.telegram?.botToken ?? ""}
-          onChange={(v) => updateConfig(["connectors", "telegram", "botToken"], v)}
-          placeholder="123456:ABC-DEF..."
-        />
-      </FieldRow>
-      <FieldRow label="Allow From (User IDs)">
-        <SettingsInput
-          value={Array.isArray(config.connectors?.telegram?.allowFrom)
-            ? config.connectors?.telegram?.allowFrom?.join(", ")
-            : ""}
-          onChange={(v) =>
-            updateConfig(
-              ["connectors", "telegram", "allowFrom"],
-              v.trim() ? v.split(",").map((entry) => Number(entry.trim())).filter((n) => !isNaN(n)) : undefined,
-            )
-          }
-          placeholder="Telegram user IDs, comma-separated (optional)"
-        />
-      </FieldRow>
-      <FieldRow label="Ignore Old Messages on Boot">
-        <ToggleSwitch
-          checked={config.connectors?.telegram?.ignoreOldMessagesOnBoot ?? true}
-          onChange={(v) => updateConfig(["connectors", "telegram", "ignoreOldMessagesOnBoot"], v)}
-        />
-      </FieldRow>
-
       <div
         className="text-[length:var(--text-caption1)] font-[var(--weight-semibold)] text-[var(--text-tertiary)] mt-[var(--space-4)] mb-[var(--space-2)]"
       >
@@ -292,8 +212,8 @@ export function SettingsConnectorsSection({
             className="text-[length:var(--text-caption1)] font-[var(--weight-semibold)] text-[var(--accent)] hover:opacity-80 transition-opacity"
             onClick={() => {
               const next = [...instances]
-              const id = `discord-${next.length + 1}`
-              next.push({ id, type: "discord" })
+              const id = `slack-${next.length + 1}`
+              next.push({ id, type: "slack" })
               updateConfig(["connectors", "instances"], next)
             }}
           >
@@ -328,17 +248,16 @@ export function SettingsConnectorsSection({
             <SettingsInput
               value={instance.id ?? ""}
               onChange={(v) => updateConfig(["connectors", "instances"], updateInstanceAt(instances, idx, { id: v }))}
-              placeholder="e.g. discord-vox"
+              placeholder="e.g. slack-ops"
             />
           </FieldRow>
           <FieldRow label="Type">
             <SettingsSelect
-              value={instance.type ?? "discord"}
+              value={instance.type ?? "slack"}
               onChange={(v) =>
                 updateConfig(["connectors", "instances"], updateInstanceAt(instances, idx, { type: v as ConnectorInstance["type"] }))
               }
               options={[
-                { value: "discord", label: "Discord" },
                 { value: "slack", label: "Slack" },
                 { value: "whatsapp", label: "WhatsApp" },
               ]}
@@ -356,46 +275,6 @@ export function SettingsConnectorsSection({
               ]}
             />
           </FieldRow>
-          {(instance.type === "discord" || !instance.type) && (
-            <>
-              <FieldRow label="Bot Token">
-                <SettingsInput
-                  type="password"
-                  value={instance.botToken ?? ""}
-                  onChange={(v) => updateConfig(["connectors", "instances"], updateInstanceAt(instances, idx, { botToken: v }))}
-                  placeholder="Bot token..."
-                />
-              </FieldRow>
-              <FieldRow label="Guild ID">
-                <SettingsInput
-                  value={instance.guildId ?? ""}
-                  onChange={(v) => updateConfig(["connectors", "instances"], updateInstanceAt(instances, idx, { guildId: v.trim() || undefined }))}
-                  placeholder="Server/Guild ID"
-                />
-              </FieldRow>
-              <FieldRow label="Channel ID">
-                <SettingsInput
-                  value={instance.channelId ?? ""}
-                  onChange={(v) => updateConfig(["connectors", "instances"], updateInstanceAt(instances, idx, { channelId: v.trim() || undefined }))}
-                  placeholder="Restrict to channel (optional)"
-                />
-              </FieldRow>
-              <FieldRow label="Allow From">
-                <SettingsInput
-                  value={Array.isArray(instance.allowFrom) ? instance.allowFrom.join(", ") : instance.allowFrom ?? ""}
-                  onChange={(v) =>
-                    updateConfig(
-                      ["connectors", "instances"],
-                      updateInstanceAt(instances, idx, {
-                        allowFrom: v.trim() ? v.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
-                      }),
-                    )
-                  }
-                  placeholder="User IDs, comma-separated (optional)"
-                />
-              </FieldRow>
-            </>
-          )}
           {instance.type === "slack" && (
             <>
               <FieldRow label="App Token">
@@ -412,6 +291,20 @@ export function SettingsConnectorsSection({
                   value={instance.botToken ?? ""}
                   onChange={(v) => updateConfig(["connectors", "instances"], updateInstanceAt(instances, idx, { botToken: v }))}
                   placeholder="xoxb-..."
+                />
+              </FieldRow>
+              <FieldRow label="Allow From">
+                <SettingsInput
+                  value={Array.isArray(instance.allowFrom) ? instance.allowFrom.join(", ") : instance.allowFrom ?? ""}
+                  onChange={(v) =>
+                    updateConfig(
+                      ["connectors", "instances"],
+                      updateInstanceAt(instances, idx, {
+                        allowFrom: v.trim() ? v.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
+                      }),
+                    )
+                  }
+                  placeholder="U123, U456"
                 />
               </FieldRow>
             </>

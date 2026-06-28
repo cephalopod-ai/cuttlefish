@@ -89,7 +89,7 @@ export interface RateLimitHandlerHooks {
 
   /**
    * Called when entering the fallback branch (before the fallback engine runs).
-   * Use this to: notify the user we're switching engines (UI message, Discord, etc.).
+   * Use this to: notify the user we're switching engines (UI message, connector alert, etc.).
    */
   onFallbackStart?: (info: { resumeAt: Date | null; until: Date; originalEngine: string; fallbackName: string }) => void | Promise<void>;
 
@@ -107,7 +107,7 @@ export interface RateLimitHandlerHooks {
 
   /**
    * Called once when entering the wait-and-retry loop. Use this to: switch UI
-   * to "waiting", post a "I'll continue automatically" message, notify Discord, etc.
+   * to "waiting", post a "I'll continue automatically" message, notify the configured connector, etc.
    */
   onWaitingStart?: (info: { resumeAt: Date | null; rateLimit: RateLimitInfo }) => void | Promise<void>;
 
