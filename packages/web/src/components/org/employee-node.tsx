@@ -19,6 +19,8 @@ export function EmployeeNode({ data, selected }: NodeProps) {
   const roleText = roleLabel(employee)
   const chatTarget = isExec ? "/" : `/?employee=${encodeURIComponent(employee.name)}`
   const modelTitle = employee.model || ""
+  const execSummary = employee.executionProfileSummary as { tier?: string } | undefined
+  const isMidPair = execSummary?.tier === "mid_pair"
 
   return (
     <div
@@ -79,6 +81,14 @@ export function EmployeeNode({ data, selected }: NodeProps) {
               className="min-w-0 truncate rounded-[10px] bg-[var(--fill-quaternary)] px-[7px] py-px text-[length:var(--text-caption2)] leading-[1.2] text-[var(--text-tertiary)]"
             >
               {employee.model}
+            </span>
+          )}
+          {isMidPair && (
+            <span
+              title="Built-in review"
+              className="shrink-0 rounded-[10px] bg-[color-mix(in_srgb,var(--system-purple)_15%,transparent)] px-[7px] py-px text-[length:var(--text-caption2)] font-[var(--weight-semibold)] leading-[1.2] text-[var(--system-purple)]"
+            >
+              review
             </span>
           )}
         </div>

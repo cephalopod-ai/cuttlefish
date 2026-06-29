@@ -202,4 +202,9 @@ export interface CuttlefishConfig {
   };
   knowledge?: KnowledgeConfig;
   remotes?: Record<string, { url: string; label?: string; token?: string }>;
+  /** Feature flags (kill switches and opt-ins for in-progress features). */
+  features?: {
+    /** Enable multi-role employee execution (mid_pair tier). Default false — all employees run as solo. */
+    multiRoleEmployeeExecution?: boolean;
+  };
 }

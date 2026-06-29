@@ -214,6 +214,42 @@ export function EmployeeDetail({
           </div>
         </div>
 
+        {employee.executionProfileSummary && (
+          <div className="mt-[var(--space-4)] pt-[var(--space-4)] border-t border-[var(--separator)]">
+            <p className="text-[length:var(--text-caption2)] font-[var(--weight-semibold)] uppercase tracking-[var(--tracking-wide)] text-[var(--text-tertiary)] mb-[var(--space-2)]">
+              Execution
+            </p>
+            <div className="flex flex-wrap items-center gap-[var(--space-2)]">
+              <span
+                className="rounded-[10px] px-[10px] py-[2px] text-[length:var(--text-caption2)] font-[var(--weight-semibold)] uppercase tracking-[0.02em]"
+                style={
+                  employee.executionProfileSummary.tier === "mid_pair"
+                    ? {
+                        color: "var(--system-purple)",
+                        background: "color-mix(in srgb, var(--system-purple) 15%, transparent)",
+                      }
+                    : {
+                        color: "var(--text-tertiary)",
+                        background: "var(--fill-tertiary)",
+                      }
+                }
+              >
+                {employee.executionProfileSummary.label}
+              </span>
+              {employee.executionProfileSummary.tier === "mid_pair" && employee.executionProfileSummary.reviewerLossPolicy && (
+                <span className="text-[length:var(--text-caption2)] text-[var(--text-tertiary)]">
+                  on reviewer loss: {employee.executionProfileSummary.reviewerLossPolicy.replace(/_/g, " ")}
+                </span>
+              )}
+              {employee.executionProfileSummary.tier === "mid_pair" && employee.executionProfileSummary.reviewerToolProfile && (
+                <span className="text-[length:var(--text-caption2)] text-[var(--text-tertiary)]">
+                  · {employee.executionProfileSummary.reviewerToolProfile.replace(/_/g, " ")}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
         {persona && (
           <div className="mt-[var(--space-4)] pt-[var(--space-4)] border-t border-[var(--separator)]">
             <p className="text-[length:var(--text-caption2)] font-[var(--weight-semibold)] uppercase tracking-[var(--tracking-wide)] text-[var(--text-tertiary)] mb-[var(--space-2)]">

@@ -56,6 +56,7 @@ const DEFAULT_CHANGE_POLICY: Record<OrgChangeType, PolicyTier> = {
   change_model: { riskLevel: "medium", requiresHumanApproval: true },
   change_engine: { riskLevel: "medium", requiresHumanApproval: true },
   change_budget: { riskLevel: "medium", requiresHumanApproval: true },
+  change_execution: { riskLevel: "medium", requiresHumanApproval: true },
   promote: { riskLevel: "high", requiresHumanApproval: true },
   demote: { riskLevel: "high", requiresHumanApproval: true },
   reassign_manager: { riskLevel: "high", requiresHumanApproval: true },

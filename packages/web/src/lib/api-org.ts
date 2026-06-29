@@ -2,6 +2,35 @@ import { del, get, patch, post } from "./api-core"
 
 export type EmployeeLifecycle = "draft" | "active" | "probation" | "disabled" | "retired"
 
+export type ExecutionTier = "solo" | "mid_pair"
+export type ReviewerLossPolicy = "block" | "replace_then_block" | "replace_then_degrade" | "degrade"
+export type ReviewerToolProfile = "read_only" | "read_plus_inspect" | "patch_suggestions"
+
+export interface EmployeeExecutionConfig {
+  tier: ExecutionTier
+  maxInternalPasses?: number
+  maxChildSessions?: number
+  maxWallClockMs?: number
+  maxToolCalls?: number
+  maxEstimatedCostUsd?: number
+  reviewerLossPolicy?: ReviewerLossPolicy
+  reviewerToolProfile?: ReviewerToolProfile
+  roles?: {
+    implementer?: { override?: { engine?: string; model?: string; effortLevel?: string }; fallbackChain?: Array<{ engine: string; model: string; effortLevel?: string }> }
+    reviewer?: { override?: { engine?: string; model?: string; effortLevel?: string }; fallbackChain?: Array<{ engine: string; model: string; effortLevel?: string }> }
+  }
+}
+
+/** Static summary computed from execution config — used in org cards and detail panels. */
+export interface ExecutionProfileSummary {
+  tier: ExecutionTier
+  /** Human-readable label, e.g. "Solo" or "Built-in review" */
+  label: string
+  reviewerLossPolicy?: ReviewerLossPolicy
+  reviewerToolProfile?: ReviewerToolProfile
+  hasCustomRoleOverrides: boolean
+}
+
 export interface Employee {
   name: string
   displayName: string
@@ -30,6 +59,8 @@ export interface Employee {
       reason?: string
     }>
   }
+  execution?: EmployeeExecutionConfig
+  executionProfileSummary?: ExecutionProfileSummary
 }
 
 export interface EmployeeUpdate {
@@ -49,6 +80,7 @@ export interface EmployeeUpdate {
   avatar?: string
   /** Canonical icon: plain emoji. "" clears it. Mutually exclusive with `avatar`. */
   emoji?: string
+  execution?: Partial<EmployeeExecutionConfig>
 }
 
 export interface ManagerEmployeeUpdate {

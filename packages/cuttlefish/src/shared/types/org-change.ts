@@ -14,6 +14,7 @@ export type OrgChangeType =
   | "change_model"
   | "change_engine"
   | "change_budget"
+  | "change_execution"
   | "promote"
   | "demote"
   | "reassign_manager"
@@ -39,6 +40,7 @@ export const ORG_CHANGE_TYPES: readonly OrgChangeType[] = [
   "change_model",
   "change_engine",
   "change_budget",
+  "change_execution",
   "promote",
   "demote",
   "reassign_manager",

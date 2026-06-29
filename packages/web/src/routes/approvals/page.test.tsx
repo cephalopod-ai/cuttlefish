@@ -93,6 +93,18 @@ describe("ApprovalsPage", () => {
     expect(screen.getByRole("button", { name: /Revise & resume/i })).toBeTruthy()
   })
 
+  it("renders approvals inside an internal scroll region", () => {
+    render(
+      <MemoryRouter>
+        <ApprovalsPage />
+      </MemoryRouter>,
+    )
+
+    const scrollRegion = screen.getByTestId("approvals-scroll-region")
+    expect(scrollRegion.className).toContain("h-full")
+    expect(scrollRegion.className).toContain("overflow-y-auto")
+  })
+
   it("renders a visible error state when either queue fails to load", () => {
     approvalsState.approvalsError = new Error("approval fetch failed")
 

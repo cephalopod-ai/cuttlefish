@@ -34,6 +34,8 @@ import { parseLeaseTransportMeta } from "../orchestration/lease-meta.js";
 import { emitSessionSummaryBestEffort, knowledgeRelayOptions } from "../knowledge/outbox-service.js";
 import { positiveNumberOr, resolveTurnStallWatchdogConfig, shouldNotifyLeaderReviewOnStall, shouldRetrySameEngineAfterStall } from "./turn-stall-policy.js";
 export { resolveTurnStallWatchdogConfig, shouldNotifyLeaderReviewOnStall, shouldRetrySameEngineAfterStall } from "./turn-stall-policy.js";
+import { isExecutionDepthBlocked } from "./employee-execution.js";
+import { createScopedSessionToken } from "./auth.js";
 
 /**
  * Web/queue session execution orchestrator.
@@ -95,6 +97,13 @@ export async function runWebSession(
     employee = findEmployee(currentSession.employee, registry);
   }
 
+  // Recursion guard: child role sessions (executionDepth ≥ 1) must not expand
+  // into fresh execution profiles. Log if triggered — indicates a dispatch bug.
+  if (isExecutionDepthBlocked(currentSession.transportMeta as Record<string, unknown> | undefined)) {
+    const role = (currentSession.transportMeta as Record<string, unknown>)?.["internalRole"] ?? "unknown";
+    logger.warn(`[execution] Session ${currentSession.id} has executionDepth ≥ 1 (role: ${String(role)}) — execution profile expansion suppressed`);
+  }
+
   if (isKnownEngine(currentSession.engine) && !engineAvailable(config, currentSession.engine)) {
     const errMsg = engineUnavailableMessage(config, currentSession.engine);
     logger.error(`Web session ${currentSession.id} blocked: ${errMsg}`);
@@ -127,6 +136,7 @@ export async function runWebSession(
       connectors: Array.from(context.connectors.keys()),
       config,
       sessionId: currentSession.id,
+      sessionToken: context.apiToken ? createScopedSessionToken(currentSession.id, context.apiToken) : undefined,
       hierarchy: orgHierarchy,
       voicePersona: currentSession.source === "talk" ? getOrchestratorPersona() : undefined,
       talkThreads:

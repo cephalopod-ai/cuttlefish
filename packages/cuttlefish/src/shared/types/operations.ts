@@ -117,6 +117,8 @@ export interface Employee {
   reviewTriggers?: SecurityReviewTrigger[];
   /** Employee name to route security-review context to. */
   securityReviewer?: string;
+  /** Execution profile for this employee. Defaults to { tier: "solo" } if absent. */
+  execution?: EmployeeExecutionConfig;
   /**
    * Lifecycle state managed by the HR / Org Steward flow. Defaults to "active".
    * `disabled` employees stay in the registry (so the hierarchy and reporting
@@ -161,6 +163,92 @@ export interface ServiceDeclaration {
   name: string;
   description: string;
 }
+
+export type ExecutionTier = "solo" | "mid_pair";
+
+export type ReviewerLossPolicy =
+  | "block"
+  | "replace_then_block"
+  | "replace_then_degrade"
+  | "degrade";
+
+export type ReviewerToolProfile =
+  | "read_only"
+  | "read_plus_inspect"
+  | "patch_suggestions";
+
+export type ReviewVerdict =
+  | "approved"
+  | "changes_requested"
+  | "blocked"
+  | "needs_human_review";
+
+export interface ReviewResult {
+  verdict: ReviewVerdict;
+  summary: string;
+  requiredChanges: string[];
+  riskAreas: string[];
+  confidence: "low" | "medium" | "high";
+}
+
+export interface RoleModelOverride {
+  engine?: string;
+  model?: string;
+  effortLevel?: string;
+}
+
+export interface RoleFallbackTarget {
+  engine: string;
+  model: string;
+  effortLevel?: string;
+}
+
+export interface RoleExecutionPolicy {
+  override?: RoleModelOverride;
+  fallbackChain?: RoleFallbackTarget[];
+}
+
+export interface EmployeeExecutionConfig {
+  tier: ExecutionTier;
+  /** Max implementer→reviewer→revise passes (default 1) */
+  maxInternalPasses?: number;
+  /** Max child sessions spawned per employee run (default 3) */
+  maxChildSessions?: number;
+  /** Wall-clock cap for the entire employee run in ms (default 300000) */
+  maxWallClockMs?: number;
+  maxToolCalls?: number;
+  maxEstimatedCostUsd?: number;
+  /** What to do when the reviewer role is unavailable (default replace_then_degrade) */
+  reviewerLossPolicy?: ReviewerLossPolicy;
+  /** Tool access granted to the reviewer role (default read_only) */
+  reviewerToolProfile?: ReviewerToolProfile;
+  roles?: {
+    implementer?: RoleExecutionPolicy;
+    reviewer?: RoleExecutionPolicy;
+  };
+}
+
+export const EXECUTION_TIERS: readonly ExecutionTier[] = ["solo", "mid_pair"];
+
+export const REVIEWER_LOSS_POLICIES: readonly ReviewerLossPolicy[] = [
+  "block",
+  "replace_then_block",
+  "replace_then_degrade",
+  "degrade",
+];
+
+export const REVIEWER_TOOL_PROFILES: readonly ReviewerToolProfile[] = [
+  "read_only",
+  "read_plus_inspect",
+  "patch_suggestions",
+];
+
+export const REVIEW_VERDICTS: readonly ReviewVerdict[] = [
+  "approved",
+  "changes_requested",
+  "blocked",
+  "needs_human_review",
+];
 
 /** A node in the resolved org tree. Wraps an Employee with computed hierarchy data. */
 export interface OrgNode {

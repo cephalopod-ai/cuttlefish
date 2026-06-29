@@ -3,12 +3,25 @@ import path from "node:path";
 import yaml from "js-yaml";
 import { ORG_DIR, ORG_RETIRED_DIR } from "../shared/paths.js";
 import { safeWriteYaml } from "../shared/safe-write.js";
-import { EMPLOYEE_APPROVAL_POLICIES, EMPLOYEE_LIFECYCLES, SECURITY_REVIEW_TRIGGERS } from "../shared/types.js";
+import {
+  EMPLOYEE_APPROVAL_POLICIES,
+  EMPLOYEE_LIFECYCLES,
+  SECURITY_REVIEW_TRIGGERS,
+  EXECUTION_TIERS,
+  REVIEWER_LOSS_POLICIES,
+  REVIEWER_TOOL_PROFILES,
+} from "../shared/types.js";
 import type {
   Employee,
   EmployeeApprovalPolicy,
   EmployeeLifecycle,
   SecurityReviewTrigger,
+  EmployeeExecutionConfig,
+  ExecutionTier,
+  ReviewerLossPolicy,
+  ReviewerToolProfile,
+  RoleExecutionPolicy,
+  RoleFallbackTarget,
   CuttlefishConfig,
   OrgChangeType,
 } from "../shared/types.js";
@@ -48,6 +61,75 @@ function walkEmployeeYamls<T>(
     }
   }
   return undefined;
+}
+
+/**
+ * Parse the `execution` block from a raw YAML data object.
+ * Returns undefined (not { tier: "solo" }) when absent — callers that need
+ * the default should apply it themselves; parseEmployeeData leaves it
+ * undefined so the caller can distinguish "explicitly set" vs "defaulted".
+ */
+function parseExecutionConfig(raw: unknown): EmployeeExecutionConfig | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const data = raw as Record<string, unknown>;
+
+  const tier = data.tier;
+  if (!(EXECUTION_TIERS as readonly string[]).includes(tier as string)) return undefined;
+
+  const config: EmployeeExecutionConfig = { tier: tier as ExecutionTier };
+
+  if (typeof data.maxInternalPasses === "number") config.maxInternalPasses = data.maxInternalPasses;
+  if (typeof data.maxChildSessions === "number") config.maxChildSessions = data.maxChildSessions;
+  if (typeof data.maxWallClockMs === "number") config.maxWallClockMs = data.maxWallClockMs;
+  if (typeof data.maxToolCalls === "number") config.maxToolCalls = data.maxToolCalls;
+  if (typeof data.maxEstimatedCostUsd === "number") config.maxEstimatedCostUsd = data.maxEstimatedCostUsd;
+
+  if (
+    typeof data.reviewerLossPolicy === "string" &&
+    (REVIEWER_LOSS_POLICIES as readonly string[]).includes(data.reviewerLossPolicy)
+  ) {
+    config.reviewerLossPolicy = data.reviewerLossPolicy as ReviewerLossPolicy;
+  }
+
+  if (
+    typeof data.reviewerToolProfile === "string" &&
+    (REVIEWER_TOOL_PROFILES as readonly string[]).includes(data.reviewerToolProfile)
+  ) {
+    config.reviewerToolProfile = data.reviewerToolProfile as ReviewerToolProfile;
+  }
+
+  if (data.roles && typeof data.roles === "object" && !Array.isArray(data.roles)) {
+    const roles = data.roles as Record<string, unknown>;
+    const parsedRoles: EmployeeExecutionConfig["roles"] = {};
+    for (const role of ["implementer", "reviewer"] as const) {
+      if (roles[role] && typeof roles[role] === "object" && !Array.isArray(roles[role])) {
+        const r = roles[role] as Record<string, unknown>;
+        const policy: RoleExecutionPolicy = {};
+        if (r.override && typeof r.override === "object" && !Array.isArray(r.override)) {
+          const ov = r.override as Record<string, unknown>;
+          policy.override = {
+            engine: typeof ov.engine === "string" ? ov.engine : undefined,
+            model: typeof ov.model === "string" ? ov.model : undefined,
+            effortLevel: typeof ov.effortLevel === "string" ? ov.effortLevel : undefined,
+          };
+        }
+        if (Array.isArray(r.fallbackChain)) {
+          policy.fallbackChain = r.fallbackChain
+            .filter((fc: unknown) => fc && typeof fc === "object" && typeof (fc as any).engine === "string" && typeof (fc as any).model === "string")
+            .map((fc: any) => ({
+              engine: fc.engine as string,
+              model: fc.model as string,
+              effortLevel: typeof fc.effortLevel === "string" ? fc.effortLevel : undefined,
+            }));
+        }
+        parsedRoles[role] = policy;
+      }
+    }
+    if (Object.keys(parsedRoles).length > 0) config.roles = parsedRoles;
+  }
+
+  return config;
 }
 
 /** Parse a single employee YAML data object into an Employee (applying defaults),
@@ -96,6 +178,7 @@ function parseEmployeeData(data: any, fullPath: string): Employee | undefined {
       typeof data.lifecycle === "string" && (EMPLOYEE_LIFECYCLES as readonly string[]).includes(data.lifecycle)
         ? (data.lifecycle as EmployeeLifecycle)
         : "active",
+    execution: parseExecutionConfig(data.execution),
   };
 }
 
@@ -195,6 +278,8 @@ export interface EmployeeUpdate {
   avatar?: string;
   /** Canonical icon: a plain emoji. "" clears it. See `avatar`. */
   emoji?: string;
+  /** V1 execution profile. Replaces the existing block wholesale. null clears to solo default. */
+  execution?: Partial<EmployeeExecutionConfig> | null;
 }
 
 export interface EmployeeCreate {
@@ -217,6 +302,7 @@ export interface EmployeeCreate {
   fallbackModel?: string | null;
   avatar?: string;
   emoji?: string;
+  execution?: Partial<EmployeeExecutionConfig> | null;
 }
 
 /** The set of YAML keys the update path is allowed to write. `name` is never here. */
@@ -239,7 +325,8 @@ const WRITABLE_FIELDS = [
 
 // `avatar`/`emoji` are accepted but not in WRITABLE_FIELDS — like `fallbackModel`,
 // they are merged via dedicated XOR logic (see mergeEmployeeUpdateData).
-const ACCEPTED_UPDATE_FIELDS = [...WRITABLE_FIELDS, "fallbackEngine", "fallbackModel", "avatar", "emoji"] as const;
+// `execution` is accepted but handled separately since it's an object block.
+const ACCEPTED_UPDATE_FIELDS = [...WRITABLE_FIELDS, "fallbackEngine", "fallbackModel", "avatar", "emoji", "execution"] as const;
 
 const VALID_RANKS: ReadonlyArray<Employee["rank"]> = [
   "executive",
@@ -547,6 +634,38 @@ export function validateEmployeeUpdate(
     }
   }
 
+  // --- execution block (V1: solo or mid_pair) ---
+  if (body.execution !== undefined) {
+    if (body.execution === null) {
+      updates.execution = null;
+    } else if (typeof body.execution !== "object" || Array.isArray(body.execution)) {
+      return { ok: false, error: "execution must be an object or null" };
+    } else {
+      const exec = body.execution as Record<string, unknown>;
+      if (exec.tier !== undefined && !(EXECUTION_TIERS as readonly string[]).includes(exec.tier as string)) {
+        return { ok: false, error: `invalid execution.tier "${String(exec.tier)}" (valid: ${EXECUTION_TIERS.join(", ")})` };
+      }
+      if (exec.reviewerLossPolicy !== undefined && !(REVIEWER_LOSS_POLICIES as readonly string[]).includes(exec.reviewerLossPolicy as string)) {
+        return { ok: false, error: `invalid execution.reviewerLossPolicy "${String(exec.reviewerLossPolicy)}"` };
+      }
+      if (exec.reviewerToolProfile !== undefined && !(REVIEWER_TOOL_PROFILES as readonly string[]).includes(exec.reviewerToolProfile as string)) {
+        return { ok: false, error: `invalid execution.reviewerToolProfile "${String(exec.reviewerToolProfile)}"` };
+      }
+      for (const numField of ["maxInternalPasses", "maxChildSessions", "maxWallClockMs", "maxToolCalls", "maxEstimatedCostUsd"] as const) {
+        if (exec[numField] !== undefined && (typeof exec[numField] !== "number" || (exec[numField] as number) <= 0)) {
+          return { ok: false, error: `execution.${numField} must be a positive number` };
+        }
+      }
+      // Reject unknown sub-keys to block future-tier fields from slipping in
+      const knownExecKeys = new Set(["tier", "maxInternalPasses", "maxChildSessions", "maxWallClockMs", "maxToolCalls", "maxEstimatedCostUsd", "reviewerLossPolicy", "reviewerToolProfile", "roles"]);
+      const unknownExecKeys = Object.keys(exec).filter((k) => !knownExecKeys.has(k));
+      if (unknownExecKeys.length > 0) {
+        return { ok: false, error: `unknown execution field(s): ${unknownExecKeys.join(", ")}` };
+      }
+      updates.execution = exec as Partial<EmployeeExecutionConfig>;
+    }
+  }
+
   if (Object.keys(updates).length === 0) {
     return { ok: false, error: "no recognized fields to update" };
   }
@@ -589,6 +708,7 @@ export function validateEmployeeCreate(
     "fallbackModel",
     "avatar",
     "emoji",
+    "execution",
   ]);
   const unknownKeys = Object.keys(body).filter((key) => !known.has(key));
   if (unknownKeys.length > 0) {
@@ -654,6 +774,7 @@ export function validateEmployeeCreate(
     fallbackModel: body.fallbackModel,
     avatar: body.avatar,
     emoji: body.emoji,
+    execution: body.execution,
   }, existingNames);
   if (!updates.ok || !updates.updates) {
     return { ok: false, error: updates.error || "invalid employee body" };
@@ -810,6 +931,18 @@ export function mergeEmployeeUpdateData(
     next.modelPolicy = { ...rawPolicy, fallback_chain: chain };
     delete next.model_policy;
   }
+  // --- execution block ---
+  if (Object.prototype.hasOwnProperty.call(updates, "execution")) {
+    if (updates.execution === null) {
+      delete next.execution;
+    } else if (updates.execution !== undefined) {
+      const existing = (typeof next.execution === "object" && next.execution !== null && !Array.isArray(next.execution))
+        ? next.execution as Record<string, unknown>
+        : {};
+      next.execution = { ...existing, ...updates.execution };
+    }
+  }
+
   // `name` is immutable — never write or rename it, even if present in `updates`.
   return next;
 }
@@ -844,6 +977,7 @@ export function buildEmployeeCreateData(employee: EmployeeCreate): Record<string
   const emoji = (employee.emoji ?? "").trim();
   if (avatar) data.avatar = avatar;
   else if (emoji) data.emoji = emoji;
+  if (employee.execution) data.execution = employee.execution;
   return data;
 }
 

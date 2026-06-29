@@ -15,9 +15,34 @@ import type { ApiContext } from "../context.js";
 import { matchRoute } from "../match-route.js";
 import { badRequest, json, notFound, serverError } from "../responses.js";
 import { loadSessionMessagesForApi } from "../session-query-routes.js";
-import { ORG_CHANGE_TYPES, type OrgChangeType } from "../../../shared/types.js";
+import { EXECUTION_TIERS, ORG_CHANGE_TYPES, type Employee, type EmployeeExecutionConfig, type OrgChangeType } from "../../../shared/types.js";
 
 const TICKET_SESSION_TAIL_LIMIT = 8;
+
+/** Effective execution config — applies V1 defaults for absent fields. */
+function effectiveExecution(emp: Employee): EmployeeExecutionConfig {
+  return emp.execution ?? { tier: "solo" };
+}
+
+interface ExecutionProfileSummary {
+  tier: "solo" | "mid_pair";
+  label: string;
+  reviewerLossPolicy?: string;
+  reviewerToolProfile?: string;
+  hasCustomRoleOverrides: boolean;
+}
+
+function computeExecutionProfileSummary(emp: Employee): ExecutionProfileSummary {
+  const exec = effectiveExecution(emp);
+  const tier = (EXECUTION_TIERS as readonly string[]).includes(exec.tier) ? exec.tier : "solo";
+  return {
+    tier,
+    label: tier === "mid_pair" ? "Built-in review" : "Solo",
+    reviewerLossPolicy: exec.reviewerLossPolicy,
+    reviewerToolProfile: exec.reviewerToolProfile,
+    hasCustomRoleOverrides: !!(exec.roles?.implementer || exec.roles?.reviewer),
+  };
+}
 
 const VALID_CHANGE_TYPES = new Set<OrgChangeType>(ORG_CHANGE_TYPES);
 const MANAGER_MUTABLE_EMPLOYEE_FIELDS = new Set([
@@ -127,6 +152,7 @@ export async function handleOrgRoutes(
         directReports: node.directReports,
         depth: node.depth,
         chain: node.chain,
+        executionProfileSummary: computeExecutionProfileSummary(emp),
       };
     });
     json(res, {
@@ -158,6 +184,7 @@ export async function handleOrgRoutes(
       directReports: node?.directReports ?? [],
       depth: node?.depth ?? 0,
       chain: node?.chain ?? [params.name],
+      executionProfileSummary: computeExecutionProfileSummary(emp),
     });
     return true;
   }

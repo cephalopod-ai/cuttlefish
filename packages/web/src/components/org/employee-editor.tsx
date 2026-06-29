@@ -25,6 +25,25 @@ const LEVEL_OPTIONS = [
   { value: "senior", label: "Senior" },
   { value: "employee", label: "Junior" },
 ] as const
+
+const EXECUTION_TIER_OPTIONS = [
+  { value: "solo", label: "Solo" },
+  { value: "mid_pair", label: "Built-in review" },
+] as const
+
+const REVIEWER_LOSS_POLICY_OPTIONS = [
+  { value: "replace_then_degrade", label: "Replace, then degrade" },
+  { value: "replace_then_block", label: "Replace, then block" },
+  { value: "degrade", label: "Degrade to solo" },
+  { value: "block", label: "Block" },
+] as const
+
+const REVIEWER_TOOL_PROFILE_OPTIONS = [
+  { value: "read_only", label: "Read only" },
+  { value: "read_plus_inspect", label: "Read + inspect" },
+  { value: "patch_suggestions", label: "Patch suggestions" },
+] as const
+
 function fallbackModelOf(employee: Employee): string {
   return employee.modelPolicy?.fallback_chain?.[0]?.model ?? ""
 }
@@ -92,6 +111,24 @@ export function EmployeeEditor({
   const [departments, setDepartments] = useState<string[]>([])
   const [employeeNames, setEmployeeNames] = useState<string[]>([])
   const [orgEmployees, setOrgEmployees] = useState<Employee[]>([])
+  const [executionTier, setExecutionTier] = useState<"solo" | "mid_pair">(
+    (employee.execution?.tier ?? "solo") as "solo" | "mid_pair",
+  )
+  const [reviewerLossPolicy, setReviewerLossPolicy] = useState<string>(
+    employee.execution?.reviewerLossPolicy ?? "replace_then_degrade",
+  )
+  const [reviewerToolProfile, setReviewerToolProfile] = useState<string>(
+    employee.execution?.reviewerToolProfile ?? "read_only",
+  )
+  const [maxInternalPasses, setMaxInternalPasses] = useState<string>(
+    String(employee.execution?.maxInternalPasses ?? 1),
+  )
+  const [maxChildSessions, setMaxChildSessions] = useState<string>(
+    String(employee.execution?.maxChildSessions ?? 3),
+  )
+  const [maxWallClockMs, setMaxWallClockMs] = useState<string>(
+    String(employee.execution?.maxWallClockMs ?? 300000),
+  )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
@@ -196,8 +233,36 @@ export function EmployeeEditor({
       p.avatar = avatar
       p.emoji = emoji
     }
+    // Execution config: diff against current stored config
+    const origTier = employee.execution?.tier ?? "solo"
+    const origLossPolicy = employee.execution?.reviewerLossPolicy ?? "replace_then_degrade"
+    const origToolProfile = employee.execution?.reviewerToolProfile ?? "read_only"
+    const origMaxPasses = String(employee.execution?.maxInternalPasses ?? 1)
+    const origMaxChildren = String(employee.execution?.maxChildSessions ?? 3)
+    const origMaxMs = String(employee.execution?.maxWallClockMs ?? 300000)
+    const execChanged =
+      executionTier !== origTier ||
+      (executionTier === "mid_pair" && (
+        reviewerLossPolicy !== origLossPolicy ||
+        reviewerToolProfile !== origToolProfile ||
+        maxInternalPasses !== origMaxPasses ||
+        maxChildSessions !== origMaxChildren ||
+        maxWallClockMs !== origMaxMs
+      ))
+    if (execChanged) {
+      p.execution = {
+        tier: executionTier,
+        ...(executionTier === "mid_pair" ? {
+          reviewerLossPolicy: reviewerLossPolicy as import("@/lib/api-org").ReviewerLossPolicy,
+          reviewerToolProfile: reviewerToolProfile as import("@/lib/api-org").ReviewerToolProfile,
+          maxInternalPasses: parseInt(maxInternalPasses, 10) || 1,
+          maxChildSessions: parseInt(maxChildSessions, 10) || 3,
+          maxWallClockMs: parseInt(maxWallClockMs, 10) || 300000,
+        } : {}),
+      }
+    }
     return p
-  }, [displayName, department, rank, reportsTo, persona, alwaysNotify, cliFlags, fallbackEngine, fallbackModel, selector, icon, employee])
+  }, [displayName, department, rank, reportsTo, persona, alwaysNotify, cliFlags, fallbackEngine, fallbackModel, selector, icon, employee, executionTier, reviewerLossPolicy, reviewerToolProfile, maxInternalPasses, maxChildSessions, maxWallClockMs])
 
   const dirty = Object.keys(patch).length > 0
 
@@ -284,7 +349,7 @@ export function EmployeeEditor({
       </Field>
 
       <div className="grid grid-cols-2 gap-[var(--space-3)]">
-      <Field label="Level">
+      <Field label="Rank">
           <Select value={rank} onValueChange={(v) => setRank(v as Employee["rank"])}>
             <SelectTrigger>
               <SelectValue />
@@ -339,6 +404,77 @@ export function EmployeeEditor({
           onChange={setReportsTo}
           hint="Primary stays first. Additional entries are secondary matrix links."
         />
+      </Field>
+
+      <Field label="Execution style" hint="Solo runs normally. Built-in review adds an independent reviewer after each implementation pass.">
+        <Select value={executionTier} onValueChange={(v) => setExecutionTier(v as "solo" | "mid_pair")}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {EXECUTION_TIER_OPTIONS.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {executionTier === "mid_pair" && (
+          <div className="mt-[var(--space-2)] flex flex-col gap-[var(--space-3)] rounded-[var(--radius-md)] border border-[var(--separator)] bg-[var(--fill-quaternary)] p-[var(--space-3)]">
+            <div className="grid grid-cols-2 gap-[var(--space-3)]">
+              <div className="flex flex-col gap-[var(--space-1)]">
+                <label className="text-[length:var(--text-caption2)] font-[var(--weight-semibold)] uppercase tracking-[var(--tracking-wide)] text-[var(--text-tertiary)]">
+                  Reviewer loss policy
+                </label>
+                <Select value={reviewerLossPolicy} onValueChange={setReviewerLossPolicy}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {REVIEWER_LOSS_POLICY_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-[var(--space-1)]">
+                <label className="text-[length:var(--text-caption2)] font-[var(--weight-semibold)] uppercase tracking-[var(--tracking-wide)] text-[var(--text-tertiary)]">
+                  Reviewer tool access
+                </label>
+                <Select value={reviewerToolProfile} onValueChange={setReviewerToolProfile}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {REVIEWER_TOOL_PROFILE_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-[var(--space-2)]">
+              <div className="flex flex-col gap-[var(--space-1)]">
+                <label className="text-[length:var(--text-caption2)] font-[var(--weight-semibold)] uppercase tracking-[var(--tracking-wide)] text-[var(--text-tertiary)]">
+                  Max passes
+                </label>
+                <input type="number" min={1} max={10} className={inputCls} value={maxInternalPasses} onChange={(e) => setMaxInternalPasses(e.target.value)} />
+              </div>
+              <div className="flex flex-col gap-[var(--space-1)]">
+                <label className="text-[length:var(--text-caption2)] font-[var(--weight-semibold)] uppercase tracking-[var(--tracking-wide)] text-[var(--text-tertiary)]">
+                  Max child sessions
+                </label>
+                <input type="number" min={1} max={20} className={inputCls} value={maxChildSessions} onChange={(e) => setMaxChildSessions(e.target.value)} />
+              </div>
+              <div className="flex flex-col gap-[var(--space-1)]">
+                <label className="text-[length:var(--text-caption2)] font-[var(--weight-semibold)] uppercase tracking-[var(--tracking-wide)] text-[var(--text-tertiary)]">
+                  Timeout (ms)
+                </label>
+                <input type="number" min={10000} step={10000} className={inputCls} value={maxWallClockMs} onChange={(e) => setMaxWallClockMs(e.target.value)} />
+              </div>
+            </div>
+          </div>
+        )}
       </Field>
 
       <Field label="Engine · Model · Effort" hint="Applies to new sessions for this employee.">

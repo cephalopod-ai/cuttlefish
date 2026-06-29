@@ -204,54 +204,60 @@ export default function ApprovalsPage() {
 
   return (
     <PageLayout>
-      <div className="mx-auto w-full max-w-2xl p-4 sm:p-6 flex flex-col gap-4">
-        <div>
-          <h1 className="text-lg font-semibold">Approvals</h1>
-          <p className="text-sm text-muted-foreground">
-            Sessions waiting on a human decision (e.g. a model fallback after a rate limit). Approving
-            resumes the session on the fallback engine; rejecting stops it — surfaced, not silently stalled.
-          </p>
-        </div>
+      <div className="h-full min-h-0">
+        <div
+          data-scrollable
+          data-testid="approvals-scroll-region"
+          className="mx-auto flex h-full w-full max-w-2xl min-h-0 flex-col gap-4 overflow-y-auto p-4 sm:p-6"
+        >
+          <div>
+            <h1 className="text-lg font-semibold">Approvals</h1>
+            <p className="text-sm text-muted-foreground">
+              Sessions waiting on a human decision (e.g. a model fallback after a rate limit). Approving
+              resumes the session on the fallback engine; rejecting stops it — surfaced, not silently stalled.
+            </p>
+          </div>
 
-        {isLoading ? (
-          <div className="flex flex-col gap-3">
-            <Skeleton className="h-28 w-full" />
-            <Skeleton className="h-28 w-full" />
-          </div>
-        ) : (approvalsError || checkpointsError) ? (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-            {approvalsError instanceof Error ? approvalsError.message : checkpointsError instanceof Error ? checkpointsError.message : 'Failed to load approvals.'}
-          </div>
-        ) : !hasItems ? (
-          <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-            No pending approvals.
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {approvals && approvals.length > 0 ? (
-              <>
-                <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  <ShieldQuestion className="size-3.5" />
-                  Fallback approvals
-                </div>
-                {approvals.map((approval) => (
-                  <ApprovalCard key={approval.id} approval={approval} />
-                ))}
-              </>
-            ) : null}
-            {checkpoints && checkpoints.length > 0 ? (
-              <>
-                <div className="flex items-center gap-2 pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  <PauseCircle className="size-3.5" />
-                  Human checkpoints
-                </div>
-                {checkpoints.map((checkpoint) => (
-                  <CheckpointCard key={checkpoint.id} checkpoint={checkpoint} />
-                ))}
-              </>
-            ) : null}
-          </div>
-        )}
+          {isLoading ? (
+            <div className="flex flex-col gap-3">
+              <Skeleton className="h-28 w-full" />
+              <Skeleton className="h-28 w-full" />
+            </div>
+          ) : (approvalsError || checkpointsError) ? (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+              {approvalsError instanceof Error ? approvalsError.message : checkpointsError instanceof Error ? checkpointsError.message : 'Failed to load approvals.'}
+            </div>
+          ) : !hasItems ? (
+            <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+              No pending approvals.
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3 pb-2">
+              {approvals && approvals.length > 0 ? (
+                <>
+                  <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <ShieldQuestion className="size-3.5" />
+                    Fallback approvals
+                  </div>
+                  {approvals.map((approval) => (
+                    <ApprovalCard key={approval.id} approval={approval} />
+                  ))}
+                </>
+              ) : null}
+              {checkpoints && checkpoints.length > 0 ? (
+                <>
+                  <div className="flex items-center gap-2 pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <PauseCircle className="size-3.5" />
+                    Human checkpoints
+                  </div>
+                  {checkpoints.map((checkpoint) => (
+                    <CheckpointCard key={checkpoint.id} checkpoint={checkpoint} />
+                  ))}
+                </>
+              ) : null}
+            </div>
+          )}
+        </div>
       </div>
     </PageLayout>
   )
