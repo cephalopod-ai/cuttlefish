@@ -11,6 +11,7 @@ const PRIORITY_LABELS: Record<string, string> = {
 }
 
 function relativeTime(ts: number): string {
+  if (!ts || !Number.isFinite(ts)) return '?'
   const diff = Date.now() - ts
   const mins = Math.floor(diff / 60000)
   if (mins < 1) return 'just now'

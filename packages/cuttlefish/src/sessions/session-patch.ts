@@ -4,6 +4,24 @@ import type { Employee, CuttlefishConfig } from "../shared/types.js";
 import { getModelRegistry, effortLevelsForModel } from "../shared/models.js";
 import { logger } from "../shared/logger.js";
 
+/** Short model aliases accepted by the API, resolved before registry lookup. */
+const CLAUDE_MODEL_ALIASES: Record<string, string> = {
+  sonnet: "claude-sonnet-4-6",
+  opus: "claude-opus-4-8",
+  haiku: "claude-haiku-4-5-20251001",
+};
+
+/**
+ * Expand a short model alias to its canonical registry ID.
+ * Only applies to the "claude" engine; other engines pass through unchanged.
+ */
+function resolveModelAlias(engine: string, model: string): string {
+  if (engine === "claude") {
+    return CLAUDE_MODEL_ALIASES[model.toLowerCase()] ?? model;
+  }
+  return model;
+}
+
 export interface CwdValidationResult {
   ok: boolean;
   /** Realpath-resolved absolute directory when ok. */
@@ -114,7 +132,7 @@ export function validateNewSessionSelection(
     if (typeof requestedModel !== "string" || !requestedModel.trim()) {
       return { ok: false, error: "model must be a non-empty string" };
     }
-    model = requestedModel.trim();
+    model = resolveModelAlias(engine, requestedModel.trim());
     if (!entry.models.some((m) => m.id === model)) {
       if (engine === "pi") {
         // Pi models are discovered dynamically; tolerate an id the snapshot hasn't
@@ -165,7 +183,7 @@ export function validateSessionPatch(
     if (typeof body.model !== "string" || !body.model.trim()) {
       return { ok: false, error: "model must be a non-empty string" };
     }
-    const modelId = body.model.trim();
+    const modelId = resolveModelAlias(engine, body.model.trim());
     if (entry && !entry.models.some((m) => m.id === modelId)) {
       if (engine === "pi") {
         // Pi models are discovered dynamically; tolerate an id the snapshot hasn't

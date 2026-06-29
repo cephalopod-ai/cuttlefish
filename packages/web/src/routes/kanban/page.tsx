@@ -156,9 +156,9 @@ export function buildDepartmentBoardSaveRequests(
         assignee: t.assigneeId ?? undefined,
         source: t.source,
         sessionId: t.sessionId,
-        createdAt: new Date(t.createdAt).toISOString(),
-        updatedAt: new Date(t.updatedAt).toISOString(),
-        baseUpdatedAt: new Date(t.baseUpdatedAt ?? t.updatedAt).toISOString(),
+        createdAt: new Date(t.createdAt || Date.now()).toISOString(),
+        updatedAt: new Date(t.updatedAt || Date.now()).toISOString(),
+        baseUpdatedAt: new Date(t.baseUpdatedAt ?? t.updatedAt ?? Date.now()).toISOString(),
       }))
     return {
       department: target.department,

@@ -109,7 +109,11 @@ export async function finalizeManagedSessionTurn(input: {
   const updatedSession = updateSession(input.session.id, {
     ...(input.result.sessionId?.trim() ? { engineSessionId: input.result.sessionId } : {}),
     ...(typeof input.result.contextTokens === "number" ? { lastContextTokens: input.result.contextTokens } : {}),
-    status: input.wasInterrupted ? "idle" : (input.result.error ? "error" : "idle"),
+    status: input.wasInterrupted
+      ? "idle"
+      : input.result.error?.startsWith("Interrupted:")
+        ? "interrupted"
+        : input.result.error ? "error" : "idle",
     replyContext: input.msg.replyContext,
     messageId: input.msg.messageId ?? null,
     transportMeta: (() => {

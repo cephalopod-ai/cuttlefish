@@ -384,6 +384,15 @@ export default function LimitsPage() {
                 <Skeleton height={180} className="rounded-[var(--radius-lg)]" />
                 <Skeleton height={180} className="rounded-[var(--radius-lg)]" />
               </div>
+            ) : allEngines.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-[var(--space-12)] gap-[var(--space-3)] text-center">
+                <p className="text-[length:var(--text-body)] font-[var(--weight-semibold)] text-[var(--text-primary)]">
+                  No engine data yet
+                </p>
+                <p className="text-[length:var(--text-footnote)] text-[var(--text-secondary)] max-w-xs">
+                  Cuttlefish hasn't collected usage snapshots yet. Try refreshing, or run a session to populate limits.
+                </p>
+              </div>
             ) : (
               <>
                 {usageEngines.map((engine) => (

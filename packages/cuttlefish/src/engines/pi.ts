@@ -325,7 +325,9 @@ export class PiEngine implements InterruptibleEngine {
     const errMsg = live.turnError
       || (code === 0
         ? "Pi process exited successfully without a final assistant response"
-        : `Pi process exited with code ${code}: ${live.stderr.slice(0, 500)}`);
+        : code === null
+          ? `Interrupted: agent process exited via signal (${live.stderr.slice(0, 200)})`
+          : `Interrupted: agent process exited with code ${code} (${live.stderr.slice(0, 200)})`);
     logger.error(errMsg);
     live.resolve({ sessionId: live.sessionIdOut, result, error: errMsg });
   }

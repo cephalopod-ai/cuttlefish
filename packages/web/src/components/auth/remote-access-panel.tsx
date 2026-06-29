@@ -82,16 +82,18 @@ export function RemoteAccessPanel({ authState, devices = [], onCreatePairingCode
       )}
 
       <div className="flex flex-wrap gap-[var(--space-2)]">
-        <button
-          type="button"
-          onClick={createCode}
-          disabled={creating || !canCreatePairingCode}
-          aria-label={creating ? "Creating pairing code" : "Create pairing code"}
-          className="inline-flex h-10 items-center gap-2 rounded-[var(--radius-md)] bg-[var(--accent)] pl-[var(--space-3)] pr-[calc(var(--space-3)_-_2px)] text-[length:var(--text-footnote)] font-[var(--weight-semibold)] text-[var(--accent-contrast)] transition-[transform,filter,opacity] duration-150 [transition-timing-function:var(--ease-snappy)] hover:brightness-[1.04] active:scale-[0.96] disabled:opacity-60 disabled:hover:brightness-100 disabled:active:scale-100"
-        >
-          <AuthStateIcon busy={creating} idleIcon={KeyRound} size={14} />
-          <AuthStateLabel busy={creating} idle="Create pairing code" busyText="Creating..." className="min-w-[8.5rem] justify-items-start" />
-        </button>
+        {authState?.authRequired && (
+          <button
+            type="button"
+            onClick={createCode}
+            disabled={creating || !canCreatePairingCode}
+            aria-label={creating ? "Creating pairing code" : "Create pairing code"}
+            className="inline-flex h-10 items-center gap-2 rounded-[var(--radius-md)] bg-[var(--accent)] pl-[var(--space-3)] pr-[calc(var(--space-3)_-_2px)] text-[length:var(--text-footnote)] font-[var(--weight-semibold)] text-[var(--accent-contrast)] transition-[transform,filter,opacity] duration-150 [transition-timing-function:var(--ease-snappy)] hover:brightness-[1.04] active:scale-[0.96] disabled:opacity-60 disabled:hover:brightness-100 disabled:active:scale-100"
+          >
+            <AuthStateIcon busy={creating} idleIcon={KeyRound} size={14} />
+            <AuthStateLabel busy={creating} idle="Create pairing code" busyText="Creating..." className="min-w-[8.5rem] justify-items-start" />
+          </button>
+        )}
         <button
           type="button"
           onClick={() => { void forgetBrowser() }}
@@ -104,9 +106,13 @@ export function RemoteAccessPanel({ authState, devices = [], onCreatePairingCode
         </button>
       </div>
 
-      {!canCreatePairingCode && (
+      {!authState?.authRequired ? (
         <div className="text-pretty text-[length:var(--text-caption1)] text-[var(--text-tertiary)]">
-          Create codes from the local Mac dashboard.
+          Remote pairing is only available when gateway authentication is enabled.
+        </div>
+      ) : !canCreatePairingCode && (
+        <div className="text-pretty text-[length:var(--text-caption1)] text-[var(--text-tertiary)]">
+          Create codes from the local Mac dashboard — remote access is not available here.
         </div>
       )}
 

@@ -8,16 +8,16 @@ function cfg(): CuttlefishConfig {
     gateway: { port: 8888, host: "127.0.0.1" },
     engines: {
       default: "claude",
-      claude: { bin: "claude", model: "opus" },
+      claude: { bin: "claude", model: "claude-opus-4-8" },
       codex: { bin: "codex", model: "gpt-5.4" },
       antigravity: { model: "gemini-3-flash-preview" },
       grok: { bin: "grok", model: "grok-build" },
     },
     models: {
       claude: {
-        default: "opus",
+        default: "claude-opus-4-8",
         models: [
-          { id: "opus", label: "Opus 4.8", supportsEffort: true, effortLevels: ["low", "medium", "high"] },
+          { id: "claude-opus-4-8", label: "Opus 4.8", supportsEffort: true, effortLevels: ["low", "medium", "high"] },
           { id: "claude-sonnet-4-6", label: "Sonnet 4.6", supportsEffort: true, effortLevels: ["low", "medium", "high"] },
         ],
       },
@@ -76,7 +76,7 @@ describe("validateNewSessionSelection", () => {
     expect(r).toEqual({
       ok: true,
       engine: "claude",
-      model: "opus",
+      model: "claude-opus-4-8",
       effortLevel: "medium",
     });
   });
