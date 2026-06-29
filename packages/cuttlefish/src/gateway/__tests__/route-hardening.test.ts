@@ -97,6 +97,7 @@ const ctx = {
   getConfig: () => ({ gateway: {}, engines: {} }),
   connectors: new Map(),
   startTime: Date.now(),
+  emit: vi.fn(),
 } as unknown as ApiContext;
 
 beforeEach(() => {
@@ -283,6 +284,15 @@ describe("PUT /api/org/departments/:name/board — optimistic concurrency", () =
   it("returns 409 when a stale board save would overwrite active session state", async () => {
     const softwareDir = path.join(orgDir, "software-delivery");
     fs.mkdirSync(softwareDir, { recursive: true });
+    fs.writeFileSync(path.join(softwareDir, "worker.yaml"), [
+      "name: worker",
+      "displayName: Worker",
+      "department: software-delivery",
+      "rank: employee",
+      "engine: claude",
+      "model: sonnet",
+      "persona: Worker persona",
+    ].join("\n"));
     fs.writeFileSync(path.join(softwareDir, "board.json"), JSON.stringify([{
       id: "ticket-running",
       title: "Running",
@@ -327,6 +337,49 @@ describe("PUT /api/org/departments/:name/board — optimistic concurrency", () =
       status: "in_progress",
       sessionId: "session-123",
     });
+  });
+
+  it("allows deleting an in-progress ticket when the referenced session is absent", async () => {
+    const softwareDir = path.join(orgDir, "software-delivery");
+    fs.mkdirSync(softwareDir, { recursive: true });
+    fs.writeFileSync(path.join(softwareDir, "worker.yaml"), [
+      "name: worker",
+      "displayName: Worker",
+      "department: software-delivery",
+      "rank: employee",
+      "engine: claude",
+      "model: sonnet",
+      "persona: Worker persona",
+    ].join("\n"));
+    fs.writeFileSync(path.join(softwareDir, "board.json"), JSON.stringify([{
+      id: "ticket-dead",
+      title: "Dead",
+      description: "",
+      status: "in_progress",
+      priority: "medium",
+      complexity: "medium",
+      assignee: "worker",
+      source: "session",
+      sessionId: "session-gone",
+      createdAt: "2026-06-22T00:00:00.000Z",
+      updatedAt: "2026-06-22T01:00:00.000Z",
+    }]));
+
+    const cap = makeRes();
+    await handleApiRequest(
+      makeReq("PUT", "/api/org/departments/software-delivery/board", {
+        tickets: [],
+        deletedIds: ["ticket-dead"],
+      }),
+      cap.res,
+      ctx,
+    );
+
+    expect(cap.status).toBe(200);
+    expect(cap.body).toMatchObject({ status: "ok" });
+    const board = JSON.parse(fs.readFileSync(path.join(softwareDir, "board.json"), "utf-8"));
+    expect(Array.isArray(board) ? board : board.tickets).toEqual([]);
+    expect(Array.isArray(board) ? [] : board.deletedTickets.map((entry: { id: string }) => entry.id)).toEqual(["ticket-dead"]);
   });
 });
 

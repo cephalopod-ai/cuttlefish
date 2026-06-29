@@ -3,6 +3,7 @@ import { withTempCuttlefishHome } from "../../test-utils/cuttlefish-home.js";
 import fs from "node:fs";
 import path from "node:path";
 import type { ServerResponse } from "node:http";
+import { Readable } from "node:stream";
 
 function makeRes() {
   let status = 200;
@@ -32,12 +33,13 @@ function makeRes() {
   };
 }
 
-function makeReq(method: string, urlPath: string) {
-  return {
+function makeReq(method: string, urlPath: string, body: unknown = {}) {
+  const stream = Readable.from([Buffer.from(JSON.stringify(body))]);
+  return Object.assign(stream, {
     method,
     url: urlPath,
-    headers: { host: "localhost" },
-  } as any;
+    headers: { host: "localhost", "content-type": "application/json" },
+  }) as any;
 }
 
 let tmpHome: string;
