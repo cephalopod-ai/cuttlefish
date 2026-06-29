@@ -171,14 +171,14 @@ function CheckpointList({
 }) {
   if (!items || items.length === 0) return null
   return (
-    <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
+    <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground min-w-0">
       <div className="mb-2 flex items-center gap-2 font-medium text-foreground">
         {icon}
         {label}
       </div>
       <ul className="space-y-1">
         {items.map((item) => (
-          <li key={item} className="break-words">{item}</li>
+          <li key={item} className="break-words overflow-hidden">{item}</li>
         ))}
       </ul>
     </div>
@@ -194,7 +194,7 @@ function ApprovalDetail({ approval, readOnly }: { approval: Approval; readOnly?:
   const { from, to, reason } = fallbackSummary(approval.payload)
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 max-w-2xl">
       <div className="flex items-center gap-2">
         <ShieldQuestion className="size-5 text-amber-500" />
         <h2 className="text-base font-semibold capitalize">{approval.type} approval</h2>
@@ -278,7 +278,7 @@ function CheckpointDetail({ checkpoint, readOnly }: { checkpoint: Checkpoint; re
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 max-w-2xl">
       <div className="flex items-center gap-2">
         <PauseCircle className="size-5 text-amber-500" />
         <h2 className="text-base font-semibold">Human checkpoint</h2>
@@ -301,7 +301,7 @@ function CheckpointDetail({ checkpoint, readOnly }: { checkpoint: Checkpoint; re
         )}
       </div>
 
-      <div className="grid gap-2 md:grid-cols-3">
+      <div className="flex flex-col gap-3">
         <CheckpointList icon={<FileText className="size-3.5" />} label="Files" items={checkpoint.payload.affectedFiles} />
         <CheckpointList icon={<FolderArchive className="size-3.5" />} label="Artifacts" items={checkpoint.payload.affectedArtifacts} />
         <CheckpointList icon={<Wrench className="size-3.5" />} label="Actions" items={checkpoint.payload.affectedActions} />
