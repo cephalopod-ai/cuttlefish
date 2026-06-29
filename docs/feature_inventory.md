@@ -54,6 +54,22 @@
   and `reason: "board-conflict"` instead of overwriting newer server state.
 - Running board-linked tickets preserve active `sessionId` and `source` metadata across
   fresh saves so a stale layout cannot silently move a dispatched ticket back to `todo`.
+- Date fields `createdAt`, `updatedAt`, and `baseUpdatedAt` are now guarded at
+  serialization time; missing or invalid timestamps fall back to `Date.now()` to
+  prevent "Invalid Date" / `"Invalid time value"` errors on save.
+
+### Kanban ticket card time display
+- `packages/web/src/components/kanban/ticket-card.tsx`
+- `packages/web/src/components/kanban/create-ticket-modal.tsx`
+- Relative-time display (`relativeTime()`) now guards against `undefined` or non-finite
+  timestamps, rendering `?` instead of `NaNmo ago`.
+- The create-ticket modal now shows a "Title is required" helper text and accessible
+  button label when the submit button is disabled due to an empty title field.
+
+### Usage limits empty state
+- `packages/web/src/routes/limits/page.tsx`
+- The `/limits` page now renders an explicit "No engine data yet" empty state when the
+  daemon has not yet collected any usage snapshots, instead of showing a blank page.
 
 ### Matrix orchestration operations dashboard
 - `packages/web/src/routes/orchestration/page.tsx`
@@ -122,6 +138,34 @@
 - Tickets can also set `manualOnly: true`, exposed in the UI as a manual-only
   toggle, which prevents background board-worker auto-dispatch while still
   allowing explicit human `Run now`.
+
+### Remote access pairing code panel
+- `packages/web/src/components/auth/remote-access-panel.tsx`
+- The settings remote-access panel controls pairing codes and shows paired browsers.
+- The "Create pairing code" button is hidden when gateway authentication is disabled
+  (`authRequired: false`), replaced by an explanatory note.
+- When authentication is enabled but the session is not on the local dashboard
+  (`canBootstrapLocal: false`), the button renders as disabled with a hint directing
+  the operator to create codes from the local Mac dashboard.
+
+### Session model alias expansion
+- `packages/cuttlefish/src/sessions/session-patch.ts`
+- The session create and session-patch API now accept short Claude model aliases:
+  `sonnet` → `claude-sonnet-4-6`, `opus` → `claude-opus-4-8`,
+  `haiku` → `claude-haiku-4-5-20251001`. Aliases are expanded before registry
+  validation so callers using convenience names receive a valid session instead of
+  an "unknown model" rejection.
+- Only the `claude` engine is affected; other engines pass the model string through unchanged.
+
+### Agent process crash session status
+- `packages/cuttlefish/src/engines/pi.ts`
+- `packages/cuttlefish/src/sessions/manager-helpers.ts`
+- When a Pi agent process exits with a non-zero code or a signal without producing
+  a result, the session now transitions to `interrupted` status (not `idle`) with
+  a `lastError` value prefixed `"Interrupted:"`.
+- This matches the daemon restart recovery path (`recoverStaleSessions`) which uses
+  the same `"Interrupted:"` prefix convention. Operator-visible session state now
+  correctly distinguishes unexpected crashes from normal completion.
 
 ### Settings orchestration controls
 - `packages/web/src/routes/settings/page.tsx`

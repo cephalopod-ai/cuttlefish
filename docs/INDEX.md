@@ -47,7 +47,8 @@ artifacts unless explicitly published.
 ## Session and Audit Log Summaries
 
 - `docs/logs/session/062026-session-summary.md`: June 2026 durable session summary —
-  multi-role execution, security hardening, kanban improvements, Qdrant, email, orchestration.
+  multi-role execution, security hardening, kanban improvements, Qdrant, email,
+  orchestration, and D1–D8 defect repair campaign (model alias, crash masking, UI fixes).
 
 ## Historical Design And Planning Archives
 
