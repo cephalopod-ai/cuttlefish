@@ -36,8 +36,11 @@ const PILLS: { key: FilterKey; label: string }[] = [
 ]
 
 export function parseLogLine(raw: string, index: number): ParsedLogEntry {
-  // Expected format: "2026-03-07 12:00:00 [INFO] message here"
-  const match = raw.match(/^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s+\[(\w+)\]\s*(.*)$/)
+  // Accept both the gateway's ISO format ("2026-03-07T12:00:00.123Z [WARN] msg",
+  // see shared/logger.ts) and a plain space-separated form
+  // ("2026-03-07 12:00:00 [INFO] msg"). The fractional seconds / trailing Z are
+  // matched but trimmed from the captured timestamp for a compact display.
+  const match = raw.match(/^(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})(?:\.\d+)?Z?\s+\[(\w+)\]\s*(.*)$/)
   if (match) {
     return {
       id: `log-${index}`,
