@@ -104,9 +104,11 @@ function validateBoardAssigneesForDepartment(department: string, payload: unknow
     const assignee = (ticket as { assignee?: unknown }).assignee;
     if (typeof assignee !== "string" || !assignee.trim()) continue;
     const employee = org.get(assignee);
-    if (!employee) continue;
+    const id = typeof (ticket as { id?: unknown }).id === "string" ? (ticket as { id: string }).id : `#${index}`;
+    if (!employee) {
+      return `ticket "${id}" is assigned to "${assignee}", who is not a known employee`;
+    }
     if (employee.department !== department) {
-      const id = typeof (ticket as { id?: unknown }).id === "string" ? (ticket as { id: string }).id : `#${index}`;
       return `ticket "${id}" is assigned to "${assignee}", who belongs to department "${employee.department}", not "${department}"`;
     }
   }

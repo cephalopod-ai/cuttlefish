@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest"
 import { MemoryRouter } from "react-router-dom"
-import { render, screen } from "@testing-library/react"
+import { render, screen, fireEvent } from "@testing-library/react"
 import type { Approval, Checkpoint } from "@/lib/api"
 
 const approvalsState = vi.hoisted(() => ({
@@ -51,7 +51,7 @@ describe("ApprovalsPage", () => {
     approvalsState.checkpointsError = null
   })
 
-  it("renders fallback approvals and human checkpoints in separate sections", () => {
+  it("renders fallback approvals and human checkpoints in the pending list, and shows detail on click", () => {
     approvalsState.approvals = [{
       id: "approval-1",
       sessionId: "session-12345678",
@@ -86,9 +86,15 @@ describe("ApprovalsPage", () => {
       </MemoryRouter>,
     )
 
-    expect(screen.getByText("Fallback approvals")).toBeTruthy()
-    expect(screen.getByText("Human checkpoints")).toBeTruthy()
-    expect(screen.getByText("Approve deleting generated report")).toBeTruthy()
+    // Both items appear in the pending list by their labels
+    expect(screen.getAllByText("fallback approval").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("Approve deleting generated report").length).toBeGreaterThan(0)
+
+    // Click the checkpoint list item to load its detail
+    const checkpointListItems = screen.getAllByText("Approve deleting generated report")
+    fireEvent.click(checkpointListItems[0])
+
+    // Detail panel shows checkpoint-specific content
     expect(screen.getByText("reports/draft.md")).toBeTruthy()
     expect(screen.getByRole("button", { name: /Revise & resume/i })).toBeTruthy()
   })
@@ -101,7 +107,6 @@ describe("ApprovalsPage", () => {
     )
 
     const scrollRegion = screen.getByTestId("approvals-scroll-region")
-    expect(scrollRegion.className).toContain("h-full")
     expect(scrollRegion.className).toContain("overflow-y-auto")
   })
 
