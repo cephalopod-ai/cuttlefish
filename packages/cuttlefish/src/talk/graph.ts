@@ -129,8 +129,11 @@ export function buildGraphSnapshot(
   const nodes: TalkGraphNode[] = [];
   const queue: Array<{ id: string; depth: number }> = [{ id: rootId, depth: 0 }];
   const seen = new Set<string>([rootId]);
-  while (queue.length > 0 && nodes.length < MAX_NODES) {
-    const { id, depth } = queue.shift()!;
+  // Index cursor instead of queue.shift(): shift() is O(n) per call (it reindexes
+  // the whole array), making this BFS O(n²). Advancing a head pointer keeps it O(n).
+  let head = 0;
+  while (head < queue.length && nodes.length < MAX_NODES) {
+    const { id, depth } = queue[head++];
     for (const child of listChildSessions(id)) {
       if (seen.has(child.id)) continue;
       seen.add(child.id);

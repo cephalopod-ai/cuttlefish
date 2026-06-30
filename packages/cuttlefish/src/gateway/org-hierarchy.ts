@@ -213,8 +213,11 @@ export function resolveOrgHierarchy(
     });
 
   const queue: string[] = [...rootNodes];
-  while (queue.length > 0) {
-    const name = queue.shift()!;
+  // Index cursor instead of queue.shift(): shift() is O(n) per call, making this
+  // hierarchy BFS O(n²) in the number of employees. A head pointer keeps it O(n).
+  let head = 0;
+  while (head < queue.length) {
+    const name = queue[head++];
     sorted.push(name);
     const node = nodes[name];
     const parent = node.parentName;
