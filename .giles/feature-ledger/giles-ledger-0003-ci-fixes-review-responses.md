@@ -92,11 +92,22 @@ Added `UNIQUE(run_id, artifact_id, relation)` constraint to `run_artifact_xref` 
 **touched files:**
 - `packages/cuttlefish/src/artifact-lineage/store.ts` — added UNIQUE constraint to CREATE TABLE
 
+### Codex P1: invalid policy action is fail-open (Codex P1)
+
+`parseRule` returned `null` for unknown `action` values, silently dropping the rule. A typo (e.g. "exprot" instead of "export") would cause a deny rule to vanish, leaving the gate open. Now `parseRule` throws so `parseProfileFile` propagates the error — the whole policy file is rejected on invalid action (fail-closed).
+
+**touched files:**
+- `packages/cuttlefish/src/policy/loader.ts` — changed `return null` to `throw new Error(...)` in parseRule for invalid action
+
+### Codex P2: UNIQUE constraint on existing xref tables (Codex P2, already fixed)
+
+Codex reviewed commit `9ba9dc1` and correctly noted that `CREATE TABLE IF NOT EXISTS` skips existing tables. This was already addressed in commit `f230234` which added `CREATE UNIQUE INDEX IF NOT EXISTS idx_lineage_xref_unique ON run_artifact_xref (run_id, artifact_id, relation)` as a standalone statement that runs on every `open()` call — applying the constraint to existing databases.
+
 ## Validation Run
 
+- CI all green (build, giles, unit-tests, typecheck) on commit f230234
 - Domain drift guard: CLEAN
 - TypeScript: no new type errors in changed files
-- Full CI validation required (Node.js 24, pnpm test)
 
 ## Remaining Open Items
 
@@ -106,4 +117,4 @@ Added `UNIQUE(run_id, artifact_id, relation)` constraint to `run_artifact_xref` 
 
 ## Provenance
 
-CI-fix and review-response pass for PR #5, 2026-06-30. All changes verified against CI failure logs and reviewer comments.
+CI-fix and review-response pass for PR #5 and PR #6, 2026-06-30. All changes verified against CI failure logs and reviewer comments.

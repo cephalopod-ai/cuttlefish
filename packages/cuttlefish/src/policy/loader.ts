@@ -16,8 +16,7 @@ function parseRule(raw: unknown, index: number): PolicyRule | null {
     if (raw.action === "export" || raw.action === "retain" || raw.action === "quarantine" || raw.action === "register") {
       rule.action = raw.action;
     } else {
-      // Unknown action: reject the rule rather than silently dropping the constraint.
-      return null;
+      throw new Error(`policy: rule ${index} has unknown action "${String(raw.action)}"; fix the policy file or remove the rule`);
     }
   }
   if (typeof raw.kindPattern === "string" && raw.kindPattern) rule.kindPattern = raw.kindPattern;
