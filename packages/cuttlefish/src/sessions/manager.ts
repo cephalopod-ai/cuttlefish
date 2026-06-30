@@ -13,7 +13,6 @@ import { isInterruptibleEngine } from "../shared/types.js";
 import {
   accumulateSessionCost,
   createSession,
-  deleteSession,
   getSession,
   getSessionBySessionKey,
   getMessages,
@@ -32,8 +31,6 @@ import { effortLevelsForModel, engineAvailable, isKnownEngine, engineUnavailable
 import { detectRateLimit, isDeadSessionError } from "../shared/rateLimit.js";
 import { getClaudeExpectedResetAt, isLikelyNearClaudeUsageLimit } from "../shared/usageAwareness.js";
 import { getRecordedReset, usageConfig } from "../shared/usage-status.js";
-import { loadJobs } from "../cron/jobs.js";
-import { setCronJobEnabled, triggerCronJob } from "../cron/scheduler.js";
 import { checkBudget } from "../gateway/budgets.js";
 import { markTranscriptSyncedThrough } from "../gateway/external-turns.js";
 import { resolveMcpServers, writeMcpConfigFile, cleanupMcpConfigFile } from "../mcp/resolver.js";
@@ -47,6 +44,7 @@ import {
 } from "./rate-limit-handler.js";
 import { finalizeManagedSessionTurn, maybeRevertEngineOverride, mergeTransportMeta } from "./manager-helpers.js";
 import { isUntrustedSource, wrapUntrustedMessage } from "./untrusted-input.js";
+import { handleSessionCommand, resetSession } from "./session-commands.js";
 import { createScopedSessionToken } from "../gateway/auth.js";
 import type { ContentScreeningResult } from "../shared/types.js";
 export { mergeTransportMeta } from "./manager-helpers.js";
@@ -720,156 +718,19 @@ export class SessionManager {
   }
 
   async handleCommand(msg: IncomingMessage, connector: Connector): Promise<boolean> {
-    const text = msg.text.trim();
-    const target = connector.reconstructTarget(msg.replyContext);
-    target.messageTs ??= msg.messageId;
-
-    if (text === "/new" || text.startsWith("/new ")) {
-      this.resetSession(msg.sessionKey);
-      await connector.replyMessage(target, "Session reset. Starting fresh.");
-      logger.info(`Session reset for ${msg.sessionKey}`);
-      return true;
-    }
-
-    if (text === "/status" || text.startsWith("/status ")) {
-      const session = getSessionBySessionKey(msg.sessionKey);
-      if (!session) {
-        await connector.replyMessage(target, "No active session for this conversation.");
-        return true;
-      }
-      const queueDepth = this.queue.getPendingCount(session.sessionKey);
-      const transportState = this.queue.getTransportState(session.sessionKey, session.status);
-      const info = [
-        `Session: ${session.id}`,
-        `Engine: ${session.engine}`,
-        `Connector: ${session.connector || session.source}`,
-        `Model: ${session.model || this.config.engines[session.engine as "claude" | "codex" | "antigravity" | "grok" | "pi" | "kiro" | "hermes" | "ollama" | "kilo"]?.model || "default"}`,
-        `State: ${transportState}`,
-        `Queue depth: ${queueDepth}`,
-        `Created: ${session.createdAt}`,
-        `Last activity: ${session.lastActivity}`,
-        session.lastError ? `Last error: ${session.lastError}` : null,
-      ].filter(Boolean).join("\n");
-
-      await connector.replyMessage(target, info);
-      return true;
-    }
-
-    if (text.startsWith("/model")) {
-      const nextModel = text.slice("/model".length).trim();
-      if (!nextModel) {
-        await connector.replyMessage(target, "Usage: /model <model-name>");
-        return true;
-      }
-
-      const session = getSessionBySessionKey(msg.sessionKey);
-      if (!session) {
-        await connector.replyMessage(target, "No active session for this conversation.");
-        return true;
-      }
-
-      updateSession(session.id, {
-        model: nextModel,
-        lastActivity: new Date().toISOString(),
-      });
-      await connector.replyMessage(target, `Model updated to \`${nextModel}\` for this session.`);
-      return true;
-    }
-
-    if (text === "/doctor" || text.startsWith("/doctor ")) {
-      const connectors = Array.from(this.connectorProvider().values());
-      const connectorLines = connectors.length > 0
-        ? connectors.map((candidate) => {
-            const health = candidate.getHealth();
-            return `- ${candidate.name}: ${health.status}${health.detail ? ` (${health.detail})` : ""}`;
-          })
-        : ["- none"];
-      const info = [
-        `Default engine: ${this.config.engines.default}`,
-        `Claude: ${this.config.engines.claude.model}`,
-        `Codex: ${this.config.engines.codex.model}`,
-        ...(this.config.engines.antigravity ? [`Antigravity: ${this.config.engines.antigravity.model ?? "Gemini 3.5 Flash (Medium)"}`] : []),
-        ...(this.config.engines.grok ? [`Grok: ${this.config.engines.grok.model ?? "grok-build"}`] : []),
-        ...(this.config.engines.ollama ? [`Ollama: ${this.config.engines.ollama.model ?? "gemma4"}`] : []),
-        ...(this.config.engines.kilo ? [`Kilo: ${this.config.engines.kilo.model ?? "default"}`] : []),
-        "Connectors:",
-        ...connectorLines,
-      ].join("\n");
-      await connector.replyMessage(target, info);
-      return true;
-    }
-
-    if (text.startsWith("/cron")) {
-      return this.handleCronCommand(text, connector, target);
-    }
-
-    return false;
+    return handleSessionCommand(
+      {
+        config: this.config,
+        queue: this.queue,
+        engines: this.engines,
+        connectorProvider: this.connectorProvider,
+      },
+      msg,
+      connector,
+    );
   }
 
   resetSession(sessionKey: string): void {
-    const session = getSessionBySessionKey(sessionKey);
-    if (session) {
-      // Tear down any live/warm engine process before deleting the session.
-      const engine = this.engines.get(session.engine);
-      if (engine && isInterruptibleEngine(engine)) {
-        engine.kill(session.id, "Interrupted: session reset");
-      }
-      deleteSession(session.id);
-      logger.info(`Deleted session ${session.id}`);
-    }
-  }
-
-  private async handleCronCommand(text: string, connector: Connector, target: Target): Promise<boolean> {
-    const [_, subcommand = "", ...rest] = text.split(/\s+/);
-    const arg = rest.join(" ").trim();
-
-    if (!subcommand || subcommand === "list") {
-      const jobs = loadJobs();
-      if (jobs.length === 0) {
-        await connector.replyMessage(target, "No cron jobs configured.");
-        return true;
-      }
-
-      const lines = jobs.map((job) =>
-        `- ${job.name} (${job.id}) — ${job.enabled ? "enabled" : "disabled"} — ${job.schedule}`,
-      );
-      await connector.replyMessage(target, ["Cron jobs:", ...lines].join("\n"));
-      return true;
-    }
-
-    if (subcommand === "run") {
-      if (!arg) {
-        await connector.replyMessage(target, "Usage: /cron run <job-id-or-name>");
-        return true;
-      }
-      const result = await triggerCronJob(arg);
-      await connector.replyMessage(
-        target,
-        !result.found
-          ? `Cron job "${arg}" not found.`
-          : !result.started
-            ? `Cron job "${result.job.name}" already running; skipped overlap.`
-            : `Triggered cron job "${result.job.name}".`,
-      );
-      return true;
-    }
-
-    if (subcommand === "enable" || subcommand === "disable") {
-      if (!arg) {
-        await connector.replyMessage(target, `Usage: /cron ${subcommand} <job-id-or-name>`);
-        return true;
-      }
-      const job = setCronJobEnabled(arg, subcommand === "enable");
-      await connector.replyMessage(
-        target,
-        job
-          ? `Cron job "${job.name}" ${job.enabled ? "enabled" : "disabled"}.`
-          : `Cron job "${arg}" not found.`,
-      );
-      return true;
-    }
-
-    await connector.replyMessage(target, "Usage: /cron [list|run|enable|disable] <job-id-or-name>");
-    return true;
+    resetSession({ engines: this.engines }, sessionKey);
   }
 }

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import type { ApiContext } from "../gateway/api.js";
+import type { ApiContext } from "../gateway/api/context.js";
 import { logger } from "../shared/logger.js";
 import type { LiveRunContinuationRecord, LiveRunTaskPayload } from "./live-run.js";
 import {

@@ -515,7 +515,7 @@ export function validateEmployeeUpdate(
     if (!Array.isArray(v) || !v.every((x) => typeof x === "string")) {
       return { ok: false, error: "cliFlags must be an array of strings" };
     }
-    const badFlag = (v as string[]).find((f) => /[ -]/.test(f));
+    const badFlag = (v as string[]).find((f) => /[\x00-\x1f\x7f]/.test(f));
     if (badFlag !== undefined) {
       return { ok: false, error: "cliFlags entries must not contain control characters or newlines" };
     }

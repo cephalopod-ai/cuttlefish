@@ -2,8 +2,8 @@ import { z } from "zod";
 import { createSession, getSession, insertMessage, updateSession } from "../sessions/registry.js";
 import { logger } from "../shared/logger.js";
 import type { Engine, JsonObject } from "../shared/types.js";
-import type { ApiContext } from "../gateway/api.js";
-import { dispatchWebSessionRun } from "../gateway/api/session-dispatch.js";
+import type { ApiContext } from "../gateway/api/context.js";
+import { type WebSessionDispatcher, resolveDefaultWebSessionDispatcher } from "./execution-port.js";
 import { buildCoordinatorTaskBrief, type CoordinatorMode } from "./coordinator.js";
 import { isReviewerRole } from "./cross-family.js";
 import { toLeaseTransportMeta } from "./lease-meta.js";
@@ -238,6 +238,12 @@ export async function runOrchestrationLeaseTurn(opts: {
   title?: string;
   model?: string;
   effortLevel?: string;
+  /**
+   * Narrow execution port (ARC-CUT-001). Defaults to the gateway web-session
+   * dispatcher, resolved lazily so orchestration never statically imports the
+   * gateway API aggregate.
+   */
+  dispatch?: WebSessionDispatcher;
 }): Promise<OrchestrationRunSession> {
   const runtime = opts.context.orchestration?.runtime;
   if (!runtime) throw new Error("orchestration runtime is not enabled");
@@ -293,7 +299,8 @@ export async function runOrchestrationLeaseTurn(opts: {
   let dispatchError: unknown;
 
   try {
-    await dispatchWebSessionRun(session, opts.prompt, engine, opts.context.getConfig(), telemetryContext);
+    const dispatch = opts.dispatch ?? (await resolveDefaultWebSessionDispatcher());
+    await dispatch(session, opts.prompt, engine, opts.context.getConfig(), telemetryContext);
   } catch (err) {
     dispatchError = err;
     throw err;

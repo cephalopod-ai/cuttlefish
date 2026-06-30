@@ -33,8 +33,8 @@ import { resultAlreadyInStreamedBlocks, shouldPreserveStreamedBlocks } from "./s
 import type { ApiContext } from "./api/context.js";
 import { parseLeaseTransportMeta } from "../orchestration/lease-meta.js";
 import { emitSessionSummaryBestEffort, knowledgeRelayOptions } from "../knowledge/outbox-service.js";
-import { positiveNumberOr, resolveTurnStallWatchdogConfig, shouldNotifyLeaderReviewOnStall, shouldRetrySameEngineAfterStall } from "./turn-stall-policy.js";
-export { resolveTurnStallWatchdogConfig, shouldNotifyLeaderReviewOnStall, shouldRetrySameEngineAfterStall } from "./turn-stall-policy.js";
+import { positiveNumberOr, resolveStallLeaderName, resolveTurnStallWatchdogConfig, shouldNotifyLeaderReviewOnStall, shouldRetrySameEngineAfterStall } from "./turn-stall-policy.js";
+export { resolveStallLeaderName, resolveTurnStallWatchdogConfig, shouldNotifyLeaderReviewOnStall, shouldRetrySameEngineAfterStall } from "./turn-stall-policy.js";
 import { isExecutionDepthBlocked } from "./employee-execution.js";
 import { createScopedSessionToken } from "./auth.js";
 
@@ -180,17 +180,7 @@ export async function runWebSession(
     let lastStreamAt = Date.now();
     let leaderReviewNotified = false;
 
-    const leaderName = (() => {
-      if (!employee) return null;
-      let parentName = orgHierarchy.nodes[employee.name]?.parentName ?? null;
-      while (parentName) {
-        const parent = orgHierarchy.nodes[parentName]?.employee;
-        if (!parent) return null;
-        if (parent.rank === "manager" || parent.rank === "executive") return parent.name;
-        parentName = orgHierarchy.nodes[parent.name]?.parentName ?? null;
-      }
-      return null;
-    })();
+    const leaderName = resolveStallLeaderName(orgHierarchy, employee?.name);
     const leaderReviewActor = leaderName ? `${leaderName} can` : "A manager can";
     const leaderReviewWorker = employee?.displayName ?? employee?.name ?? currentSession.employee ?? "This worker";
     const maybeNotifyLeaderReview = (idleMs: number) => {

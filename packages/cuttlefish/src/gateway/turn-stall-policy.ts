@@ -1,4 +1,4 @@
-import type { CuttlefishConfig } from "../shared/types.js";
+import type { CuttlefishConfig, OrgHierarchy } from "../shared/types.js";
 
 export interface TurnStallWatchdogConfig {
   tickMs: number;
@@ -43,4 +43,26 @@ export function shouldNotifyLeaderReviewOnStall(input: {
   if (input.leaderCheckMs <= 0) return false;
   if (input.idleMs < input.leaderCheckMs) return false;
   return input.idleMs < input.inactivityMs;
+}
+
+/**
+ * Resolve the name of the nearest managing leader (rank `manager` or
+ * `executive`) above an employee in the org hierarchy, used to address a
+ * stall leader-review notice. Returns null when the employee is unknown, has no
+ * parent chain, or no manager/executive ancestor exists. Pure over the resolved
+ * hierarchy so it is testable without a live org scan.
+ */
+export function resolveStallLeaderName(
+  hierarchy: OrgHierarchy,
+  employeeName: string | null | undefined,
+): string | null {
+  if (!employeeName) return null;
+  let parentName = hierarchy.nodes[employeeName]?.parentName ?? null;
+  while (parentName) {
+    const parent = hierarchy.nodes[parentName]?.employee;
+    if (!parent) return null;
+    if (parent.rank === "manager" || parent.rank === "executive") return parent.name;
+    parentName = hierarchy.nodes[parent.name]?.parentName ?? null;
+  }
+  return null;
 }

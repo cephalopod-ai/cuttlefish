@@ -1,11 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
   resolveFallbackContinuationSession,
+  resolveStallLeaderName,
   resolveTurnStallWatchdogConfig,
   shouldNotifyLeaderReviewOnStall,
   shouldRetrySameEngineAfterStall,
 } from "../run-web-session.js";
-import type { Session } from "../../shared/types.js";
+import type { Employee, OrgHierarchy, OrgNode, Session } from "../../shared/types.js";
 
 describe("resolveTurnStallWatchdogConfig", () => {
   it("uses the tuned defaults when the gateway block omits stall settings", () => {
@@ -97,6 +98,59 @@ describe("shouldNotifyLeaderReviewOnStall", () => {
       inactivityMs: 900_000,
       alreadyNotified: false,
     })).toBe(false);
+  });
+});
+
+describe("resolveStallLeaderName", () => {
+  function node(name: string, rank: Employee["rank"], parentName: string | null): OrgNode {
+    return {
+      employee: { name, rank } as Employee,
+      parentName,
+      directReports: [],
+      depth: 0,
+      chain: [],
+    };
+  }
+
+  function hierarchy(nodes: Record<string, OrgNode>): OrgHierarchy {
+    return { root: null, nodes, sorted: Object.keys(nodes), warnings: [] };
+  }
+
+  const h = hierarchy({
+    ceo: node("ceo", "executive", null),
+    lead: node("lead", "manager", "ceo"),
+    senior: node("senior", "senior", "lead"),
+    worker: node("worker", "employee", "senior"),
+  });
+
+  it("climbs to the nearest manager ancestor", () => {
+    expect(resolveStallLeaderName(h, "worker")).toBe("lead");
+    expect(resolveStallLeaderName(h, "senior")).toBe("lead");
+  });
+
+  it("returns the executive when no manager sits between", () => {
+    expect(resolveStallLeaderName(h, "lead")).toBe("ceo");
+  });
+
+  it("returns null for a missing employee name", () => {
+    expect(resolveStallLeaderName(h, undefined)).toBeNull();
+    expect(resolveStallLeaderName(h, null)).toBeNull();
+    expect(resolveStallLeaderName(h, "ghost")).toBeNull();
+  });
+
+  it("returns null when the chain has no manager/executive ancestor", () => {
+    const flat = hierarchy({
+      a: node("a", "senior", "b"),
+      b: node("b", "employee", null),
+    });
+    expect(resolveStallLeaderName(flat, "a")).toBeNull();
+  });
+
+  it("returns null when a parent reference dangles", () => {
+    const broken = hierarchy({
+      worker: node("worker", "employee", "ghost-parent"),
+    });
+    expect(resolveStallLeaderName(broken, "worker")).toBeNull();
   });
 });
 
