@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS run_artifact_xref (
 );
 CREATE INDEX IF NOT EXISTS idx_lineage_xref_run ON run_artifact_xref (run_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_lineage_xref_artifact ON run_artifact_xref (artifact_id, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_lineage_xref_unique ON run_artifact_xref (run_id, artifact_id, relation);
 `;
 
 export class ArtifactLineageStore {
@@ -245,12 +246,13 @@ export class ArtifactLineageStore {
     // DFS forward from toId following outgoing edges, looking for fromId (would close a cycle)
     const visited = new Set<string>();
     const stack = [toId];
+    const stmt = this.db.prepare("SELECT to_artifact_id FROM lineage_edges WHERE from_artifact_id = ?");
     while (stack.length > 0) {
       const current = stack.pop()!;
       if (current === fromId) return true;
       if (visited.has(current)) continue;
       visited.add(current);
-      const rows = this.db.prepare("SELECT to_artifact_id FROM lineage_edges WHERE from_artifact_id = ?").all(current) as Array<{ to_artifact_id: string }>;
+      const rows = stmt.all(current) as Array<{ to_artifact_id: string }>;
       for (const row of rows) {
         stack.push(row.to_artifact_id);
       }

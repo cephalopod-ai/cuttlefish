@@ -28,7 +28,8 @@ function parseRule(raw: unknown, index: number): PolicyRule | null {
 function parseProfileFile(filePath: string): PolicyProfile {
   const raw: unknown = JSON.parse(fs.readFileSync(filePath, "utf-8"));
   if (!isPlainObject(raw)) throw new Error(`policy: ${filePath} is not a JSON object`);
-  const rulesRaw = Array.isArray(raw.rules) ? raw.rules : [];
+  if (!Array.isArray(raw.rules)) throw new Error(`policy: ${filePath} 'rules' field is missing or not an array`);
+  const rulesRaw = raw.rules;
   const rules: PolicyRule[] = rulesRaw
     .map((r, i) => parseRule(r, i))
     .filter((r): r is PolicyRule => r !== null);
