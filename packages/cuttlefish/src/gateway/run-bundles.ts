@@ -10,6 +10,7 @@ import {
   type SessionMessage,
 } from "../sessions/registry.js";
 import { LOGS_DIR, RUN_BUNDLES_DIR } from "../shared/paths.js";
+import { gateExternalEmit } from "../policy/export-gate.js";
 import type { Approval, RunAttachment, Session } from "../shared/types.js";
 import type { ApiContext } from "./api/context.js";
 import { enrichRunAttachmentsForSession } from "./run-attachments.js";
@@ -263,6 +264,17 @@ export function exportRunBundle(sessionId: string, context: ApiContext): Exporte
   const bundleId = `${safeSegment(sessionId)}-${Date.now().toString(36)}`;
   const bundlePath = path.join(RUN_BUNDLES_DIR, safeSegment(sessionId), bundleId);
   fs.mkdirSync(bundlePath, { recursive: true });
+
+  const exportVerdict = gateExternalEmit({
+    kind: "cuttlefish.run_bundle",
+    locator: bundlePath,
+    sizeBytes: null,
+    mimeType: null,
+    producingRunId: sessionId,
+  });
+  if (!exportVerdict.allowed) {
+    throw new Error(`run bundle export denied by policy: ${exportVerdict.reason}`);
+  }
 
   const manifestFiles: BundleManifestFile[] = [];
   const { copied, skipped } = copyArtifacts(bundlePath, producedArtifacts, attachments, manifestFiles);

@@ -34,6 +34,12 @@ import {
   type WorktreeHandle,
 } from "./worktree.js";
 import { persistDualLaneArtifacts } from "./artifacts.js";
+import {
+  beginOrchestrationRun,
+  createBlockedOrchestrationRun,
+  finalizeOrchestrationRunCompleted,
+  finalizeOrchestrationRunFailed,
+} from "./run-ledger-integration.js";
 
 const LANE_DEFS = [
   { id: "openai", family: "openai" },
@@ -107,7 +113,10 @@ export async function runDualLaneTask(opts: {
   if (!runtime) throw new Error("orchestration runtime is not enabled");
   const allocationResult = await runtime.requestAllocationWithLiveHeadroom(buildDualLaneAllocationRequest(opts.task));
   if (!allocationResult.ok) {
-    runtime.queueLiveContinuation(buildDualLaneContinuation(runtime.getLiveContinuation(opts.task.taskId, opts.task.coordinatorId), opts.task));
+    const blockedRunId = createBlockedOrchestrationRun(opts.task.taskId, opts.task.coordinatorId, "dual_lane", opts.task.title);
+    const continuationRecord = buildDualLaneContinuation(runtime.getLiveContinuation(opts.task.taskId, opts.task.coordinatorId), opts.task);
+    continuationRecord.runId = blockedRunId;
+    runtime.queueLiveContinuation(continuationRecord);
     return {
       ok: false,
       state: "blocked_resource",
@@ -135,6 +144,10 @@ export async function runAllocatedDualLaneTask(opts: {
 }): Promise<DualLaneRunResult> {
   const runtime = opts.context.orchestration?.runtime;
   if (!runtime) throw new Error("orchestration runtime is not enabled");
+
+  const runId = beginOrchestrationRun(opts.allocation, "dual_lane", opts.task.title);
+  opts.allocation.runId = runId;
+
   const baseCwd = resolveTaskBaseCwd(opts.task.cwd, opts.context.getConfig());
   const lanes = initialLanes(opts.task);
   const sessions: OrchestrationRunSession[] = [];
@@ -185,13 +198,15 @@ export async function runAllocatedDualLaneTask(opts: {
       sessions.push(session);
       if (orchestrationSessionFailed(session)) {
         lane.error = session.error ?? session.status;
+        const errorSummary = `${lane.id} lane failed: ${lane.error}`;
+        finalizeOrchestrationRunFailed(runId, errorSummary);
         const failed: DualLaneRunResult = {
           ok: false,
           state: "failed",
           mode: "dual_lane",
           sessions,
           reviewPolicy: opts.reviewPolicy,
-          errorSummary: `${lane.id} lane failed: ${lane.error}`,
+          errorSummary,
           lanes: lanes.map(stripLaneWorktreeHandle),
         };
         releaseRunningAllocationLeases(runtime, opts.allocation);
@@ -221,6 +236,7 @@ export async function runAllocatedDualLaneTask(opts: {
       store: runtime.getStore(),
     });
 
+    finalizeOrchestrationRunCompleted(runId);
     return {
       ok: true,
       state: "selection_required",
@@ -234,6 +250,7 @@ export async function runAllocatedDualLaneTask(opts: {
       selection: { required: true, default: "human", options: ["openai", "anthropic"] },
     };
   } catch (err) {
+    finalizeOrchestrationRunFailed(runId, err instanceof Error ? err.message : String(err));
     releaseRunningAllocationLeases(runtime, opts.allocation);
     cleanupPreparedLanes(lanes);
     throw err;

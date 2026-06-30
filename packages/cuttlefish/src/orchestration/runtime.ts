@@ -28,6 +28,7 @@ import {
   type ReviewPolicySummary,
 } from "./types.js";
 import { DEFAULT_MAX_WORKTREES, reapExpiredReviewBundles, reapOrphanedWorktrees, type WorktreeHandle, type WorktreeOptions } from "./worktree.js";
+import { interruptOrchestrationRun, recoverOrchestrationRun, sweepOrphanedOrchestrationRuns } from "./run-ledger-integration.js";
 
 const DEFAULT_REAPER_INTERVAL_MS = 5_000;
 const DEFAULT_STALE_DISPATCHING_CONTINUATION_MS = 10 * 60 * 1_000;
@@ -225,6 +226,9 @@ export class OrchestrationRuntime {
 
   queueLiveContinuation(record: LiveRunContinuationRecord): void {
     this.store.upsertLiveContinuation(record);
+    if (record.runId) {
+      this.store.stampContinuationRunId(record.taskId, record.coordinatorId, record.runId);
+    }
   }
 
   getLiveContinuation(taskId: string, coordinatorId: string): LiveRunContinuationRecord | undefined {
@@ -470,6 +474,7 @@ export class OrchestrationRuntime {
     const wait = this.waitForResumeDispatches(timeoutMs);
     if (wait) await wait;
     for (const continuation of this.store.listLiveContinuations(["dispatching"])) {
+      interruptOrchestrationRun(continuation.runId, reason);
       this.markLiveContinuationFailed(continuation.taskId, continuation.coordinatorId, reason, continuation.allocationId);
     }
     for (const lease of this.scheduler.listLeases()) {
@@ -567,17 +572,20 @@ export class OrchestrationRuntime {
 
   private recoverStaleDispatchingContinuations(): void {
     const cutoff = Date.now() - this.staleDispatchingContinuationMs;
+    const liveAllocationIds = new Set(this.scheduler.listAllocations().map((a) => a.allocationId));
     for (const continuation of this.store.listLiveContinuations(["dispatching"])) {
       const updatedAt = Date.parse(continuation.updatedAt);
       if (Number.isFinite(updatedAt) && updatedAt > cutoff) continue;
       const error = `Recovered stale dispatching continuation after runtime restart`;
       logger.warn(`Orchestration ${error}: ${continuation.taskId}/${continuation.coordinatorId}`);
+      recoverOrchestrationRun(continuation, DEFAULT_MAX_LIVE_CONTINUATION_RETRIES, error);
       this.markLiveContinuationFailed(continuation.taskId, continuation.coordinatorId, error, continuation.allocationId);
       const allocation = continuation.allocationId
         ? this.scheduler.listAllocations().find((candidate) => candidate.allocationId === continuation.allocationId)
         : undefined;
       if (allocation) this.releaseAllocationLeases(allocation, { retryQueued: false });
     }
+    sweepOrphanedOrchestrationRuns(liveAllocationIds);
   }
 
   private waitForResumeDispatches(timeoutMs: number): Promise<void> | undefined {

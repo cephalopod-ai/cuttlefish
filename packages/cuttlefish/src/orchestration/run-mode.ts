@@ -26,6 +26,12 @@ import {
   telemetryCountsFromDiff,
   type OrchestrationRunTelemetryRecord,
 } from "./telemetry.js";
+import {
+  beginOrchestrationRun,
+  createBlockedOrchestrationRun,
+  finalizeOrchestrationRunCompleted,
+  finalizeOrchestrationRunFailed,
+} from "./run-ledger-integration.js";
 
 export const liveRunModeSchema = z.enum(LIVE_RUN_MODES);
 
@@ -127,7 +133,10 @@ export async function runOrchestrationTask(opts: RunOrchestrationTaskOptions): P
   }, runtime.config);
   const allocationResult = await runtime.requestAllocationWithLiveHeadroom(brief.request);
   if (!allocationResult.ok) {
-    runtime.queueLiveContinuation(buildContinuationRecord(runtime.getLiveContinuation(task.taskId, task.coordinatorId), task, mode));
+    const blockedRunId = createBlockedOrchestrationRun(task.taskId, task.coordinatorId, mode, task.title);
+    const continuationRecord = buildContinuationRecord(runtime.getLiveContinuation(task.taskId, task.coordinatorId), task, mode);
+    continuationRecord.runId = blockedRunId;
+    runtime.queueLiveContinuation(continuationRecord);
     return { ok: false, state: "blocked_resource", mode, queueItem: allocationResult.queueItem, reviewPolicy: allocationResult.reviewPolicy };
   }
 
@@ -144,6 +153,9 @@ export async function runOrchestrationTask(opts: RunOrchestrationTaskOptions): P
 export async function runAllocatedOrchestrationTask(opts: RunAllocatedOrchestrationTaskOptions): Promise<OrchestrationRunTaskResult> {
   const runtime = opts.context.orchestration?.runtime;
   if (!runtime) throw new Error("orchestration runtime is not enabled");
+
+  const runId = beginOrchestrationRun(opts.allocation, opts.mode, opts.task.title);
+  opts.allocation.runId = runId;
 
   const sessions: OrchestrationRunSession[] = [];
   const baseCwd = resolveTaskBaseCwd(opts.task.cwd, opts.context.getConfig());
@@ -185,6 +197,8 @@ export async function runAllocatedOrchestrationTask(opts: RunAllocatedOrchestrat
         });
         sessions.push(session);
         if (orchestrationSessionFailed(session)) {
+          const errorSummary = `${lease.role} failed: ${session.error ?? session.status}`;
+          finalizeOrchestrationRunFailed(runId, errorSummary);
           return {
             ok: false,
             state: "failed",
@@ -192,7 +206,7 @@ export async function runAllocatedOrchestrationTask(opts: RunAllocatedOrchestrat
             allocation: opts.allocation,
             sessions,
             reviewPolicy: opts.reviewPolicy,
-            errorSummary: `${lease.role} failed: ${session.error ?? session.status}`,
+            errorSummary,
           };
         }
       } catch (err) {
@@ -217,6 +231,7 @@ export async function runAllocatedOrchestrationTask(opts: RunAllocatedOrchestrat
     }
   }
 
+  finalizeOrchestrationRunCompleted(runId);
   return {
     ok: true,
     state: "completed",

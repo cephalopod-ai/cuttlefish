@@ -29,6 +29,7 @@ import {
   listLiveContinuationsFromDb,
   markLiveContinuationStateInDb,
   setQueuePauseStateInDb,
+  stampContinuationRunIdInDb,
   type QueuePauseState,
   upsertLiveContinuationInDb,
 } from "./store-continuations.js";
@@ -90,6 +91,10 @@ export class OrchestrationStore {
 
   deleteLiveContinuation(taskId: string, coordinatorId: string): void {
     deleteLiveContinuationFromDb(this.db, taskId, coordinatorId);
+  }
+
+  stampContinuationRunId(taskId: string, coordinatorId: string, runId: string): void {
+    stampContinuationRunIdInDb(this.db, taskId, coordinatorId, runId);
   }
 
   claimQueuedLiveContinuation(

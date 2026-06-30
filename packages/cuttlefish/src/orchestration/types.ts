@@ -88,6 +88,7 @@ export interface Allocation {
   optionalRolesSkipped: string[];
   createdAt: string;
   updatedAt: string;
+  runId?: string;
 }
 
 export type ReviewPolicyDecision =

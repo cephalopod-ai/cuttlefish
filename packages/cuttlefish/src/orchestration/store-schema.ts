@@ -7,7 +7,7 @@ import { writeRecoveryManifest } from "./store-recovery.js";
 import { DEFAULT_LEASE_DURATION_MS, type TelemetryEvent } from "./types.js";
 import { setMeta } from "./store-utils.js";
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 export const NEXT_SEQ_META_KEY = "scheduler_next_seq";
 export const QUEUE_PAUSE_META_KEY = "queue_pause";
 
@@ -220,6 +220,7 @@ function openDatabase(dbPath: string): Database.Database {
     ensureAllocationUpdatedAtColumn(db);
     ensureQueueDiagnosticsColumns(db);
     ensureArtifactCoordinatorColumn(db);
+    ensureContinuationRunIdColumn(db);
     setMeta(db, "schema_version", String(SCHEMA_VERSION));
     return db;
   } catch (err) {
@@ -281,6 +282,12 @@ function renameIfExists(source: string, target: string): string | undefined {
 
 function resolveRecoveryDir(dbPath: string): string {
   return dbPath === ORCH_DB ? ORCH_RECOVERY_DIR : path.join(path.dirname(dbPath), "orchestration-recovery");
+}
+
+function ensureContinuationRunIdColumn(db: Database.Database): void {
+  const columns = db.pragma("table_info(live_run_continuations)") as Array<{ name: string }>;
+  if (columns.some((column) => column.name === "run_id")) return;
+  db.prepare("ALTER TABLE live_run_continuations ADD COLUMN run_id TEXT").run();
 }
 
 function ensureQueueDiagnosticsColumns(db: Database.Database): void {
