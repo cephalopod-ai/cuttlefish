@@ -54,20 +54,20 @@ describe("gateExternalEmit", () => {
     });
   });
 
-  describe("builtin rule: run bundle deny", () => {
-    it("denies export of cuttlefish.run_bundle* kinds via the builtin deny rule", () => {
+  describe("builtin rule: run bundle allow", () => {
+    it("allows export of cuttlefish.run_bundle* kinds via the builtin allow rule", () => {
       const verdict = gateExternalEmit(
         makeDescriptor({ kind: "cuttlefish.run_bundle.v1" }),
         tmpDir,
       );
-      expect(verdict.allowed).toBe(false);
-      expect(verdict.rule).toBe("builtin-deny-run-bundle");
+      expect(verdict.allowed).toBe(true);
+      expect(verdict.rule).toBe("builtin-allow-run-bundle");
     });
 
-    it("denies export of bare cuttlefish.run_bundle kind", () => {
+    it("allows export of bare cuttlefish.run_bundle kind", () => {
       const verdict = gateExternalEmit(makeDescriptor({ kind: "cuttlefish.run_bundle" }), tmpDir);
-      expect(verdict.allowed).toBe(false);
-      expect(verdict.rule).toBe("builtin-deny-run-bundle");
+      expect(verdict.allowed).toBe(true);
+      expect(verdict.rule).toBe("builtin-allow-run-bundle");
     });
   });
 

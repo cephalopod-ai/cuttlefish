@@ -14,6 +14,7 @@ import type { Approval, RunAttachment, Session } from "../shared/types.js";
 import type { ApiContext } from "./api/context.js";
 import { enrichRunAttachmentsForSession } from "./run-attachments.js";
 import { serializeSession } from "./api/serialize-session.js";
+import { gateExternalEmit } from "../policy/export-gate.js";
 
 interface BundleManifestFile {
   path: string;

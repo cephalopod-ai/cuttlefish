@@ -270,7 +270,7 @@ describe("sweepOrphanedOrchestrationRuns", () => {
     ]);
     mockTransitionRun.mockReturnValue({ runId: "x", currentState: "dead_lettered" });
 
-    const swept = sweepOrphanedOrchestrationRuns(new Set(["alloc-live-99"]));
+    const swept = sweepOrphanedOrchestrationRuns(new Set(["alloc-live-99"]), new Set());
     expect(swept).toBe(2);
 
     expect(mockTransitionRun).toHaveBeenCalledTimes(2);
@@ -285,14 +285,14 @@ describe("sweepOrphanedOrchestrationRuns", () => {
       { runId: "run-live", sourceRef: "alloc-live-1" },
     ]);
 
-    const swept = sweepOrphanedOrchestrationRuns(new Set(["alloc-live-1"]));
+    const swept = sweepOrphanedOrchestrationRuns(new Set(["alloc-live-1"]), new Set());
     expect(swept).toBe(0);
     expect(mockTransitionRun).not.toHaveBeenCalled();
   });
 
   it("queries the ledger for non-terminal orchestration runs", () => {
     mockListRuns.mockReturnValue([]);
-    sweepOrphanedOrchestrationRuns(new Set());
+    sweepOrphanedOrchestrationRuns(new Set(), new Set());
 
     expect(mockListRuns).toHaveBeenCalledOnce();
     const listArgs = mockListRuns.mock.calls[0][0];
@@ -307,13 +307,13 @@ describe("sweepOrphanedOrchestrationRuns", () => {
     mockTransitionRun.mockReturnValue({ runId: "run-no-ref", currentState: "dead_lettered" });
 
     // A null sourceRef means liveAllocationIds.has(null) is false → swept
-    const swept = sweepOrphanedOrchestrationRuns(new Set(["alloc-live"]));
+    const swept = sweepOrphanedOrchestrationRuns(new Set(["alloc-live"]), new Set());
     expect(swept).toBe(1);
   });
 
   it("returns 0 when there are no non-terminal orchestration runs", () => {
     mockListRuns.mockReturnValue([]);
-    const swept = sweepOrphanedOrchestrationRuns(new Set());
+    const swept = sweepOrphanedOrchestrationRuns(new Set(), new Set());
     expect(swept).toBe(0);
     expect(mockTransitionRun).not.toHaveBeenCalled();
   });
@@ -331,7 +331,7 @@ describe("sweepOrphanedOrchestrationRuns", () => {
     });
 
     // The error on the first run should not prevent the second from being swept.
-    const swept = sweepOrphanedOrchestrationRuns(new Set());
+    const swept = sweepOrphanedOrchestrationRuns(new Set(), new Set());
     expect(swept).toBe(1); // only the successful one is counted
     expect(mockTransitionRun).toHaveBeenCalledTimes(2);
   });
