@@ -1292,3 +1292,36 @@ Ten findings were selected for adversarial verification by reading primary sourc
 | Auditor | Lead Auditor (synthesis of 5 audit streams) |
 | Report Path | `docs/cloud-audit/AUDIT-BASELINE-2026-06-30.md` |
 | Governance Reference | `AGENTS.md`, `.giles/feature-ledger/`, `governance/` |
+
+---
+
+## Repair Campaign Results (2026-06-30)
+
+**Campaign commit:** `591a614`
+**Branch:** `claude/cuttlefish-audit-baseline-akw14u`
+**Validation:** `tsc --noEmit` clean; 1853 tests pass, 0 failing (up from 3 failing pre-campaign), 1 skipped. No regressions introduced.
+
+### Findings Remediated
+
+| Finding ID | Severity | Description | Resolution |
+|---|---|---|---|
+| SEC-CRIT-001 | CRITICAL | `handleAuthApiRequest` dead code embedded raw master token in browser cookies | Removed dead code block from `gateway/auth.ts` and its test |
+| SEC-HIGH-001 | HIGH | Auth cookies lacked `Secure` flag | Added `secure` parameter (default `true`) to all cookie helpers; routes pass `secure=!isLoopbackHost(...)` |
+| SEC-HIGH-004 | HIGH | Artifact-lineage cycle check + INSERT not atomic (TOCTOU) | Wrapped both operations in `BEGIN IMMEDIATE` transaction in `artifact-lineage/store.ts` |
+| ARCH-HIGH-004 | HIGH | Same as SEC-HIGH-004 — architecture framing of the atomicity gap | Resolved by same fix |
+| ARCH-HIGH-001 | HIGH | Policy cache had no TTL — live policy tightening invisible to running gateway | Added 60-second TTL (`POLICY_CACHE_TTL_MS`) to `getPolicyProfile()` in `policy/loader.ts` |
+| ARCH-HIGH-002 | HIGH | Startup orphan-sweep passed empty `liveAllocationIds` — every in-progress orchestration run marked `interrupted` on boot | Added `getLiveOrchestrationSourceRefs()` in `shared/run-recovery.ts`; `server.ts` now passes real live source-refs |
+| ARCH-MED-002 | MEDIUM | `getArtifactLineage()` had no re-entrant guard — double-init race on concurrent module access | Added `initializing` flag with try/finally guard in `artifact-lineage/index.ts` |
+| (unlabelled) | HIGH | `hasCycle()` DFS traversed edges backwards (finding predecessors instead of successors) — cycle detection always returned false | Fixed query direction to forward DFS (`from_artifact_id` → `to_artifact_id`) in `artifact-lineage/store.ts` |
+| (test coverage) | MEDIUM | Zero dedicated tests for policy subsystem and orchestration run-ledger integration | Added `policy/__tests__/evaluator.test.ts`, `policy/__tests__/export-gate.test.ts`, `orchestration/__tests__/run-ledger-integration.test.ts` |
+
+### Findings Deferred (Not Remediated in This Campaign)
+
+| Finding ID | Severity | Description | Reason Deferred |
+|---|---|---|---|
+| SEC-HIGH-002 | HIGH | AI reviewer failures fail open to weaker heuristic classifier | Requires content-screening redesign; deferred to next milestone |
+| SEC-HIGH-003 | HIGH | Screening prompt injectable — untrusted content can supply fabricated JSON verdict | Same as SEC-HIGH-002 |
+| SEC-MED-001 | MEDIUM | HMAC session tokens use master token as secret — master compromise forges all sessions | Breaking change to session model; deferred |
+| ARCH-HIGH-003 | HIGH | Deeply embedded product identity (`instance-home` rejects non-`cuttlefish` names at startup) | Fork-readiness concern; deferred to prefork-substrate campaign |
+| QUAL-MED-003 | MEDIUM | Stale TODO comments in `run-recovery.ts` | No stale TODOs were found in that file; finding was a false positive |
+| Docs/governance gap | LOW–MED | CHANGELOG, ARCHITECTURE.md, Giles ledger gaps for 2026-06-30 features | Partially addressed in prior commits; remaining gaps deferred |
