@@ -207,4 +207,78 @@ program
     });
 }
 
+// Ledger subcommands (cuttlefish ledger reset|status)
+{
+  const ledgerCmd = program
+    .command("ledger")
+    .description("Manage the run ledger database");
+
+  ledgerCmd
+    .command("status")
+    .description("Show run ledger schema version and record counts")
+    .action(async () => {
+      const { runLedgerStatus } = await import("../src/cli/ledger.js");
+      await runLedgerStatus();
+    });
+
+  ledgerCmd
+    .command("reset")
+    .description("Quarantine an incompatible run-ledger DB and let it be recreated clean on next start")
+    .option("--force", "Skip confirmation prompt")
+    .action(async (opts: { force?: boolean }) => {
+      const { runLedgerReset } = await import("../src/cli/ledger.js");
+      await runLedgerReset(opts);
+    });
+}
+
+// Inspect subcommands (cuttlefish inspect runs|run|lineage|dead-letter|policy)
+{
+  const inspectCmd = program
+    .command("inspect")
+    .description("Inspect run-ledger, artifact lineage, dead-letter, and policy state");
+
+  inspectCmd
+    .command("runs")
+    .description("List run-ledger records")
+    .option("--state <state>", "Filter by canonical state")
+    .option("--session <sessionId>", "Filter by session ID")
+    .option("--limit <n>", "Maximum records to show", "50")
+    .action(async (opts: { state?: string; session?: string; limit?: string }) => {
+      const { runInspectRuns } = await import("../src/cli/inspect.js");
+      await runInspectRuns(opts);
+    });
+
+  inspectCmd
+    .command("run <runId>")
+    .description("Show a single run record with events and errors")
+    .action(async (runId: string) => {
+      const { runInspectRun } = await import("../src/cli/inspect.js");
+      await runInspectRun(runId);
+    });
+
+  inspectCmd
+    .command("lineage <artifactId>")
+    .description("Show artifact lineage (ancestors and descendants)")
+    .action(async (artifactId: string) => {
+      const { runInspectLineage } = await import("../src/cli/inspect.js");
+      await runInspectLineage(artifactId);
+    });
+
+  inspectCmd
+    .command("dead-letter")
+    .description("Show quarantine records from the artifact lineage DB")
+    .action(async () => {
+      const { runInspectDeadLetter } = await import("../src/cli/inspect.js");
+      await runInspectDeadLetter();
+    });
+
+  inspectCmd
+    .command("policy")
+    .description("Show the resolved policy snapshot")
+    .action(async () => {
+      const { runInspectPolicy } = await import("../src/cli/inspect.js");
+      await runInspectPolicy();
+    });
+}
+
 program.parse();

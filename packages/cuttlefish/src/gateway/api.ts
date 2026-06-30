@@ -25,6 +25,7 @@ import { handleSessionWriteRoutes } from "./api/routes/session-write.js";
 import { handleSkillRoutes } from "./api/routes/skills.js";
 import { handleStatusRoutes } from "./api/routes/status.js";
 import { handleSystemRoutes } from "./api/routes/system.js";
+import { handleInspectRoutes } from "./api/routes/inspect.js";
 
 export type { ApiContext } from "./api/context.js";
 export { normalizeBlockDeltaForTurn, shouldPersistFinalAssistantMessage, finalBlocksForAssistantMessage } from "./api/block-finalize.js";
@@ -68,6 +69,7 @@ export async function handleApiRequest(
     if (await handleSystemRoutes(method, pathname, req, url, res, context)) return;
     if (await handleEmailRoutes(method, pathname, req, url, res, context)) return;
     if (await handleConnectorRoutes(method, pathname, req, res, context)) return;
+    if (handleInspectRoutes(method, pathname, res, context)) return;
 
     if (pathname.startsWith("/api/talk/")) {
       const handled = await handleTalkApi(req, res, context);

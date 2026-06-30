@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { getMessages } from "../sessions/registry.js";
+import { getArtifactLineage } from "../artifact-lineage/index.js";
 import { appendOrchestrationAudit } from "./audit.js";
 import {
   dualLaneTaskDir,
@@ -203,6 +204,17 @@ function writeArtifact(opts: {
     note: opts.note ?? null,
   };
   opts.store?.addArtifactRecord(record);
+  try {
+    getArtifactLineage().registerArtifact({
+      artifactId: record.artifactId,
+      canonicalKind: `orchestration:${record.kind}`,
+      locator: record.path,
+      sizeBytes: record.bytes,
+      createdAt: record.createdAt,
+    });
+  } catch {
+    // lineage recording is non-fatal
+  }
   appendOrchestrationAudit("orchestration.artifact.record", record, file);
   return record;
 }

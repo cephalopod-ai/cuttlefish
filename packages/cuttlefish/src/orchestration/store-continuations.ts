@@ -24,6 +24,7 @@ interface LiveRunContinuationRow {
   last_dispatched_at: string | null;
   allocation_id: string | null;
   last_error: string | null;
+  run_id: string | null;
 }
 
 export function listLiveContinuationsFromDb(
@@ -66,8 +67,8 @@ export function upsertLiveContinuationInDb(db: Database.Database, record: LiveRu
   db.prepare(`
     INSERT INTO live_run_continuations (
       task_id, coordinator_id, mode, state, task_json, enqueued_at, updated_at,
-      retry_count, last_dispatched_at, allocation_id, last_error
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      retry_count, last_dispatched_at, allocation_id, last_error, run_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(task_id, coordinator_id) DO UPDATE SET
       mode = excluded.mode,
       state = excluded.state,
@@ -77,7 +78,8 @@ export function upsertLiveContinuationInDb(db: Database.Database, record: LiveRu
       retry_count = excluded.retry_count,
       last_dispatched_at = excluded.last_dispatched_at,
       allocation_id = excluded.allocation_id,
-      last_error = excluded.last_error
+      last_error = excluded.last_error,
+      run_id = excluded.run_id
   `).run(
     record.taskId,
     record.coordinatorId,
@@ -90,7 +92,14 @@ export function upsertLiveContinuationInDb(db: Database.Database, record: LiveRu
     record.lastDispatchedAt ?? null,
     record.allocationId ?? null,
     record.lastError ?? null,
+    record.runId ?? null,
   );
+}
+
+export function stampContinuationRunIdInDb(db: Database.Database, taskId: string, coordinatorId: string, runId: string): void {
+  db.prepare(`
+    UPDATE live_run_continuations SET run_id = ? WHERE task_id = ? AND coordinator_id = ?
+  `).run(runId, taskId, coordinatorId);
 }
 
 export function deleteLiveContinuationFromDb(db: Database.Database, taskId: string, coordinatorId: string): void {
@@ -223,5 +232,6 @@ function rowToLiveRunContinuation(row: LiveRunContinuationRow): LiveRunContinuat
     lastDispatchedAt: row.last_dispatched_at ?? undefined,
     allocationId: row.allocation_id ?? undefined,
     lastError: row.last_error ?? undefined,
+    runId: row.run_id ?? undefined,
   };
 }

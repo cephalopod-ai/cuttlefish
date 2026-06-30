@@ -759,6 +759,15 @@ function validateTalk(problems: string[], value: unknown): void {
   }
 }
 
+function validatePolicy(problems: string[], value: unknown): void {
+  if (!isPlainObject(value)) {
+    problems.push("policy must be a mapping");
+    return;
+  }
+  pushUnknownKeys(problems, value, ["dir"], "policy");
+  if (value.dir !== undefined) validateString(problems, "policy.dir", value.dir);
+}
+
 function validateRemotes(problems: string[], value: unknown): void {
   if (!isPlainObject(value)) {
     problems.push("remotes must be a mapping");
@@ -813,6 +822,7 @@ export function validateConfigShape(config: unknown): string[] {
     "talk",
     "knowledge",
     "remotes",
+    "policy",
   ], "config");
 
   if (c.cuttlefish !== undefined) {
@@ -843,6 +853,7 @@ export function validateConfigShape(config: unknown): string[] {
   if (c.talk !== undefined) validateTalk(problems, c.talk);
   if (c.knowledge !== undefined) validateKnowledge(problems, c.knowledge, { pushUnknownKeys, validateString, validateNumber });
   if (c.remotes !== undefined) validateRemotes(problems, c.remotes);
+  if (c.policy !== undefined) validatePolicy(problems, c.policy);
   validateNotificationConnectorReference(problems, c);
 
   return problems;

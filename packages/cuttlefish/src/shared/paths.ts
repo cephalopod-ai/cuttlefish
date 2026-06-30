@@ -19,6 +19,8 @@ export interface CuttlefishPaths {
   CONFIG_PATH: string;
   SESSIONS_DB: string;
   RUN_LEDGER_DB: string;
+  ARTIFACT_LINEAGE_DB: string;
+  POLICY_DIR: string;
   ORCH_DB: string;
   ORCH_CONFIG_DIR: string;
   ORCH_WORKTREE_ROOT: string;
@@ -63,6 +65,8 @@ function buildCuttlefishPaths(home: string): CuttlefishPaths {
     CONFIG_PATH: path.join(home, "config.yaml"),
     SESSIONS_DB: path.join(home, "sessions", "registry.db"),
     RUN_LEDGER_DB: path.join(home, "run-ledger.db"),
+    ARTIFACT_LINEAGE_DB: path.join(home, "artifact-lineage.db"),
+    POLICY_DIR: path.join(home, "policy"),
     ORCH_DB: path.join(home, "orchestration.db"),
     ORCH_CONFIG_DIR: path.join(home, "orchestration"),
     ORCH_WORKTREE_ROOT: path.join(home, "worktrees"),
@@ -105,6 +109,8 @@ function applyRuntimePaths(paths: CuttlefishPaths): void {
   CONFIG_PATH = paths.CONFIG_PATH;
   SESSIONS_DB = paths.SESSIONS_DB;
   RUN_LEDGER_DB = paths.RUN_LEDGER_DB;
+  ARTIFACT_LINEAGE_DB = paths.ARTIFACT_LINEAGE_DB;
+  POLICY_DIR = paths.POLICY_DIR;
   ORCH_DB = paths.ORCH_DB;
   ORCH_CONFIG_DIR = paths.ORCH_CONFIG_DIR;
   ORCH_WORKTREE_ROOT = paths.ORCH_WORKTREE_ROOT;
@@ -162,6 +168,8 @@ export let CUTTLEFISH_HOME = initialPaths.CUTTLEFISH_HOME;
 export let CONFIG_PATH = initialPaths.CONFIG_PATH;
 export let SESSIONS_DB = initialPaths.SESSIONS_DB;
 export let RUN_LEDGER_DB = initialPaths.RUN_LEDGER_DB;
+export let ARTIFACT_LINEAGE_DB = initialPaths.ARTIFACT_LINEAGE_DB;
+export let POLICY_DIR = initialPaths.POLICY_DIR;
 /** Durable state for the inert provider-neutral matrix scheduler. */
 export let ORCH_DB = initialPaths.ORCH_DB;
 /** Default repo-local operator config directory for matrix orchestration YAML. */

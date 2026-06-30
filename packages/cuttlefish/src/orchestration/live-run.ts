@@ -34,4 +34,5 @@ export interface LiveRunContinuationRecord {
   lastDispatchedAt?: string;
   allocationId?: string;
   lastError?: string;
+  runId?: string;
 }

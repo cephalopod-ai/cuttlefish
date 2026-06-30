@@ -6,6 +6,7 @@ import type {
   Session,
 } from "../shared/types.js";
 import { logger } from "../shared/logger.js";
+import { gateExternalEmit } from "../policy/export-gate.js";
 import {
   claimPendingExternalOutboxItems,
   enqueueExternalOutboxItem,
@@ -36,6 +37,17 @@ export function knowledgeRelayOptions(config: CuttlefishConfig): {
 }
 
 export function enqueueKnowledgeEnvelope(envelope: ExternalKnowledgeEnvelope, sinkName: string) {
+  const verdict = gateExternalEmit({
+    kind: "knowledge:envelope",
+    locator: null,
+    sizeBytes: null,
+    mimeType: null,
+    producingRunId: null,
+  });
+  if (!verdict.allowed) {
+    logger.warn(`knowledge: export gate denied queuing ${envelope.topic}: ${verdict.reason}`);
+    return null;
+  }
   const item = enqueueExternalOutboxItem({ envelope, sinkName });
   logger.info(`knowledge: queued ${envelope.topic} (${item.id})`);
   return item;

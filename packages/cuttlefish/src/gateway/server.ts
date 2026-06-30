@@ -71,6 +71,7 @@ import { createGatewayCleanup, type GatewayCleanup } from "./server/cleanup.js";
 import { serveStatic, isAllowedCorsOrigin } from "./server/http-static.js";
 import { bindOrchestrationRuntimeHandlers } from "./server/orchestration.js";
 import { createGatewayTransports } from "./server/transports.js";
+import { recoverOrphanedRunsAtStartup } from "../shared/run-recovery.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -119,6 +120,13 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
     logger.info(`Recovered ${recoveredQueue} in-flight queue item(s) from previous run — reset to pending`);
   }
   const sweptPartials = clearAllPartialMessages();
+
+  // Sweep orphaned run-ledger entries: any run in non-terminal state with no
+  // live session or orchestration allocation gets marked `interrupted`.
+  // Orchestration-engine runs are covered by the orchestration runtime's own
+  // boot-time sweep; this pass handles session-engine runs only at this point.
+  const liveSessionIds = new Set(listSessions({ status: 'running' }).map((s) => s.id));
+  recoverOrphanedRunsAtStartup(liveSessionIds, new Set());
   if (sweptPartials > 0) {
     logger.info(`Swept ${sweptPartials} stranded mid-turn partial message(s) from previous run`);
   }

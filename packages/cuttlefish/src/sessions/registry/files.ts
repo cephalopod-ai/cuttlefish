@@ -1,4 +1,5 @@
 import { initDb } from './core.js';
+import { getArtifactLineage } from '../../artifact-lineage/index.js';
 
 export type ArtifactKind = 'generated' | 'input' | 'downloaded' | 'manual';
 
@@ -126,7 +127,7 @@ export function insertFile(meta: InsertFileMeta): FileMeta {
     meta.notes ?? null,
     now,
   );
-  return {
+  const result: FileMeta = {
     ...meta,
     sha256: meta.sha256 ?? null,
     artifactKind,
@@ -137,6 +138,21 @@ export function insertFile(meta: InsertFileMeta): FileMeta {
     notes: meta.notes ?? null,
     createdAt: now,
   };
+  try {
+    getArtifactLineage().registerArtifact({
+      artifactId: meta.id,
+      canonicalKind: `file:${artifactKind}`,
+      locator: meta.path ?? null,
+      sha256: meta.sha256 ?? null,
+      sizeBytes: meta.size,
+      mimeType: meta.mimetype ?? null,
+      producingRunId: meta.producingRunId ?? null,
+      createdAt: now,
+    });
+  } catch {
+    // lineage recording is non-fatal
+  }
+  return result;
 }
 
 export function getFile(id: string): FileMeta | undefined {

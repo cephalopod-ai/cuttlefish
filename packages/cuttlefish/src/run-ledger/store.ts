@@ -321,6 +321,27 @@ export class RunLedgerStore {
     return rows.map(parseRunRow);
   }
 
+  listRuns(opts: { states?: string[]; engine?: string; sessionId?: string; limit?: number } = {}): RunRecord[] {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    if (opts.states && opts.states.length > 0) {
+      conditions.push(`current_state IN (${opts.states.map(() => "?").join(", ")})`);
+      params.push(...opts.states);
+    }
+    if (opts.engine) {
+      conditions.push("engine = ?");
+      params.push(opts.engine);
+    }
+    if (opts.sessionId) {
+      conditions.push("session_id = ?");
+      params.push(opts.sessionId);
+    }
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const limit = opts.limit && opts.limit > 0 ? ` LIMIT ${Math.floor(opts.limit)}` : "";
+    const rows = this.db.prepare(`SELECT * FROM runs ${where} ORDER BY created_at DESC, run_id${limit}`).all(...params) as Record<string, unknown>[];
+    return rows.map(parseRunRow);
+  }
+
   listEvents(runId: string): RunEventRecord[] {
     const rows = this.db.prepare("SELECT * FROM run_events WHERE run_id = ? ORDER BY created_at, event_id").all(runId) as Record<string, unknown>[];
     return rows.map(parseRunEventRow);
