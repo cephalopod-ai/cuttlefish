@@ -61,6 +61,27 @@ export type RouteOptions = {
 type UntrustedContentGateResult =
   | { action: "allow"; prompt: string; screening: ContentScreeningResult }
   | { action: "checkpoint"; prompt: string; screening: ContentScreeningResult; notification: string };
+
+/**
+ * Deliver a user-facing reply, swallowing the connector error so it can't crash
+ * the session — but LOG the failure instead of dropping it silently. The reply
+ * content is already persisted to the session transcript, so the web UI still
+ * shows it; this surfaces the lost connector (e.g. Slack) delivery for operators.
+ * Use only for replyMessage (actual content), not cosmetic reactions/typing.
+ */
+function replyMessageLogged(
+  connector: Connector,
+  target: Target,
+  text: string,
+  sessionId: string,
+): Promise<unknown> {
+  return Promise.resolve(connector.replyMessage(target, text)).catch((err) => {
+    logger.warn(
+      `Session ${sessionId}: connector ${connector.name ?? "?"} failed to deliver a reply (persisted to transcript): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  });
+}
+
 export class SessionManager {
   private config: CuttlefishConfig;
   private engines: Map<string, Engine>;
@@ -221,7 +242,7 @@ export class SessionManager {
         lastError: errMsg,
       });
       insertMessage(session.id, "assistant", `⛔ ${errMsg}`);
-      await connector.replyMessage(target, `⛔ ${errMsg}`).catch(() => {});
+      await replyMessageLogged(connector, target, `⛔ ${errMsg}`, session.id);
       // Wake the parent COO if this was a delegated child session (parity with
       // the normal error path; no-op for top-level sessions).
       if (erroredSession) {
@@ -326,7 +347,7 @@ export class SessionManager {
         };
         session = updateSession(session.id, { transportMeta: nextMeta as any }) ?? session;
         if (gated.action === "checkpoint") {
-          await connector.replyMessage(target, gated.notification).catch(() => {});
+          await replyMessageLogged(connector, target, gated.notification, session.id);
           return;
         }
       }
@@ -357,7 +378,7 @@ export class SessionManager {
             if (decorateMessages && connector.setTypingStatus) {
               await connector.setTypingStatus(target.channel, threadTs, '').catch(() => {});
             }
-            await connector.replyMessage(target, `⛔ ${pausedMsg}`).catch(() => {});
+            await replyMessageLogged(connector, target, `⛔ ${pausedMsg}`, session.id);
             if (decorateMessages && capabilities.reactions) {
               await connector.removeReaction(target, 'eyes').catch(() => {});
             }
@@ -419,7 +440,7 @@ export class SessionManager {
           // so it reads as a supersede, not a fresh unprompted turn.
           const labelled = `(recovered — this supersedes the earlier reported failure)\n\n${lateText}`;
           notifyParentSession(recovered ?? live, { result: labelled, error: null }, { alwaysNotify: employee?.alwaysNotify, sink: this.notificationSink });
-          void connector.replyMessage(target, labelled).catch(() => {});
+          void replyMessageLogged(connector, target, labelled, session.id);
           logger.info(`Session ${session.id} recovered by late Stop after a failed turn`);
         },
       });
@@ -500,7 +521,7 @@ export class SessionManager {
               if (decorateMessages && connector.setTypingStatus) {
                 await connector.setTypingStatus(target.channel, threadTs, "").catch(() => {});
               }
-              await connector.replyMessage(target, fallbackText).catch(() => {});
+              await replyMessageLogged(connector, target, fallbackText, session.id);
               if (decorateMessages && capabilities.reactions) {
                 await connector.removeReaction(target, "eyes").catch(() => {});
               }
@@ -593,7 +614,7 @@ export class SessionManager {
                 await connector.removeReaction(target, waitEmoji).catch(() => {});
               }
 
-              await connector.replyMessage(target, retryText).catch(() => {});
+              await replyMessageLogged(connector, target, retryText, session.id);
               const retryUpdated = updateSession(session.id, {
                 ...(retryResult.sessionId?.trim() ? { engineSessionId: retryResult.sessionId } : {}),
                 ...(typeof retryResult.contextTokens === "number" ? { lastContextTokens: retryResult.contextTokens } : {}),
@@ -619,7 +640,7 @@ export class SessionManager {
                 `❌ ${timeoutError}. Session ${session.id}${session.employee ? ` (${session.employee})` : ""} has been stopped.`,
                 { sink: this.notificationSink },
               );
-              await connector.replyMessage(target, "Usage limit didn't reset in time. Please try again later.").catch(() => {});
+              await replyMessageLogged(connector, target, "Usage limit didn't reset in time. Please try again later.", session.id);
               updateSession(session.id, {
                 status: "error",
                 lastActivity: new Date().toISOString(),
@@ -674,7 +695,7 @@ export class SessionManager {
         await connector.setTypingStatus(target.channel, threadTs, "").catch(() => {});
       }
 
-      await connector.replyMessage(target, `Error: ${errMsg}`).catch(() => {});
+      await replyMessageLogged(connector, target, `Error: ${errMsg}`, session.id);
 
       if (decorateMessages && capabilities.reactions) {
         await connector.removeReaction(target, "eyes").catch(() => {});
