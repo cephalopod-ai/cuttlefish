@@ -7,7 +7,7 @@ import { GATEWAY_INFO_FILE } from "../shared/paths.js";
 import { gatewayBaseUrl, readGatewayInfo } from "../gateway/gateway-info.js";
 import { hydrateAllAttachments, talkSessionsAttachedTo } from "../talk/attachments.js";
 import type { SessionNotificationOptions, SessionNotificationSink } from "./notification-sink.js";
-import { markLeaderAckPending } from "./leader-ack.js";
+import { markLeaderAckPending, shouldSuppressLeaderAckCallback } from "./leader-ack.js";
 
 /**
  * Notify the parent session that a child session has replied.
@@ -27,6 +27,10 @@ export function notifyParentSession(
 
   if (!childSession.parentSessionId) return;
   if (options?.alwaysNotify === false) return;
+  if (shouldSuppressLeaderAckCallback(childSession, result)) {
+    logger.info(`[leader-ack] suppressing no-op callback for already-settled child report ${childSession.id}`);
+    return;
+  }
 
   const parent = getSession(childSession.parentSessionId);
   markLeaderAckPending(childSession, {

@@ -1,10 +1,10 @@
-import { getSession, insertMessage, listSessions } from "../sessions/registry.js";
+import { getMessages, getSession, insertMessage, listSessions } from "../sessions/registry.js";
 import { HR_EMPLOYEE_NAME } from "./org-policy.js";
 import { resolveOrgHierarchy, withPortalExecutive } from "./org-hierarchy.js";
 import { scanOrg } from "./org.js";
 import { logger } from "../shared/logger.js";
 import type { CuttlefishConfig, Employee, Session } from "../shared/types.js";
-import { markLeaderAckEscalated, readLeaderAckMeta } from "../sessions/leader-ack.js";
+import { acknowledgeLeaderAck, isLeaderAckNoOpResult, markLeaderAckEscalated, readLeaderAckMeta, type LeaderAckMeta } from "../sessions/leader-ack.js";
 
 const DEFAULT_INTERVAL_MS = 60_000;
 const DEFAULT_TIMEOUT_MS = 10 * 60_000;
@@ -56,6 +56,17 @@ function buildChildEscalationMessage(child: Session, timeoutMs: number, recipien
   return `🧭 Leader acknowledgement timeout: ${leader} did not acknowledge this report within ${minutes} minute${minutes === 1 ? "" : "s"}. Escalated to ${escalationTargetLabel(recipient)} for reassignment or backlog guidance.`;
 }
 
+function hasParentNoOpAcknowledgement(ack: LeaderAckMeta): boolean {
+  const parent = getSession(ack.parentSessionId);
+  if (!parent) return false;
+  const reportedAt = Date.parse(ack.reportedAt);
+  return getMessages(parent.id).some((message) => {
+    if (message.role !== "assistant" && message.role !== "user") return false;
+    if (Number.isFinite(reportedAt) && message.timestamp < reportedAt) return false;
+    return isLeaderAckNoOpResult(message.content);
+  });
+}
+
 export function buildLeaderAckEscalationPrompt(input: LeaderAckEscalationDispatch): string {
   const minutes = formatDurationMinutes(input.timeoutMs);
   const ackLeader = input.ackLeaderName || "the assigned leader";
@@ -83,6 +94,15 @@ export function sweepLeaderAcknowledgements(deps: LeaderAckReconcilerDeps): numb
   for (const session of listSessions()) {
     const ack = readLeaderAckMeta(session);
     if (!ack || ack.state !== "pending") continue;
+    if (hasParentNoOpAcknowledgement(ack)) {
+      acknowledgeLeaderAck(session.id, session, {
+        acknowledgedBy: ack.leaderName || ack.leaderSessionId,
+        now: new Date(now).toISOString(),
+      });
+      deps.emit("session:updated", { sessionId: session.id });
+      logger.info(`[leader-ack] session ${session.id} acknowledged by parent no-op/closure response`);
+      continue;
+    }
     const reportedAt = Date.parse(ack.reportedAt);
     if (!Number.isFinite(reportedAt) || now - reportedAt < timeoutMs) continue;
 

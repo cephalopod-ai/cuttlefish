@@ -79,6 +79,52 @@ describe("leader acknowledgement reconciler", () => {
     expect(reg.getMessages(child.id).some((message) => message.content.includes("Escalated to HR Manager"))).toBe(true);
   });
 
+  it("acknowledges instead of escalating when the parent already marked the child report no-op", async () => {
+    const parent = reg.createSession({
+      engine: "claude",
+      source: "web",
+      sourceRef: "web:parent-noop",
+      prompt: "parent",
+      employee: "software-delivery-lead",
+    });
+    const child = reg.createSession({
+      engine: "claude",
+      source: "web",
+      sourceRef: "web:child-noop",
+      prompt: "child",
+      employee: "execution-safety-reviewer",
+      parentSessionId: parent.id,
+    });
+    ack.markLeaderAckPending(child, {
+      leaderSessionId: parent.id,
+      leaderName: "software-delivery-lead",
+      reportKind: "result",
+      now: new Date(0).toISOString(),
+    });
+    reg.insertMessage(parent.id, "assistant", "Ignoring this stale acknowledgement loop. Task is closed.");
+
+    const dispatchEscalation = vi.fn(async () => {});
+    const fixed = rec.sweepLeaderAcknowledgements({
+      emit: vi.fn(),
+      getConfig: () => ({
+        gateway: { port: 8888, host: "127.0.0.1", leaderAckTimeoutMs: 60_000 },
+        engines: { default: "claude", claude: { bin: "claude", model: "opus" } },
+        connectors: {},
+        logging: { file: true, stdout: true, level: "info" },
+      } as any),
+      now: () => 120_000,
+      dispatchEscalation,
+    });
+
+    expect(fixed).toBe(0);
+    expect(ack.readLeaderAckMeta(reg.getSession(child.id))).toMatchObject({
+      state: "acknowledged",
+      acknowledgedBy: "software-delivery-lead",
+    });
+    expect(dispatchEscalation).not.toHaveBeenCalled();
+    expect(reg.getMessages(child.id).some((message) => message.content.includes("Leader acknowledgement timeout"))).toBe(false);
+  });
+
   it("marks the leader ack acknowledged when the child receives a real follow-up", () => {
     const child = reg.createSession({
       engine: "claude",

@@ -18,8 +18,27 @@ export interface LeaderAckMeta {
   boardDepartment?: string | null;
 }
 
+const SIMPLE_NO_OP_ACK_RE = /^(?:acknowledged|noted|understood|ok|okay|thanks|thank you)(?:[.!])?$/i;
+const STALE_NO_OP_RE = /\b(?:stale|no[- ]?op|no remaining work|no further action|no action required|no response required|no response needed|ignore further|ignoring|already recorded|already accepted|closure acknowledged|audit closed|task is closed|task remains done|review is closed)\b/i;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function isLeaderAckNoOpResult(result: string | null | undefined): boolean {
+  const text = result?.replace(/\s+/g, " ").trim();
+  if (!text) return true;
+  return SIMPLE_NO_OP_ACK_RE.test(text) || STALE_NO_OP_RE.test(text);
+}
+
+export function shouldSuppressLeaderAckCallback(
+  session: Pick<Session, "transportMeta"> | null | undefined,
+  result: { result?: string | null; error?: string | null },
+): boolean {
+  if (result.error) return false;
+  const current = readLeaderAckMeta(session);
+  if (!current || current.state === "pending") return false;
+  return isLeaderAckNoOpResult(result.result);
 }
 
 export function readLeaderAckMeta(session: Pick<Session, "transportMeta"> | null | undefined): LeaderAckMeta | null {

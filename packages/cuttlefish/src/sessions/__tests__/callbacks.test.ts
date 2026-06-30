@@ -668,4 +668,44 @@ describe("notifyParentSession — alwaysNotify suppression", () => {
 
     expect(fetchSpy).toHaveBeenCalledOnce();
   });
+
+  it("suppresses already-settled stale/no-op acknowledgement callbacks", async () => {
+    const child = makeSession({
+      transportMeta: {
+        leaderAck: {
+          state: "acknowledged",
+          parentSessionId: "parent-001",
+          leaderSessionId: "parent-001",
+          leaderName: "software-delivery-lead",
+          reportKind: "result",
+          reportedAt: new Date(0).toISOString(),
+        },
+      } as Session["transportMeta"],
+    });
+
+    notifyParentSession(child, { result: "Acknowledged." });
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("still notifies for substantive callbacks after a settled acknowledgement", async () => {
+    const child = makeSession({
+      transportMeta: {
+        leaderAck: {
+          state: "acknowledged",
+          parentSessionId: "parent-001",
+          leaderSessionId: "parent-001",
+          leaderName: "software-delivery-lead",
+          reportKind: "result",
+          reportedAt: new Date(0).toISOString(),
+        },
+      } as Session["transportMeta"],
+    });
+
+    notifyParentSession(child, { result: "Implemented the requested runtime fix and added validation." });
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+  });
 });
