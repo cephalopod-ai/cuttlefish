@@ -585,10 +585,12 @@ export class OrchestrationRuntime {
         : undefined;
       if (allocation) this.releaseAllocationLeases(allocation, { retryQueued: false });
     }
-    const liveContinuationKeys = new Set(
-      this.store.listLiveContinuations(["queued"]).map((c) => `${c.taskId}:${c.coordinatorId}`),
+    const liveBlockedRunIds = new Set(
+      this.store.listLiveContinuations(["queued"])
+        .map((c) => c.runId)
+        .filter((id): id is string => id !== undefined),
     );
-    sweepOrphanedOrchestrationRuns(liveAllocationIds, liveContinuationKeys);
+    sweepOrphanedOrchestrationRuns(liveAllocationIds, liveBlockedRunIds);
   }
 
   private waitForResumeDispatches(timeoutMs: number): Promise<void> | undefined {

@@ -142,6 +142,14 @@ When `config.orchestration.enabled` is not true, `createGatewayOrchestrationRunt
 - `config.policy.dir`: config value accepted but all call sites hardcode `POLICY_DIR` (Codex P2) — deferred, low risk since POLICY_DIR already reads from env
 - Documentation updates (ARCHITECTURE.md, TEST_LEDGER.md) — not yet written
 
+### Codex P2: sweep orphaned runs by runId not taskId:coordinatorId key (Codex P2)
+
+`sweepOrphanedOrchestrationRuns` used `liveContinuationKeys` (a set of `${taskId}:${coordinatorId}` strings) to protect blocked runs from dead-lettering. This key is non-unique: if two blocked runs share the same task/coordinator pair, both are protected even though only one has a matching live continuation. Changed to match by the specific `runId` stored on each live continuation — only the exact run referenced by a live queued continuation is protected.
+
+**touched files:**
+- `packages/cuttlefish/src/orchestration/run-ledger-integration.ts` — renamed param `liveContinuationKeys` → `liveBlockedRunIds`; check `liveBlockedRunIds.has(run.runId)` instead of key-based sourceRef match
+- `packages/cuttlefish/src/orchestration/runtime.ts` — build `liveBlockedRunIds` from `listLiveContinuations(["queued"]).map(c => c.runId).filter(Boolean)`
+
 ## Provenance
 
 CI-fix and review-response pass for PR #5 and PR #6, 2026-06-30. All changes verified against CI failure logs and reviewer comments.
