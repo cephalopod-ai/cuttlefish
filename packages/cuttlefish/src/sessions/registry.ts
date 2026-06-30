@@ -51,6 +51,7 @@ export {
   type ExternalOutboxStatus,
 } from "./registry/external-outbox.js";
 export {
+  beginSessionRun,
   CRON_GROUP,
   DIRECT_GROUP,
   VALID_SESSION_STATUSES,

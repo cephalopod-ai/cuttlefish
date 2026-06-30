@@ -7,7 +7,7 @@ import { recordEngineRateLimit } from "../shared/usage-status.js";
 import { effortLevelsForModel, engineAvailable, isKnownEngine, engineUnavailableMessage } from "../shared/models.js";
 import { createApproval } from "./approvals.js";
 import { buildContext } from "../sessions/context.js";
-import { listChildSessions, getSession, updateSession, patchSessionTransportMeta, insertMessage, insertPartialMessage, updatePartialMessage, deletePartialMessages, finalizePartialMessages, getMessages } from "../sessions/registry.js";
+import { beginSessionRun, listChildSessions, getSession, updateSession, patchSessionTransportMeta, insertMessage, insertPartialMessage, updatePartialMessage, deletePartialMessages, finalizePartialMessages, getMessages } from "../sessions/registry.js";
 import { logger } from "../shared/logger.js";
 import { CUTTLEFISH_HOME } from "../shared/paths.js";
 import { resolveEffort } from "../shared/effort.js";
@@ -63,11 +63,16 @@ export async function runWebSession(
   attachments?: string[],
   resourceContext?: string | null,
 ): Promise<void> {
-  const currentSession = getSession(session.id);
+  let currentSession = getSession(session.id);
   if (!currentSession) {
     logger.info(`Skipping deleted web session ${session.id} before run start`);
     return;
   }
+  currentSession = beginSessionRun({
+    sessionId: currentSession.id,
+    prompt,
+    transportMeta: currentSession.transportMeta,
+  }) ?? currentSession;
   config = context.getConfig();
   const preferredPtyView = context.ptyViewEngines?.[session.engine] === engine;
   const runtimeEngine =

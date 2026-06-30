@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { JsonObject, ReplyContext, Session } from '../../shared/types.js';
 import { initDb, parseJsonObject, rowToSession } from './core.js';
 import { portalEmployeeSlug } from '../../shared/portal-slug.js';
+import { getRunLedger } from '../../run-ledger/index.js';
 
 export interface CreateSessionOpts {
   engine: string;
@@ -20,6 +21,35 @@ export interface CreateSessionOpts {
   effortLevel?: string;
   cwd?: string | null;
   promptExcerpt?: string;
+}
+
+function sessionRunIdFromMeta(
+  meta: JsonObject | null | undefined,
+  key: 'activeRunId' | 'latestRunId' | 'retryOfRunId' | 'replayOfRunId',
+): string | null {
+  const value = meta && typeof meta === 'object' ? meta[key] : null;
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function resolveParentRunId(parentSessionId: string | null | undefined): string | null {
+  if (!parentSessionId) return null;
+  const parent = getSession(parentSessionId);
+  if (!parent) return null;
+  return sessionRunIdFromMeta(parent.transportMeta, 'activeRunId')
+    ?? sessionRunIdFromMeta(parent.transportMeta, 'latestRunId');
+}
+
+function withRunMeta(meta: JsonObject | null | undefined, runId: string): JsonObject {
+  const next: JsonObject = { ...(meta ?? {}) };
+  delete next.retryOfRunId;
+  delete next.replayOfRunId;
+  next.activeRunId = runId;
+  next.latestRunId = runId;
+  return next;
+}
+
+function syncRunLedgerForSessionUpdate(before: Session, after: Session): void {
+  getRunLedger().syncSessionUpdate({ before, after });
 }
 
 function computeGroupKey(source: string, sourceRef: string, employee: string | null | undefined): string {
@@ -166,32 +196,43 @@ export function isValidSessionStatus(status: unknown): status is Session['status
 
 export function updateSession(id: string, updates: UpdateSessionFields): Session | undefined {
   const db = initDb();
-  const sets: string[] = [];
-  const values: unknown[] = [];
 
   if (updates.status !== undefined && !isValidSessionStatus(updates.status)) {
     throw new Error(`Illegal session status: ${JSON.stringify(updates.status)}`);
   }
 
-  if (updates.engine !== undefined) { sets.push('engine = ?'); values.push(updates.engine); }
-  if (updates.engineSessionId !== undefined) { sets.push('engine_session_id = ?'); values.push(updates.engineSessionId); }
-  if (updates.status !== undefined) { sets.push('status = ?'); values.push(updates.status); }
-  if (updates.model !== undefined) { sets.push('model = ?'); values.push(updates.model); }
-  if (updates.effortLevel !== undefined) { sets.push('effort_level = ?'); values.push(updates.effortLevel); }
-  if (updates.lastContextTokens !== undefined) { sets.push('last_context_tokens = ?'); values.push(updates.lastContextTokens); }
-  if (updates.replyContext !== undefined) { sets.push('reply_context = ?'); values.push(updates.replyContext ? JSON.stringify(updates.replyContext) : null); }
-  if (updates.messageId !== undefined) { sets.push('message_id = ?'); values.push(updates.messageId); }
-  if (updates.transportMeta !== undefined) { sets.push('transport_meta = ?'); values.push(updates.transportMeta ? JSON.stringify(updates.transportMeta) : null); }
-  if (updates.lastActivity !== undefined) { sets.push('last_activity = ?'); values.push(updates.lastActivity); }
-  if (updates.lastError !== undefined) { sets.push('last_error = ?'); values.push(updates.lastError); }
-  if (updates.title !== undefined) { sets.push('title = ?'); values.push(updates.title); }
-  if (updates.userId !== undefined) { sets.push('user_id = ?'); values.push(updates.userId); }
+  const tx = db.transaction((sessionId: string) => {
+    const row = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId) as Record<string, unknown> | undefined;
+    if (!row) return undefined;
+    const before = rowToSession(row);
+    const sets: string[] = [];
+    const values: unknown[] = [];
 
-  if (sets.length === 0) return getSession(id);
+    if (updates.engine !== undefined) { sets.push('engine = ?'); values.push(updates.engine); }
+    if (updates.engineSessionId !== undefined) { sets.push('engine_session_id = ?'); values.push(updates.engineSessionId); }
+    if (updates.status !== undefined) { sets.push('status = ?'); values.push(updates.status); }
+    if (updates.model !== undefined) { sets.push('model = ?'); values.push(updates.model); }
+    if (updates.effortLevel !== undefined) { sets.push('effort_level = ?'); values.push(updates.effortLevel); }
+    if (updates.lastContextTokens !== undefined) { sets.push('last_context_tokens = ?'); values.push(updates.lastContextTokens); }
+    if (updates.replyContext !== undefined) { sets.push('reply_context = ?'); values.push(updates.replyContext ? JSON.stringify(updates.replyContext) : null); }
+    if (updates.messageId !== undefined) { sets.push('message_id = ?'); values.push(updates.messageId); }
+    if (updates.transportMeta !== undefined) { sets.push('transport_meta = ?'); values.push(updates.transportMeta ? JSON.stringify(updates.transportMeta) : null); }
+    if (updates.lastActivity !== undefined) { sets.push('last_activity = ?'); values.push(updates.lastActivity); }
+    if (updates.lastError !== undefined) { sets.push('last_error = ?'); values.push(updates.lastError); }
+    if (updates.title !== undefined) { sets.push('title = ?'); values.push(updates.title); }
+    if (updates.userId !== undefined) { sets.push('user_id = ?'); values.push(updates.userId); }
 
-  values.push(id);
-  db.prepare(`UPDATE sessions SET ${sets.join(', ')} WHERE id = ?`).run(...values);
-  return getSession(id);
+    if (sets.length === 0) return before;
+
+    values.push(sessionId);
+    db.prepare(`UPDATE sessions SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+    const updatedRow = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId) as Record<string, unknown> | undefined;
+    const after = updatedRow ? rowToSession(updatedRow) : undefined;
+    if (after) syncRunLedgerForSessionUpdate(before, after);
+    return after;
+  });
+
+  return tx(id);
 }
 
 export function patchSessionTransportMeta(
@@ -212,6 +253,74 @@ export function patchSessionTransportMeta(
     return updated ? rowToSession(updated) : undefined;
   });
   return tx(id);
+}
+
+export function beginSessionRun(input: {
+  sessionId: string;
+  prompt?: string;
+  replyContext?: ReplyContext | null;
+  messageId?: string | null;
+  transportMeta?: JsonObject | null;
+  now?: string;
+}): Session | undefined {
+  const db = initDb();
+  const now = input.now ?? new Date().toISOString();
+
+  const tx = db.transaction((sessionId: string) => {
+    const row = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId) as Record<string, unknown> | undefined;
+    if (!row) return undefined;
+    const current = rowToSession(row);
+    const runId = uuidv4();
+    const parentRunId = resolveParentRunId(current.parentSessionId);
+    const mergedTransportMeta = withRunMeta(input.transportMeta ?? current.transportMeta, runId);
+    const replayOfRunId = sessionRunIdFromMeta(current.transportMeta, 'replayOfRunId');
+    const retryOfRunId = sessionRunIdFromMeta(current.transportMeta, 'retryOfRunId');
+
+    getRunLedger().createRun({
+      runId,
+      sessionId: current.id,
+      source: current.source,
+      sourceRef: current.sourceRef,
+      engine: current.engine,
+      title: current.title,
+      promptExcerpt: promptExcerptOf(input.prompt) ?? current.promptExcerpt ?? null,
+      createdAt: now,
+      parentRunId,
+      retryOfRunId,
+      replayOfRunId,
+      initialSessionStatus: current.status,
+    });
+
+    if (current.status === 'running') {
+      getRunLedger().transitionRun({
+        runId,
+        nextState: 'running',
+        at: now,
+        payload: { reason: 'session_already_running' },
+      });
+    }
+
+    db.prepare(`
+      UPDATE sessions
+         SET reply_context = ?,
+             message_id = ?,
+             transport_meta = ?,
+             last_activity = ?,
+             last_error = NULL
+       WHERE id = ?
+    `).run(
+      input.replyContext !== undefined ? (input.replyContext ? JSON.stringify(input.replyContext) : null) : (current.replyContext ? JSON.stringify(current.replyContext) : null),
+      input.messageId !== undefined ? input.messageId : current.messageId,
+      JSON.stringify(mergedTransportMeta),
+      now,
+      sessionId,
+    );
+
+    const updatedRow = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId) as Record<string, unknown> | undefined;
+    return updatedRow ? rowToSession(updatedRow) : undefined;
+  });
+
+  return tx(input.sessionId);
 }
 
 export interface ListSessionsFilter {
@@ -367,12 +476,18 @@ export function getSessionGroupCounts(portalSlug?: string | null): Record<string
 }
 
 export function recoverStaleSessions(): number {
-  const db = initDb();
   const now = new Date().toISOString();
-  const result = db.prepare(
-    "UPDATE sessions SET status = 'interrupted', last_activity = ?, last_error = 'Interrupted: gateway restarted while session was running' WHERE status = 'running'",
-  ).run(now);
-  return result.changes;
+  const running = listSessions({ status: 'running' });
+  let changed = 0;
+  for (const session of running) {
+    const updated = updateSession(session.id, {
+      status: 'interrupted',
+      lastActivity: now,
+      lastError: 'Interrupted: gateway restarted while session was running',
+    });
+    if (updated) changed += 1;
+  }
+  return changed;
 }
 
 export function getInterruptedSessions(): Session[] {
@@ -399,11 +514,17 @@ export function duplicateSession(sourceId: string, newTitle?: string): { session
   const newId = uuidv4();
   const title = newTitle ?? `Copy of ${source.title || sourceId.slice(0, 8)}`;
   const newSessionKey = `web:${Date.now()}`;
+  const replayOfRunId = sessionRunIdFromMeta(source.transportMeta, 'latestRunId')
+    ?? sessionRunIdFromMeta(source.transportMeta, 'activeRunId');
   const messages = db.prepare(
     'SELECT role, content, timestamp, media, blocks FROM messages WHERE session_id = ? ORDER BY timestamp ASC',
   ).all(sourceId) as Array<{ role: string; content: string; timestamp: number; media: string | null; blocks: string | null }>;
 
   const txn = db.transaction(() => {
+    const nextTransportMeta = {
+      ...(source.transportMeta ?? {}),
+      ...(replayOfRunId ? { replayOfRunId } : {}),
+    } satisfies JsonObject;
     db.prepare(`
       INSERT INTO sessions (
         id, engine, engine_session_id, source, source_ref, connector, session_key,
@@ -421,7 +542,7 @@ export function duplicateSession(sourceId: string, newTitle?: string): { session
       newSessionKey,
       source.replyContext ? JSON.stringify(source.replyContext) : null,
       source.messageId,
-      source.transportMeta ? JSON.stringify(source.transportMeta) : null,
+      JSON.stringify(nextTransportMeta),
       source.employee,
       computeGroupKey(source.source, source.sourceRef, source.employee),
       source.model,
