@@ -255,19 +255,37 @@ export async function handleRateLimit(opts: RateLimitHandlerOpts): Promise<RateL
           ? prompt
           : `Continue this conversation and respond to the last USER message.\n\nConversation so far:\n\n${historyText}`;
 
-        const fallbackResult = await fallbackEngine.run({
-          prompt: fallbackPrompt,
-          resumeSessionId: fallbackResume,
-          systemPrompt,
-          cwd: session.cwd || CUTTLEFISH_HOME,
-          bin: fallbackConfig.bin,
-          model: fallbackConfig.model,
-          effortLevel: fallbackEffort,
-          cliFlags: employee?.cliFlags ?? cliFlags,
-          attachments: attachments?.length ? attachments : undefined,
-          sessionId: session.id,
-          ...(hooks.onFallbackStream ? { onStream: hooks.onFallbackStream } : {}),
-        });
+        let fallbackResult: EngineResult;
+        try {
+          fallbackResult = await fallbackEngine.run({
+            prompt: fallbackPrompt,
+            resumeSessionId: fallbackResume,
+            systemPrompt,
+            cwd: session.cwd || CUTTLEFISH_HOME,
+            bin: fallbackConfig.bin,
+            model: fallbackConfig.model,
+            effortLevel: fallbackEffort,
+            cliFlags: employee?.cliFlags ?? cliFlags,
+            attachments: attachments?.length ? attachments : undefined,
+            sessionId: session.id,
+            ...(hooks.onFallbackStream ? { onStream: hooks.onFallbackStream } : {}),
+          });
+        } catch (err) {
+          // The engineOverride + engine switch were persisted BEFORE this run. If
+          // the fallback engine throws, leaving them in place would strand the
+          // session on the fallback engine until the (up to 6h) `until` window
+          // expired — every subsequent turn routed to the wrong engine. Revert the
+          // override immediately so the next turn retries on the original engine,
+          // then rethrow for the caller's normal error handling.
+          updateSession(session.id, { engine: sourceEngine, engineSessionId: session.engineSessionId });
+          patchSessionTransportMeta(session.id, (current) => {
+            const next = { ...current };
+            delete (next as Record<string, unknown>).engineOverride;
+            return next;
+          });
+          logger.warn(`Session ${session.id}: fallback engine "${fallbackName}" failed; reverted to "${sourceEngine}". ${err instanceof Error ? err.message : String(err)}`);
+          throw err;
+        }
 
         // Persist the fallback engine thread id so future fallbacks can resume it.
         const nextEngineSessions = { ...engineSessions };

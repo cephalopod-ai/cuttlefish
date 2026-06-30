@@ -156,6 +156,24 @@ describe("handleRateLimit — fallback guard (#40)", () => {
     }));
     expect(outcome.kind).toBe("fallback");
   });
+
+  it("reverts the engineOverride to the source engine when the fallback engine throws", async () => {
+    engineAvailableMock.mockReturnValue(true);
+    const boom = new Error("fallback engine crashed");
+    const fallbackRun = vi.fn(async () => { throw boom; });
+
+    await expect(
+      handleRateLimit(makeOpts(fallbackRun, { engine: "codex", engineSessionId: "codex-thread-1" })),
+    ).rejects.toThrow("fallback engine crashed");
+
+    // The override switched the session to the fallback engine before run(); on
+    // throw it must be reverted so the next turn retries the original engine
+    // instead of being stranded on the fallback until the `until` window expires.
+    expect(updateSessionMock).toHaveBeenCalledWith("sess-1", expect.objectContaining({
+      engine: "codex",
+      engineSessionId: "codex-thread-1",
+    }));
+  });
 });
 
 describe("handleRateLimit — wait cancellation", () => {
