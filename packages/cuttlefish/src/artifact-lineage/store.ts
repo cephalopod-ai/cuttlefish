@@ -91,6 +91,10 @@ CREATE TABLE IF NOT EXISTS run_artifact_xref (
 );
 CREATE INDEX IF NOT EXISTS idx_lineage_xref_run ON run_artifact_xref (run_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_lineage_xref_artifact ON run_artifact_xref (artifact_id, created_at);
+DELETE FROM run_artifact_xref
+  WHERE xref_id NOT IN (
+    SELECT MIN(xref_id) FROM run_artifact_xref GROUP BY run_id, artifact_id, relation
+  );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_lineage_xref_unique ON run_artifact_xref (run_id, artifact_id, relation);
 `;
 

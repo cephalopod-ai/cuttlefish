@@ -2,27 +2,31 @@ import { logger } from "./logger.js";
 import { getRunLedger } from "../run-ledger/index.js";
 
 /**
- * Boot-time scan for orphaned session-engine run-ledger entries in non-terminal
- * states. Any session-engine run with no corresponding live session is transitioned
- * to `interrupted`. Orchestration-engine runs are intentionally skipped here;
- * they are handled by the orchestration runtime's own boot-time sweep after it
- * initialises.
+ * Boot-time scan for orphaned run-ledger entries in non-terminal states.
+ * Any run with no corresponding live session is transitioned to `interrupted`.
+ * When orchestration is enabled, orchestration-engine runs are intentionally
+ * skipped here because the orchestration runtime's own boot-time sweep handles
+ * them with finer-grained logic (blocked-run continuation keys, etc.).
+ * When orchestration is disabled, the runtime sweep never runs, so this
+ * function recovers orchestration-engine runs too.
  *
  * Recovery NEVER maps to `completed`; fail-closed rule.
  *
- * @param liveSessionIds Set of session IDs that are actively running (post-recovery).
+ * @param liveSessionIds Set of session IDs that are actively running.
+ * @param orchestrationEnabled Whether the orchestration runtime will sweep its own runs.
  * @returns Count of runs swept.
  */
 export function recoverOrphanedRunsAtStartup(
   liveSessionIds: Set<string>,
+  orchestrationEnabled = true,
 ): number {
   const ledger = getRunLedger();
   const nonTerminal = ledger.listRuns({ states: ["created", "running", "blocked"] });
   let swept = 0;
   const at = new Date().toISOString();
   for (const run of nonTerminal) {
-    // Orchestration runs are handled by the runtime's own boot-time sweep.
-    if (run.engine === "orchestration") continue;
+    // Orchestration runs are handled by the runtime's own boot-time sweep when enabled.
+    if (run.engine === "orchestration" && orchestrationEnabled) continue;
     const isLiveSession = run.sessionId !== null && liveSessionIds.has(run.sessionId);
     if (isLiveSession) continue;
     try {

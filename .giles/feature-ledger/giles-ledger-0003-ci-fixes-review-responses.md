@@ -115,6 +115,33 @@ Codex reviewed commit `9ba9dc1` and correctly noted that `CREATE TABLE IF NOT EX
 - `config.policy.dir`: config value accepted but all call sites hardcode `POLICY_DIR` (Codex P2) — deferred, low risk since POLICY_DIR already reads from env
 - Documentation updates (ARCHITECTURE.md, TEST_LEDGER.md) — not yet written
 
+### Codex P2: dedup xrefs before unique index (Codex P2)
+
+`CREATE UNIQUE INDEX` on an existing table fails if duplicate rows already exist. Added a DELETE dedup statement in CREATE_SCHEMA, before the `CREATE UNIQUE INDEX` — keeps the row with `MIN(xref_id)` per `(run_id, artifact_id, relation)` group. No-op on new or already-clean databases.
+
+**touched files:**
+- `packages/cuttlefish/src/artifact-lineage/store.ts` — added DELETE dedup before CREATE UNIQUE INDEX
+
+### Codex P2: recover orchestration runs when runtime is disabled (Codex P2)
+
+When `config.orchestration.enabled` is not true, `createGatewayOrchestrationRuntime` returns `undefined` and the runtime sweep never runs. Orchestration-engine runs were skipped unconditionally by `recoverOrphanedRunsAtStartup`, leaving them non-terminal forever. Added `orchestrationEnabled` parameter (default true); when false, orchestration runs are recovered as `interrupted` by the startup sweep.
+
+**touched files:**
+- `packages/cuttlefish/src/shared/run-recovery.ts` — added `orchestrationEnabled` parameter
+- `packages/cuttlefish/src/gateway/server.ts` — pass `currentConfig.orchestration?.enabled === true`
+
+## Validation Run
+
+- CI all green (build, giles, unit-tests, typecheck) on commit 82f04db
+- Domain drift guard: CLEAN
+- TypeScript: no new type errors in changed files
+
+## Remaining Open Items
+
+- `run-mode.ts`: blocked run resume creates a new run instead of transitioning the saved blocked run (Codex P2) — deferred, requires careful orchestration logic
+- `config.policy.dir`: config value accepted but all call sites hardcode `POLICY_DIR` (Codex P2) — deferred, low risk since POLICY_DIR already reads from env
+- Documentation updates (ARCHITECTURE.md, TEST_LEDGER.md) — not yet written
+
 ## Provenance
 
 CI-fix and review-response pass for PR #5 and PR #6, 2026-06-30. All changes verified against CI failure logs and reviewer comments.
