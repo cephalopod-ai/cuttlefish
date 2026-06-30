@@ -1,5 +1,32 @@
 # Changelog
 
+## [Unreleased]
+
+> Defect repairs surfaced by a workflow playtest of the org/HR/kanban/cron/dispatch
+> machinery (onboarding → multi-tier org → dispatch → escalation → team deletion).
+
+### Bug Fixes
+- **Creating an employee with a manager now works via the API and CLI.** `validateEmployeeCreate`
+  received the known-employee roster as a live `registry.keys()` iterator and consumed it in the
+  duplicate-name guard (`Array.from(existingNames)`) before the `reportsTo` check ran. The reportsTo
+  check then built `new Set()` from the now-exhausted iterator, so **every** `reportsTo` reference —
+  even to an employee that existed since boot — was rejected as `reportsTo references unknown
+  employee(s): …`. This silently broke building any org hierarchy through `POST /api/org/employees`
+  and `cuttlefish create`; only setup/hand-edited YAML could wire up managers. The iterable is now
+  materialized once into an array and reused by both checks (F1).
+- **The `features` config block can now be set via `PUT /api/config`.** `features` (which gates the
+  `mid_pair` / multi-role embedded-reviewer execution tier and is read at runtime via
+  `config.features.multiRoleEmployeeExecution`) was missing from the `validateConfigShape` top-level
+  allow-list, so any settings write carrying it was rejected with `unknown config keys: features`
+  (and the whole merged config was dropped, taking co-submitted valid keys with it). Added a
+  `validateFeatures` shape validator and the allow-list entry, making the feature reachable from the
+  settings API (F4).
+
+### Tests
+- Regression tests covering `validateEmployeeCreate` with an iterator-shaped roster (accept a valid
+  manager, still reject an unknown one) and `validateConfigShape` accepting/validating the `features`
+  block. Both fail against the pre-fix code.
+
 ## [0.23.4] - 2026-06-30
 
 > Security and architecture defect-repair campaign following the pre-release cloud audit baseline.
