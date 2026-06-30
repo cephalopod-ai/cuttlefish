@@ -54,4 +54,29 @@ describe("mergeTransportMeta", () => {
   it("handles both sides empty", () => {
     expect(mergeTransportMeta(null, undefined)).toEqual({});
   });
+
+  it("preserves orchestration/board session-owned keys against incoming overwrites (drift regression)", () => {
+    // These keys were added to transportMeta after the original inline preserve-list
+    // and used to be silently clobbered by an incoming message's transportMeta.
+    const existing = {
+      orchestrationWorkspace: "/work/run-1",
+      orchestrationReviewPolicy: "strict",
+      executionDepth: 2,
+      boardTicketId: "ticket-abc",
+    } as any;
+    const incoming = {
+      orchestrationWorkspace: "/evil",
+      orchestrationReviewPolicy: "none",
+      executionDepth: 0,
+      boardTicketId: "ticket-stomped",
+      channelName: "general",
+    } as any;
+
+    const merged = mergeTransportMeta(existing, incoming) as Record<string, unknown>;
+    expect(merged.orchestrationWorkspace).toBe("/work/run-1");
+    expect(merged.orchestrationReviewPolicy).toBe("strict");
+    expect(merged.executionDepth).toBe(2);
+    expect(merged.boardTicketId).toBe("ticket-abc");
+    expect(merged.channelName).toBe("general"); // non-owned keys still merge in
+  });
 });

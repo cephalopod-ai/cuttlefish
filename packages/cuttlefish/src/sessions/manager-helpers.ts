@@ -50,6 +50,27 @@ export function maybeRevertEngineOverride(session: Session): Session {
   }) ?? session;
 }
 
+/**
+ * Transport-meta keys owned by the SESSION (server-managed lifecycle/orchestration
+ * state), not by an inbound message. mergeTransportMeta restores these from the
+ * existing session so a new message's transportMeta cannot clobber them.
+ *
+ * This is the single source of truth: when a new server-owned key is introduced,
+ * add it here. Previously the preserve-list was inlined and drifted — newer keys
+ * like `orchestrationWorkspace` and `boardTicketId` were silently overwritten by
+ * incoming messages because they were never added to the inline list.
+ */
+export const SESSION_OWNED_TRANSPORT_META_KEYS = [
+  "engineOverride",
+  "engineSessions",
+  "claudeSyncSince",
+  "transcriptSyncedThrough",
+  "executionDepth",
+  "orchestrationWorkspace",
+  "orchestrationReviewPolicy",
+  "boardTicketId",
+] as const;
+
 export function mergeTransportMeta(
   existing: Session["transportMeta"],
   incoming: IncomingMessage["transportMeta"],
@@ -61,7 +82,7 @@ export function mergeTransportMeta(
     ? (incoming as Record<string, unknown>)
     : {};
   const merged: Record<string, unknown> = { ...baseExisting, ...baseIncoming };
-  for (const key of ["engineOverride", "engineSessions", "claudeSyncSince", "transcriptSyncedThrough"]) {
+  for (const key of SESSION_OWNED_TRANSPORT_META_KEYS) {
     if (baseExisting[key] !== undefined) merged[key] = baseExisting[key];
   }
   return merged as any;
