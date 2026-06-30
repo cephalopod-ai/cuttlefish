@@ -1,12 +1,18 @@
 import { get, post } from "./api-core"
 import type { Employee } from "./api-org"
 
+// Mirror of the backend source of truth in
+// packages/cuttlefish/src/shared/types/org-change.ts (OrgChangeType /
+// OrgChangeStatus). Keep these in sync — `change_execution` and the `error`
+// status had drifted out of this copy, so the web under-handled real backend
+// change types/states.
 export type OrgChangeType =
   | "create_agent"
   | "modify_instructions"
   | "change_model"
   | "change_engine"
   | "change_budget"
+  | "change_execution"
   | "promote"
   | "demote"
   | "reassign_manager"
@@ -20,6 +26,7 @@ export type OrgChangeStatus =
   | "pending_approval"
   | "approved"
   | "rejected"
+  | "error"
   | "applied"
   | "rolled_back"
 
