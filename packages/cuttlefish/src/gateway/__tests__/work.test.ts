@@ -107,6 +107,7 @@ describe("GET /api/work", () => {
       JSON.stringify([
         { id: "t-1", title: "Todo", description: "", status: "todo", priority: "medium", assignee: "worker", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
         { id: "t-2", title: "Blocked", description: "", status: "blocked", priority: "high", assignee: "boss", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        { id: "t-3", title: "Done", description: "", status: "done", priority: "low", assignee: "worker", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
       ]),
     );
 
@@ -134,9 +135,11 @@ describe("GET /api/work", () => {
       agents: 3,
       agentsRunning: 1,
       cronJobs: 0,
-      ticketsTotal: 2,
+      // ticketsOpen excludes the terminal "done" ticket; ticketsTotal keeps it.
+      ticketsOpen: 2,
+      ticketsTotal: 3,
     });
-    expect(cap.body.ticketCounts).toMatchObject({ todo: 1, blocked: 1 });
+    expect(cap.body.ticketCounts).toMatchObject({ todo: 1, blocked: 1, done: 1 });
     expect(cap.body.managers).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ employee: "boss", running: true }),
