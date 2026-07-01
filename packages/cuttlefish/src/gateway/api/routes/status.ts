@@ -162,13 +162,17 @@ async function buildCommandCenterPayload(context: ApiContext) {
     return a.displayName.localeCompare(b.displayName);
   });
 
+  const ticketsTotal = Object.values(ticketCounts).reduce((sum, count) => sum + count, 0);
   return {
     generatedAt: new Date(now).toISOString(),
     summary: {
       agents: employees.length,
       agentsRunning: runningEmployees.size,
       cronJobs: cronJobs.length,
-      ticketsTotal: Object.values(ticketCounts).reduce((sum, count) => sum + count, 0),
+      // "Open" excludes terminal (done) tickets so the metric matches its label;
+      // ticketsTotal is retained for callers that want the whole-board count.
+      ticketsOpen: ticketsTotal - ticketCounts.done,
+      ticketsTotal,
     },
     ticketCounts,
     managers,

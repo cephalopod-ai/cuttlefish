@@ -249,6 +249,7 @@ export interface CommandCenterResponse {
     agents: number
     agentsRunning: number
     cronJobs: number
+    ticketsOpen: number
     ticketsTotal: number
   }
   ticketCounts: Record<string, number>

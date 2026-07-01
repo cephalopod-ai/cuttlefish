@@ -13,7 +13,7 @@ vi.mock('@/context/breadcrumb-context', () => ({
 const commandCenterState = vi.hoisted(() => ({
   data: {
     generatedAt: '2026-07-01T00:00:00Z',
-    summary: { agents: 5, agentsRunning: 2, cronJobs: 3, ticketsTotal: 9 },
+    summary: { agents: 5, agentsRunning: 2, cronJobs: 3, ticketsOpen: 5, ticketsTotal: 9 },
     ticketCounts: { todo: 4, blocked: 1, done: 4 },
     managers: [{ employee: 'boss', displayName: 'Boss', department: 'engineering', rank: 'manager', running: true }],
     availableAgents: [{
@@ -55,5 +55,59 @@ describe('CommandPage', () => {
     expect((screen.getByRole('link', { name: /Start chat with Boss/i }) as HTMLAnchorElement).getAttribute('href')).toBe('/?employee=boss')
     expect(screen.getByText(/claude · sonnet · 3 turns · \$1\.50/i)).toBeTruthy()
     expect(screen.getByText('Open tickets')).toBeTruthy()
+  })
+
+  it('shows an error state with retry and suppresses the "nominal" badge, zeroed metrics, and empty state on fetch failure', () => {
+    const prevData = commandCenterState.data
+    const prevError = commandCenterState.error
+    commandCenterState.data = undefined as unknown as typeof commandCenterState.data
+    commandCenterState.error = new Error('gateway unavailable')
+    try {
+      render(
+        <MemoryRouter>
+          <CommandPage />
+        </MemoryRouter>,
+      )
+      expect(screen.getByText('gateway unavailable')).toBeTruthy()
+      expect(screen.getByRole('button', { name: /retry/i })).toBeTruthy()
+      // Health badge must not claim the fleet is healthy while the fetch failed.
+      expect(screen.queryByText(/All systems nominal/i)).toBeNull()
+      // The "no activity" empty state is a success signal — never on error.
+      expect(screen.queryByText(/No agent activity yet/i)).toBeNull()
+    } finally {
+      commandCenterState.data = prevData
+      commandCenterState.error = prevError
+    }
+  })
+
+  it('renders finite usage-bar widths (no NaN) when every agent has zero tokens', () => {
+    const prevData = commandCenterState.data
+    commandCenterState.data = {
+      ...prevData,
+      availableAgents: [{
+        employee: 'z',
+        displayName: 'Zed',
+        rank: 'employee',
+        department: 'ops',
+        engine: 'claude',
+        model: 'sonnet',
+        running: false,
+        usage: {
+          day: { range: 'day', sessionCount: 0, totalCostUsd: 0, totalTurns: 0, totalTokens: 0 },
+          week: { range: 'week', sessionCount: 0, totalCostUsd: 0, totalTurns: 0, totalTokens: 0 },
+          month: { range: 'month', sessionCount: 0, totalCostUsd: 0, totalTurns: 0, totalTokens: 0 },
+        },
+      }],
+    }
+    try {
+      const { container } = render(
+        <MemoryRouter>
+          <CommandPage />
+        </MemoryRouter>,
+      )
+      expect(container.innerHTML).not.toContain('NaN')
+    } finally {
+      commandCenterState.data = prevData
+    }
   })
 })

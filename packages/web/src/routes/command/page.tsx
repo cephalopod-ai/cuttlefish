@@ -7,6 +7,7 @@ import {
   MessageSquarePlus,
   PlayCircle,
   Radio,
+  RefreshCw,
   Ticket,
   Users,
   Zap,
@@ -26,6 +27,29 @@ const STATUS_META: Array<{ key: string; label: string; color: string; href: stri
   { key: 'blocked', label: 'Blocked', color: 'var(--system-red)', href: '/kanban' },
   { key: 'done', label: 'Done', color: 'var(--system-green)', href: '/kanban' },
 ]
+
+type HealthTone = 'ok' | 'warn' | 'error' | 'neutral'
+
+// Header health chip styling per tone. Kept out of the JSX so the badge can
+// honestly reflect loading/error states instead of defaulting to "nominal".
+const HEALTH_TONES: Record<HealthTone, { chip: string; dot: string }> = {
+  ok: {
+    chip: 'border-[color:color-mix(in_srgb,var(--system-green)_35%,transparent)] bg-[color:color-mix(in_srgb,var(--system-green)_10%,transparent)] text-[var(--system-green)]',
+    dot: 'var(--system-green)',
+  },
+  warn: {
+    chip: 'border-[color:color-mix(in_srgb,var(--system-orange)_35%,transparent)] bg-[color:color-mix(in_srgb,var(--system-orange)_10%,transparent)] text-[var(--system-orange)]',
+    dot: 'var(--system-orange)',
+  },
+  error: {
+    chip: 'border-[color:color-mix(in_srgb,var(--system-red)_35%,transparent)] bg-[color:color-mix(in_srgb,var(--system-red)_10%,transparent)] text-[var(--system-red)]',
+    dot: 'var(--system-red)',
+  },
+  neutral: {
+    chip: 'border-[var(--separator)] bg-[var(--bg-secondary)] text-[var(--text-secondary)]',
+    dot: 'var(--text-tertiary)',
+  },
+}
 
 function useUtcClock() {
   const [clock, setClock] = useState('00:00:00')
@@ -100,7 +124,9 @@ function prettifyTicketStatus(status: string): string {
 
 function buildAgentRows(agents: CommandCenterAgentUsage[], range: CommandCenterUsageRange) {
   const ranked = [...agents].sort((a, b) => b.usage[range].totalTokens - a.usage[range].totalTokens)
-  const maxTokens = ranked[0]?.usage[range].totalTokens ?? 1
+  // `|| 1` (not `?? 1`) so an all-zero range still divides by 1: `?? 1` leaves
+  // maxTokens at 0, producing width `NaN%` that renders bars at full width.
+  const maxTokens = ranked[0]?.usage[range].totalTokens || 1
   return ranked.map((agent, index) => {
     const usage = agent.usage[range]
     return {
@@ -126,7 +152,7 @@ function managerBadge(manager: CommandCenterManagerSummary) {
 
 export default function CommandPage() {
   useBreadcrumbs([{ label: 'Command Center' }])
-  const { data, isLoading, error } = useCommandCenter()
+  const { data, isLoading, error, refetch } = useCommandCenter()
   const [range, setRange] = useState<CommandCenterUsageRange>('day')
   const clock = useUtcClock()
 
@@ -137,11 +163,15 @@ export default function CommandPage() {
   const totalTickets = useMemo(() => ticketEntries.reduce((sum, entry) => sum + entry.count, 0), [ticketEntries])
   const usageRows = useMemo(() => buildAgentRows(data?.availableAgents ?? [], range), [data?.availableAgents, range])
 
-  const health = useMemo(() => {
+  const health = useMemo((): { label: string; tone: HealthTone } => {
+    // Derive health from a successful reading, never from the absence of data:
+    // a missing/failed fetch must not report "nominal".
+    if (isLoading) return { label: 'Checking status…', tone: 'neutral' }
+    if (error) return { label: 'Status unavailable', tone: 'error' }
     const blocked = data?.ticketCounts.blocked ?? 0
-    if (blocked > 0) return { label: `${blocked} blocked ticket${blocked === 1 ? '' : 's'} need attention`, tone: 'warn' as const }
-    return { label: 'All systems nominal', tone: 'ok' as const }
-  }, [data?.ticketCounts.blocked])
+    if (blocked > 0) return { label: `${blocked} blocked ticket${blocked === 1 ? '' : 's'} need attention`, tone: 'warn' }
+    return { label: 'All systems nominal', tone: 'ok' }
+  }, [isLoading, error, data?.ticketCounts.blocked])
 
   return (
     <PageLayout>
@@ -163,14 +193,12 @@ export default function CommandPage() {
               <div
                 className={[
                   'inline-flex items-center gap-2 rounded-full border px-3 py-2 text-[length:var(--text-footnote)] font-[var(--weight-semibold)]',
-                  health.tone === 'ok'
-                    ? 'border-[color:color-mix(in_srgb,var(--system-green)_35%,transparent)] bg-[color:color-mix(in_srgb,var(--system-green)_10%,transparent)] text-[var(--system-green)]'
-                    : 'border-[color:color-mix(in_srgb,var(--system-orange)_35%,transparent)] bg-[color:color-mix(in_srgb,var(--system-orange)_10%,transparent)] text-[var(--system-orange)]',
+                  HEALTH_TONES[health.tone].chip,
                 ].join(' ')}
               >
                 <span
                   className="size-2 rounded-full"
-                  style={{ background: health.tone === 'ok' ? 'var(--system-green)' : 'var(--system-orange)', boxShadow: 'var(--accent-glow)' }}
+                  style={{ background: HEALTH_TONES[health.tone].dot, boxShadow: 'var(--accent-glow)' }}
                 />
                 {health.label}
               </div>
@@ -181,12 +209,23 @@ export default function CommandPage() {
             </div>
           </header>
 
-          {error && (
-            <div className="rounded-[var(--radius-lg)] border border-[color:color-mix(in_srgb,var(--system-red)_35%,transparent)] bg-[color:color-mix(in_srgb,var(--system-red)_10%,transparent)] px-4 py-3 text-[var(--system-red)]">
-              {error instanceof Error ? error.message : 'Failed to load command center'}
+          {error ? (
+            // On failure, show only the error + a retry — not zeroed metric cards
+            // and the "no activity" empty state, which read as a healthy idle fleet.
+            <div className="flex flex-col items-start gap-3 rounded-[var(--radius-lg)] border border-[color:color-mix(in_srgb,var(--system-red)_35%,transparent)] bg-[color:color-mix(in_srgb,var(--system-red)_10%,transparent)] px-4 py-4">
+              <div className="text-[var(--system-red)]">
+                {error instanceof Error ? error.message : 'Failed to load command center'}
+              </div>
+              <button
+                type="button"
+                onClick={() => { void refetch() }}
+                className="inline-flex items-center gap-2 rounded-full border border-[var(--separator)] bg-[var(--bg-secondary)] px-3 py-1.5 text-[length:var(--text-footnote)] font-[var(--weight-semibold)] text-[var(--text-primary)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]"
+              >
+                <RefreshCw size={14} /> Retry
+              </button>
             </div>
-          )}
-
+          ) : (
+          <>
           <section className="grid gap-4 xl:grid-cols-4">
             {isLoading ? (
               Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-36 rounded-[var(--radius-xl)]" />)
@@ -202,7 +241,7 @@ export default function CommandPage() {
                   emphasized
                 />
                 <MetricCard title="Cron jobs" value={String(data?.summary.cronJobs ?? 0)} detail="scheduled automations" href="/cron" icon={<Clock3 size={18} />} />
-                <MetricCard title="Open tickets" value={String(data?.summary.ticketsTotal ?? 0)} detail="board inventory across departments" href="/kanban" icon={<Ticket size={18} />} />
+                <MetricCard title="Open tickets" value={String(data?.summary.ticketsOpen ?? 0)} detail="open work across departments" href="/kanban" icon={<Ticket size={18} />} />
               </>
             )}
           </section>
@@ -264,7 +303,7 @@ export default function CommandPage() {
                     Agent usage
                   </h2>
                   <p className="text-[length:var(--text-footnote)] text-[var(--text-secondary)]">
-                    Token volume, turns, sessions, and cost by active period.
+                    Context footprint, turns, sessions, and cost by active period.
                   </p>
                 </div>
                 <div className="ml-auto inline-flex rounded-[10px] border border-[var(--separator)] bg-[var(--bg-tertiary)] p-1">
@@ -272,6 +311,7 @@ export default function CommandPage() {
                     <button
                       key={option}
                       type="button"
+                      aria-pressed={option === range}
                       onClick={() => setRange(option)}
                       className={[
                         'rounded-[8px] px-3 py-1.5 text-[length:var(--text-footnote)] font-[var(--weight-semibold)] capitalize transition-colors',
@@ -296,7 +336,7 @@ export default function CommandPage() {
                   <div className="grid grid-cols-[36px_minmax(0,1fr)_minmax(160px,240px)] gap-3 px-1 text-[10px] uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
                     <span className="text-right">#</span>
                     <span>Agent</span>
-                    <span>Tokens {range}</span>
+                    <span>Context {range}</span>
                   </div>
                   {usageRows.map(({ agent, usage, rank, width, accent }) => (
                     <div
@@ -439,6 +479,8 @@ export default function CommandPage() {
                 Start a chat or schedule a cron job to light up the dashboard.
               </p>
             </div>
+          )}
+          </>
           )}
         </div>
       </div>
