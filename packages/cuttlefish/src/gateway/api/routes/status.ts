@@ -1,6 +1,10 @@
 import type { ServerResponse } from "node:http";
 import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
 import { loadInstances } from "../../../cli/instances.js";
+import { loadJobs } from "../../../cron/jobs.js";
+import { ORG_DIR } from "../../../shared/paths.js";
 import { getModelRegistry } from "../../../shared/models.js";
 import { listSessions } from "../../../sessions/registry.js";
 import { deriveWorkState, emptyWorkCounts } from "../../../shared/work-state.js";
@@ -8,6 +12,169 @@ import { listApprovals } from "../../approvals.js";
 import type { ApiContext } from "../context.js";
 import { json } from "../responses.js";
 import { isSessionLiveRunning } from "../serialize-session.js";
+
+type CommandCenterRangeKey = "day" | "week" | "month";
+
+interface CommandCenterUsageBucket {
+  range: CommandCenterRangeKey;
+  sessionCount: number;
+  totalCostUsd: number;
+  totalTurns: number;
+  totalTokens: number;
+}
+
+interface CommandCenterAgentUsage {
+  employee: string;
+  displayName: string;
+  rank: string;
+  department: string | null;
+  engine: string;
+  model: string;
+  running: boolean;
+  usage: Record<CommandCenterRangeKey, CommandCenterUsageBucket>;
+}
+
+interface CommandCenterManagerSummary {
+  employee: string;
+  displayName: string;
+  department: string | null;
+  rank: string;
+  running: boolean;
+}
+
+const COMMAND_CENTER_RANGES: Array<{ key: CommandCenterRangeKey; ms: number }> = [
+  { key: "day", ms: 24 * 60 * 60 * 1000 },
+  { key: "week", ms: 7 * 24 * 60 * 60 * 1000 },
+  { key: "month", ms: 30 * 24 * 60 * 60 * 1000 },
+];
+
+function readDepartmentTicketCounts(orgDir: string, departments: string[]): Record<string, number> {
+  const counts: Record<string, number> = {
+    backlog: 0,
+    todo: 0,
+    in_progress: 0,
+    review: 0,
+    done: 0,
+    blocked: 0,
+  };
+  for (const department of departments) {
+    const boardPath = path.join(orgDir, department, "board.json");
+    if (!fs.existsSync(boardPath)) continue;
+    try {
+      const raw = JSON.parse(fs.readFileSync(boardPath, "utf-8")) as unknown;
+      const tickets = Array.isArray(raw)
+        ? raw
+        : raw && typeof raw === "object" && Array.isArray((raw as { tickets?: unknown[] }).tickets)
+          ? (raw as { tickets: unknown[] }).tickets
+          : [];
+      for (const ticket of tickets) {
+        const status = typeof (ticket as { status?: unknown })?.status === "string"
+          ? (ticket as { status: string }).status
+          : null;
+        if (status && status in counts) counts[status] += 1;
+      }
+    } catch {
+      // Board corruption already surfaces on the board route; the command center
+      // stays best-effort and simply omits unreadable departments.
+    }
+  }
+  return counts;
+}
+
+function roundCurrency(value: number): number {
+  return Number(value.toFixed(4));
+}
+
+async function buildCommandCenterPayload(context: ApiContext) {
+  const sessions = listSessions();
+  const now = Date.now();
+  const { withPortalExecutive } = await import("../../org-hierarchy.js");
+  const { scanOrg } = await import("../../org.js");
+  const registry = withPortalExecutive(scanOrg(), context.getConfig().portal?.portalName);
+  const employees = Array.from(registry.values());
+  const runningEmployees = new Set(
+    sessions
+      .filter((session) => session.employee && isSessionLiveRunning(session, context))
+      .map((session) => session.employee as string),
+  );
+  const departments = Array.from(new Set(employees.map((employee) => employee.department).filter((dept): dept is string => !!dept)));
+  const ticketCounts = readDepartmentTicketCounts(ORG_DIR, departments);
+  const cronJobs = loadJobs();
+
+  const usageByEmployee = new Map<string, CommandCenterAgentUsage>();
+  for (const employee of employees) {
+    usageByEmployee.set(employee.name, {
+      employee: employee.name,
+      displayName: employee.displayName,
+      rank: employee.rank,
+      department: employee.department || null,
+      engine: employee.engine,
+      model: employee.model,
+      running: runningEmployees.has(employee.name),
+      usage: Object.fromEntries(
+        COMMAND_CENTER_RANGES.map(({ key }) => [
+          key,
+          {
+            range: key,
+            sessionCount: 0,
+            totalCostUsd: 0,
+            totalTurns: 0,
+            totalTokens: 0,
+          },
+        ]),
+      ) as Record<CommandCenterRangeKey, CommandCenterUsageBucket>,
+    });
+  }
+
+  for (const session of sessions) {
+    if (!session.employee) continue;
+    const target = usageByEmployee.get(session.employee);
+    if (!target) continue;
+    const createdAtMs = Date.parse(session.createdAt);
+    if (!Number.isFinite(createdAtMs)) continue;
+    const ageMs = now - createdAtMs;
+    for (const { key, ms } of COMMAND_CENTER_RANGES) {
+      if (ageMs > ms) continue;
+      const bucket = target.usage[key];
+      bucket.sessionCount += 1;
+      bucket.totalCostUsd = roundCurrency(bucket.totalCostUsd + (session.totalCost ?? 0));
+      bucket.totalTurns += session.totalTurns ?? 0;
+      bucket.totalTokens += session.lastContextTokens ?? 0;
+    }
+  }
+
+  const managers: CommandCenterManagerSummary[] = employees
+    .filter((employee) => employee.rank === "manager" || employee.rank === "executive")
+    .map((employee) => ({
+      employee: employee.name,
+      displayName: employee.displayName,
+      department: employee.department || null,
+      rank: employee.rank,
+      running: runningEmployees.has(employee.name),
+    }))
+    .sort((a, b) => {
+      if (a.rank !== b.rank) return a.rank === "executive" ? -1 : 1;
+      return a.displayName.localeCompare(b.displayName);
+    });
+
+  const availableAgents = Array.from(usageByEmployee.values()).sort((a, b) => {
+    if (a.running !== b.running) return a.running ? -1 : 1;
+    return a.displayName.localeCompare(b.displayName);
+  });
+
+  return {
+    generatedAt: new Date(now).toISOString(),
+    summary: {
+      agents: employees.length,
+      agentsRunning: runningEmployees.size,
+      cronJobs: cronJobs.length,
+      ticketsTotal: Object.values(ticketCounts).reduce((sum, count) => sum + count, 0),
+    },
+    ticketCounts,
+    managers,
+    availableAgents,
+  };
+}
 
 // Named so the /api/status "connectors" check surfaces which connector(s)
 // are failing instead of a bare count (a bare count made two different
@@ -188,6 +355,11 @@ export async function handleStatusRoutes(
     }
     events.sort((a, b) => b.ts - a.ts);
     json(res, events.slice(0, 30));
+    return true;
+  }
+
+  if (method === "GET" && pathname === "/api/command-center") {
+    json(res, await buildCommandCenterPayload(context));
     return true;
   }
 

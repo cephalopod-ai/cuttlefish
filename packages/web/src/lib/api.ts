@@ -214,6 +214,48 @@ export interface WorkOverview {
   items: WorkItem[]
 }
 
+export type CommandCenterUsageRange = 'day' | 'week' | 'month'
+
+export interface CommandCenterUsageBucket {
+  range: CommandCenterUsageRange
+  sessionCount: number
+  totalCostUsd: number
+  totalTurns: number
+  totalTokens: number
+}
+
+export interface CommandCenterAgentUsage {
+  employee: string
+  displayName: string
+  rank: string
+  department: string | null
+  engine: string
+  model: string
+  running: boolean
+  usage: Record<CommandCenterUsageRange, CommandCenterUsageBucket>
+}
+
+export interface CommandCenterManagerSummary {
+  employee: string
+  displayName: string
+  department: string | null
+  rank: string
+  running: boolean
+}
+
+export interface CommandCenterResponse {
+  generatedAt: string
+  summary: {
+    agents: number
+    agentsRunning: number
+    cronJobs: number
+    ticketsTotal: number
+  }
+  ticketCounts: Record<string, number>
+  managers: CommandCenterManagerSummary[]
+  availableAgents: CommandCenterAgentUsage[]
+}
+
 export interface FsEntry { name: string; isDir: boolean }
 export interface FsListResult { path: string; parent: string | null; entries: FsEntry[] }
 export interface FsRecent { default: string; recent: string[] }
@@ -307,6 +349,7 @@ export const api = {
   fsRecent: () => get<FsRecent>("/api/fs/recent"),
   /** Feature 2: normalized work-state across all sessions. */
   getWork: () => get<WorkOverview>("/api/work"),
+  getCommandCenter: () => get<CommandCenterResponse>("/api/command-center"),
   /** Resolved model + capability registry (engines, their models, effort levels). */
   getEngines: () => get<EnginesResponse>("/api/engines"),
   /** Force re-discovery of dynamic (pi) models, returning the rebuilt registry. */

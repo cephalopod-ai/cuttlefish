@@ -7,6 +7,7 @@
 - The public dashboard is a Vite React app served by the gateway daemon.
 - Implemented routes are:
   - `/` for the primary chat workspace; `/chat` redirects to `/`.
+  - `/command` for the command-center overview.
   - `/talk` for multi-agent talk sessions.
   - `/kanban` for department ticket boards and dispatch controls.
   - `/orchestration` for matrix orchestration operations.
@@ -462,3 +463,11 @@
   `refreshCuttlefishPaths()` to redirect `CUTTLEFISH_HOME`-derived paths without a module reset.
 - `getCuttlefishPaths()` returns an explicit snapshot for code that should avoid reading
   mutable module bindings directly.
+### Command Center overview
+- `packages/web/src/routes/command/page.tsx`
+- `packages/web/src/hooks/use-command-center.ts`
+- `packages/cuttlefish/src/gateway/api/routes/status.ts`
+- `/command` is an executive summary page showing linked counts for agents, running agents, tickets, and cron jobs.
+- The manager panel exposes direct-chat launch buttons that reuse the existing chat deep-link shape `/?employee=<slug>` instead of a new messaging flow.
+- The agent usage panel rolls up per-agent session activity for day/week/month windows from persisted session fields: session count, accumulated cost, total turns, and summed `lastContextTokens` as an observed token-volume proxy.
+- Ticket status counts are board-derived and link back to `/kanban`; cron count links to `/cron`; agent counts link to `/org`.

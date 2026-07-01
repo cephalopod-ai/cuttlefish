@@ -43,6 +43,9 @@ export const queryKeys = {
   work: {
     all: ['work'] as const,
   },
+  commandCenter: {
+    all: ['command-center'] as const,
+  },
   config: ['config'] as const,
   status: ['status'] as const,
 } as const

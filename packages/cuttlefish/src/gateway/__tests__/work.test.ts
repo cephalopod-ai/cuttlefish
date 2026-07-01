@@ -75,4 +75,78 @@ describe("GET /api/work", () => {
     expect(body.counts.waiting_on_human).toBe(1); // gated (approval beats running)
     expect(body.items.length).toBe(5);
   });
+
+  it("serves command-center summary counts, manager chat roster, and usage buckets", async () => {
+    fs.mkdirSync(path.join(tmp, "org", "engineering"), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmp, "org", "engineering", "boss.yaml"),
+      [
+        "name: boss",
+        "displayName: Boss",
+        "department: engineering",
+        "rank: manager",
+        "engine: claude",
+        "model: sonnet",
+        "persona: Team manager",
+      ].join("\n"),
+    );
+    fs.writeFileSync(
+      path.join(tmp, "org", "engineering", "worker.yaml"),
+      [
+        "name: worker",
+        "displayName: Worker",
+        "department: engineering",
+        "rank: employee",
+        "engine: codex",
+        "model: gpt-5",
+        "persona: Builder",
+      ].join("\n"),
+    );
+    fs.writeFileSync(
+      path.join(tmp, "org", "engineering", "board.json"),
+      JSON.stringify([
+        { id: "t-1", title: "Todo", description: "", status: "todo", priority: "medium", assignee: "worker", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        { id: "t-2", title: "Blocked", description: "", status: "blocked", priority: "high", assignee: "boss", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      ]),
+    );
+
+    const running = reg.createSession({ engine: "claude", source: "web", sourceRef: "cmd:boss", employee: "boss", prompt: "lead" });
+    reg.updateSession(running.id, { status: "running", lastContextTokens: 120, title: "Lead" });
+    reg.accumulateSessionCost(running.id, 1.25, 2);
+    const idle = reg.createSession({ engine: "codex", source: "web", sourceRef: "cmd:worker", employee: "worker", prompt: "build" });
+    reg.updateSession(idle.id, { status: "idle", lastContextTokens: 80, title: "Build" });
+    reg.accumulateSessionCost(idle.id, 0.5, 1);
+
+    const ctx = {
+      getConfig: () => ({ gateway: {}, engines: {}, portal: { portalName: "Cuttlefish" } }),
+      emit: () => {},
+      connectors: new Map(),
+      sessionManager: {
+        getEngine: () => ({ isTurnRunning: () => true }),
+        getQueue: () => ({ getTransportState: (_k: string, s: string) => s, getPendingCount: () => 0 }),
+      },
+    } as unknown as import("../api.js").ApiContext;
+
+    const cap = makeRes();
+    await api.handleApiRequest(makeReq("GET", "/api/command-center"), cap.res, ctx);
+    expect(cap.status).toBe(200);
+    expect(cap.body.summary).toMatchObject({
+      agents: 3,
+      agentsRunning: 1,
+      cronJobs: 0,
+      ticketsTotal: 2,
+    });
+    expect(cap.body.ticketCounts).toMatchObject({ todo: 1, blocked: 1 });
+    expect(cap.body.managers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ employee: "boss", running: true }),
+      ]),
+    );
+    expect(cap.body.availableAgents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ employee: "boss", usage: expect.objectContaining({ day: expect.objectContaining({ totalTokens: 120 }) }) }),
+        expect.objectContaining({ employee: "worker", usage: expect.objectContaining({ day: expect.objectContaining({ totalTokens: 80 }) }) }),
+      ]),
+    );
+  });
 });

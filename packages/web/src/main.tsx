@@ -6,6 +6,7 @@ import { lazyRoute } from './lib/lazy-route'
 import './routes/globals.css'
 
 const ChatPage = lazyRoute(() => import('./routes/chat/page'), 'chat')
+const CommandPage = lazyRoute(() => import('./routes/command/page'), 'command')
 const CronPage = lazyRoute(() => import('./routes/cron/page'), 'cron')
 const KanbanPage = lazyRoute(() => import('./routes/kanban/page'), 'kanban')
 const ApprovalsPage = lazyRoute(() => import('./routes/approvals/page'), 'approvals')
@@ -64,6 +65,7 @@ function App() {
             <Routes>
               <Route path="/" element={<ChatPage />} />
               <Route path="/chat" element={<Navigate to="/" replace />} />
+              <Route path="/command" element={<CommandPage />} />
               <Route path="/cron" element={<CronPage />} />
               <Route path="/kanban" element={<KanbanPage />} />
               <Route path="/approvals" element={<ApprovalsPage />} />
