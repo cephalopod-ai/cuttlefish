@@ -1036,6 +1036,8 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Org map (react-flow) edges follow the separator token */
 .react-flow__edge-path { stroke: var(--separator-opaque); }
+/* Live routing chain: tighten the dash so the flowing animation reads as a signal line */
+.react-flow__edge.animated .react-flow__edge-path { stroke-dasharray: 6 4; }
 
 /* ============================================
    Chat — Typing Dots

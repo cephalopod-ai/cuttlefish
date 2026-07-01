@@ -109,7 +109,7 @@ export function AppearanceSection({
                 outlineOffset: 2,
               }}
             >
-              {isActive && <Check size={14} color="#fff" strokeWidth={3} />}
+              {isActive && <Check size={14} color="var(--accent-contrast)" strokeWidth={3} />}
             </button>
           )
         })}

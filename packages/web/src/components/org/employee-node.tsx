@@ -33,9 +33,9 @@ export function EmployeeNode({ data, selected }: NodeProps) {
       style={{
         border: `1px solid ${selected ? "var(--accent)" : isExec ? "color-mix(in srgb, var(--accent) 45%, var(--separator))" : "var(--separator)"}`,
         boxShadow: selected
-          ? "0 0 0 1px var(--accent), var(--shadow-card)"
+          ? "0 0 0 1px var(--accent), var(--shadow-card), var(--accent-glow)"
           : isExec
-            ? "var(--inset-shine), var(--shadow-card)"
+            ? "var(--inset-shine), var(--shadow-card), var(--accent-glow)"
             : "var(--shadow-subtle)",
       }}
     >
@@ -57,7 +57,8 @@ export function EmployeeNode({ data, selected }: NodeProps) {
       {isExec && (
         <span
           aria-hidden
-          className="absolute left-0 top-0 bottom-0 w-[2px] bg-[var(--accent)]"
+          className="absolute left-0 top-0 bottom-0 w-[2px]"
+          style={{ background: 'var(--accent-bg)' }}
         />
       )}
 
@@ -83,7 +84,7 @@ export function EmployeeNode({ data, selected }: NodeProps) {
           {employee.model && (
             <span
               title={modelTitle}
-              className="min-w-0 truncate rounded-[10px] bg-[var(--fill-quaternary)] px-[7px] py-px text-[length:var(--text-caption2)] leading-[1.2] text-[var(--text-tertiary)]"
+              className="min-w-0 truncate rounded-[10px] bg-[var(--fill-quaternary)] px-[7px] py-px text-[length:var(--text-caption2)] font-[family-name:var(--font-code)] leading-[1.2] text-[var(--text-tertiary)]"
             >
               {employee.model}
             </span>

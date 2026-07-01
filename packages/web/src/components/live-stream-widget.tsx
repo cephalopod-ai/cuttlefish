@@ -217,7 +217,7 @@ export function LiveStreamWidget() {
     return (
       <button
         onClick={() => setState("expanded")}
-        className="focus-ring flex items-center fixed bottom-5 right-5 z-50 px-3.5 py-2 rounded-[var(--radius-pill)] border border-[var(--separator)] bg-[var(--material-regular)] cursor-pointer gap-2 backdrop-blur-[40px] backdrop-saturate-[1.8] shadow-[0_4px_24px_rgba(0,0,0,0.25)]"
+        className="focus-ring flex items-center fixed bottom-5 right-5 z-50 px-3.5 py-2 rounded-full border border-[var(--separator)] bg-[var(--material-regular)] cursor-pointer gap-2 backdrop-blur-[40px] backdrop-saturate-[1.8] shadow-[var(--shadow-key)]"
         style={{
           WebkitBackdropFilter: "blur(40px) saturate(180%)",
         }}
@@ -240,7 +240,7 @@ export function LiveStreamWidget() {
 
   return (
     <div
-      className="panel-slide-in fixed bottom-5 right-5 z-50 w-[440px] h-[400px] rounded-[var(--radius-lg)] border border-[var(--separator)] bg-[var(--material-regular)] flex flex-col overflow-hidden backdrop-blur-[40px] backdrop-saturate-[1.8] shadow-[0_8px_40px_rgba(0,0,0,0.35)]"
+      className="panel-slide-in fixed bottom-5 right-5 z-50 w-[440px] h-[400px] rounded-[var(--radius-lg)] border border-[var(--separator)] bg-[var(--material-regular)] flex flex-col overflow-hidden backdrop-blur-[40px] backdrop-saturate-[1.8] shadow-[var(--shadow-overlay)]"
       style={{
         WebkitBackdropFilter: "blur(40px) saturate(180%)",
       }}

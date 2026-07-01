@@ -65,6 +65,10 @@ export function TicketCard({ ticket, assigneeName, onClick, onDelete }: TicketCa
         cursor: isDragging ? 'grabbing' : 'grab',
         opacity: isDragging ? 0.6 : 1,
         borderLeft: `3px solid ${PRIORITY_COLORS[ticket.priority]}`,
+        // Signature glow on live work (no-op on Ledger themes).
+        ...(ticket.status === 'in-progress' || ticket.workState === 'working'
+          ? { boxShadow: 'var(--accent-glow)' }
+          : {}),
       }}
     >
       {/* Delete button (visible on hover) */}

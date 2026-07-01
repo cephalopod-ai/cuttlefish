@@ -143,7 +143,7 @@ export function EmployeePicker({ employees, value, onChange }: EmployeePickerPro
       {/* Dropdown */}
       {open && (
         <div
-          className="absolute top-full left-0 right-0 mt-1 z-50 bg-[var(--material-regular)] border border-[var(--separator)] rounded-[var(--radius-md)] shadow-[0_8px_32px_rgba(0,0,0,0.3)] overflow-hidden"
+          className="absolute top-full left-0 right-0 mt-1 z-50 bg-[var(--material-regular)] border border-[var(--separator)] rounded-[var(--radius-md)] shadow-[var(--shadow-overlay)] overflow-hidden"
         >
           {/* Search */}
           <div className="pt-2 px-2 pb-1">

@@ -277,10 +277,13 @@ export function CreateTicketModal({
             disabled={!form.title.trim()}
             title={form.title.trim() ? undefined : 'Title is required'}
             aria-label={form.title.trim() ? 'Create ticket' : 'Create ticket — title is required'}
-            className="rounded-[var(--radius-md)] py-3 px-5 w-full text-[length:var(--text-body)] font-[var(--weight-semibold)] border-none flex items-center justify-center gap-[var(--space-2)] mt-[var(--space-2)] bg-[var(--accent)] text-white transition-opacity duration-150 ease-linear"
+            className="rounded-[var(--radius-md)] py-3 px-5 w-full text-[length:var(--text-body)] font-[var(--weight-semibold)] border-none flex items-center justify-center gap-[var(--space-2)] mt-[var(--space-2)] transition-opacity duration-150 ease-linear"
             style={{
               cursor: form.title.trim() ? 'pointer' : 'default',
               opacity: form.title.trim() ? 1 : 0.5,
+              background: 'var(--accent-bg)',
+              color: 'var(--accent-contrast)',
+              boxShadow: 'var(--accent-glow)',
             }}
           >
             <Plus size={16} />

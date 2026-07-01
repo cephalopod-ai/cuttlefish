@@ -70,7 +70,7 @@ export const MessageRow = React.memo(function MessageRow({ msg, index: i, messag
     <div key={msg.id || i}>
       {/* Timestamp divider */}
       {showTimestamp && (
-        <div className="text-center py-[var(--space-3)] text-[length:var(--text-caption2)] text-[var(--text-tertiary)]">
+        <div className="text-center py-[var(--space-3)] text-[length:var(--text-caption2)] text-[var(--text-tertiary)] font-[family-name:var(--font-code)]">
           {formattedTimestamp}
         </div>
       )}

@@ -476,7 +476,7 @@ export function ModelSelectorRow({ mode, value, onChange, pendingNote, errorNote
           className="group inline-flex max-w-full items-center gap-1.5 rounded-lg border-none bg-transparent px-1.5 py-1 text-[length:var(--text-footnote)] transition-colors hover:bg-[var(--fill-secondary)] disabled:cursor-default disabled:opacity-60 cursor-pointer"
         >
           <span aria-hidden className="shrink-0 text-[var(--accent)] text-[11px] leading-none">✦</span>
-          <span className="truncate font-[var(--weight-semibold)] tracking-[-0.2px] text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] transition-colors">{modelLabel}</span>
+          <span className="truncate font-[family-name:var(--font-code)] font-[var(--weight-semibold)] tracking-[-0.2px] text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] transition-colors">{modelLabel}</span>
           {effort && (
             // Effort is the first thing to drop on a narrow composer.
             <span className="hidden shrink-0 text-[var(--text-tertiary)] sm:inline">· {effortLabelOf(effort)}</span>

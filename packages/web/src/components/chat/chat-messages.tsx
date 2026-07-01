@@ -110,7 +110,7 @@ export function ChatMessages({ messages, loading, streamingText, onRetry }: Chat
           // Share the assistant text gutter (space-3 mobile / space-8 @lg) so the
           // indicator lines up flush with the messages and tool cards.
           <div className="assistant-msg-row flex items-center gap-1.5 mt-[var(--space-1)]">
-            <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-[cuttlefish-pulse_1.4s_infinite] shrink-0" />
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-[cuttlefish-pulse_1.4s_infinite] shrink-0" style={{ boxShadow: 'var(--accent-glow)' }} />
             <span className="text-[length:var(--text-caption1)] text-[var(--text-tertiary)] font-[var(--weight-medium)]">
               Thinking
             </span>

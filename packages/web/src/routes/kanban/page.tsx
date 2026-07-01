@@ -603,7 +603,8 @@ export default function KanbanPage() {
           </div>
           <button
             onClick={loadData}
-            className="px-[var(--space-4)] py-[var(--space-2)] rounded-[var(--radius-md)] bg-[var(--accent)] text-[var(--accent-contrast)] border-none cursor-pointer text-[length:var(--text-body)] font-[var(--weight-semibold)]"
+            className="px-[var(--space-4)] py-[var(--space-2)] rounded-[var(--radius-md)] border-none cursor-pointer text-[length:var(--text-body)] font-[var(--weight-semibold)]"
+            style={{ background: 'var(--accent-bg)', color: 'var(--accent-contrast)', boxShadow: 'var(--accent-glow)' }}
           >
             Retry
           </button>
@@ -663,7 +664,8 @@ export default function KanbanPage() {
               </label>
               <button
                 onClick={() => setCreateOpen(true)}
-                className="rounded-[var(--radius-md)] px-4 py-2 text-[length:var(--text-footnote)] font-[var(--weight-semibold)] border-none flex items-center gap-[var(--space-2)] bg-[var(--accent)] text-white cursor-pointer"
+                className="rounded-[var(--radius-md)] px-4 py-2 text-[length:var(--text-footnote)] font-[var(--weight-semibold)] border-none flex items-center gap-[var(--space-2)] cursor-pointer"
+                style={{ background: 'var(--accent-bg)', color: 'var(--accent-contrast)', boxShadow: 'var(--accent-glow)' }}
               >
                 <Plus size={16} />
                 New Ticket
@@ -713,9 +715,10 @@ export default function KanbanPage() {
                 onClick={() => setFilterEmployeeId(null)}
                 className={`flex items-center gap-[var(--space-1)] px-3 py-1 rounded-full border-none text-[length:var(--text-caption1)] font-semibold cursor-pointer shrink-0 ${
                   filterEmployeeId === null
-                    ? 'bg-[var(--accent)] text-white'
+                    ? ''
                     : 'bg-[var(--fill-tertiary)] text-[var(--text-secondary)]'
                 }`}
+                style={filterEmployeeId === null ? { background: 'var(--accent-bg)', color: 'var(--accent-contrast)' } : undefined}
               >
                 All
               </button>
@@ -727,9 +730,10 @@ export default function KanbanPage() {
                   }
                   className={`flex items-center gap-[var(--space-1)] px-3 py-1 rounded-full border-none text-[length:var(--text-caption1)] font-semibold cursor-pointer shrink-0 ${
                     filterEmployeeId === emp.name
-                      ? 'bg-[var(--accent)] text-white'
+                      ? ''
                       : 'bg-[var(--fill-tertiary)] text-[var(--text-secondary)]'
                   }`}
+                  style={filterEmployeeId === emp.name ? { background: 'var(--accent-bg)', color: 'var(--accent-contrast)' } : undefined}
                 >
                   {emp.displayName}
                 </button>

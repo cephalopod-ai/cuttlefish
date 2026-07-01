@@ -17,6 +17,9 @@ function styleEdges(edges: Edge[]): Edge[] {
         stroke: hi ? "var(--accent)" : "var(--separator-opaque)",
         strokeWidth: hi ? 2 : 1.25,
         opacity: hi ? 1 : 0.6,
+        // Signature glow on the live routing chain (SVG path → filter, not box-shadow).
+        // No-op on Ledger themes where --accent is muted; strongest on Signal.
+        ...(hi ? { filter: "drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 70%, transparent))" } : {}),
       },
     }
   })

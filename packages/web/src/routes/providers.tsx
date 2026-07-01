@@ -7,10 +7,10 @@ interface ThemeContextValue {
   setTheme: (t: ThemeId) => void
 }
 
-const ThemeContext = createContext<ThemeContextValue>({ theme: 'dark', setTheme: () => {} })
+const ThemeContext = createContext<ThemeContextValue>({ theme: 'reef-light', setTheme: () => {} })
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<ThemeId>('dark')
+  const [theme, setThemeState] = useState<ThemeId>('reef-light')
 
   const apply = useCallback((t: ThemeId) => {
     setThemeState(t)
@@ -28,7 +28,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const saved = localStorage.getItem('cuttlefish-theme')
     // Coerce stale ids from removed themes (glass/atelier/…) to a valid one.
-    const valid = saved && ALL_THEME_IDS.includes(saved as ThemeId) ? (saved as ThemeId) : 'signal-dark'
+    const valid = saved && ALL_THEME_IDS.includes(saved as ThemeId) ? (saved as ThemeId) : 'reef-light'
     apply(valid)
   }, [apply])
 

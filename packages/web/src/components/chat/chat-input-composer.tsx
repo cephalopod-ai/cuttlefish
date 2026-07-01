@@ -146,9 +146,12 @@ export function ChatInputComposer({
             showStop
               ? 'bg-[var(--system-red)] text-white cursor-pointer'
               : hasContent
-                ? 'bg-[var(--accent)] text-[var(--accent-contrast)] cursor-pointer'
+                ? 'text-[var(--accent-contrast)] cursor-pointer'
                 : 'bg-[var(--fill-tertiary)] text-[var(--text-quaternary)] cursor-default'
           }`}
+          // Reef's --accent-bg is a gradient, so the active-send fill + glow are set
+          // inline (a Tailwind bg-[var()] arbitrary class can't render a gradient value).
+          style={!showStop && hasContent ? { background: 'var(--accent-bg)', boxShadow: 'var(--accent-glow)' } : undefined}
         >
           <span className={`absolute inset-0 flex items-center justify-center transition-all duration-200 ease-in-out ${showStop ? 'opacity-0 scale-50' : 'opacity-100 scale-100'}`}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">

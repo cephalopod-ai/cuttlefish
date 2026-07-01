@@ -308,7 +308,7 @@ export function TicketDetailPanel({
       className="absolute top-0 right-0 bottom-0 z-30"
     >
       <div
-        className="w-[420px] max-w-[100vw] h-full bg-[var(--material-regular)] shadow-[-4px_0_24px_rgba(0,0,0,0.25)] flex flex-col"
+        className="w-[420px] max-w-[100vw] h-full bg-[var(--material-regular)] shadow-[var(--shadow-overlay)] flex flex-col"
       >
         {/* Color strip */}
         <div className="h-[3px] bg-[var(--accent)] shrink-0" />

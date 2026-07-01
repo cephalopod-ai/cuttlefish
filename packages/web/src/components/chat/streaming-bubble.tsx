@@ -11,7 +11,7 @@ export function StreamingBubble({ streamingText }: { streamingText: string }) {
       <div className="assistant-msg-bubble flex flex-col">
         <div className="assistant-transcript py-[var(--space-1)] text-[var(--text-primary)] text-[length:var(--text-body)] leading-[var(--leading-relaxed)]">
           {formattedContent}
-          <span className="stream-caret" aria-hidden="true" />
+          <span className="stream-caret" aria-hidden="true" style={{ color: 'var(--accent)' }} />
         </div>
       </div>
     </div>
