@@ -144,6 +144,8 @@ export function TicketDetailPanel({
 }: TicketDetailPanelProps) {
   const closeRef = useRef<HTMLButtonElement>(null)
   const { subscribe } = useGateway()
+  const currentTicketIdRef = useRef(ticket.id)
+  currentTicketIdRef.current = ticket.id
   const [liveSession, setLiveSession] = useState<TicketSessionResponse | null>(null)
   const [liveLoading, setLiveLoading] = useState(false)
   const [draftTitle, setDraftTitle] = useState(ticket.title)
@@ -201,19 +203,24 @@ export function TicketDetailPanel({
   }
 
   const loadLiveSession = useCallback(async () => {
+    const requestTicketId = ticket.id
+    const isStale = () => currentTicketIdRef.current !== requestTicketId
     if (!ticket.departmentId) {
+      if (isStale()) return
       setLiveSession({ found: false })
       setLiveLoading(false)
       return
     }
     setLiveLoading(true)
     try {
-      const next = await api.getTicketSession(ticket.departmentId, ticket.id)
+      const next = await api.getTicketSession(ticket.departmentId, requestTicketId)
+      if (isStale()) return
       setLiveSession(next)
     } catch {
+      if (isStale()) return
       setLiveSession({ found: false })
     } finally {
-      setLiveLoading(false)
+      if (!isStale()) setLiveLoading(false)
     }
   }, [ticket.departmentId, ticket.id])
 
