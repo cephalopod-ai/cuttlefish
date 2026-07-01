@@ -42,7 +42,7 @@ vi.mock('@/hooks/use-command-center', () => ({
 import CommandPage from './page'
 
 describe('CommandPage', () => {
-  it('renders summary counts, manager chat link, and agent usage', () => {
+  it('renders the redesigned dashboard shell, manager chat link, and agent usage', () => {
     render(
       <MemoryRouter>
         <CommandPage />
@@ -50,9 +50,10 @@ describe('CommandPage', () => {
     )
 
     expect(screen.getByText('Command Center')).toBeTruthy()
-    expect(screen.getByText('5')).toBeTruthy()
-    expect(screen.getByText('9')).toBeTruthy()
+    expect(screen.getByText(/blocked ticket need attention/i)).toBeTruthy()
+    expect(screen.getByText(/fleet status, manager routing, and usage rollups/i)).toBeTruthy()
     expect((screen.getByRole('link', { name: /Start chat with Boss/i }) as HTMLAnchorElement).getAttribute('href')).toBe('/?employee=boss')
-    expect(screen.getByText('1,200')).toBeTruthy()
+    expect(screen.getByText(/claude · sonnet · 3 turns · \$1\.50/i)).toBeTruthy()
+    expect(screen.getByText('Open tickets')).toBeTruthy()
   })
 })

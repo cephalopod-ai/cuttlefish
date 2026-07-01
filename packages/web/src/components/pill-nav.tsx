@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState, type ComponentType, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react"
 import { Link, useLocation } from "react-router-dom"
-import { Menu, Sun, Moon, Palette, Waves, ArrowLeftRight, PanelLeft } from "lucide-react"
+import { Menu, Sun, Moon, Palette, Waves, Radio, Sparkles, ArrowLeftRight, PanelLeft } from "lucide-react"
 import { useTheme } from "@/routes/providers"
 import { useSettings } from "@/routes/settings-provider"
 import { DEFAULT_PORTAL_ICON } from "@/lib/settings"
@@ -113,6 +113,8 @@ function ThemeIcon({ theme }: { theme: ThemeId }) {
   if (theme === "light") return <Sun size={18} />
   if (theme === "dark") return <Moon size={18} />
   if (theme === "cuttlefish") return <Waves size={18} />
+  if (theme === "signal-dark" || theme === "signal-light") return <Radio size={18} />
+  if (theme === "reef-light" || theme === "reef-dark") return <Sparkles size={18} />
   return <Palette size={18} />
 }
 
@@ -486,6 +488,8 @@ function themeGlyph(theme: ThemeId): ComponentType<{ size?: number | string; cla
   if (theme === "light") return Sun
   if (theme === "dark") return Moon
   if (theme === "cuttlefish") return Waves
+  if (theme === "signal-dark" || theme === "signal-light") return Radio
+  if (theme === "reef-light" || theme === "reef-dark") return Sparkles
   return Palette
 }
 

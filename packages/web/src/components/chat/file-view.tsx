@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 import { ExternalLink, ArrowLeft } from "lucide-react";
 import { useTheme } from "@/routes/providers";
 import { SyntaxHighlighter, syntaxTheme } from "@/lib/syntax-highlighter";
+import { isLightTheme } from "@/lib/themes";
 
 /** Shape returned by GET /api/files/read?path=<path>. */
 interface FileReadResponse {
@@ -111,14 +112,14 @@ export function FileView({
   const [notFound, setNotFound] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Resolve whether to use a dark or light highlighter theme. ThemeProvider
-  // sets data-theme on <html>; "light" is the only light variant.
+  // Resolve whether to use a dark or light highlighter theme from the current
+  // concrete theme id on <html>.
   const isDark = useMemo(() => {
     if (typeof document !== "undefined") {
       const attr = document.documentElement.getAttribute("data-theme");
-      if (attr) return attr !== "light";
+      if (attr) return !isLightTheme(attr);
     }
-    return theme !== "light";
+    return !isLightTheme(theme);
   }, [theme]);
 
   useEffect(() => {

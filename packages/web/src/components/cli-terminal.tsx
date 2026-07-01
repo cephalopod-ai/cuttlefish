@@ -6,13 +6,12 @@ import { usePageVisibility } from "../hooks/use-page-visibility";
 import { dlog } from "../lib/debug-log";
 import { nextReconnectDelay } from "../lib/ws-backoff";
 import { api } from "../lib/api";
+import { isLightTheme } from "@/lib/themes";
 
 /**
- * Theme-aware xterm color palettes. The app exposes exactly two visual themes
- * via `data-theme` on <html> ("dark" / "light"; "system" resolves through the
- * prefers-color-scheme media query). These ITheme palettes mirror the Ledger
- * design tokens (warm charcoal / warm paper) with a tasteful warm ANSI 16-color
- * set so the interactive `claude` TUI reads correctly in both themes.
+ * Theme-aware xterm color palettes. The app now exposes multiple concrete theme
+ * ids, but the terminal still resolves to a light or dark palette based on the
+ * active theme family.
  */
 const XTERM_THEME_DARK: ITheme = {
   background: "#14130F",
@@ -76,7 +75,7 @@ function resolveXtermTheme(): ITheme {
         ? "dark"
         : "light";
   }
-  return mode === "light" ? XTERM_THEME_LIGHT : XTERM_THEME_DARK;
+  return isLightTheme(mode) ? XTERM_THEME_LIGHT : XTERM_THEME_DARK;
 }
 
 /** Read the app mono font from CSS so the terminal matches the rest of the UI. */

@@ -1,6 +1,6 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
-import { THEMES, type ThemeId } from '@/lib/themes'
+import { ALL_THEME_IDS, type ThemeId } from '@/lib/themes'
 
 interface ThemeContextValue {
   theme: ThemeId
@@ -28,7 +28,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const saved = localStorage.getItem('cuttlefish-theme')
     // Coerce stale ids from removed themes (glass/atelier/…) to a valid one.
-    const valid = saved && THEMES.some((t) => t.id === saved) ? (saved as ThemeId) : 'dark'
+    const valid = saved && ALL_THEME_IDS.includes(saved as ThemeId) ? (saved as ThemeId) : 'signal-dark'
     apply(valid)
   }, [apply])
 

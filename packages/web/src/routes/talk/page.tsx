@@ -26,11 +26,19 @@ import { TalkVoiceIndicator } from "./talk-voice-indicator"
 import { WhisperDownloadModal } from "@/components/stt/whisper-download-modal"
 import { useTalkContext } from "./talk-provider"
 import { useStageMode } from "./stage"
+import { isLightTheme } from "@/lib/themes"
 import "./talk-tokens.css"
 import "./talk-layout.css"
 
 export default function TalkPage() {
   const { theme, setTheme } = useTheme()
+  const toggleTheme = useCallback(() => {
+    if (theme === 'reef-light') return setTheme('reef-dark')
+    if (theme === 'reef-dark') return setTheme('reef-light')
+    if (theme === 'signal-light') return setTheme('signal-dark')
+    if (theme === 'signal-dark') return setTheme('signal-light')
+    setTheme(isLightTheme(theme) ? 'dark' : 'light')
+  }, [setTheme, theme])
   // State lives in TalkProvider (above the router) so it survives navigation;
   // activate() kicks off the (gated) bootstrap the first time Talk is opened.
   const talk = useTalkContext()
@@ -180,11 +188,11 @@ export default function TalkPage() {
             {talk.muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
           </button>
           <button
-            onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+            onClick={toggleTheme}
             aria-label="Toggle theme"
             className="inline-flex size-9 items-center justify-center rounded-full border border-[var(--separator)] bg-[var(--material-regular)] text-[var(--text-secondary)] backdrop-blur-md transition-colors active:bg-[var(--fill-secondary)]"
           >
-            {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
+            {isLightTheme(theme) ? <Moon size={16} /> : <Sun size={16} />}
           </button>
         </div>
       </div>

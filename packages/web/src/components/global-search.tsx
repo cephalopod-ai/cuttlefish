@@ -48,6 +48,7 @@ function saveRecent(item: RecentItem) {
 
 const STATIC_PAGES = [
   { id: "page-chat", label: "Chat", icon: MessageSquare, href: "/" },
+  { id: "page-command", label: "Command Center", icon: Command, href: "/command" },
   { id: "page-org", label: "Organization", icon: Users, href: "/org" },
   { id: "page-kanban", label: "Kanban", icon: LayoutGrid, href: "/kanban" },
   { id: "page-cron", label: "Cron", icon: Clock, href: "/cron" },
