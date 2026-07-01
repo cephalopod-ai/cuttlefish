@@ -2,6 +2,55 @@
 
 ## [Unreleased]
 
+> Defect repairs surfaced by an `audit-playtest-app` exploratory playtest of the
+> session and org HTTP surfaces (chat create/message, bulk-delete, stop, employee
+> create, org scan). See `.giles/feature-ledger/giles-ledger-0008-playtest-defect-repair-2026-07-01.md`.
+
+### Bug Fixes
+- **A whitespace-only chat prompt no longer dispatches a real, billable engine
+  turn.** `POST /api/sessions` and `POST /api/sessions/:id/message` checked
+  `!prompt` on the raw string, so `"   "` passed the truthiness check and a real
+  session/engine turn was created for effectively empty input. The prompt is now
+  trimmed before the empty-check on both routes.
+- **Deleting the same session id twice in one bulk-delete request no longer
+  misreports a fully successful delete as a partial failure.** `POST
+  /api/sessions/bulk-delete` computed `deletedIds`/`failedIds` against the raw
+  (possibly duplicated) `ids` array, so a duplicate id inflated the apparent
+  delete count past the real row count and tripped the "partial" 409 branch even
+  though every requested session was actually deleted. `ids` is now de-duplicated
+  before use.
+- **Stopping an already-idle session no longer claims to have interrupted a live
+  run.** `POST /api/sessions/:id/stop` always returned `stopped: true` with no way
+  to tell a genuine interrupt apart from a no-op stop on an idle session. The
+  response now includes `wasRunning`, derived from the session's own recorded
+  status immediately before the stop (not from `killResult.interruptible`, which
+  only reflects engine-type capability, not whether a live process existed for
+  the session).
+- **Employee names that differ only in casing (e.g. `Foo` vs `foo`) are now
+  rejected as duplicates.** `validateEmployeeCreate`'s duplicate-name guard was
+  case-sensitive, but employee YAML filenames derive from `name` — a case-only
+  variant risks silent collision/overwrite on case-insensitive filesystems
+  (default macOS/Windows).
+- **A broken employee YAML file is no longer silently dropped from the org
+  roster with zero operator-visible signal.** `scanOrg` logged a parse failure
+  server-side only; the employee simply vanished from `GET /api/org` with an
+  empty `hierarchy.warnings`. `scanOrg` now accepts an optional warnings-out
+  array and records a `parse_error` warning per broken file; `GET /api/org`
+  threads it into the response's `hierarchy.warnings`. (The dashboard does not
+  yet render `hierarchy.warnings` in any UI surface — that remains open; see the
+  ledger entry.)
+
+### Tests
+- `session-write-routes.test.ts` (new): regression coverage for the
+  whitespace-prompt, duplicate-id bulk-delete, and stop `wasRunning` fixes above,
+  including the case where `killResult.interruptible > 0` on an already-idle
+  session (an adversarial review found this could otherwise make `wasRunning`
+  falsely report `true`).
+- `org-defect-repairs.test.ts` (new): regression coverage for the
+  case-insensitive duplicate-name guard and `scanOrg`'s parse-error warnings
+  (plus a back-compat check that existing zero-arg `scanOrg()` call sites are
+  unaffected).
+
 > Defect repairs surfaced by a workflow playtest of the org/HR/kanban/cron/dispatch
 > machinery (onboarding → multi-tier org → dispatch → escalation → team deletion).
 

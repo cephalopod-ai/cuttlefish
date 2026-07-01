@@ -24,6 +24,7 @@ import type {
   RoleFallbackTarget,
   CuttlefishConfig,
   OrgChangeType,
+  OrgWarning,
 } from "../shared/types.js";
 import { logger } from "../shared/logger.js";
 import { getModelRegistry, effortLevelsForModel } from "../shared/models.js";
@@ -183,7 +184,16 @@ function parseEmployeeData(data: any, fullPath: string): Employee | undefined {
   };
 }
 
-export function scanOrg(): Map<string, Employee> {
+/**
+ * Scan all employee YAML files under ORG_DIR into a registry.
+ *
+ * @param warningsOut - optional array to receive an `OrgWarning` for each file
+ *   that failed to parse, so callers that surface warnings to an operator
+ *   (e.g. the `/api/org` route) can report a broken file instead of letting
+ *   it silently vanish from the roster. Defaults to unused so every existing
+ *   zero-arg call site keeps its exact prior behavior.
+ */
+export function scanOrg(warningsOut?: OrgWarning[]): Map<string, Employee> {
   const registry = new Map<string, Employee>();
 
   if (!fs.existsSync(ORG_DIR)) return registry;
@@ -195,6 +205,11 @@ export function scanOrg(): Map<string, Employee> {
       if (employee) registry.set(employee.name, employee);
     } catch (err) {
       logger.warn(`Failed to parse employee file ${fullPath}: ${err}`);
+      warningsOut?.push({
+        employee: path.basename(fullPath),
+        type: "parse_error",
+        message: `Failed to parse employee file ${path.relative(ORG_DIR, fullPath)}: ${err}`,
+      });
     }
     return undefined; // keep walking — scanOrg visits every file
   });
@@ -732,7 +747,10 @@ export function validateEmployeeCreate(
   if (!/^[a-z0-9][a-z0-9._-]*$/i.test(name)) {
     return { ok: false, error: "name must use only letters, numbers, dot, underscore, or hyphen" };
   }
-  if (knownNames.some((candidate) => candidate === name)) {
+  // Case-insensitive: employee YAML filenames derive from `name`, and a
+  // case-only variant (e.g. "Foo" vs "foo") would silently collide or
+  // overwrite on case-insensitive filesystems (default macOS/Windows).
+  if (knownNames.some((candidate) => candidate.toLowerCase() === name.toLowerCase())) {
     return { ok: false, error: `employee "${name}" already exists` };
   }
 

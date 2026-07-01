@@ -234,6 +234,7 @@ export async function handleSessionWriteRoutes(
       notFound(res);
       return true;
     }
+    const wasRunning = session.status === "running";
     const killResult = killSessionEngines(context, session, "Interrupted by user");
     context.sessionManager.getQueue().clearQueue(session.sessionKey || session.sourceRef || session.id);
     const stopped = killResult.interruptible > 0 || session.status !== "running";
@@ -244,6 +245,13 @@ export async function handleSessionWriteRoutes(
     json(res, {
       status: stopped ? "stopped" : "not_stopped",
       stopped,
+      // Reflects the session's own recorded status before this call, not
+      // killResult.interruptible: that counter only means "an interruptible
+      // engine type is attached," not "a live process existed for this
+      // session," so it can't reliably signal whether a turn was actually
+      // running. This lets callers avoid a misleading "run stopped"
+      // confirmation when the session was already idle.
+      wasRunning,
       interruptible: killResult.interruptible > 0,
       sessionId: params.id,
     }, stopped ? 200 : 409);
@@ -388,7 +396,10 @@ export async function handleSessionWriteRoutes(
     const parsed = await readJsonBody(req, res);
     if (!parsed.ok) return true;
     const body = parsed.body as any;
-    const ids: string[] = body.ids;
+    // De-duplicate: a duplicate id would otherwise be counted twice in
+    // deletedIds/failedIds against a single underlying row, misreporting a
+    // fully successful delete as a partial (409) failure.
+    const ids: string[] = Array.isArray(body.ids) ? [...new Set(body.ids)] : body.ids;
     if (!Array.isArray(ids) || ids.length === 0) {
       badRequest(res, "ids array is required");
       return true;
@@ -438,7 +449,7 @@ export async function handleSessionWriteRoutes(
     const parsed = await readJsonBody(req, res);
     if (!parsed.ok) return true;
     const body = parsed.body as any;
-    const prompt = body.prompt || body.message;
+    const prompt = (typeof body.prompt === "string" ? body.prompt : typeof body.message === "string" ? body.message : "").trim();
     if (!prompt) {
       badRequest(res, "prompt or message is required");
       return true;
@@ -585,7 +596,7 @@ export async function handleSessionWriteRoutes(
     const parsed = await readJsonBody(req, res);
     if (!parsed.ok) return true;
     const body = parsed.body as any;
-    const prompt = body.message || body.prompt;
+    const prompt = (typeof body.message === "string" ? body.message : typeof body.prompt === "string" ? body.prompt : "").trim();
     if (!prompt) {
       badRequest(res, "message is required");
       return true;

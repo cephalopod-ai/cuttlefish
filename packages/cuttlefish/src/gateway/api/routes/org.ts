@@ -15,7 +15,7 @@ import type { ApiContext } from "../context.js";
 import { matchRoute } from "../match-route.js";
 import { badRequest, json, notFound, serverError } from "../responses.js";
 import { loadSessionMessagesForApi } from "../session-query-routes.js";
-import { EXECUTION_TIERS, ORG_CHANGE_TYPES, type Employee, type EmployeeExecutionConfig, type OrgChangeType } from "../../../shared/types.js";
+import { EXECUTION_TIERS, ORG_CHANGE_TYPES, type Employee, type EmployeeExecutionConfig, type OrgChangeType, type OrgWarning } from "../../../shared/types.js";
 
 const TICKET_SESSION_TAIL_LIMIT = 8;
 
@@ -134,7 +134,8 @@ export async function handleOrgRoutes(
       .filter((entry) => entry.isDirectory() && !RESERVED_ORG_DIRS.has(entry.name))
       .map((entry) => entry.name);
     const { resolveOrgHierarchy, withPortalExecutive } = await import("../../org-hierarchy.js");
-    const orgRegistry = withPortalExecutive(scanOrg(), context.getConfig().portal?.portalName);
+    const scanWarnings: OrgWarning[] = [];
+    const orgRegistry = withPortalExecutive(scanOrg(scanWarnings), context.getConfig().portal?.portalName);
     const departments = [
       ...new Set([
         ...directoryDepartments,
@@ -163,7 +164,10 @@ export async function handleOrgRoutes(
       hierarchy: {
         root: hierarchy.root,
         sorted: hierarchy.sorted,
-        warnings: hierarchy.warnings,
+        // Parse failures happen inside scanOrg, before the hierarchy is even
+        // built, so they're surfaced here alongside (not inside)
+        // resolveOrgHierarchy's own structural warnings (broken refs, cycles).
+        warnings: [...scanWarnings, ...hierarchy.warnings],
       },
     });
     return true;
