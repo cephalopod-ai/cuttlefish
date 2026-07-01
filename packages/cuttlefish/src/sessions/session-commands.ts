@@ -8,9 +8,21 @@
  * in the full turn-execution path. `SessionManager.handleCommand` /
  * `resetSession` delegate to these functions, preserving their public contracts.
  */
-import type { Connector, Engine, IncomingMessage, CuttlefishConfig, Target } from "../shared/types.js";
-import { isInterruptibleEngine } from "../shared/types.js";
-import { deleteSession, getSessionBySessionKey, updateSession } from "./registry.js";
+import type {
+  Connector,
+  Engine,
+  IncomingMessage,
+  CuttlefishConfig,
+  Target,
+} from "../shared/types.js";
+import {
+  isInterruptibleEngine,
+} from "../shared/types.js";
+import {
+  deleteSession,
+  getSessionBySessionKey,
+  updateSession,
+} from "./registry.js";
 import type { SessionQueue } from "./queue.js";
 import { logger } from "../shared/logger.js";
 import { loadJobs } from "../cron/jobs.js";
