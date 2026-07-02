@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState, type ComponentType, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react"
 import { Link, useLocation } from "react-router-dom"
-import { Menu, Sun, Moon, Palette, Waves, Radio, Sparkles, ArrowLeftRight, PanelLeft } from "lucide-react"
+import { Menu, Sun, Moon, Palette, Waves, Radio, Sparkles, ArrowLeftRight, PanelLeft, Command as CommandIcon } from "lucide-react"
 import { useTheme } from "@/routes/providers"
 import { useSettings } from "@/routes/settings-provider"
 import { DEFAULT_PORTAL_ICON } from "@/lib/settings"
@@ -423,9 +423,9 @@ export function NavRibbon({
             </button>
           ) : (
             // Global (non-chat) rail: no list to fold, so the top slot is a plain
-            // brand mark that links home.
+            // brand mark that links to Command Center, the operator dashboard hub.
             <Link
-              to="/"
+              to="/command"
               aria-label={portalName}
               title={portalName}
               className="relative flex size-11 items-center justify-center rounded-[12px] transition-colors hover:bg-[var(--fill-secondary)]"
@@ -538,7 +538,7 @@ export function PillNav({ actions }: { actions?: ReactNode }) {
 
   const title = items[0]?.label ?? ""
   const navItem = NAV_ITEMS.find((n) => isNavItemActive(n.href, pathname))
-  const RouteIcon = navItem?.icon
+  const RouteIcon = navItem?.icon ?? (pathname.startsWith("/command") ? CommandIcon : undefined)
 
   return (
     <>

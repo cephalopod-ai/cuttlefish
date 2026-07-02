@@ -37,8 +37,8 @@ describe("NavRibbon", () => {
     expect(screen.queryByLabelText("Show chats")).toBeNull()
     expect(screen.queryByLabelText("Hide chats")).toBeNull()
     expect(container.querySelector("[aria-expanded]")).toBeNull()
-    // The top slot is a brand mark that links home.
-    expect(container.querySelector('a[href="/"]')).toBeTruthy()
+    // The top slot is a brand mark that links to Command Center.
+    expect(container.querySelector('a[href="/command"]')).toBeTruthy()
   })
 
   it("renders the toggle with a state-aware label", () => {
@@ -59,6 +59,7 @@ describe("NavRibbon", () => {
       const link = screen.getByLabelText(item.label)
       expect(link.getAttribute("href")).toBe(item.href)
     }
+    expect(screen.queryByLabelText("Command")).toBeNull()
   })
 
   it("keeps Talk in the bottom utility cluster above Theme instead of in the main nav list", () => {
@@ -96,7 +97,7 @@ describe("NavRibbon", () => {
         </MemoryRouter>
       </SettingsProvider>,
     )
-    const brandImg = container.querySelector('a[href="/"] img')
+    const brandImg = container.querySelector('a[href="/command"] img')
     expect(brandImg?.getAttribute("src")).toBe("/brand/cuttlefish_icon_app.svg")
     expect(container.textContent).not.toContain("aquatic:octopus")
   })

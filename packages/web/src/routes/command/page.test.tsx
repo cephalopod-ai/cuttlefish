@@ -42,7 +42,7 @@ vi.mock('@/hooks/use-command-center', () => ({
 import CommandPage from './page'
 
 describe('CommandPage', () => {
-  it('renders the redesigned dashboard shell, manager chat link, and agent usage', () => {
+  it('renders the dashboard shell, manager chat link, and agent usage without redundant shortcut cards', () => {
     render(
       <MemoryRouter>
         <CommandPage />
@@ -55,6 +55,9 @@ describe('CommandPage', () => {
     expect((screen.getByRole('link', { name: /Start chat with Boss/i }) as HTMLAnchorElement).getAttribute('href')).toBe('/?employee=boss')
     expect(screen.getByText(/claude · sonnet · 3 turns · \$1\.50/i)).toBeTruthy()
     expect(screen.getByText('Open tickets')).toBeTruthy()
+    expect(screen.queryByText('Fleet routing')).toBeNull()
+    expect(screen.queryByText('Automation load')).toBeNull()
+    expect(screen.queryByText('Board triage')).toBeNull()
   })
 
   it('shows an error state with retry and suppresses the "nominal" badge, zeroed metrics, and empty state on fetch failure', () => {

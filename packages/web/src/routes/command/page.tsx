@@ -2,15 +2,12 @@ import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowRight,
-  Bot,
   Clock3,
   MessageSquarePlus,
-  PlayCircle,
   Radio,
   RefreshCw,
   Ticket,
   Users,
-  Zap,
 } from 'lucide-react'
 import { PageLayout } from '@/components/page-layout'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -88,19 +85,19 @@ function MetricCard({
     <Link
       to={href}
       className={[
-        'group relative overflow-hidden rounded-[var(--radius-xl)] border p-5 shadow-[var(--shadow-card)] transition-transform duration-150 hover:-translate-y-0.5',
+        'group relative overflow-hidden rounded-[var(--radius-xl)] border p-4 shadow-[var(--shadow-card)] transition-transform duration-150 hover:-translate-y-0.5',
         emphasized
           ? 'border-[color:color-mix(in_srgb,var(--accent)_55%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-fill)_65%,var(--material-regular))]'
           : 'border-[var(--separator)] bg-[var(--material-regular)]',
       ].join(' ')}
     >
       <div className="absolute inset-x-0 top-0 h-px bg-[color:color-mix(in_srgb,var(--text-primary)_22%,transparent)] opacity-70" />
-      <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
         <div className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-tertiary)]">{title}</div>
         <div className={emphasized ? 'text-[var(--accent)]' : 'text-[var(--text-secondary)]'}>{icon}</div>
       </div>
-      <div className="mb-2 flex items-end gap-2">
-        <span className={emphasized ? 'text-5xl font-bold tracking-[-0.04em] text-[var(--accent)]' : 'text-5xl font-bold tracking-[-0.04em] text-[var(--text-primary)]'}>
+      <div className="mb-1.5 flex items-end gap-2">
+        <span className={emphasized ? 'text-4xl font-bold tracking-[-0.04em] text-[var(--accent)]' : 'text-4xl font-bold tracking-[-0.04em] text-[var(--text-primary)]'}>
           {value}
         </span>
       </div>
@@ -176,23 +173,23 @@ export default function CommandPage() {
   return (
     <PageLayout>
       <div className="h-full overflow-y-auto">
-        <div className="mx-auto flex max-w-[1320px] flex-col gap-5 px-4 py-5 sm:px-6 sm:py-6">
-          <header className="flex flex-wrap items-center gap-4 rounded-[var(--radius-2xl)] border border-[var(--separator)] bg-[var(--material-thick)] px-5 py-4 shadow-[var(--shadow-card)]">
-            <div className="flex size-12 items-center justify-center rounded-[18px] border border-[var(--separator)] bg-[var(--bg-secondary)] shadow-[var(--shadow-subtle)]">
-              <img src="/brand/cuttlefish_icon_app.svg" alt="" className="size-8 object-contain" draggable={false} />
+        <div className="mx-auto flex max-w-[1120px] flex-col gap-4 px-4 py-4 sm:px-5 sm:py-5">
+          <header className="flex flex-wrap items-center gap-3 rounded-[var(--radius-2xl)] border border-[var(--separator)] bg-[var(--material-thick)] px-4 py-3 shadow-[var(--shadow-card)]">
+            <div className="flex size-11 items-center justify-center rounded-[16px] border border-[var(--separator)] bg-[var(--bg-secondary)] shadow-[var(--shadow-subtle)]">
+              <img src="/brand/cuttlefish_icon_app.svg" alt="" className="size-7 object-contain" draggable={false} />
             </div>
             <div className="min-w-0 flex-1">
-              <h1 className="text-[length:var(--text-title1)] font-[var(--weight-bold)] tracking-[var(--tracking-tight)] text-[var(--text-primary)]">
+              <h1 className="text-[clamp(1.85rem,3vw,2.5rem)] font-[var(--weight-bold)] tracking-[var(--tracking-tight)] text-[var(--text-primary)]">
                 Command Center
               </h1>
               <p className="text-[length:var(--text-footnote)] text-[var(--text-secondary)]">
                 Orchestration overview, fleet status, manager routing, and usage rollups.
               </p>
             </div>
-            <div className="ml-auto flex flex-wrap items-center gap-3">
+            <div className="ml-auto flex flex-wrap items-center gap-2.5">
               <div
                 className={[
-                  'inline-flex items-center gap-2 rounded-full border px-3 py-2 text-[length:var(--text-footnote)] font-[var(--weight-semibold)]',
+                  'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[length:var(--text-footnote)] font-[var(--weight-semibold)]',
                   HEALTH_TONES[health.tone].chip,
                 ].join(' ')}
               >
@@ -202,7 +199,7 @@ export default function CommandPage() {
                 />
                 {health.label}
               </div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-[var(--separator)] bg-[var(--bg-secondary)] px-3 py-2 text-[length:var(--text-footnote)] text-[var(--text-secondary)]">
+              <div className="inline-flex items-center gap-2 rounded-full border border-[var(--separator)] bg-[var(--bg-secondary)] px-3 py-1.5 text-[length:var(--text-footnote)] text-[var(--text-secondary)]">
                 <span className="font-[family-name:var(--font-code)] text-[var(--text-primary)]">{clock}</span>
                 <span className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-tertiary)]">UTC</span>
               </div>
@@ -226,9 +223,9 @@ export default function CommandPage() {
             </div>
           ) : (
           <>
-          <section className="grid gap-4 xl:grid-cols-4">
+          <section className="grid gap-3 xl:grid-cols-4">
             {isLoading ? (
-              Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-36 rounded-[var(--radius-xl)]" />)
+              Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-32 rounded-[var(--radius-xl)]" />)
             ) : (
               <>
                 <MetricCard title="Agents" value={String(data?.summary?.agents ?? 0)} detail="registered across the org" href="/org" icon={<Users size={18} />} />
@@ -246,10 +243,10 @@ export default function CommandPage() {
             )}
           </section>
 
-          <section className="rounded-[var(--radius-2xl)] border border-[var(--separator)] bg-[var(--material-regular)] p-5 shadow-[var(--shadow-card)]">
-            <div className="mb-4 flex items-center gap-3">
+          <section className="rounded-[var(--radius-2xl)] border border-[var(--separator)] bg-[var(--material-regular)] p-4 shadow-[var(--shadow-card)]">
+            <div className="mb-3 flex items-center gap-3">
               <div>
-                <h2 className="text-[length:var(--text-title3)] font-[var(--weight-bold)] tracking-[var(--tracking-tight)] text-[var(--text-primary)]">
+                <h2 className="text-[clamp(1.35rem,2vw,1.8rem)] font-[var(--weight-bold)] tracking-[var(--tracking-tight)] text-[var(--text-primary)]">
                   Tickets by status
                 </h2>
                 <p className="text-[length:var(--text-footnote)] text-[var(--text-secondary)]">
@@ -262,27 +259,27 @@ export default function CommandPage() {
             </div>
 
             {isLoading ? (
-              <Skeleton className="h-28 rounded-[var(--radius-lg)]" />
+              <Skeleton className="h-24 rounded-[var(--radius-lg)]" />
             ) : (
               <>
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+                <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-6">
                   {ticketEntries.map((entry) => (
                     <Link
                       key={entry.key}
                       to={entry.href}
-                      className="rounded-[var(--radius-lg)] border border-[var(--separator)] bg-[var(--bg-secondary)] px-4 py-3 transition-transform duration-150 hover:-translate-y-0.5"
+                      className="rounded-[var(--radius-lg)] border border-[var(--separator)] bg-[var(--bg-secondary)] px-3.5 py-2.5 transition-transform duration-150 hover:-translate-y-0.5"
                     >
-                      <div className="mb-2 flex items-center gap-2">
+                      <div className="mb-1.5 flex items-center gap-2">
                         <span className="size-2 rounded-sm" style={{ background: entry.color }} />
                         <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--text-tertiary)]">{entry.label}</span>
                       </div>
-                      <div className="text-3xl font-bold tracking-[-0.03em]" style={{ color: entry.color }}>
+                      <div className="text-2xl font-bold tracking-[-0.03em]" style={{ color: entry.color }}>
                         {entry.count}
                       </div>
                     </Link>
                   ))}
                 </div>
-                <div className="mt-4 h-2 overflow-hidden rounded-full bg-[var(--bg-tertiary)]">
+                <div className="mt-3 h-2 overflow-hidden rounded-full bg-[var(--bg-tertiary)]">
                   {ticketEntries.map((entry) => (
                     <span
                       key={entry.key}
@@ -295,18 +292,18 @@ export default function CommandPage() {
             )}
           </section>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
-            <section className="rounded-[var(--radius-2xl)] border border-[var(--separator)] bg-[var(--material-regular)] p-5 shadow-[var(--shadow-card)]">
-              <div className="mb-4 flex flex-wrap items-center gap-3">
+          <div className="grid gap-3 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
+            <section className="rounded-[var(--radius-2xl)] border border-[var(--separator)] bg-[var(--material-regular)] p-4 shadow-[var(--shadow-card)]">
+              <div className="mb-3 flex flex-wrap items-center gap-3">
                 <div>
-                  <h2 className="text-[length:var(--text-title3)] font-[var(--weight-bold)] tracking-[var(--tracking-tight)] text-[var(--text-primary)]">
+                  <h2 className="text-[clamp(1.35rem,2vw,1.8rem)] font-[var(--weight-bold)] tracking-[var(--tracking-tight)] text-[var(--text-primary)]">
                     Agent usage
                   </h2>
                   <p className="text-[length:var(--text-footnote)] text-[var(--text-secondary)]">
                     Context footprint, turns, sessions, and cost by active period.
                   </p>
                 </div>
-                <div className="ml-auto inline-flex rounded-[10px] border border-[var(--separator)] bg-[var(--bg-tertiary)] p-1">
+                <div className="ml-auto inline-flex rounded-[10px] border border-[var(--separator)] bg-[var(--bg-tertiary)] p-0.5">
                   {RANGE_OPTIONS.map((option) => (
                     <button
                       key={option}
@@ -314,7 +311,7 @@ export default function CommandPage() {
                       aria-pressed={option === range}
                       onClick={() => setRange(option)}
                       className={[
-                        'rounded-[8px] px-3 py-1.5 text-[length:var(--text-footnote)] font-[var(--weight-semibold)] capitalize transition-colors',
+                        'rounded-[8px] px-3 py-1 text-[length:var(--text-footnote)] font-[var(--weight-semibold)] capitalize transition-colors',
                         option === range
                           ? 'text-[var(--accent-contrast)]'
                           : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]',
@@ -329,11 +326,11 @@ export default function CommandPage() {
 
               {isLoading ? (
                 <div className="grid gap-3">
-                  {Array.from({ length: 6 }).map((_, index) => <Skeleton key={index} className="h-14 rounded-[var(--radius-lg)]" />)}
+                  {Array.from({ length: 6 }).map((_, index) => <Skeleton key={index} className="h-12 rounded-[var(--radius-lg)]" />)}
                 </div>
               ) : (
-                <div className="space-y-2">
-                  <div className="grid grid-cols-[36px_minmax(0,1fr)_minmax(160px,240px)] gap-3 px-1 text-[10px] uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
+                <div className="space-y-1.5">
+                  <div className="grid grid-cols-[32px_minmax(0,1fr)_minmax(150px,220px)] gap-3 px-1 text-[10px] uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
                     <span className="text-right">#</span>
                     <span>Agent</span>
                     <span>Context {range}</span>
@@ -341,12 +338,12 @@ export default function CommandPage() {
                   {usageRows.map(({ agent, usage, rank, width, accent }) => (
                     <div
                       key={agent.employee}
-                      className="grid grid-cols-[36px_minmax(0,1fr)_minmax(160px,240px)] items-center gap-3 rounded-[var(--radius-lg)] px-1 py-2 transition-colors hover:bg-[var(--fill-secondary)]"
+                      className="grid grid-cols-[32px_minmax(0,1fr)_minmax(150px,220px)] items-center gap-3 rounded-[var(--radius-lg)] px-1 py-1.5 transition-colors hover:bg-[var(--fill-secondary)]"
                     >
                       <span className="text-right font-[family-name:var(--font-code)] text-[length:var(--text-footnote)] text-[var(--text-tertiary)]">{rank}</span>
-                      <div className="flex min-w-0 items-center gap-3">
+                      <div className="flex min-w-0 items-center gap-2.5">
                         <span
-                          className="grid size-9 shrink-0 place-items-center rounded-[10px] border text-[length:var(--text-footnote)] font-[var(--weight-bold)]"
+                          className="grid size-8 shrink-0 place-items-center rounded-[10px] border text-[length:var(--text-footnote)] font-[var(--weight-bold)]"
                           style={{ color: accent, borderColor: `${accent}66`, background: `${accent}22` }}
                         >
                           {agent.displayName.slice(0, 1)}
@@ -372,10 +369,10 @@ export default function CommandPage() {
               )}
             </section>
 
-            <section className="rounded-[var(--radius-2xl)] border border-[var(--separator)] bg-[var(--material-regular)] p-5 shadow-[var(--shadow-card)]">
-              <div className="mb-4 flex items-center gap-3">
+            <section className="rounded-[var(--radius-2xl)] border border-[var(--separator)] bg-[var(--material-regular)] p-4 shadow-[var(--shadow-card)]">
+              <div className="mb-3 flex items-center gap-3">
                 <div>
-                  <h2 className="text-[length:var(--text-title3)] font-[var(--weight-bold)] tracking-[var(--tracking-tight)] text-[var(--text-primary)]">
+                  <h2 className="text-[clamp(1.35rem,2vw,1.8rem)] font-[var(--weight-bold)] tracking-[var(--tracking-tight)] text-[var(--text-primary)]">
                     Managers
                   </h2>
                   <p className="text-[length:var(--text-footnote)] text-[var(--text-secondary)]">
@@ -387,10 +384,10 @@ export default function CommandPage() {
 
               {isLoading ? (
                 <div className="grid gap-3">
-                  {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-20 rounded-[var(--radius-lg)]" />)}
+                  {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-16 rounded-[var(--radius-lg)]" />)}
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-2.5">
                   {data?.managers?.map((manager, index) => {
                     const badge = managerBadge(manager)
                     const accent = index % 4 === 0
@@ -404,10 +401,10 @@ export default function CommandPage() {
                     return (
                       <div
                         key={manager.employee}
-                        className="flex items-center gap-3 rounded-[var(--radius-lg)] border border-[var(--separator)] bg-[var(--bg-secondary)] px-3 py-3"
+                        className="flex items-center gap-3 rounded-[var(--radius-lg)] border border-[var(--separator)] bg-[var(--bg-secondary)] px-3 py-2.5"
                       >
                         <span
-                          className="grid size-10 shrink-0 place-items-center rounded-[12px] border font-[var(--weight-bold)]"
+                          className="grid size-9 shrink-0 place-items-center rounded-[12px] border font-[var(--weight-bold)]"
                           style={{ color: accent, borderColor: `${accent}66`, background: `${accent}22` }}
                         >
                           {manager.displayName.slice(0, 1)}
@@ -424,7 +421,7 @@ export default function CommandPage() {
                         <Link
                           to={`/?employee=${encodeURIComponent(manager.employee)}`}
                           aria-label={`Start chat with ${manager.displayName}`}
-                          className="inline-flex size-10 shrink-0 items-center justify-center rounded-[12px] border border-[color:color-mix(in_srgb,var(--accent)_45%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-fill)_75%,var(--bg-secondary))] text-[var(--accent)] transition-transform duration-150 hover:scale-[0.98]"
+                          className="inline-flex size-9 shrink-0 items-center justify-center rounded-[12px] border border-[color:color-mix(in_srgb,var(--accent)_45%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-fill)_75%,var(--bg-secondary))] text-[var(--accent)] transition-transform duration-150 hover:scale-[0.98]"
                         >
                           <MessageSquarePlus size={18} />
                         </Link>
@@ -433,7 +430,7 @@ export default function CommandPage() {
                   })}
                   <Link
                     to="/org"
-                    className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-lg)] border border-dashed border-[var(--separator-strong)] px-4 py-3 text-[length:var(--text-footnote)] text-[var(--text-secondary)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                    className="mt-1.5 inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-lg)] border border-dashed border-[var(--separator-strong)] px-4 py-2.5 text-[length:var(--text-footnote)] text-[var(--text-secondary)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]"
                   >
                     View full org map <ArrowRight size={14} />
                   </Link>
@@ -441,36 +438,6 @@ export default function CommandPage() {
               )}
             </section>
           </div>
-
-          <section className="grid gap-4 md:grid-cols-3">
-            <Link to="/org" className="rounded-[var(--radius-xl)] border border-[var(--separator)] bg-[var(--material-regular)] p-4 shadow-[var(--shadow-card)] transition-transform duration-150 hover:-translate-y-0.5">
-              <div className="mb-3 inline-flex size-10 items-center justify-center rounded-[12px] bg-[var(--fill-secondary)] text-[var(--accent)]">
-                <Bot size={18} />
-              </div>
-              <div className="text-[length:var(--text-subheadline)] font-[var(--weight-semibold)] text-[var(--text-primary)]">Fleet routing</div>
-              <p className="mt-1 text-[length:var(--text-footnote)] text-[var(--text-secondary)]">
-                Inspect employees, hierarchy, engine assignments, and live states.
-              </p>
-            </Link>
-            <Link to="/cron" className="rounded-[var(--radius-xl)] border border-[var(--separator)] bg-[var(--material-regular)] p-4 shadow-[var(--shadow-card)] transition-transform duration-150 hover:-translate-y-0.5">
-              <div className="mb-3 inline-flex size-10 items-center justify-center rounded-[12px] bg-[var(--fill-secondary)] text-[var(--accent-2)]">
-                <Zap size={18} />
-              </div>
-              <div className="text-[length:var(--text-subheadline)] font-[var(--weight-semibold)] text-[var(--text-primary)]">Automation load</div>
-              <p className="mt-1 text-[length:var(--text-footnote)] text-[var(--text-secondary)]">
-                Jump into schedules and recent runs when background work spikes.
-              </p>
-            </Link>
-            <Link to="/kanban" className="rounded-[var(--radius-xl)] border border-[var(--separator)] bg-[var(--material-regular)] p-4 shadow-[var(--shadow-card)] transition-transform duration-150 hover:-translate-y-0.5">
-              <div className="mb-3 inline-flex size-10 items-center justify-center rounded-[12px] bg-[var(--fill-secondary)] text-[var(--system-orange)]">
-                <PlayCircle size={18} />
-              </div>
-              <div className="text-[length:var(--text-subheadline)] font-[var(--weight-semibold)] text-[var(--text-primary)]">Board triage</div>
-              <p className="mt-1 text-[length:var(--text-footnote)] text-[var(--text-secondary)]">
-                Move from aggregated board pressure to the detailed Kanban workflow.
-              </p>
-            </Link>
-          </section>
 
           {!isLoading && !data?.availableAgents?.length && (
             <div className="rounded-[var(--radius-xl)] border border-[var(--separator)] bg-[var(--material-regular)] px-5 py-8 text-center shadow-[var(--shadow-card)]">
