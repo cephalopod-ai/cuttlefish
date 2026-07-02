@@ -506,7 +506,12 @@ export async function handleOrgRoutes(
     }
     const boardPath = path.join(deptDir, "board.json");
     if (!fs.existsSync(boardPath)) {
-      notFound(res);
+      // The department exists but has no board yet — that's an empty board, not a
+      // missing resource. Returning 200 with an empty state (instead of 404) keeps
+      // the dashboard's per-department board fetches quiet: a brand-new org has no
+      // board.json until the first ticket is written, and a 404 there only produces
+      // console-error noise on every poll that could mask a real failure.
+      json(res, defaultBoardState());
       return true;
     }
     try {
