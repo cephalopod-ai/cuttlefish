@@ -8,6 +8,7 @@ import type {
 } from "@/lib/api"
 import { PageLayout, ToolbarActions } from "@/components/page-layout"
 import { useBreadcrumbs } from "@/context/breadcrumb-context"
+import { usePageVisibility } from "@/hooks/use-page-visibility"
 import { Skeleton } from "@/components/ui/skeleton"
 
 const DANGER = 90
@@ -335,25 +336,29 @@ export default function LimitsPage() {
   // Auto-update while the page is open: usage snapshots advance every session, so
   // a fetch-once-on-mount view goes stale immediately. Poll quietly (GET, no
   // spinner) every 30s so the numbers track live without a manual reload.
+  // Paused while the tab is hidden; returning re-runs the effect, which also
+  // serves as the catch-up fetch and re-renders the relative-time labels.
+  const pageVisible = usePageVisibility()
+  const [, setNowTick] = useState(0)
   useEffect(() => {
-    const id = window.setInterval(() => {
+    if (!pageVisible) return
+    const poll = () => {
       api
         .getEngineLimits()
         .then(setData)
         .catch(() => {
           /* transient poll failure — keep the last good snapshot, no error toast */
         })
+    }
+    poll()
+    const id = window.setInterval(() => {
+      poll()
+      // Same cadence keeps relative "Updated Xm ago" / "Stale" labels ticking
+      // (the label is derived from refreshedAt, not React state).
+      setNowTick((n) => n + 1)
     }, 30_000)
     return () => window.clearInterval(id)
-  }, [])
-
-  // Re-render on a timer so relative "Updated Xm ago" / "Stale" labels keep ticking
-  // even between polls (the label is derived from refreshedAt, not React state).
-  const [, setNowTick] = useState(0)
-  useEffect(() => {
-    const id = window.setInterval(() => setNowTick((n) => n + 1), 30_000)
-    return () => window.clearInterval(id)
-  }, [])
+  }, [pageVisible])
 
   const allEngines = useMemo(
     () => sortEngines(Object.values(data?.engines ?? {})),

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChatMessages } from '@/components/chat/chat-messages'
 import { useGateway } from '@/hooks/use-gateway'
+import { usePageVisibility } from '@/hooks/use-page-visibility'
 import { api, type Employee, type TicketSessionResponse, type TicketSessionMessage } from '@/lib/api'
 import type { Message } from '@/lib/conversations'
 import type { KanbanTicket, TicketStatus, TicketPriority, TicketComplexity } from '@/lib/kanban/types'
@@ -40,7 +41,10 @@ const COMPLEXITY_LABELS: Record<TicketComplexity, string> = {
   medium: 'Medium complexity',
   high: 'High complexity',
 }
-const LIVE_REFRESH_MS = 4000
+/** Slow safety-net only: session:delta/completed/started events over the
+ *  gateway websocket are the primary refresh path — the interval exists to
+ *  recover from a dropped frame, not to drive updates. */
+const LIVE_REFRESH_MS = 30000
 const LIVE_STALE_HINT_MS = 15000
 const LIVE_TRANSCRIPT_LIMIT = 8
 
@@ -144,6 +148,7 @@ export function TicketDetailPanel({
 }: TicketDetailPanelProps) {
   const closeRef = useRef<HTMLButtonElement>(null)
   const { subscribe } = useGateway()
+  const pageVisible = usePageVisibility()
   const currentTicketIdRef = useRef(ticket.id)
   const [liveSession, setLiveSession] = useState<TicketSessionResponse | null>(null)
   const [liveLoading, setLiveLoading] = useState(false)
@@ -253,15 +258,18 @@ export function TicketDetailPanel({
       }
     })
 
-    const timer = window.setInterval(() => {
-      void loadLiveSession()
-    }, LIVE_REFRESH_MS)
+    let timer: number | null = null
+    if (pageVisible) {
+      timer = window.setInterval(() => {
+        void loadLiveSession()
+      }, LIVE_REFRESH_MS)
+    }
 
     return () => {
       unsubscribe()
-      window.clearInterval(timer)
+      if (timer !== null) window.clearInterval(timer)
     }
-  }, [subscribe, ticket.status, liveSession?.found, liveSession?.sessionId, liveSession?.status, loadLiveSession])
+  }, [subscribe, ticket.status, liveSession?.found, liveSession?.sessionId, liveSession?.status, loadLiveSession, pageVisible])
 
   const assignee = employees.find(e => e.name === ticket.assigneeId) ?? null
   const accentColor = 'var(--accent)'

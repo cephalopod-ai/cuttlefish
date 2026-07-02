@@ -183,6 +183,15 @@ export function hydrateAllAttachments(deps: HydrateAllDeps): void {
 }
 
 /** Test seam: clear all in-memory attachment state + hydration markers. */
+/** Forget a session's in-memory attachment state entirely (session delete).
+ *  Covers both directions: its own attachments as a talk session, and any
+ *  hydration marker — without this, deleted sessions accumulate entries for
+ *  the daemon's lifetime. */
+export function clearTalkAttachments(sessionId: string): void {
+  attachmentsByTalk.delete(sessionId);
+  hydrated.delete(sessionId);
+}
+
 export function __resetAttachmentsForTest(): void {
   attachmentsByTalk.clear();
   hydrated.clear();

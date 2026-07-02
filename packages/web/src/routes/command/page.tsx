@@ -13,6 +13,7 @@ import { PageLayout } from '@/components/page-layout'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useBreadcrumbs } from '@/context/breadcrumb-context'
 import { useCommandCenter } from '@/hooks/use-command-center'
+import { usePageVisibility } from '@/hooks/use-page-visibility'
 import type { CommandCenterAgentUsage, CommandCenterManagerSummary, CommandCenterUsageRange } from '@/lib/api'
 
 const RANGE_OPTIONS: CommandCenterUsageRange[] = ['day', 'week', 'month']
@@ -50,8 +51,11 @@ const HEALTH_TONES: Record<HealthTone, { chip: string; dot: string }> = {
 
 function useUtcClock() {
   const [clock, setClock] = useState('00:00:00')
+  const pageVisible = usePageVisibility()
 
+  // 1s re-renders are pointless on a hidden tab — pause and resync on return.
   useEffect(() => {
+    if (!pageVisible) return
     const format = () => {
       const date = new Date()
       const part = (value: number) => String(value).padStart(2, '0')
@@ -61,7 +65,7 @@ function useUtcClock() {
     format()
     const timer = window.setInterval(format, 1000)
     return () => window.clearInterval(timer)
-  }, [])
+  }, [pageVisible])
 
   return clock
 }

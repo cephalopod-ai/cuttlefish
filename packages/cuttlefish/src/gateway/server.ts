@@ -1,4 +1,3 @@
-import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -37,6 +36,7 @@ import type { OrchestrationRuntime } from "../orchestration/runtime.js";
 import { initDb, clearAllPartialMessages, createSession, getInterruptedSessions, getSession, getSessionBySessionKey, listSessions, recoverStaleQueueItems, recoverStaleSessions, updateSession } from "../sessions/registry.js";
 import { SessionManager } from "../sessions/manager.js";
 import { initStt } from "../stt/stt.js";
+import { shutdownTalkTts } from "../talk/tts-stream.js";
 import { loadJobs } from "../cron/jobs.js";
 import { reloadScheduler, startScheduler, stopScheduler } from "../cron/scheduler.js";
 import { startBoardWorker } from "./board-worker.js";
@@ -68,6 +68,7 @@ import { handleApiRequest, resumePendingWebQueueItems, type ApiContext } from ".
 import { dispatchWebSessionRun } from "./api/session-dispatch.js";
 import { startConfiguredConnectors } from "./server/connectors.js";
 import { createGatewayCleanup, type GatewayCleanup } from "./server/cleanup.js";
+import { createSleepGuard } from "./sleep-guard.js";
 import { serveStatic, isAllowedCorsOrigin } from "./server/http-static.js";
 import { bindOrchestrationRuntimeHandlers } from "./server/orchestration.js";
 import { createGatewayTransports } from "./server/transports.js";
@@ -519,9 +520,12 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
   apiContext.reloadConfig = reloadConfig;
   emailService.start();
   void relayKnowledgeOutbox();
+  // Retry backstop only: the happy path relays on enqueue, so this timer just
+  // re-drives previously-failed deliveries. 60s keeps the idle daemon from
+  // running a claim query 4×/min against an (almost always) empty outbox.
   const knowledgeRelayTimer = setInterval(() => {
     void relayKnowledgeOutbox();
-  }, 15_000);
+  }, 60_000);
   knowledgeRelayTimer.unref?.();
 
   const replayDeferredOrchestrationRuntimeRefresh = (): void => {
@@ -540,6 +544,8 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
   reconcileOrphanedTickets({ engines, orgDir: ORG_DIR, getSession, listSessions, emit, cause: "startup" });
   logBoardSummary(ORG_DIR, (msg) => logger.info(msg));
 
+  const sleepGuard = createSleepGuard();
+
   const stopStatusReconciler = startStatusReconciler({
     engines,
     emit,
@@ -547,6 +553,9 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
     onAfterSweep: () => {
       reconcileOrphanedTickets({ engines, orgDir: ORG_DIR, getSession, listSessions, emit });
       replayDeferredOrchestrationRuntimeRefresh();
+      // Reconcile the macOS sleep assertion with real activity: held only
+      // while sessions are running, released when the gateway goes idle.
+      sleepGuard.update(listSessions({ status: "running" }).length > 0);
     },
   });
   const stopBoardWorker = startBoardWorker({ context: apiContext, orgDir: ORG_DIR });
@@ -609,6 +618,9 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
           prompt: buildLeaderAckEscalationPrompt({ childSession, recipient, ackLeaderName, timeoutMs }),
           promptExcerpt: `Leader acknowledgement timeout for ${childSession.employee || childSession.id}`,
         }),
+        // Fired from the reconciler timer — a stalled connection must not hold
+        // the callback (and its response body) open indefinitely.
+        signal: AbortSignal.timeout(30_000),
       });
       await assertFetchOk(response, "leader acknowledgement escalation");
     },
@@ -629,19 +641,13 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
     }, 1000);
   }
 
-  let caffeinate: ChildProcess | null = null;
-  if (process.platform === "darwin") {
-    caffeinate = spawn("caffeinate", ["-s"], { stdio: "ignore", detached: false });
-    caffeinate.unref();
-    caffeinate.on("error", (err) => {
-      logger.warn(`caffeinate failed to start: ${err.message}`);
-      caffeinate = null;
-    });
-    logger.info("caffeinate started — macOS sleep prevention active");
-  }
+  // Seed the sleep guard from current state; the status reconciler sweep keeps
+  // it reconciled from here on (acquired while sessions run, released at idle).
+  sleepGuard.update(listSessions({ status: "running" }).length > 0);
 
   return createGatewayCleanup({
-    caffeinate,
+    stopSleepGuard: () => sleepGuard.stop(),
+    stopTts: () => shutdownTalkTts(),
     claudeLifecycle,
     connectors,
     gatewayInfoFile: GATEWAY_INFO_FILE,

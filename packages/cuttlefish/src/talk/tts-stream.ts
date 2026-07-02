@@ -33,6 +33,15 @@ export function __setTalkTtsForTest(tts: Tts | null): void {
 }
 
 /**
+ * Gateway-shutdown hook: kill the Kokoro sidecar if one was ever spawned.
+ * Deliberately does NOT construct the engine just to tear it down — if TTS was
+ * never used this session there is no sidecar to stop.
+ */
+export function shutdownTalkTts(): void {
+  engine?.shutdown();
+}
+
+/**
  * Max characters accepted by POST /api/tts in a single read-aloud call. Bounds
  * the sidecar's synth time and the WAV response size (≈ a few minutes of audio).
  */

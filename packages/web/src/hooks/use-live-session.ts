@@ -20,6 +20,7 @@
  * identical to the previous inline implementation.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { usePageVisibility } from '@/hooks/use-page-visibility'
 import { api } from '@/lib/api'
 import type { BackgroundActivity } from '@/lib/api'
 import type { Message, MediaAttachment } from '@/lib/conversations'
@@ -198,6 +199,7 @@ export function useLiveSession(
   opts: UseLiveSessionOptions,
 ): UseLiveSessionResult {
   const { subscribe, connectionSeq, readOnly = false } = opts
+  const pageVisible = usePageVisibility()
   const initialSnapshotRef = useRef<LiveSessionSnapshot | null | undefined>(undefined)
   if (initialSnapshotRef.current === undefined) {
     initialSnapshotRef.current = sessionId ? readLiveSessionSnapshot(sessionId) : null
@@ -780,8 +782,11 @@ export function useLiveSession(
   // Poll while the UI thinks a turn is running. This covers the case where the
   // single terminal WS frame is dropped but the socket itself never reconnects,
   // so the reconnect-only watchdog above never gets a chance to reconcile.
+  // Safety net only (deltas arrive over the WS), so it runs slow and pauses on
+  // hidden tabs; returning to the tab re-arms it via the visibility dep.
   useEffect(() => {
     if (!loading) return
+    if (!pageVisible) return
     const id = sessionIdRef.current
     if (!id) return
     const interval = setInterval(async () => {
@@ -801,9 +806,9 @@ export function useLiveSession(
       } catch {
         // best-effort; normal WS/reconnect paths can still recover later
       }
-    }, 10_000)
+    }, 30_000)
     return () => clearInterval(interval)
-  }, [loading, loadSession])
+  }, [loading, loadSession, pageVisible])
 
   // --- write API (editable pane) ---
   const beginSend = useCallback((userMsg: Message) => {

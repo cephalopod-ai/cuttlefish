@@ -6,6 +6,7 @@ import type { InterruptibleEngine, EngineRunOpts, EngineResult, StreamDelta } fr
 import { logger } from "../shared/logger.js";
 import { resolveBin } from "../shared/resolve-bin.js";
 import { buildEngineEnv } from "../shared/engine-env.js";
+import { readFirstLineSync } from "../shared/first-line.js";
 import { codexMcpConfigFlagsFromFile } from "../mcp/resolver.js";
 
 const CODEX_SESSIONS_DIR = path.join(os.homedir(), ".codex", "sessions");
@@ -64,7 +65,8 @@ function walkJsonl(dir: string, out: string[] = []): string[] {
 
 function codexSessionIdFromTranscript(filePath: string): string | undefined {
   try {
-    const first = fs.readFileSync(filePath, "utf-8").split("\n", 1)[0];
+    const first = readFirstLineSync(filePath);
+    if (!first) return undefined;
     const msg = JSON.parse(first);
     const id = msg?.payload?.id;
     return typeof id === "string" && id ? id : undefined;

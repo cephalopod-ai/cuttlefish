@@ -215,10 +215,21 @@ async function readCodexRateLimits(config: CuttlefishConfig): Promise<JsonRecord
     let stdout = "";
     let stderr = "";
     let settled = false;
+    // SIGTERM + escalation: a wedged app-server that ignores SIGTERM would
+    // otherwise outlive the probe as an orphan.
+    function killChild(): void {
+      try { child.kill("SIGTERM"); } catch { /* already gone */ }
+      const force = setTimeout(() => {
+        if (child.exitCode === null) {
+          try { child.kill("SIGKILL"); } catch { /* already gone */ }
+        }
+      }, 2_000);
+      force.unref?.();
+    }
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
-      child.kill("SIGTERM");
+      killChild();
       reject(new Error(stderr.trim() || "Timed out reading Codex rate limits"));
     }, 5000);
 
@@ -226,7 +237,7 @@ async function readCodexRateLimits(config: CuttlefishConfig): Promise<JsonRecord
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      child.kill("SIGTERM");
+      killChild();
       resolve(value);
     }
 

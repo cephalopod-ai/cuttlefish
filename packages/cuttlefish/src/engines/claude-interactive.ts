@@ -13,9 +13,8 @@ import { SsePtyProxy, MAIN_AGENT_SENTINEL, type SseDataEvent, type UpstreamActiv
 import { findTranscriptForSession } from "./claude-transcript.js";
 import { buildInteractiveArgs, isNativeClaudeCommand, pasteAndSubmit } from "./claude-interactive-args.js";
 import {
-  computeInteractiveCost,
+  computeInteractiveTurnStats,
   lastAssistantTextFromTranscript,
-  lastTurnContextTokens,
   stripReasoningBlocks,
 } from "./claude-interactive-transcript.js";
 import { claudeHookToDeltas, rateLimitFromStopFailure, sseEventToDeltas } from "./claude-interactive-stream.js";
@@ -290,14 +289,14 @@ export class InteractiveClaudeEngine implements InterruptibleEngine, PtyViewEngi
     }
 
     // Reconstruct cost from the transcript (the Stop hook carries no cost).
+    // Context-meter: most recent turn's input context (input + cache), mirroring
+    // headless claude.ts so interactive/CLI-view turns also populate the meter.
+    // Both come from one read of the transcript.
     const transcriptPath = resolver.transcriptPath;
     if (transcriptPath && !result.error) {
-      const cost = computeInteractiveCost(transcriptPath, opts.model);
-      if (cost) { result.cost = cost.cost; result.numTurns = cost.turns; }
-      // Context-meter: most recent turn's input context (input + cache), mirroring
-      // headless claude.ts so interactive/CLI-view turns also populate the meter.
-      const ctx = lastTurnContextTokens(transcriptPath);
-      if (ctx) result.contextTokens = ctx;
+      const stats = computeInteractiveTurnStats(transcriptPath, opts.model);
+      if (stats?.cost) { result.cost = stats.cost.cost; result.numTurns = stats.cost.turns; }
+      if (stats?.contextTokens) result.contextTokens = stats.contextTokens;
     }
     // Recover lost result text: if the turn settled with no text and no API-level
     // failure, the Stop hook (which carries last_assistant_message) was dropped —
@@ -421,19 +420,26 @@ export class InteractiveClaudeEngine implements InterruptibleEngine, PtyViewEngi
         : MAIN_AGENT_SENTINEL,
     });
     const { proxy, port } = await this.startProxy(cuttlefishSessionId);
-    const env = buildClaudePtyEnv(port || undefined);
-    const bin = resolveBin("claude", opts.bin);
-    const geom = this.lastGeom.get(cuttlefishSessionId);
-    logger.info(`InteractiveClaudeEngine spawning ${bin} (resume: ${opts.resumeSessionId || "none"}, geom: ${geom ? `${geom.cols}×${geom.rows}` : "default"}, sseProxy: ${port || "off"})`);
-    const proc = await spawnPty(bin, args, {
-      name: "xterm-256color",
-      cols: geom?.cols ?? 120,
-      rows: geom?.rows ?? 40,
-      cwd: opts.cwd || CUTTLEFISH_HOME,
-      env,
-    });
-    this.spawnParams.set(cuttlefishSessionId, { model: opts.model, effortLevel: opts.effortLevel, appendApplied: true });
-    return this.wireProcToStream(cuttlefishSessionId, proc, port ? proxy : undefined);
+    try {
+      const env = buildClaudePtyEnv(port || undefined);
+      const bin = resolveBin("claude", opts.bin);
+      const geom = this.lastGeom.get(cuttlefishSessionId);
+      logger.info(`InteractiveClaudeEngine spawning ${bin} (resume: ${opts.resumeSessionId || "none"}, geom: ${geom ? `${geom.cols}×${geom.rows}` : "default"}, sseProxy: ${port || "off"})`);
+      const proc = await spawnPty(bin, args, {
+        name: "xterm-256color",
+        cols: geom?.cols ?? 120,
+        rows: geom?.rows ?? 40,
+        cwd: opts.cwd || CUTTLEFISH_HOME,
+        env,
+      });
+      this.spawnParams.set(cuttlefishSessionId, { model: opts.model, effortLevel: opts.effortLevel, appendApplied: true });
+      return this.wireProcToStream(cuttlefishSessionId, proc, port ? proxy : undefined);
+    } catch (err) {
+      // The proxy is normally torn down by the PTY's onExit — if the PTY never
+      // spawned, stop it here or its bound port/server leaks on every retry.
+      proxy.stop();
+      throw err;
+    }
   }
 
   /** Spawn an idle PTY for the CLI/xterm view. If an engineSessionId is provided,
@@ -469,8 +475,11 @@ export class InteractiveClaudeEngine implements InterruptibleEngine, PtyViewEngi
     if (opts.cols && opts.rows) setCapped(this.lastGeom, cuttlefishSessionId, { cols: opts.cols, rows: opts.rows });
 
     void (async () => {
+      let proxy: SsePtyProxy | undefined;
       try {
-        const { proxy, port } = await this.startProxy(cuttlefishSessionId);
+        const started = await this.startProxy(cuttlefishSessionId);
+        proxy = started.proxy;
+        const port = started.port;
         // Re-check after the async gap: a real turn (run) or another idle spawn may
         // have claimed the session while we awaited the proxy bind. If so, don't
         // adopt a duplicate PTY — drop our proxy and bail.
@@ -493,6 +502,9 @@ export class InteractiveClaudeEngine implements InterruptibleEngine, PtyViewEngi
         this.spawnParams.set(cuttlefishSessionId, { model: opts.model, effortLevel: undefined, appendApplied: false });
         this.lifecycle.adopt(cuttlefishSessionId, handle);
       } catch (err) {
+        // Nothing adopted the proxy (spawnPty threw before wireProcToStream) —
+        // stop it or its bound port/server leaks.
+        proxy?.stop();
         logger.warn(`ensureIdleSpawn failed for session ${cuttlefishSessionId}: ${err instanceof Error ? err.message : String(err)}`);
       } finally {
         this.idleSpawning.delete(cuttlefishSessionId);

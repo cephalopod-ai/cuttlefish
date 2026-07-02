@@ -5,9 +5,9 @@ import type { SessionNotificationSink } from "../sessions/notification-sink.js";
 import { logger } from "../shared/logger.js";
 
 const DEFAULT_INTERVAL_MS = 15_000;
-/** runWebSession's heartbeat refreshes lastActivity every 5s while a turn is in
- *  flight. A "running" session whose heartbeat is older than this has no live
- *  turn driving it — the completion event was lost.
+/** runWebSession's heartbeat refreshes lastActivity every 10s while a turn is
+ *  in flight. A "running" session whose heartbeat is older than this has no
+ *  live turn driving it — the completion event was lost.
  *
  *  Queued-but-not-started turns are safe: the POST handler sets
  *  status:"running" + lastActivity synchronously at enqueue, and runWebSession

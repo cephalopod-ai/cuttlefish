@@ -22,7 +22,9 @@ import { CUTTLEFISH_HOME } from "../../../shared/paths.js";
 import { getClaudeExpectedResetAt } from "../../../shared/usageAwareness.js";
 import { logger } from "../../../shared/logger.js";
 import { isInterruptibleEngine } from "../../../shared/types.js";
+import { clearTalkAttachments } from "../../../talk/attachments.js";
 import { maybeEmitTalkGraph } from "../../../talk/graph.js";
+import { clearTalkMuted } from "../../../talk/mute-state.js";
 import { createPtyAccessToken } from "../../auth.js";
 import { fileIdsToMedia, handleSessionAttachment, rehomeAttachmentsToSession } from "../../files.js";
 import { readJsonBody } from "../../http-helpers.js";
@@ -217,6 +219,10 @@ export async function handleSessionWriteRoutes(
     killSessionEngines(context, session, "Interrupted: session deleted");
     context.sessionManager.getQueue().clearQueue(session.sessionKey || session.sourceRef || session.id);
     maybeEmitTalkGraph(params.id, "removed", { getSession, emit: context.emit });
+    // Drop per-session in-memory talk state (mute flag, attachments) — these
+    // registries otherwise retain deleted-session entries for the daemon's life.
+    clearTalkMuted(params.id);
+    clearTalkAttachments(params.id);
     const deleted = deleteSession(params.id);
     if (!deleted) {
       notFound(res);

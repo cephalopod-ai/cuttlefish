@@ -1,5 +1,4 @@
 import type http from "node:http";
-import type { ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import type { WebSocket, WebSocketServer } from "ws";
 import type { Connector } from "../../shared/types.js";
@@ -11,7 +10,6 @@ import type { OrchestrationRuntime } from "../../orchestration/runtime.js";
 export type GatewayCleanup = () => Promise<void>;
 
 interface GatewayCleanupDeps {
-  caffeinate: ChildProcess | null;
   claudeLifecycle: PtyLifecycleManager;
   connectors: Connector[];
   gatewayInfoFile: string;
@@ -32,12 +30,15 @@ interface GatewayCleanupDeps {
   uploadCleanupTimer: NodeJS.Timeout;
   knowledgeRelayTimer?: NodeJS.Timeout;
   stopEmailService?: () => void;
+  /** Release the macOS sleep assertion (no-op if not held). */
+  stopSleepGuard?: () => void;
+  /** Kill the Kokoro TTS sidecar (if one was spawned this session). */
+  stopTts?: () => void;
   wsClients: Set<WebSocket>;
   wss: WebSocketServer;
 }
 
 export function createGatewayCleanup({
-  caffeinate,
   claudeLifecycle,
   connectors,
   gatewayInfoFile,
@@ -58,6 +59,8 @@ export function createGatewayCleanup({
   uploadCleanupTimer,
   knowledgeRelayTimer,
   stopEmailService,
+  stopSleepGuard,
+  stopTts,
   wsClients,
   wss,
 }: GatewayCleanupDeps): GatewayCleanup {
@@ -72,9 +75,16 @@ export function createGatewayCleanup({
     if (knowledgeRelayTimer) clearInterval(knowledgeRelayTimer);
     stopEmailService?.();
 
-    if (caffeinate && caffeinate.exitCode === null) {
-      caffeinate.kill();
-      logger.info("caffeinate stopped");
+    try {
+      stopTts?.();
+    } catch (err) {
+      logger.warn(`Failed to stop TTS sidecar: ${err instanceof Error ? err.message : err}`);
+    }
+
+    try {
+      stopSleepGuard?.();
+    } catch (err) {
+      logger.warn(`Failed to release sleep guard: ${err instanceof Error ? err.message : err}`);
     }
 
     const runningSessions = getRunningSessions();

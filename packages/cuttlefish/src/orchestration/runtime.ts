@@ -30,7 +30,11 @@ import {
 import { DEFAULT_MAX_WORKTREES, reapExpiredReviewBundles, reapOrphanedWorktrees, type WorktreeHandle, type WorktreeOptions } from "./worktree.js";
 import { interruptOrchestrationRun, recoverOrchestrationRun, sweepOrphanedOrchestrationRuns } from "./run-ledger-integration.js";
 
-const DEFAULT_REAPER_INTERVAL_MS = 5_000;
+// Reaper ticks are a backstop: lease expiry is also forced on demand at
+// schedule time, and worktree/telemetry pruning only has to catch strays.
+// 30s keeps the daemon quiet at idle (each tick costs directory scans plus a
+// SQLite write) without letting garbage linger meaningfully longer.
+const DEFAULT_REAPER_INTERVAL_MS = 30_000;
 const DEFAULT_STALE_DISPATCHING_CONTINUATION_MS = 10 * 60 * 1_000;
 const DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS = 5_000;
 const EMPIRICAL_ROUTING_MAX_BYTES = 1_000_000;

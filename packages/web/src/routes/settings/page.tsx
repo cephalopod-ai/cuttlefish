@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { PageLayout } from "@/components/page-layout"
 import { useBreadcrumbs } from "@/context/breadcrumb-context"
 import { useModelRegistry } from "@/hooks/use-model-registry"
+import { usePageVisibility } from "@/hooks/use-page-visibility"
 import { api } from "@/lib/api"
 import { useAuth } from "@/routes/auth-provider"
 import { useTheme } from "@/routes/providers"
@@ -79,6 +80,7 @@ export default function SettingsPage() {
   const [feedback, setFeedback] = useState<FeedbackState>(null)
   const [waQr, setWaQr] = useState<string | null>(null)
   const [waStatus, setWaStatus] = useState("unknown")
+  const pageVisible = usePageVisibility()
   const [employees, setEmployees] = useState<Array<{ name: string; displayName: string }>>([])
 
   useEffect(() => {
@@ -126,6 +128,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (!config.connectors?.whatsapp) return
+    if (!pageVisible) return
 
     let cancelled = false
 
@@ -149,15 +152,17 @@ export default function SettingsPage() {
     }
 
     void checkQr()
+    // Fast poll only while a QR scan is pending (codes rotate); once linked
+    // (or not yet pending) a slow check is enough to notice state changes.
     const interval = setInterval(() => {
       void checkQr()
-    }, 10000)
+    }, waStatus === "qr_pending" ? 10000 : 60000)
 
     return () => {
       cancelled = true
       clearInterval(interval)
     }
-  }, [config.connectors?.whatsapp])
+  }, [config.connectors?.whatsapp, waStatus, pageVisible])
 
   function updateConfig(path: string[], value: unknown) {
     setConfig((prev) => {
