@@ -47,7 +47,7 @@ operator control plane" — is defeated by three independent mechanisms:**
    the API path. → **CF2-101 (Critical).**
 2. **Auth-off-on-loopback.** On the shipped default (`127.0.0.1`), gateway auth
    is not required, so the entire principal/scoped-token block — including
-   `scopedTokenForbidden` and the connector-send policy — never runs. → **CF2-110
+   `scopedTokenForbidden` and the connector-send policy — never runs. → **CF2-120
    (root, found independently by 3 lenses).**
 3. **Secret-bearing engine env.** The two most-used engines (Claude PTY, headless
    Grok) inherit `CUTTLEFISH_GATEWAY_TOKEN`/`CUTTLEFISH_INTERNAL_TOKEN` (and
@@ -282,7 +282,7 @@ Two independent bypasses of the (otherwise solid) SSRF guard, both on the
 hops); extend `ipv6IsPrivate` to canonicalize and check the embedded IPv4 for the
 whole `::ffff:0:0/96` (and v4-compat / NAT64) ranges in all notations. (The
 already-documented TOCTOU/DNS-pinning residual, `ssrf-guard.ts:14-15`, remains —
-track as Medium CF2-207.)
+track as Medium CF2-209.)
 
 ### CF2-108 — Child model output is injected verbatim into the parent engine (delegation worm / upward confused-deputy)
 **Severity: High · Confidence: Confirmed · Basis: source-evidenced · Lens: audit-security-llm (LLM-011)**
