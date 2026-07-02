@@ -14,6 +14,15 @@ export function buildClaudePtyEnv(proxyPort?: number): Record<string, string> {
   }
   env.CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN = "1";
   env.CLAUDE_CODE_RESUME_TOKEN_THRESHOLD = "999999999";
+  // The claude CLI refuses `--dangerously-skip-permissions` when it detects it is
+  // running as root/sudo, unless IS_SANDBOX=1 is set. Cuttlefish always passes that
+  // flag, so in a root context (containers, CI, some cloud sandboxes) the very first
+  // turn dies instantly with `read EIO` and no visible error. When we are already
+  // root, opt into the sandbox acknowledgement so the engine can start; on a normal
+  // non-root install this is a no-op. Respect an explicit operator override.
+  if (env.IS_SANDBOX === undefined && typeof process.getuid === "function" && process.getuid() === 0) {
+    env.IS_SANDBOX = "1";
+  }
   if (proxyPort) env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${proxyPort}`;
   return env;
 }

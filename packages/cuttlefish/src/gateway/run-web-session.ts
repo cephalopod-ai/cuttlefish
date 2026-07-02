@@ -595,7 +595,37 @@ export async function runWebSession(
 
     const wasInterrupted = result.error?.startsWith("Interrupted");
     const wasSuperseded = !wasInterrupted && isTurnSuperseded(currentSession.id, turnStartedAt);
-    const quietPreempted = wasInterrupted || wasSuperseded;
+
+    // An "Interrupted" result is normally a QUIET preemption — the user switched
+    // engine, a newer turn superseded this one, or a stall-retry kicked in — and
+    // should leave no error noise. But an engine that DIES on spawn before emitting
+    // anything ALSO surfaces as an interrupt ("… process exited"), and that is a
+    // real failure the user must see, not a silent no-op. Distinguish it: an
+    // interrupt whose turn produced no streamed output and was not superseded by a
+    // newer turn is an engine crash, so surface it instead of swallowing it. (This
+    // is the silent-first-turn-failure seam: without it a bad engine bin, an
+    // unauthenticated CLI, or a crash-on-spawn leaves the chat blank with no clue.)
+    const engineDiedNoOutput =
+      !!wasInterrupted &&
+      !isTurnSuperseded(currentSession.id, turnStartedAt) &&
+      getMessages(currentSession.id).every((m) => !m.partial) &&
+      !result.result?.trim() &&
+      /process exited/i.test(result.error ?? "");
+
+    const quietPreempted = (wasInterrupted || wasSuperseded) && !engineDiedNoOutput;
+
+    if (engineDiedNoOutput) {
+      // Turn the raw interrupt into a visible, actionable chat notification and let
+      // the normal error path below mark the session errored + emit the error.
+      const engineLabel = currentSession.engine;
+      result.error = `The ${engineLabel} engine exited before responding — the CLI failed to start or crashed on spawn (no reply was produced).`;
+      insertMessage(
+        currentSession.id,
+        "notification",
+        `⚠️ ${result.error} Check that the "${engineLabel}" CLI is installed and signed in, then try again.`,
+      );
+    }
+
     if (!quietPreempted && isOrchestrationImplementationTurn(currentSession) && !result.error && !result.result?.trim()) {
       result.error = "Orchestration implementation turn produced no output";
     }

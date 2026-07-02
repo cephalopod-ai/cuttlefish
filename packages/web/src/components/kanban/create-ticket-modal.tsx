@@ -54,6 +54,24 @@ const initialState = {
   manualOnly: false,
 }
 
+/** The server requires ticket-context URLs to be absolute http(s) (see
+ *  board-service assertValidBoardTicket). Validate client-side so an invalid URL
+ *  gets an inline message instead of a silently-rejected submit. */
+function resourceUrlError(raw: string): string | null {
+  const value = raw.trim()
+  if (!value) return null
+  let parsed: URL
+  try {
+    parsed = new URL(value)
+  } catch {
+    return 'Enter a valid URL, e.g. https://example.com/reference'
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return 'URL must start with http:// or https://'
+  }
+  return null
+}
+
 export function CreateTicketModal({
   open,
   onOpenChange,
@@ -61,9 +79,11 @@ export function CreateTicketModal({
   onSubmit,
 }: CreateTicketModalProps) {
   const [form, setForm] = useState(initialState)
+  const [urlError, setUrlError] = useState<string | null>(null)
 
   const resetForm = useCallback(() => {
     setForm(initialState)
+    setUrlError(null)
   }, [])
 
   function handleOpenChange(next: boolean) {
@@ -74,6 +94,12 @@ export function CreateTicketModal({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.title.trim()) return
+
+    const urlErr = resourceUrlError(form.resourceUrl)
+    if (urlErr) {
+      setUrlError(urlErr)
+      return
+    }
 
     onSubmit({
       title: form.title.trim(),
@@ -248,12 +274,23 @@ export function CreateTicketModal({
               type="url"
               placeholder="https://example.com/reference"
               value={form.resourceUrl}
-              onChange={(e) => setForm((f) => ({ ...f, resourceUrl: e.target.value, resourcePath: e.target.value.trim() ? null : f.resourcePath }))}
-              className="text-[length:var(--text-body)] text-[var(--text-primary)] py-2 px-3 border border-[var(--separator)] rounded-[var(--radius-md)] bg-[var(--fill-tertiary)] outline-none font-[inherit]"
+              aria-invalid={urlError ? true : undefined}
+              onChange={(e) => {
+                if (urlError) setUrlError(null)
+                setForm((f) => ({ ...f, resourceUrl: e.target.value, resourcePath: e.target.value.trim() ? null : f.resourcePath }))
+              }}
+              className="text-[length:var(--text-body)] text-[var(--text-primary)] py-2 px-3 border rounded-[var(--radius-md)] bg-[var(--fill-tertiary)] outline-none font-[inherit]"
+              style={{ borderColor: urlError ? 'var(--system-red)' : 'var(--separator)' }}
             />
-            <div className="text-[length:var(--text-caption1)] text-[var(--text-tertiary)]">
-              Add either one local directory or one URL for the agent to inspect when this ticket runs.
-            </div>
+            {urlError ? (
+              <div className="text-[length:var(--text-caption1)]" style={{ color: 'var(--system-red)' }}>
+                {urlError}
+              </div>
+            ) : (
+              <div className="text-[length:var(--text-caption1)] text-[var(--text-tertiary)]">
+                Add either one local directory or one URL for the agent to inspect when this ticket runs.
+              </div>
+            )}
           </div>
 
           <label className="flex items-center gap-[var(--space-2)] text-[length:var(--text-caption1)] text-[var(--text-secondary)]">
