@@ -150,17 +150,30 @@ function setAnchor(sessionId: string, anchorIso: string): void {
   if (updated) updateSession(sessionId, { lastActivity: new Date().toISOString() });
 }
 
-function latestTranscriptTimestampIso(transcriptPath: string): string | undefined {
-  let raw: string;
+/** Read up to the last `maxBytes` of a file as utf-8 (whole file when smaller). */
+function readFileTailSync(filePath: string, maxBytes: number): { text: string; truncated: boolean } | undefined {
   try {
-    raw = fs.readFileSync(transcriptPath, "utf-8");
+    const fd = fs.openSync(filePath, "r");
+    try {
+      const size = fs.fstatSync(fd).size;
+      const start = Math.max(0, size - maxBytes);
+      const buf = Buffer.alloc(size - start);
+      fs.readSync(fd, buf, 0, buf.length, start);
+      return { text: buf.toString("utf-8"), truncated: start > 0 };
+    } finally {
+      fs.closeSync(fd);
+    }
   } catch {
     return undefined;
   }
+}
+
+function latestIsoInLines(raw: string, skipFirstPartial: boolean): string | undefined {
   let latestMs = 0;
   let latestIso: string | undefined;
-  for (const line of raw.split("\n")) {
-    const t = line.trim();
+  const lines = raw.split("\n");
+  for (let i = skipFirstPartial ? 1 : 0; i < lines.length; i++) {
+    const t = lines[i].trim();
     if (!t) continue;
     let obj: any;
     try { obj = JSON.parse(t); } catch { continue; }
@@ -172,6 +185,25 @@ function latestTranscriptTimestampIso(transcriptPath: string): string | undefine
     latestIso = iso;
   }
   return latestIso;
+}
+
+const LATEST_TS_TAIL_BYTES = 256 * 1024;
+
+function latestTranscriptTimestampIso(transcriptPath: string): string | undefined {
+  // Transcripts are append-only, so the newest timestamp lives in the last
+  // lines. This runs on every completed Claude turn — a bounded tail read
+  // replaces re-reading the whole (multi-MB, ever-growing) file each time.
+  const tail = readFileTailSync(transcriptPath, LATEST_TS_TAIL_BYTES);
+  if (!tail) return undefined;
+  const iso = latestIsoInLines(tail.text, tail.truncated);
+  if (iso || !tail.truncated) return iso;
+  // Pathological tail (no parseable timestamp in the last 256KB of a larger
+  // file) — fall back to scanning the whole transcript.
+  try {
+    return latestIsoInLines(fs.readFileSync(transcriptPath, "utf-8"), false);
+  } catch {
+    return undefined;
+  }
 }
 
 /** Mark a Claude transcript as already owned by the gateway completion path. */

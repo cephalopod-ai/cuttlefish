@@ -122,6 +122,12 @@ export class WhatsAppConnector implements Connector {
         const statusCode = (lastDisconnect?.error as { output?: { statusCode?: number } })?.output?.statusCode;
         const isLoggedOut = statusCode === DisconnectReason.loggedOut;
         logger.info(`WhatsApp connection closed (${statusCode}), reconnecting: ${!isLoggedOut}`);
+        // Typing refreshers are useless on a dead socket — without this they
+        // keep firing every 20s until the next reply or stop().
+        for (const interval of this.typingIntervals.values()) {
+          clearInterval(interval);
+        }
+        this.typingIntervals.clear();
         if (!isLoggedOut && this.connectionStatus !== "stopped") {
           this.scheduleReconnect();
         } else {
@@ -231,6 +237,7 @@ export class WhatsAppConnector implements Connector {
       const interval = setInterval(() => {
         this.sock?.sendPresenceUpdate("composing", channelId).catch(() => {});
       }, 20_000);
+      interval.unref?.();
       this.typingIntervals.set(channelId, interval);
     } else {
       await this.sock.sendPresenceUpdate("paused", channelId).catch(() => {});

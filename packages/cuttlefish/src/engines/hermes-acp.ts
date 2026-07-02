@@ -46,6 +46,13 @@ export class HermesAcpEngine implements InterruptibleEngine {
       rpc,
       killProc: () => {
         try { process.kill(-child.pid!, "SIGTERM"); } catch { try { child.kill("SIGTERM"); } catch { /* ignore */ } }
+        // Escalate like the other engines: a child that ignores SIGTERM must
+        // not survive killAll()/shutdown as an orphan.
+        const force = setTimeout(() => {
+          if (child.exitCode !== null) return;
+          try { process.kill(-child.pid!, "SIGKILL"); } catch { try { child.kill("SIGKILL"); } catch { /* ignore */ } }
+        }, 2_000);
+        force.unref?.();
       },
       isAliveProc: () => child.exitCode === null && !child.killed,
       onExit: (cb) => child.on("exit", cb),

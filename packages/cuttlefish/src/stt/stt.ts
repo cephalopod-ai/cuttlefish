@@ -122,9 +122,13 @@ export async function downloadModel(
     fs.mkdirSync(STT_MODELS_DIR, { recursive: true });
 
     await new Promise<void>((resolve, reject) => {
-      // Use curl for download — handles redirects, progress, and is reliable
+      // Use curl for download — handles redirects, progress, and is reliable.
+      // --speed-limit/--speed-time abort a stalled transfer (<1KB/s for 60s)
+      // instead of holding the download (and its 1s progress poll) open forever.
       const curl = spawn("curl", [
         "-L", // follow redirects
+        "--connect-timeout", "30",
+        "--speed-limit", "1024", "--speed-time", "60",
         "-o", tmpPath,
         url,
       ]);

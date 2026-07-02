@@ -335,6 +335,14 @@ export function AuraAvatar({
     // (CSS), overflowing it symmetrically; it's transparent + pointer-events:none
     // so the extra room costs nothing in layout.
     const HEADROOM = 1.7
+    // Demand-scoped frame rate: once the orb has been fully quiescent (idle
+    // state, no audio level, no live ripples, size not morphing) for the
+    // settle window, drop from display rate to ~15fps — the only remaining
+    // motion is the slow decorative breathe, which doesn't need 60fps worth
+    // of full-canvas plasma redraws. Any activity restores full rate on the
+    // next scheduled frame (≤ one throttled frame of latency).
+    const IDLE_SETTLE_MS = 1500
+    const IDLE_FRAME_MS = 66
 
     const accent = accentRef.current
     const baseAccentStr = rgbStr(accent)
@@ -348,6 +356,10 @@ export function AuraAvatar({
 
     // Persistent simulation state.
     let raf = 0
+    let idleTimeout: number | null = null
+    let prevSize = -1
+    let lastActiveAt = 0
+    let wasThrottled = false
     let time = 0
     let breathePhase = 0
     let lastTs: number | null = null
@@ -388,7 +400,10 @@ export function AuraAvatar({
       // Rings fade to zero by this radius so they never touch the canvas edge.
       const maxRippleR = (px / 2) * 0.96
 
-      const dtMs = lastTs == null ? 16 : Math.min(now - lastTs, 1000 / 30)
+      // While throttled, widen the dt clamp so the simulation clock tracks
+      // real time across the longer frame gaps instead of running slow.
+      if (lastTs == null) lastActiveAt = now
+      const dtMs = lastTs == null ? 16 : Math.min(now - lastTs, wasThrottled ? IDLE_FRAME_MS + 34 : 1000 / 30)
       lastTs = now
       const dt = dtMs / 1000
       const moving = !s.reduced
@@ -641,7 +656,20 @@ export function AuraAvatar({
       ctx.stroke()
 
       if (moving) {
-        raf = requestAnimationFrame(draw)
+        const sizeChanged = s.size !== prevSize
+        prevSize = s.size
+        const quiescent =
+          s.state === "idle" && !s.hasLevel && ripples.length === 0 && !sizeChanged
+        if (!quiescent) lastActiveAt = now
+        wasThrottled = quiescent && now - lastActiveAt > IDLE_SETTLE_MS
+        if (wasThrottled) {
+          idleTimeout = window.setTimeout(() => {
+            idleTimeout = null
+            raf = requestAnimationFrame(draw)
+          }, IDLE_FRAME_MS)
+        } else {
+          raf = requestAnimationFrame(draw)
+        }
       }
     }
 
@@ -652,11 +680,16 @@ export function AuraAvatar({
     // the size can still snap (hero↔dock mode flip). Cancel-then-schedule so a
     // burst of calls coalesces into one frame.
     redrawRef.current = () => {
+      if (idleTimeout != null) {
+        clearTimeout(idleTimeout)
+        idleTimeout = null
+      }
       cancelAnimationFrame(raf)
       raf = requestAnimationFrame(draw)
     }
 
     return () => {
+      if (idleTimeout != null) clearTimeout(idleTimeout)
       if (raf) cancelAnimationFrame(raf)
       redrawRef.current = null
       lastTs = null

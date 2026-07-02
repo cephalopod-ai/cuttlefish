@@ -1,6 +1,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { api, type Employee } from "@/lib/api"
+import { useGateway } from "@/hooks/use-gateway"
+import { usePageVisibility } from "@/hooks/use-page-visibility"
 import { describeCron, formatDuration } from "@/lib/cron-utils"
 import { PageLayout, ToolbarActions } from "@/components/page-layout"
 import { useBreadcrumbs } from "@/context/breadcrumb-context"
@@ -159,6 +161,8 @@ function RecentRuns({ jobId, refreshKey }: { jobId: string; refreshKey: number }
 
 export default function CronPage() {
   useBreadcrumbs([{ label: 'Cron' }])
+  const { subscribe } = useGateway()
+  const pageVisible = usePageVisibility()
   const [jobs, setJobs] = useState<CronJob[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -192,20 +196,31 @@ export default function CronPage() {
       .finally(() => setLoading(false))
   }, [])
 
-  // Initial load + auto-refresh every 60s
+  // Cron runs push completion events over the gateway websocket — refresh on
+  // those instead of fast-polling. The interval is a slow safety net and both
+  // it and the initial refresh pause while the tab is hidden (the effect
+  // re-runs on return, refreshing immediately).
   useEffect(() => {
+    if (!pageVisible) return
     refresh()
-    const interval = setInterval(refresh, 60000)
-    return () => clearInterval(interval)
-  }, [refresh])
+    const unsubscribe = subscribe((event) => {
+      if (event === 'cron:completed' || event === 'cron:error') refresh()
+    })
+    const interval = setInterval(refresh, 5 * 60000)
+    return () => {
+      unsubscribe()
+      clearInterval(interval)
+    }
+  }, [refresh, subscribe, pageVisible])
 
-  // "Updated X ago" ticker
+  // "Updated X ago" ticker (paused while hidden; re-runs on return)
   useEffect(() => {
+    if (!pageVisible) return
     const tick = () => setUpdatedAgo(timeAgo(lastRefresh.toISOString()))
     tick()
     const interval = setInterval(tick, 30000)
     return () => clearInterval(interval)
-  }, [lastRefresh])
+  }, [lastRefresh, pageVisible])
 
   // Toggle enabled via PUT
   function toggleEnabled(job: CronJob) {

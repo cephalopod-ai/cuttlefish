@@ -377,7 +377,11 @@ export async function runWebSession(
           logger.warn(`Orchestration heartbeat failed for session ${currentSession.id}: ${err instanceof Error ? err.message : err}`);
         }
       }
-    }, 5000);
+      // 10s stays inside every consumer's window: the status reconciler's 45s
+      // stale threshold, the UI's 15s stale hint, and the lease TTL (default
+      // 1h). Stream deltas also refresh lastActivity, so this heartbeat only
+      // carries quiet stretches of a turn.
+    }, 10_000);
 
     let partialSeq = 0;
     let curTextId: string | null = null; // the growing text-block row, null between blocks

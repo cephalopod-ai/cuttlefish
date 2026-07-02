@@ -25,10 +25,23 @@ export class HookRegistry {
   private unclaimedHandler: UnclaimedHookHandler | undefined;
   /** Per-session debounce timers for the unclaimed-Stop fallback. */
   private unclaimedTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  constructor(private ttlMs = 30_000, sweepIntervalMs = 5_000, private unclaimedDelayMs = 2_000) {
-    this.sweepTimer = setInterval(() => this.sweep(), sweepIntervalMs);
-    // Don't keep the event loop alive for the sweep timer.
-    this.sweepTimer.unref?.();
+  private disposed = false;
+  constructor(private ttlMs = 30_000, private sweepIntervalMs = 5_000, private unclaimedDelayMs = 2_000) {}
+
+  /** Demand-armed sweep: the timer only exists to expire buffered entries, so
+   *  it runs only while the buffer is non-empty (in steady state hooks are
+   *  claimed immediately and the buffer is empty — no periodic wakeups). */
+  private syncSweepTimer(): void {
+    if (this.buffer.size > 0) {
+      if (!this.sweepTimer && !this.disposed) {
+        this.sweepTimer = setInterval(() => this.sweep(), this.sweepIntervalMs);
+        // Don't keep the event loop alive for the sweep timer.
+        this.sweepTimer.unref?.();
+      }
+    } else if (this.sweepTimer) {
+      clearInterval(this.sweepTimer);
+      this.sweepTimer = null;
+    }
   }
 
   /** Install the fallback consumer for unclaimed Stop hooks. A Stop that lands
@@ -56,6 +69,7 @@ export class HookRegistry {
     const pending = this.buffer.get(cuttlefishSessionId);
     if (pending) {
       this.buffer.delete(cuttlefishSessionId);
+      this.syncSweepTimer();
       const now = Date.now();
       for (const b of pending) {
         if (now - b.at <= this.ttlMs) listener(b.payload);
@@ -66,6 +80,7 @@ export class HookRegistry {
   unregister(cuttlefishSessionId: string): void {
     this.listeners.delete(cuttlefishSessionId);
     this.buffer.delete(cuttlefishSessionId);
+    this.syncSweepTimer();
   }
 
   deliver(cuttlefishSessionId: string, payload: HookPayload): void {
@@ -74,6 +89,7 @@ export class HookRegistry {
     const arr = this.buffer.get(cuttlefishSessionId) ?? [];
     arr.push({ payload, at: Date.now() });
     this.buffer.set(cuttlefishSessionId, arr);
+    this.syncSweepTimer();
     // Unclaimed Stop with real output → arm/refresh the fallback timer. The
     // delay protects the registration race at turn start: an in-flight run()
     // registers its listener BEFORE the prompt is even written to the PTY
@@ -123,6 +139,7 @@ export class HookRegistry {
     const rest = arr.filter((b) => !isConsumable(b));
     if (rest.length === 0) this.buffer.delete(cuttlefishSessionId);
     else this.buffer.set(cuttlefishSessionId, rest);
+    this.syncSweepTimer();
     try {
       this.unclaimedHandler(cuttlefishSessionId, stops[stops.length - 1].payload);
     } catch (err) {
@@ -138,10 +155,12 @@ export class HookRegistry {
       if (fresh.length === 0) this.buffer.delete(sid);
       else if (fresh.length !== arr.length) this.buffer.set(sid, fresh);
     }
+    this.syncSweepTimer();
   }
 
   /** Stop the periodic sweep timer. Call when shutting down the registry. */
   dispose(): void {
+    this.disposed = true;
     if (this.sweepTimer) {
       clearInterval(this.sweepTimer);
       this.sweepTimer = null;

@@ -161,7 +161,13 @@ export function createKokoroTts(opts?: {
       let listening = false
       await new Promise<void>((resolve, reject) => {
         const timer = setTimeout(() => {
-          if (!listening) reject(new Error("Kokoro sidecar did not start in time"))
+          if (!listening) {
+            // A slow sidecar may still finish importing and bind its port
+            // after we give up — without this kill there would be no handle
+            // left to reap it (child is only assigned after this promise).
+            try { proc.kill("SIGKILL") } catch { /* already gone */ }
+            reject(new Error("Kokoro sidecar did not start in time"))
+          }
         }, 20_000)
 
         proc.stdout?.on("data", (buf: Buffer) => {
@@ -380,11 +386,19 @@ export function createKokoroTts(opts?: {
 
     shutdown(): void {
       if (child && child.exitCode === null) {
+        const proc = child
         try {
-          child.kill("SIGTERM")
+          proc.kill("SIGTERM")
         } catch {
           /* already gone */
         }
+        // Escalate: a sidecar wedged in native code can ignore SIGTERM.
+        const force = setTimeout(() => {
+          if (proc.exitCode === null) {
+            try { proc.kill("SIGKILL") } catch { /* already gone */ }
+          }
+        }, 2_000)
+        force.unref?.()
       }
       child = null
       port = 0
@@ -445,7 +459,15 @@ function curlDownload(
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const tmp = `${dest}.downloading`
-    const curl = spawn("curl", ["-L", "--fail", "-o", tmp, url])
+    // --speed-limit/--speed-time abort a stalled transfer (<1KB/s for 60s)
+    // instead of holding the download promise (and its 1s progress poll) open
+    // forever; --connect-timeout bounds a dead host.
+    const curl = spawn("curl", [
+      "-L", "--fail",
+      "--connect-timeout", "30",
+      "--speed-limit", "1024", "--speed-time", "60",
+      "-o", tmp, url,
+    ])
 
     const poll = setInterval(() => {
       try {

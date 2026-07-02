@@ -14,6 +14,7 @@ import type { PtyControlEvent, PtyIdleSpawnOpts, PtyViewEngine } from "./pty-vie
 import { codexCliFlags, extractCodexContextTokens } from "./codex.js";
 import { codexMcpConfigFlagsFromFile } from "../mcp/resolver.js";
 import { buildEngineEnv } from "../shared/engine-env.js";
+import { readFirstLineSync } from "../shared/first-line.js";
 
 const CODEX_SESSIONS_DIR = path.join(os.homedir(), ".codex", "sessions");
 const TURN_TIMEOUT_MS = 14 * 24 * 60 * 60 * 1000;
@@ -75,7 +76,8 @@ function listTranscriptFiles(root = CODEX_SESSIONS_DIR): Map<string, TranscriptF
 
 function parseSessionIdFromFile(filePath: string): string | undefined {
   try {
-    const first = fs.readFileSync(filePath, "utf-8").split("\n", 1)[0];
+    const first = readFirstLineSync(filePath);
+    if (!first) return undefined;
     const msg = JSON.parse(first);
     const id = msg?.payload?.id;
     return typeof id === "string" && id ? id : undefined;
