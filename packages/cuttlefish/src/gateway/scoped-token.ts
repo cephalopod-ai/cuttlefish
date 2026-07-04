@@ -62,5 +62,12 @@ export function scopedTokenForbidden(method: string | undefined, pathname: strin
   }
   // Org roster is readable; mutations (create/rename/rank/cliFlags/delete) are not.
   if ((pathname === "/api/org" || pathname.startsWith("/api/org/")) && m !== "GET") return true;
+  // Human-oversight control plane: an agent must never approve its own security
+  // checkpoint / fallback / org-change approval, nor drive scheduling. Reads stay
+  // open (an agent may poll its own pending approval); writes are operator-only.
+  if ((pathname === "/api/approvals" || pathname.startsWith("/api/approvals/")) && m !== "GET") return true;
+  if ((pathname === "/api/checkpoints" || pathname.startsWith("/api/checkpoints/")) && m !== "GET") return true;
+  if ((pathname === "/api/cron" || pathname.startsWith("/api/cron/")) && m !== "GET") return true;
+  if ((pathname === "/api/orchestration" || pathname.startsWith("/api/orchestration/")) && m !== "GET") return true;
   return false;
 }
