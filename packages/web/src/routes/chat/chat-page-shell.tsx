@@ -20,8 +20,6 @@ import { cn } from '@/lib/utils'
 
 interface ChatPageShellProps {
   openFile: (path: string) => void
-  listOpen: boolean
-  onToggleList: () => void
   selectedId: string | null
   selectedRoomId: string | null
   selectedRoom: DepartmentRoom | null
@@ -66,28 +64,20 @@ export function ChatPageShell(props: ChatPageShellProps) {
     <FileOpenContext.Provider value={props.openFile}>
       <PageLayout chromeless mainLabel="Chat">
         <div className="flex overflow-hidden h-full">
-          <div className="group/sidebar hidden h-full shrink-0 lg:flex">
-            <NavRibbon listOpen={props.listOpen} onToggleList={props.onToggleList} />
-            <div
-              className={cn(
-                "h-full overflow-hidden transition-[width] duration-200 [transition-timing-function:var(--ease-smooth)] motion-reduce:transition-none",
-                props.listOpen ? "w-[280px]" : "w-0",
-              )}
-              aria-hidden={!props.listOpen}
-            >
-              <div className="h-full w-[280px]">
-                <ChatSidebar
-                  selectedId={props.selectedId}
-                  onSelect={props.onSelect}
-                  onNewChat={props.onNewChat}
-                  onDelete={props.onDeleteSession}
-                  onDuplicate={props.onDuplicateFromSidebar}
-                  onSessionsLoaded={props.onSessionsLoaded}
-                  onEmployeeSessionsAvailable={props.onEmployeeSessionsAvailable}
-                  onOrderComputed={props.onOrderComputed}
-                  onContactEmployee={props.onContactEmployee}
-                />
-              </div>
+          <div className="hidden h-full shrink-0 lg:flex">
+            <NavRibbon />
+            <div className="h-full w-[280px] overflow-hidden">
+              <ChatSidebar
+                selectedId={props.selectedId}
+                onSelect={props.onSelect}
+                onNewChat={props.onNewChat}
+                onDelete={props.onDeleteSession}
+                onDuplicate={props.onDuplicateFromSidebar}
+                onSessionsLoaded={props.onSessionsLoaded}
+                onEmployeeSessionsAvailable={props.onEmployeeSessionsAvailable}
+                onOrderComputed={props.onOrderComputed}
+                onContactEmployee={props.onContactEmployee}
+              />
             </div>
           </div>
 

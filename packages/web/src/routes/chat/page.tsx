@@ -59,19 +59,6 @@ function ChatPage() {
   // Employee to preselect for a brand-new chat (contacting a session-less
   // employee from the sidebar, or via an ?employee= deep-link). Null = none.
   const [pendingEmployee, setPendingEmployee] = useState<string | null>(null)
-  // Show-both: the slim nav ribbon is always mounted (desktop); only the 280px
-  // chat list folds. The ribbon's top toggle drives listOpen (persisted), so nav
-  // never leaves the rail. There is no list⇄nav swap any more.
-  const [listOpen, setListOpen] = useState<boolean>(() => {
-    try { return localStorage.getItem('cuttlefish-chat-list-open') !== 'false' } catch { return true }
-  })
-  const toggleList = useCallback(() => {
-    setListOpen((prev) => {
-      const next = !prev
-      try { localStorage.setItem('cuttlefish-chat-list-open', String(next)) } catch { /* ignore */ }
-      return next
-    })
-  }, [])
   // Mobile: pop from the thread back to the chat list (the tab bar's Chat screen).
   const backToList = useCallback(() => setMobileView('sidebar'), [])
   const [viewMode, setViewMode] = useState<ViewMode>('chat')
@@ -476,10 +463,6 @@ function ChatPage() {
     }},
     { key: '[', modifiers: ['meta', 'shift'], category: 'Navigation', description: 'Previous tab', action: () => chatTabs.prevTab() },
     { key: ']', modifiers: ['meta', 'shift'], category: 'Navigation', description: 'Next tab', action: () => chatTabs.nextTab() },
-    // Fold/unfold the chat list. ⌥⌘S is the macOS-native sidebar toggle; ⌘\ is
-    // the web-friendly alias (Linear/VS Code class).
-    { key: 's', modifiers: ['meta', 'alt'], category: 'Navigation', description: 'Toggle chat list', action: toggleList },
-    { key: '\\', modifiers: ['meta'], category: 'Navigation', description: 'Toggle chat list', action: toggleList },
     ...Array.from({ length: 9 }, (_, i) => ({
       key: String(i + 1),
       modifiers: ['meta' as const, 'alt' as const],
@@ -487,7 +470,7 @@ function ChatPage() {
       description: `Tab ${i + 1}`,
       action: () => chatTabs.switchTab(i),
     })),
-  ], [handleNewChat, navigateSession, cycleEmployee, copyChat, selectedId, showShortcutOverlay, showMoreMenu, chatTabs, toggleList])
+  ], [handleNewChat, navigateSession, cycleEmployee, copyChat, selectedId, showShortcutOverlay, showMoreMenu, chatTabs])
 
   useKeyboardShortcuts(shortcuts)
 
@@ -559,8 +542,6 @@ function ChatPage() {
     <>
       <ChatPageShell
         openFile={openFile}
-        listOpen={listOpen}
-        onToggleList={toggleList}
         selectedId={selectedId}
         selectedRoomId={selectedRoomId}
         selectedRoom={selectedRoom}
