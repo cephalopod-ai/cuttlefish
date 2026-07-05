@@ -22,6 +22,7 @@ import {
 import { notifyConnectorNotification, notifyParentSession, notifyRateLimited, notifyRateLimitResumed } from "./callbacks.js";
 import type { SessionNotificationSink } from "./notification-sink.js";
 import { buildContext } from "./context.js";
+import { buildContextPacket, contextManagerMode, logContextPacketMetadata } from "./context-manager/index.js";
 import { SessionQueue } from "./queue.js";
 import { CUTTLEFISH_HOME } from "../shared/paths.js";
 import { logger } from "../shared/logger.js";
@@ -410,11 +411,23 @@ export class SessionManager {
         effortLevel,
         cliFlags: employee?.cliFlags,
       });
+      const contextPacketMode = contextManagerMode(this.config);
+      const contextPacket = contextPacketMode === "off"
+        ? null
+        : buildContextPacket({
+            config: this.config,
+            engine: session.engine,
+            model: session.model ?? engineConfig.model,
+            systemPrompt,
+            prompt: promptToRun,
+            historyMessages: getMessages(session.id),
+          });
+      if (contextPacket) logContextPacketMetadata(contextPacket.metadata, session.id);
 
       const result = await engine.run({
-        prompt: promptToRun,
+        prompt: contextPacket?.prompt ?? promptToRun,
         resumeSessionId: session.engineSessionId ?? undefined,
-        systemPrompt,
+        systemPrompt: contextPacket?.systemPrompt ?? systemPrompt,
         cwd: session.cwd || CUTTLEFISH_HOME,
         bin: engineConfig.bin,
         model: session.model ?? engineConfig.model,
@@ -422,6 +435,7 @@ export class SessionManager {
         cliFlags: invocation.cliFlags,
         mcpConfigPath,
         attachments: attachments.length > 0 ? attachments : undefined,
+        ...(contextPacket?.historyMessages ? { historyMessages: contextPacket.historyMessages } : {}),
         sessionId: session.id,
         source: session.source,
         onLateRecovery: ({ result: lateText, sessionId: engineSid }) => {

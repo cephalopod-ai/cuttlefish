@@ -735,8 +735,13 @@ function validateContext(problems: string[], value: unknown): void {
     problems.push("context must be a mapping");
     return;
   }
-  pushUnknownKeys(problems, value, ["maxChars"], "context");
+  pushUnknownKeys(problems, value, ["maxChars", "managerMode"], "context");
   if (value.maxChars !== undefined) validateNumber(problems, "context.maxChars", value.maxChars);
+  if (value.managerMode !== undefined) {
+    if (typeof value.managerMode !== "string" || !["off", "shadow", "on"].includes(value.managerMode)) {
+      problems.push("context.managerMode must be one of: off, shadow, on");
+    }
+  }
 }
 
 function validateStt(problems: string[], value: unknown, path = "stt"): void {

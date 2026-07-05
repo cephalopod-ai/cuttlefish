@@ -85,9 +85,9 @@ describe("buildOllamaPrompt", () => {
         sessionId: "s1",
       },
       [
-        { id: "1", role: "user", content: "please help", timestamp: 1 },
-        { id: "2", role: "assistant", content: "what do you need?", timestamp: 2 },
-        { id: "3", role: "user", content: "review the diff", timestamp: 3 },
+        { role: "user", content: "please help" },
+        { role: "assistant", content: "what do you need?" },
+        { role: "user", content: "review the diff" },
       ],
     );
 
@@ -141,5 +141,31 @@ describe("OllamaEngine", () => {
     spawnCalls[0]?.proc.emitStdout("answer");
     spawnCalls[0]?.proc.close(0);
     await expect(promise).resolves.toMatchObject({ sessionId: "sess-1", result: "answer" });
+  });
+
+  it("uses caller-selected historyMessages instead of loading full Cuttlefish history", async () => {
+    getMessages.mockReturnValue([
+      { id: "1", role: "assistant", content: "full db history", timestamp: 1 },
+    ]);
+    const engine = new OllamaEngine();
+    const promise = engine.run({
+      prompt: "follow up",
+      cwd: "/tmp",
+      sessionId: "sess-managed",
+      model: "gemma4",
+      historyMessages: [
+        { role: "assistant", content: "managed history", timestamp: 2 },
+        { role: "user", content: "follow up", timestamp: 3 },
+      ],
+    });
+
+    await flush();
+    expect(getMessages).not.toHaveBeenCalled();
+    expect(spawnCalls[0]?.args[2]).toContain("Assistant:\nmanaged history");
+    expect(spawnCalls[0]?.args[2]).not.toContain("full db history");
+
+    spawnCalls[0]?.proc.emitStdout("answer");
+    spawnCalls[0]?.proc.close(0);
+    await expect(promise).resolves.toMatchObject({ sessionId: "sess-managed", result: "answer" });
   });
 });

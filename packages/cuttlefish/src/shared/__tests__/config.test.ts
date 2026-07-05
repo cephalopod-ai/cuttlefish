@@ -119,6 +119,25 @@ describe("validateConfigShape", () => {
     expect(validateConfigShape({ engines: { claude: {} } })).toEqual([]);
   });
 
+  it("accepts context manager mode and rejects invalid context manager values", () => {
+    expect(validateConfigShape({
+      engines: { claude: {} },
+      context: { maxChars: 1200, managerMode: "shadow" },
+    })).toEqual([]);
+
+    const invalidMode = validateConfigShape({
+      engines: { claude: {} },
+      context: { managerMode: "sometimes" },
+    });
+    expect(invalidMode.join("\n")).toContain("context.managerMode");
+
+    const unknownNested = validateConfigShape({
+      engines: { claude: {} },
+      context: { maxChars: 1200, managerMode: "on", extra: true },
+    });
+    expect(unknownNested.join("\n")).toContain("unknown context config keys: extra");
+  });
+
   it("rejects notifications.connector values that are not configured connectors", () => {
     const problems = validateConfigShape({
       engines: { claude: {} },

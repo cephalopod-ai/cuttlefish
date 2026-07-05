@@ -179,6 +179,7 @@ export interface CuttlefishConfig {
   portal?: PortalConfig;
   context?: {
     maxChars?: number;
+    managerMode?: "off" | "shadow" | "on";
   };
   stt?: {
     enabled?: boolean;

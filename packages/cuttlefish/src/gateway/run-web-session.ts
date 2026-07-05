@@ -7,6 +7,7 @@ import { recordEngineRateLimit } from "../shared/usage-status.js";
 import { effortLevelsForModel, engineAvailable, isKnownEngine, engineUnavailableMessage } from "../shared/models.js";
 import { createApproval } from "./approvals.js";
 import { buildContext } from "../sessions/context.js";
+import { buildContextPacket, contextManagerMode, logContextPacketMetadata } from "../sessions/context-manager/index.js";
 import { beginSessionRun, listChildSessions, getSession, updateSession, patchSessionTransportMeta, insertMessage, insertPartialMessage, updatePartialMessage, deletePartialMessages, finalizePartialMessages, getMessages } from "../sessions/registry.js";
 import { logger } from "../shared/logger.js";
 import { CUTTLEFISH_HOME } from "../shared/paths.js";
@@ -428,6 +429,18 @@ export async function runWebSession(
       })()
       : prompt;
     const promptToRun = resourceContext ? `${resourceContext}\n\n${basePromptToRun}` : basePromptToRun;
+    const contextPacketMode = contextManagerMode(config);
+    const contextPacket = contextPacketMode === "off"
+      ? null
+      : buildContextPacket({
+          config,
+          engine: currentSession.engine,
+          model: currentSession.model ?? engineConfig.model,
+          systemPrompt,
+          prompt: promptToRun,
+          historyMessages: getMessages(currentSession.id),
+        });
+    if (contextPacket) logContextPacketMetadata(contextPacket.metadata, currentSession.id);
 
     const turnStartedAt = Date.now();
     let result!: Awaited<ReturnType<typeof engine.run>>;
@@ -469,15 +482,16 @@ export async function runWebSession(
       });
 
       result = await engine.run({
-      prompt: promptToRun,
+      prompt: contextPacket?.prompt ?? promptToRun,
       resumeSessionId: currentSession.engineSessionId ?? undefined,
-      systemPrompt,
+      systemPrompt: contextPacket?.systemPrompt ?? systemPrompt,
       cwd: currentSession.cwd || CUTTLEFISH_HOME,
       bin: engineConfig.bin,
       model: currentSession.model ?? engineConfig.model,
       effortLevel: invocation.effortLevel,
       cliFlags: invocation.cliFlags,
       attachments: attachments?.length ? attachments : undefined,
+      ...(contextPacket?.historyMessages ? { historyMessages: contextPacket.historyMessages } : {}),
       sessionId: currentSession.id,
       source: currentSession.source,
       onActivity: () => { lastStreamAt = Date.now(); },

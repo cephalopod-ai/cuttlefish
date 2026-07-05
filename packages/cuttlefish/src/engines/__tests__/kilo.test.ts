@@ -117,6 +117,32 @@ describe("KiloEngine", () => {
     await expect(promise).resolves.toMatchObject({ sessionId: "sess-1", result: "answer" });
   });
 
+  it("uses caller-selected historyMessages instead of loading full Cuttlefish history", async () => {
+    getMessages.mockReturnValue([
+      { id: "1", role: "assistant", content: "full db history", timestamp: 1 },
+    ]);
+    const engine = new KiloEngine();
+    const promise = engine.run({
+      prompt: "follow up",
+      cwd: "/tmp/project",
+      sessionId: "sess-managed",
+      historyMessages: [
+        { role: "assistant", content: "managed history", timestamp: 2 },
+        { role: "user", content: "follow up", timestamp: 3 },
+      ],
+    });
+
+    await flush();
+    const prompt = spawnCalls[0]?.args.at(-1) ?? "";
+    expect(getMessages).not.toHaveBeenCalled();
+    expect(prompt).toContain("Assistant:\nmanaged history");
+    expect(prompt).not.toContain("full db history");
+
+    spawnCalls[0]?.proc.emitStdout("answer");
+    spawnCalls[0]?.proc.close(0);
+    await expect(promise).resolves.toMatchObject({ sessionId: "sess-managed", result: "answer" });
+  });
+
   it("passes explicit Kilo model ids through unchanged", async () => {
     const engine = new KiloEngine();
     const promise = engine.run({

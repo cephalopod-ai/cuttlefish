@@ -1,9 +1,9 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import type { InterruptibleEngine, EngineRunOpts, EngineResult } from "../shared/types.js";
+import type { EngineHistoryMessage, InterruptibleEngine, EngineRunOpts, EngineResult } from "../shared/types.js";
 import { logger } from "../shared/logger.js";
 import { resolveBin } from "../shared/resolve-bin.js";
 import { buildEngineEnv } from "../shared/engine-env.js";
-import { getMessages, type SessionMessage } from "../sessions/registry/messages.js";
+import { getMessages } from "../sessions/registry/messages.js";
 
 const TURN_TIMEOUT_MS = 14 * 24 * 60 * 60 * 1000;
 const STDERR_MAX = 10 * 1024;
@@ -22,7 +22,7 @@ function promptRole(role: string): "User" | "Assistant" | "System" | null {
 
 export function buildOllamaPrompt(
   opts: Pick<EngineRunOpts, "prompt" | "systemPrompt" | "attachments" | "sessionId">,
-  history?: SessionMessage[],
+  history?: Pick<EngineHistoryMessage, "role" | "content" | "partial">[],
 ): string {
   const lines: string[] = [];
   const transcript = (history ?? [])
@@ -90,7 +90,7 @@ export class OllamaEngine implements InterruptibleEngine {
     const trackingId = opts.sessionId || opts.resumeSessionId || `ollama-${Date.now()}`;
     const bin = resolveBin("ollama", opts.bin);
     const model = opts.model || "gemma4";
-    const history = opts.sessionId ? getMessages(opts.sessionId) : [];
+    const history = opts.historyMessages ?? (opts.sessionId ? getMessages(opts.sessionId) : []);
     const prompt = buildOllamaPrompt(opts, history);
     const args = ["run", ...(opts.cliFlags ?? []), model, prompt];
 

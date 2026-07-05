@@ -66,7 +66,7 @@ export class AiderEngine implements InterruptibleEngine {
   async run(opts: EngineRunOpts): Promise<EngineResult> {
     const trackingId = opts.sessionId || opts.resumeSessionId || `aider-${Date.now()}`;
     const bin = resolveBin("aider", opts.bin);
-    const history = opts.sessionId ? getMessages(opts.sessionId) : [];
+    const history = opts.historyMessages ?? (opts.sessionId ? getMessages(opts.sessionId) : []);
     const prompt = buildOllamaPrompt(opts, history);
     // Point aider at a per-session chat-history file and remember where it ends now,
     // so after the turn we can read back just THIS turn's assistant prose (clean) — far

@@ -444,6 +444,12 @@
   - No stable local Kiro quota endpoint is wired, so the gauge cannot verify account-side credit balance.
   - This source tree does not contain a scheduler/provider map architecture for routing Kiro to AWS. No Kiro-to-AWS provider mapping was added.
 
+### Context manager MVP
+- Internal prompt/context assembly can run in `context.managerMode: off | shadow | on`, with `CUTTLEFISH_CONTEXT_MANAGER` as an environment override.
+- `off` is the default and preserves existing behavior. `shadow` logs structured context metadata without changing engine input. `on` applies managed Cuttlefish-history selection only for synthetic-history engines: Ollama, Kilo, and Aider.
+- Native-resume engines such as Claude, Codex, and Grok remain unmodified in `on` mode; they still rely on their CLI-owned session/thread state.
+- V1 metadata includes estimated before/after tokens, model context limit, reserved response/safety budget, slot usage, dropped/summarized records, and an empty retrieved-memory placeholder. No persistent memory, vector retrieval, or MCP memory dependency is added.
+
 ### `GET /api/org/departments/:name/tickets/:id/session`
 - Best-effort ticket-to-session resolver for the kanban panel.
 - Returns `200 { found:false }` when no live or recent matching session can be resolved.

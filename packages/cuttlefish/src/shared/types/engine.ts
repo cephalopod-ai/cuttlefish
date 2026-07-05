@@ -17,6 +17,14 @@ export interface InterruptibleEngine extends Engine {
   killIdle(): void;
 }
 
+export interface EngineHistoryMessage {
+  role: string;
+  content: string;
+  timestamp?: number;
+  partial?: boolean;
+  toolCall?: string;
+}
+
 export function isInterruptibleEngine(engine: Engine): engine is InterruptibleEngine {
   return "kill" in engine && "isAlive" in engine && "killAll" in engine;
 }
@@ -30,6 +38,7 @@ export interface EngineRunOpts {
   model?: string;
   effortLevel?: string;
   attachments?: string[];
+  historyMessages?: EngineHistoryMessage[];
   cliFlags?: string[];
   mcpConfigPath?: string;
   onStream?: (delta: StreamDelta) => void;

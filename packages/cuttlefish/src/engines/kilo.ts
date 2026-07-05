@@ -49,7 +49,7 @@ export class KiloEngine implements InterruptibleEngine {
     const trackingId = opts.sessionId || opts.resumeSessionId || `kilo-${Date.now()}`;
     const bin = resolveBin("kilo", opts.bin);
     const model = opts.model || KILO_AUTO_MODEL;
-    const history = opts.sessionId ? getMessages(opts.sessionId) : [];
+    const history = opts.historyMessages ?? (opts.sessionId ? getMessages(opts.sessionId) : []);
     const prompt = buildOllamaPrompt(opts, history);
     const args = [
       "run",
