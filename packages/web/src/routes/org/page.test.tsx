@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import type { Employee, OrgData, OrgHierarchy } from "@/lib/api";
 
 const { getOrg, orgMapState } = vi.hoisted(() => ({
@@ -90,6 +91,14 @@ vi.mock("@/components/org/org-map", () => ({
 
 import OrgPage from "./page";
 
+function renderPage() {
+  return render(
+    <MemoryRouter>
+      <OrgPage />
+    </MemoryRouter>,
+  );
+}
+
 function employee(
   partial: Partial<Employee> & { name: string; displayName: string; department: string },
 ): Employee {
@@ -159,7 +168,7 @@ describe("OrgPage department tabs", () => {
   }
 
   it("renders the All tab plus one tab per department", async () => {
-    render(<OrgPage />);
+    renderPage();
 
     expect(await screen.findByRole("tab", { name: "All" })).toBeDefined();
     expect(screen.getByRole("tab", { name: "Engineering" })).toBeDefined();
@@ -186,7 +195,7 @@ describe("OrgPage department tabs", () => {
       },
     });
 
-    render(<OrgPage />);
+    renderPage();
 
     expect(await screen.findByRole("tab", { name: "Unassigned" })).toBeDefined();
     selectTab("Unassigned");
@@ -200,7 +209,7 @@ describe("OrgPage department tabs", () => {
   });
 
   it("switches from All to a department tab and passes only visible employees to the map", async () => {
-    render(<OrgPage />);
+    renderPage();
 
     await screen.findByTestId("org-map");
     expect(orgMapState.employees.map((employee) => employee.name)).toEqual([
@@ -223,7 +232,7 @@ describe("OrgPage department tabs", () => {
   });
 
   it("clears the selection when the selected employee is hidden by a tab switch", async () => {
-    render(<OrgPage />);
+    renderPage();
 
     await screen.findByTestId("org-map");
     fireEvent.click(screen.getByRole("button", { name: "Marketing Lead" }));
@@ -239,7 +248,7 @@ describe("OrgPage department tabs", () => {
   });
 
   it("preserves employee selection behavior for visible employees in a department tab", async () => {
-    render(<OrgPage />);
+    renderPage();
 
     await screen.findByTestId("org-map");
     selectTab("Engineering");
@@ -258,13 +267,38 @@ describe("OrgPage department tabs", () => {
   });
 
   it("opens the create-agent panel from the toolbar", async () => {
-    render(<OrgPage />);
+    renderPage();
 
     await screen.findByTestId("org-map");
     fireEvent.click(screen.getByRole("button", { name: "Add agent" }));
 
     expect(await screen.findByTestId("employee-create-form")).toBeDefined();
     expect(screen.queryByTestId("employee-detail")).toBeNull();
+  });
+
+  it("renders an HR chat shortcut under the org toolbar", async () => {
+    getOrg.mockResolvedValueOnce({
+      ...orgData,
+      employees: [
+        ...orgData.employees,
+        employee({
+          name: "hr-manager",
+          displayName: "HR / Org Steward",
+          department: "general",
+          rank: "manager",
+          chain: ["hr-manager"],
+        }),
+      ],
+      hierarchy: {
+        ...orgData.hierarchy,
+        sorted: [...orgData.hierarchy.sorted, "hr-manager"],
+      },
+    });
+
+    renderPage();
+
+    await screen.findByTestId("org-map");
+    expect(screen.getByRole("link", { name: "HR chat" }).getAttribute("href")).toBe("/?employee=hr-manager");
   });
 
 });

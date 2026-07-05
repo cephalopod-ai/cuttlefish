@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState, useRef, useCallback, useMemo } from "react";
+import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import type { Employee, OrgData, OrgHierarchy } from "@/lib/api";
 import { EmployeeDetail } from "@/components/org/employee-detail";
@@ -22,6 +23,7 @@ const OrgMapFallback = (
 
 const ALL_DEPARTMENTS_TAB = "all";
 const UNASSIGNED_DEPARTMENT_TAB = "__unassigned__";
+const HR_EMPLOYEE_NAME = "hr-manager";
 
 function mergeDepartmentOption(departments: string[], department: string | undefined): string[] {
   const next = department?.trim();
@@ -168,6 +170,10 @@ export default function OrgPage() {
     () => employees.some((employee) => employee.rank !== "executive" && !employee.department),
     [employees],
   );
+  const hasHrSteward = useMemo(
+    () => employees.some((employee) => employee.name === HR_EMPLOYEE_NAME),
+    [employees],
+  );
   const visibleEmployeeNames = useMemo(
     () => new Set(visibleOrg.employees.map((employee) => employee.name)),
     [visibleOrg.employees],
@@ -228,16 +234,26 @@ export default function OrgPage() {
                 )}
               </TabsList>
             </Tabs>
-            <button
-              type="button"
-              onClick={() => {
-                setSelected(null)
-                setCreating(true)
-              }}
-              className="h-8 px-[var(--space-3)] rounded-[var(--radius-sm)] border border-[var(--separator)] bg-[var(--material-regular)]/95 text-[length:var(--text-footnote)] font-[var(--weight-semibold)] text-[var(--text-primary)]"
-            >
-              Add agent
-            </button>
+            <div className="flex flex-wrap items-center gap-[var(--space-2)]">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelected(null)
+                  setCreating(true)
+                }}
+                className="h-8 px-[var(--space-3)] rounded-[var(--radius-sm)] border border-[var(--separator)] bg-[var(--material-regular)]/95 text-[length:var(--text-footnote)] font-[var(--weight-semibold)] text-[var(--text-primary)]"
+              >
+                Add agent
+              </button>
+              {hasHrSteward && (
+                <Link
+                  to={`/?employee=${encodeURIComponent(HR_EMPLOYEE_NAME)}`}
+                  className="inline-flex h-8 items-center rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--accent)_28%,var(--separator))] bg-[color-mix(in_srgb,var(--accent)_10%,var(--material-regular))] px-[var(--space-3)] text-[length:var(--text-footnote)] font-[var(--weight-semibold)] text-[var(--accent)]"
+                >
+                  HR chat
+                </Link>
+              )}
+            </div>
           </div>
           {loading ? (
             <div className="flex items-center justify-center h-full text-[var(--text-tertiary)] text-[length:var(--text-caption1)]">
