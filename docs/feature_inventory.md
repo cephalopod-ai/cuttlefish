@@ -108,6 +108,13 @@
 - `packages/web/src/components/org/employee-detail.tsx` displays an execution profile summary in the detail panel when a profile is configured.
 - Fresh-install seed personas place Parliamentarian and Senior Security Officer in `compliance`, HR / Org Steward as the `personnel` department manager, and Assistant in `general`. New manager-hire guidance defaults managers to the COO/root reporting line unless the user explicitly says otherwise.
 
+### Cross-department service requests
+- `packages/cuttlefish/src/gateway/api/routes/org.ts`
+- Employees can declare services with `provides: [{ name, description }]` in their org YAML.
+- `GET /api/org/services` returns active service providers, deduped by service name with higher-rank providers winning ties.
+- `POST /api/org/cross-request` accepts `{ fromEmployee, service, prompt, parentSessionId? }`, resolves the active provider for the service, creates a provider-owned web session with a cross-service brief, dispatches it on the provider's configured engine/model, and returns `{ sessionId, provider, route, managers, service }`.
+- The created session records `transportMeta.crossRequest` with the requester, service, provider, route, and manager chain for traceability.
+
 ### Multi-role employee execution
 - `packages/cuttlefish/src/gateway/employee-execution.ts`
 - `packages/cuttlefish/src/shared/types/operations.ts`

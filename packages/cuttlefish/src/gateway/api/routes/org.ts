@@ -3,7 +3,7 @@ import path from "node:path";
 import type { IncomingMessage as HttpRequest, ServerResponse } from "node:http";
 import { ORG_DIR } from "../../../shared/paths.js";
 import { logger } from "../../../shared/logger.js";
-import { getSession, listSessions } from "../../../sessions/registry.js";
+import { createSession, getSession, insertMessage, listSessions } from "../../../sessions/registry.js";
 import { readJsonBody } from "../../http-helpers.js";
 import { authorizeManagerScope } from "../../manager-auth.js";
 import { BoardConflictError, defaultBoardState, readBoardArray, readBoardState, writeMergedBoardPartial } from "../../board-service.js";
@@ -95,6 +95,86 @@ function buildOrgServices(registry: Map<string, Employee>): OrgServiceSummary[] 
     }
   }
   return [...services.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function findServiceProvider(registry: Map<string, Employee>, serviceName: string): { employee: Employee; service: { name: string; description: string } } | null {
+  const key = serviceName.trim().toLowerCase();
+  if (!key) return null;
+  let best: { employee: Employee; service: { name: string; description: string } } | null = null;
+  for (const employee of registry.values()) {
+    if (!isActiveEmployee(employee) || !Array.isArray(employee.provides)) continue;
+    for (const service of employee.provides) {
+      if (service.name.trim().toLowerCase() !== key) continue;
+      const candidate = { employee, service: { name: service.name.trim(), description: service.description.trim() } };
+      if (!best) {
+        best = candidate;
+        continue;
+      }
+      const candidatePriority = SERVICE_RANK_PRIORITY[candidate.employee.rank];
+      const bestPriority = SERVICE_RANK_PRIORITY[best.employee.rank];
+      if (
+        candidatePriority < bestPriority ||
+        (candidatePriority === bestPriority && candidate.employee.name.localeCompare(best.employee.name) < 0)
+      ) {
+        best = candidate;
+      }
+    }
+  }
+  return best;
+}
+
+function buildCrossRequestBrief(input: {
+  requester: Employee;
+  service: { name: string; description: string };
+  prompt: string;
+}): string {
+  return [
+    "## Cross-service request",
+    "",
+    `**From**: ${input.requester.displayName} (${input.requester.department})`,
+    `**Service**: ${input.service.name} - ${input.service.description}`,
+    "",
+    "### Request",
+    input.prompt,
+    "",
+    "---",
+    "Handle this as a priority request from a colleague.",
+  ].join("\n");
+}
+
+function chainToRoot(name: string, hierarchy: import("../../../shared/types.js").OrgHierarchy): string[] {
+  const out: string[] = [];
+  let current: string | null | undefined = name;
+  const seen = new Set<string>();
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    out.push(current);
+    current = hierarchy.nodes[current]?.parentName ?? null;
+  }
+  return out;
+}
+
+function resolveCrossRequestRoute(
+  fromEmployee: string,
+  providerEmployee: string,
+  hierarchy: import("../../../shared/types.js").OrgHierarchy,
+): { route: string[]; managers: string[] } {
+  const fromChain = chainToRoot(fromEmployee, hierarchy);
+  const providerChain = chainToRoot(providerEmployee, hierarchy);
+  const providerSet = new Set(providerChain);
+  const common = fromChain.find((name) => providerSet.has(name));
+  if (!common) {
+    return { route: [fromEmployee, providerEmployee], managers: [] };
+  }
+  const up = fromChain.slice(0, fromChain.indexOf(common) + 1);
+  const down = providerChain.slice(0, providerChain.indexOf(common)).reverse();
+  const route = [...up, ...down];
+  const managers = route.filter((name) => {
+    if (name === fromEmployee || name === providerEmployee) return false;
+    const rank = hierarchy.nodes[name]?.employee.rank;
+    return rank === "manager" || rank === "executive";
+  });
+  return { route, managers };
 }
 
 const VALID_CHANGE_TYPES = new Set<OrgChangeType>(ORG_CHANGE_TYPES);
@@ -228,6 +308,109 @@ export async function handleOrgRoutes(
 
   if (method === "GET" && pathname === "/api/org/services") {
     json(res, { services: buildOrgServices(scanOrg()) });
+    return true;
+  }
+
+  if (method === "POST" && pathname === "/api/org/cross-request") {
+    const parsed = await readJsonBody(req, res);
+    if (!parsed.ok) return true;
+    const body = parsed.body as Record<string, unknown>;
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      badRequest(res, "body must be a JSON object");
+      return true;
+    }
+
+    const fromEmployee = typeof body.fromEmployee === "string" ? body.fromEmployee.trim() : "";
+    const serviceName = typeof body.service === "string" ? body.service.trim() : "";
+    const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
+    const parentSessionId = typeof body.parentSessionId === "string" && body.parentSessionId.trim()
+      ? body.parentSessionId.trim()
+      : undefined;
+    if (!fromEmployee) {
+      badRequest(res, "fromEmployee must be a non-empty string");
+      return true;
+    }
+    if (!serviceName) {
+      badRequest(res, "service must be a non-empty string");
+      return true;
+    }
+    if (!prompt) {
+      badRequest(res, "prompt must be a non-empty string");
+      return true;
+    }
+    if (parentSessionId && !getSession(parentSessionId)) {
+      notFound(res);
+      return true;
+    }
+
+    const registry = scanOrg();
+    const requester = registry.get(fromEmployee);
+    if (!requester || !isActiveEmployee(requester)) {
+      notFound(res);
+      return true;
+    }
+    const provider = findServiceProvider(registry, serviceName);
+    if (!provider) {
+      notFound(res);
+      return true;
+    }
+    const engine = context.sessionManager.getEngine(provider.employee.engine);
+    if (!engine) {
+      serverError(res, `Provider engine "${provider.employee.engine}" is not available`);
+      return true;
+    }
+
+    const { resolveOrgHierarchy, withPortalExecutive } = await import("../../org-hierarchy.js");
+    const hierarchy = resolveOrgHierarchy(withPortalExecutive(registry, context.getConfig().portal?.portalName));
+    const routed = resolveCrossRequestRoute(requester.name, provider.employee.name, hierarchy);
+    const brief = buildCrossRequestBrief({ requester, service: provider.service, prompt });
+    const now = Date.now();
+    const session = createSession({
+      engine: provider.employee.engine,
+      source: "web",
+      sourceRef: `cross-request:${now}:${provider.employee.name}`,
+      connector: "web",
+      sessionKey: `cross-request:${now}:${provider.employee.name}`,
+      replyContext: { source: "web" },
+      employee: provider.employee.name,
+      parentSessionId,
+      model: provider.employee.model,
+      effortLevel: provider.employee.effortLevel,
+      title: `Cross request: ${provider.service.name}`,
+      prompt: brief,
+      promptExcerpt: prompt,
+      portalName: context.getConfig().portal?.portalName,
+      transportMeta: {
+        crossRequest: {
+          fromEmployee: requester.name,
+          service: provider.service.name,
+          provider: provider.employee.name,
+          route: routed.route,
+          managers: routed.managers,
+        },
+      },
+    });
+    insertMessage(session.id, "user", brief);
+    const { dispatchEmployeeSessionRun } = await import("../../mid-pair-orchestrator.js");
+    void dispatchEmployeeSessionRun(session, brief, engine, context.getConfig(), context, provider.employee);
+    context.emit("session:created", { sessionId: session.id, employee: provider.employee.name });
+    if (session.parentSessionId) {
+      const talkParent = getSession(session.parentSessionId);
+      if (talkParent?.source === "talk") {
+        context.emit("talk:focus", { cooId: session.id, label: provider.service.name, parentId: talkParent.id });
+      }
+    }
+    json(res, {
+      sessionId: session.id,
+      provider: {
+        name: provider.employee.name,
+        displayName: provider.employee.displayName,
+        department: provider.employee.department,
+      },
+      route: routed.route,
+      managers: routed.managers,
+      service: provider.service.name,
+    }, 201);
     return true;
   }
 
