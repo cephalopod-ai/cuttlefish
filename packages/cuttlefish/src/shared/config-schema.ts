@@ -56,6 +56,31 @@ function validateStringOrStringArray(problems: string[], path: string, value: un
   if (!valid) problems.push(`${path} must be a string or array of strings`);
 }
 
+function validateWorkspaceProfile(problems: string[], path: string, value: unknown): void {
+  if (!isPlainObject(value)) {
+    problems.push(`${path} must be a mapping`);
+    return;
+  }
+  pushUnknownKeys(problems, value, ["id", "label", "cwd", "instructions", "employee"], path);
+  if (value.id !== undefined) validateString(problems, `${path}.id`, value.id);
+  if (value.label !== undefined) validateString(problems, `${path}.label`, value.label);
+  if (value.cwd !== undefined) validateString(problems, `${path}.cwd`, value.cwd);
+  if (value.instructions !== undefined) validateStringOrStringArray(problems, `${path}.instructions`, value.instructions);
+  if (value.employee !== undefined) validateString(problems, `${path}.employee`, value.employee);
+}
+
+function validateWorkspaceProfiles(problems: string[], value: unknown): void {
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => validateWorkspaceProfile(problems, `workspaces.profiles[${index}]`, entry));
+    return;
+  }
+  if (!isPlainObject(value)) {
+    problems.push("workspaces.profiles must be a mapping or array");
+    return;
+  }
+  Object.entries(value).forEach(([id, entry]) => validateWorkspaceProfile(problems, `workspaces.profiles.${id}`, entry));
+}
+
 
 function hasControlChars(s: string): boolean {
   for (let i = 0; i < s.length; i++) {
@@ -79,9 +104,10 @@ function validateWorkspaces(problems: string[], value: unknown): void {
     problems.push("workspaces must be a mapping");
     return;
   }
-  pushUnknownKeys(problems, value, ["roots", "defaultCwd"], "workspaces");
+  pushUnknownKeys(problems, value, ["roots", "defaultCwd", "profiles"], "workspaces");
   if (value.roots !== undefined) validateStringArray(problems, "workspaces.roots", value.roots);
   if (value.defaultCwd !== undefined) validateString(problems, "workspaces.defaultCwd", value.defaultCwd);
+  if (value.profiles !== undefined) validateWorkspaceProfiles(problems, value.profiles);
 }
 function validateGateway(problems: string[], value: unknown): void {
   if (!isPlainObject(value)) {

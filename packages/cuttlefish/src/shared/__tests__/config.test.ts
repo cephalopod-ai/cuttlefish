@@ -73,6 +73,14 @@ describe("validateConfigShape", () => {
       workspaces: {
         roots: ["/tmp/project"],
         defaultCwd: "/tmp/project",
+        profiles: {
+          billing: {
+            label: "Billing",
+            cwd: "/tmp/project",
+            employee: "platform-lead",
+            instructions: ["Use billing context.", "Keep migrations scoped."],
+          },
+        },
       },
       gateway: {
         port: 8888,
@@ -283,6 +291,38 @@ describe("validateConfigShape", () => {
       connectors: { slack: { botToken: "x", extra: true } },
     });
     expect(problems.some((p) => p.includes("unknown connectors.slack config keys: extra"))).toBe(true);
+  });
+
+  it("validates workspace profile shape", () => {
+    expect(validateConfigShape({
+      engines: { claude: { bin: "claude", model: "opus" } },
+      workspaces: {
+        profiles: [
+          {
+            id: "platform",
+            label: "Platform",
+            cwd: "/tmp/platform",
+            employee: "platform-lead",
+            instructions: "Use the platform repo.",
+          },
+        ],
+      },
+    })).toEqual([]);
+
+    const problems = validateConfigShape({
+      engines: { claude: { bin: "claude", model: "opus" } },
+      workspaces: {
+        profiles: {
+          platform: {
+            label: "Platform",
+            instructions: [123],
+            surprise: true,
+          },
+        },
+      },
+    });
+    expect(problems.some((p) => p.includes("unknown workspaces.profiles.platform config keys: surprise"))).toBe(true);
+    expect(problems.some((p) => p.includes("workspaces.profiles.platform.instructions"))).toBe(true);
   });
 
   it("accepts a valid email inbox configuration", () => {
