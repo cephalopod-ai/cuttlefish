@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildAssigneeChangeUpdate, buildDepartmentBoardSaveRequests } from './page'
+import { buildAssigneeChangeUpdate, buildDepartmentBoardSaveRequests, getBoardLoadDepartments } from './page'
 import type { Employee } from '@/lib/api'
 import type { KanbanStore } from '@/lib/kanban/store'
 
@@ -146,5 +146,24 @@ describe('buildAssigneeChangeUpdate', () => {
       department: 'research',
       departmentId: 'research',
     })
+  })
+})
+
+describe('getBoardLoadDepartments', () => {
+  it('uses directory-backed board departments when the org payload provides them', () => {
+    expect(getBoardLoadDepartments({
+      departments: ['dataflow', 'general', 'qa', 'Personnel', 'Compliance'],
+      boardDepartments: ['dataflow', 'general', 'qa'],
+      employees: [],
+      hierarchy: { root: null, sorted: [], warnings: [] },
+    })).toEqual(['dataflow', 'general', 'qa'])
+  })
+
+  it('falls back to departments for older org payloads', () => {
+    expect(getBoardLoadDepartments({
+      departments: ['general'],
+      employees: [],
+      hierarchy: { root: null, sorted: [], warnings: [] },
+    })).toEqual(['general'])
   })
 })

@@ -117,6 +117,7 @@ export interface OrgHierarchy {
 
 export interface OrgData {
   departments: string[]
+  boardDepartments?: string[]
   employees: Employee[]
   hierarchy: OrgHierarchy
 }

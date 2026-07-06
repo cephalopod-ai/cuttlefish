@@ -293,6 +293,7 @@ export async function handleOrgRoutes(
     });
     json(res, {
       departments,
+      boardDepartments: directoryDepartments,
       employees,
       hierarchy: {
         root: hierarchy.root,

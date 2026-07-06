@@ -35,6 +35,10 @@ const DAY_MS = 24 * 60 * 60 * 1000
 
 type DeletedKanbanTicket = KanbanTicket & { deletedAt: number }
 
+export function getBoardLoadDepartments(data: OrgData): string[] {
+  return Array.isArray(data.boardDepartments) ? data.boardDepartments : data.departments
+}
+
 function clampRecycleBinRetentionDays(value: unknown): number {
   const n = typeof value === 'number' ? value : Number(value)
   if (!Number.isFinite(n)) return DEFAULT_RECYCLE_BIN_RETENTION_DAYS
@@ -272,8 +276,9 @@ export default function KanbanPage() {
     api
       .getOrg()
       .then(async (data: OrgData) => {
+        const boardDepartments = getBoardLoadDepartments(data)
         setEmployees(data.employees)
-        setDepartments(data.departments)
+        setDepartments(boardDepartments)
 
         // Load board tickets from all departments
         const boardTickets: KanbanStore = {}
@@ -281,7 +286,7 @@ export default function KanbanPage() {
         let nextRetentionDays: number | null = null
         const nextDepartmentRetentionDays: Record<string, number> = {}
         const warnings: string[] = []
-        for (const dept of data.departments) {
+        for (const dept of boardDepartments) {
           try {
             const board: DepartmentBoardResponse = await api.getDepartmentBoard(dept)
             const retentionDays = clampRecycleBinRetentionDays(board.retentionDays)

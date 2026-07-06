@@ -179,6 +179,7 @@ persona: Keeps order.
 
     expect(cap.status).toBe(200);
     expect((cap.body as { departments: string[] }).departments).toEqual(["general"]);
+    expect((cap.body as { boardDepartments: string[] }).boardDepartments).toEqual(["general"]);
   });
 
   it("includes departments declared in employee YAML even when the folder name differs", async () => {
@@ -198,6 +199,7 @@ persona: Reviews mission systems.
 
     expect(cap.status).toBe(200);
     expect((cap.body as { departments: string[] }).departments).toEqual(["general", "mission-systems"]);
+    expect((cap.body as { boardDepartments: string[] }).boardDepartments).toEqual(["general"]);
   });
 
   it("lists active services and resolves duplicate providers by higher rank", async () => {
