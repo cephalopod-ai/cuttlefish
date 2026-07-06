@@ -107,7 +107,7 @@
 - `/org` department tabs expose an inline rename action for a selected department. `PATCH /api/org/departments/:name` updates matching employee YAML `department` fields, renames the department directory when there is no target collision, and emits org/board refresh events.
 - The create/edit surfaces now include multi-role execution configuration when the `features.multiRoleEmployeeExecution` feature flag is enabled: execution tier (`solo` or `mid_pair`), max internal passes, max child sessions, max wall-clock time, max tool calls, max estimated cost, reviewer loss policy, and reviewer tool profile.
 - `packages/web/src/components/org/employee-detail.tsx` displays an execution profile summary in the detail panel when a profile is configured.
-- Fresh-install seed personas place Parliamentarian and Senior Security Officer in `compliance`, HR / Org Steward as the `personnel` department manager, and Assistant in `general`. New manager-hire guidance defaults managers to the COO/root reporting line unless the user explicitly says otherwise.
+- Fresh-install seed personas place Parliamentarian and Senior Security Officer in `compliance`, HR / Org Steward as the `personnel` department manager, and Assistant in `general`. HR / Org Steward advises on organizational planning, agent coordination patterns, and model/budget/resource fit while remaining a review/advisory role rather than a runtime orchestrator or resource manager. New manager-hire guidance defaults managers to the COO/root reporting line unless the user explicitly says otherwise.
 
 ### Workspace profiles
 - `packages/cuttlefish/src/gateway/workspace-profiles.ts`
