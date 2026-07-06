@@ -13,6 +13,7 @@ export {
   createScopedSessionToken,
   verifyScopedSessionToken,
   scopedTokenForbidden,
+  scopedTokenSessionMismatch,
 } from "./scoped-token.js";
 export type { GatewayPrincipal } from "./scoped-token.js";
 export { createAuthToken };

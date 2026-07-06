@@ -76,5 +76,45 @@ export function scopedTokenForbidden(method: string | undefined, rawPathname: st
   if ((pathname === "/api/checkpoints" || pathname.startsWith("/api/checkpoints/")) && m !== "GET") return true;
   if ((pathname === "/api/cron" || pathname.startsWith("/api/cron/")) && m !== "GET") return true;
   if ((pathname === "/api/orchestration" || pathname.startsWith("/api/orchestration/")) && m !== "GET") return true;
+  // Operator onboarding writes operator-level config (see routes/system.ts) — an
+  // agent token must not reach it, same rationale as /api/config and /api/system.
+  if (pathname === "/api/onboarding" || pathname.startsWith("/api/onboarding/")) return true;
+  // Bulk session delete is an operator dashboard action over arbitrary session
+  // ids in the request body — it cannot be confined to one session, so a
+  // session-scoped agent token is denied it outright (a single agent may still
+  // delete its own session via DELETE /api/sessions/<its-own-id>).
+  if (pathname === "/api/sessions/bulk-delete" || pathname === "/api/sessions/cancel-all") return true;
   return false;
+}
+
+/**
+ * Per-session confinement for scoped (agent) tokens.
+ *
+ * `scopedTokenForbidden` keeps an agent out of the operator control plane, but
+ * the session routes themselves (`/api/sessions/:id/...`) are legitimately
+ * reachable by agents — an agent may drive *its own* session. Without this gate
+ * a token minted for session A could message, reset, duplicate, or delete
+ * session B, because the route handlers key only on the `:id` in the URL and
+ * never compare it to the token's bound session. This returns true when a
+ * session-scoped principal targets a *different* session's resource, so the
+ * transport layer can reject it with 403.
+ *
+ * The token's own session id and the target id are compared after the same
+ * `path.posix.normalize()` + lower-case the deny-list uses, so encoded/`..`
+ * variants collapse to the path the router will actually dispatch.
+ */
+export function scopedTokenSessionMismatch(
+  principalSessionId: string,
+  rawPathname: string,
+): boolean {
+  const pathname = path.posix.normalize(rawPathname || "/").toLowerCase();
+  // Only the per-session subtree is confined; collection routes like
+  // `/api/sessions` (list) and `/api/sessions/bulk-delete` are governed by
+  // their own handlers / the deny-list, not by a single :id.
+  const m = /^\/api\/sessions\/([^/]+)(?:\/.*)?$/.exec(pathname);
+  if (!m) return false;
+  const targetId = m[1];
+  // Non-id collection verbs that live directly under /api/sessions/<word>.
+  if (targetId === "bulk-delete" || targetId === "cancel-all") return false;
+  return targetId !== principalSessionId.toLowerCase();
 }

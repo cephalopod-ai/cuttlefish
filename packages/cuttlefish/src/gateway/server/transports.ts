@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
-import { authenticateGatewayRequest, authRequiredForRequest, isAuthenticatedRequest, isLoopbackHost, scopedTokenForbidden } from "../auth.js";
+import { authenticateGatewayRequest, authRequiredForRequest, isAuthenticatedRequest, isLoopbackHost, scopedTokenForbidden, scopedTokenSessionMismatch } from "../auth.js";
 import { logger } from "../../shared/logger.js";
 import type { ApiContext } from "../api.js";
 import { attachPtyWebSocket } from "../pty-ws.js";
@@ -87,6 +87,16 @@ export function createGatewayTransports({
       if (auth.principal?.kind === "session" && scopedTokenForbidden(req.method, pathname)) {
         res.writeHead(403, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "Forbidden for session-scoped tokens" }));
+        return;
+      }
+      // Confine a session-scoped token to its own session: it may drive
+      // /api/sessions/<its-own-id>/... but not another session's resource.
+      if (
+        auth.principal?.kind === "session" &&
+        scopedTokenSessionMismatch(auth.principal.sessionId, pathname)
+      ) {
+        res.writeHead(403, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Forbidden: session-scoped token bound to a different session" }));
         return;
       }
       // Attach principal so route handlers can apply per-principal scoping.
