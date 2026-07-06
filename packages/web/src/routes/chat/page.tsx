@@ -231,6 +231,17 @@ function ChatPage() {
     [chatTabs]
   )
 
+  const handleSelectRoom = useCallback((roomId: string) => {
+    newChatIntentRef.current = false
+    setPendingEmployee(null)
+    setSelectedRoomId(roomId)
+    setSelectedId(null)
+    setSessionMeta(null)
+    setEmployeeSessions([])
+    setMobileView('chat')
+    chatTabs.clearActiveTab()
+  }, [chatTabs])
+
   // Auto-focus the input on any session change (sidebar click, tab switch,
   // keyboard nav, "+ New"). Effect runs after ChatPane (key=selectedId)
   // remounts, so the bumped focusTrigger reaches the fresh ChatInput.
@@ -565,6 +576,7 @@ function ChatPage() {
         shortcuts={shortcuts}
         showShortcutOverlay={showShortcutOverlay}
         onSelect={handleSelect}
+        onSelectRoom={handleSelectRoom}
         onNewChat={handleNewChat}
         onDeleteSession={handleDeleteSession}
         onDuplicateFromSidebar={handleDuplicateFromSidebar}

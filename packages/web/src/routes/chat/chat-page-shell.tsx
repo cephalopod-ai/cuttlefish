@@ -57,6 +57,7 @@ interface ChatPageShellProps {
   onOpenShortcuts: () => void
   onCloseShortcuts: () => void
   onBackToList: () => void
+  onSelectRoom: (roomId: string) => void
 }
 
 export function ChatPageShell(props: ChatPageShellProps) {
@@ -68,8 +69,9 @@ export function ChatPageShell(props: ChatPageShellProps) {
             <NavRibbon />
             <div className="h-full w-[280px] overflow-hidden">
               <ChatSidebar
-                selectedId={props.selectedId}
+                selectedId={props.selectedRoomId ? roomSelectionId(props.selectedRoomId) : props.selectedId}
                 onSelect={props.onSelect}
+                onSelectRoom={props.onSelectRoom}
                 onNewChat={props.onNewChat}
                 onDelete={props.onDeleteSession}
                 onDuplicate={props.onDuplicateFromSidebar}
@@ -109,6 +111,7 @@ export function ChatPageShell(props: ChatPageShellProps) {
               <ChatSidebar
                 selectedId={props.selectedRoomId ? roomSelectionId(props.selectedRoomId) : props.selectedId}
                 onSelect={props.onSelect}
+                onSelectRoom={props.onSelectRoom}
                 onNewChat={props.onNewChat}
                 onDelete={props.onDeleteSession}
                 onDuplicate={props.onDuplicateFromSidebar}

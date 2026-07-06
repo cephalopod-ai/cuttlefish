@@ -1,7 +1,8 @@
 import React from "react"
 import type { Employee } from "@/lib/api"
 import { cn } from "@/lib/utils"
-import { ChevronDown, Clock3 } from "lucide-react"
+import { ChevronDown, Clock3, Layers } from "lucide-react"
+import { roomSelectionId } from "@/lib/rooms/grouping"
 import {
   ContactRow,
   EmployeeRow,
@@ -13,16 +14,22 @@ import {
   type SidebarEmployeeRowProps,
   type SidebarSharedRowProps,
 } from "./sidebar-row-components"
+import { formatTime } from "./sidebar-session-helpers"
+import type { ViewMode } from "./sidebar-types"
 import type { VirtualItem } from "./sidebar-view-model"
 
 interface SidebarListSurfaceProps {
   loading: boolean
   search: string
-  focusMode: "focused" | "all"
+  viewMode: ViewMode
   hiddenAutomated: number
-  selectFocusMode: (mode: "focused" | "all") => void
+  selectViewMode: (mode: ViewMode) => void
   virtualItems: VirtualItem[]
   sharedRowProps: SidebarSharedRowProps
+  selectedId: string | null
+  expandedRooms: Set<string>
+  toggleRoomExpanded: (roomId: string) => void
+  onSelectRoom?: (roomId: string) => void
   expanded: Record<string, boolean>
   handleEmployeeClick: SidebarEmployeeRowProps["handleEmployeeClick"]
   handleMarkAllRead: SidebarEmployeeRowProps["handleMarkAllRead"]
@@ -49,11 +56,15 @@ interface SidebarListSurfaceProps {
 export function SidebarListSurface({
   loading,
   search,
-  focusMode,
+  viewMode,
   hiddenAutomated,
-  selectFocusMode,
+  selectViewMode,
   virtualItems,
   sharedRowProps,
+  selectedId,
+  expandedRooms,
+  toggleRoomExpanded,
+  onSelectRoom,
   expanded,
   handleEmployeeClick,
   handleMarkAllRead,
@@ -157,8 +168,72 @@ export function SidebarListSurface({
             {loadingMore.has("__cron__") ? "Loading…" : `+${cronTotal - cronSessionsLength} more`}
           </button>
         )
-      case "room-header":
-        return null
+      case "room-header": {
+        const { room } = item
+        const isExpanded = expandedRooms.has(room.id)
+        const isSelected = selectedId === roomSelectionId(room.id)
+        const timeLabel = formatTime(room.lastActivity)
+        return (
+          <div
+            className={cn(
+              "group/room relative flex w-full items-center gap-2 border-l-2 px-4 py-3 text-left transition-colors",
+              isSelected
+                ? "border-l-[var(--text-tertiary)] bg-[var(--fill-secondary)]"
+                : "border-l-transparent hover:bg-[var(--fill-tertiary)]",
+            )}
+          >
+            <button
+              type="button"
+              onClick={() => onSelectRoom?.(room.id)}
+              aria-current={isSelected ? "page" : undefined}
+              className="flex min-w-0 flex-1 items-center gap-3 text-left"
+            >
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--fill-tertiary)] text-[var(--text-secondary)]">
+                <Layers className="size-4" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="mb-0.5 flex items-baseline gap-2">
+                  <span className={cn(
+                    "min-w-0 flex-1 truncate text-[13px] text-foreground",
+                    isSelected ? "font-semibold" : "font-medium",
+                  )}>
+                    {room.name}
+                  </span>
+                  {timeLabel ? (
+                    <span className="shrink-0 text-[10px] text-[var(--text-tertiary)]">
+                      {timeLabel}
+                    </span>
+                  ) : null}
+                </span>
+                <span className="flex min-w-0 items-center gap-1.5 overflow-hidden text-[11px] text-[var(--text-tertiary)]">
+                  <span className="shrink-0 rounded bg-[var(--fill-tertiary)] px-1.5 py-0.5 text-[10px]">
+                    {room.sessionCount} {room.sessionCount === 1 ? "chat" : "chats"}
+                  </span>
+                  <span className="shrink-0 rounded bg-[var(--fill-tertiary)] px-1.5 py-0.5 text-[10px]">
+                    {room.participantCount} {room.participantCount === 1 ? "person" : "people"}
+                  </span>
+                  {room.runningCount > 0 ? (
+                    <span className="shrink-0 rounded bg-[var(--fill-secondary)] px-1.5 py-0.5 text-[10px] text-[var(--accent)]">
+                      {room.runningCount} running
+                    </span>
+                  ) : null}
+                </span>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation()
+                toggleRoomExpanded(room.id)
+              }}
+              aria-label={`${isExpanded ? "Collapse" : "Expand"} ${room.name}`}
+              className="inline-flex size-7 shrink-0 items-center justify-center rounded-full text-[var(--text-tertiary)] transition-colors hover:bg-[var(--fill-secondary)] hover:text-foreground"
+            >
+              <ChevronDown className={cn("size-3.5 transition-transform", !isExpanded && "-rotate-90")} />
+            </button>
+          </div>
+        )
+      }
       default:
         return null
     }
@@ -168,10 +243,10 @@ export function SidebarListSurface({
     <div className="px-4 py-8 text-center text-xs text-[var(--text-quaternary)]">
       {search.trim() ? (
         "No matching chats"
-      ) : focusMode === "focused" && hiddenAutomated > 0 ? (
+      ) : viewMode === "focused" && hiddenAutomated > 0 ? (
         <>
           No personal chats here.{" "}
-          <button onClick={() => selectFocusMode("all")} className="text-[var(--accent)] hover:underline">
+          <button onClick={() => selectViewMode("all")} className="text-[var(--accent)] hover:underline">
             View all ({hiddenAutomated} automated)
           </button>
         </>
@@ -229,6 +304,7 @@ export function SidebarListSurface({
                   item.kind === "flat" ? item.row.session.id
                   : item.kind === "employee" ? item.item.pinKey
                   : item.kind === "cron-session" ? item.session.id
+                  : item.kind === "room-header" ? `room:${item.room.id}`
                   : item.kind === "section" ? `section:${item.id}`
                   : `${item.kind}:${index}`
                 }

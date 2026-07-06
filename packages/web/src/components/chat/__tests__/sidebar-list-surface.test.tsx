@@ -5,6 +5,7 @@ import { SidebarListSurface } from "../sidebar-list-surface"
 import type { VirtualItem } from "../sidebar-view-model"
 import type { SidebarSharedRowProps } from "../sidebar-row-components"
 import type { Employee } from "@/lib/api"
+import type { DepartmentRoom } from "@/lib/rooms/types"
 
 vi.mock("../sidebar-row-components", () => ({
   SECTION_LABEL_CLASS: "section-label",
@@ -42,11 +43,14 @@ function renderSurface(props?: Partial<React.ComponentProps<typeof SidebarListSu
     <SidebarListSurface
       loading={false}
       search=""
-      focusMode="all"
+      viewMode="all"
       hiddenAutomated={0}
-      selectFocusMode={vi.fn()}
+      selectViewMode={vi.fn()}
       virtualItems={[]}
       sharedRowProps={makeSharedRowProps()}
+      selectedId={null}
+      expandedRooms={new Set()}
+      toggleRoomExpanded={vi.fn()}
       expanded={{}}
       handleEmployeeClick={vi.fn()}
       handleMarkAllRead={vi.fn()}
@@ -56,14 +60,14 @@ function renderSurface(props?: Partial<React.ComponentProps<typeof SidebarListSu
       olderLineLabel="Older · 0 chats"
       toggleOlderExpanded={vi.fn()}
       cronCollapsed={false}
-    toggleCronCollapsed={vi.fn()}
-    cronTotal={0}
-    cronSessionsLength={0}
-    managerEmployees={[]}
-    teamEmployees={[]}
-    scrollContainerRef={{ current: null }}
-    handleListScroll={vi.fn()}
-    shouldVirtualize={false}
+      toggleCronCollapsed={vi.fn()}
+      cronTotal={0}
+      cronSessionsLength={0}
+      managerEmployees={[]}
+      teamEmployees={[]}
+      scrollContainerRef={{ current: null }}
+      handleListScroll={vi.fn()}
+      shouldVirtualize={false}
       totalSize={0}
       virtualRows={[]}
       measureElement={vi.fn()}
@@ -79,15 +83,56 @@ describe("SidebarListSurface", () => {
   })
 
   it("renders the focused empty state CTA", () => {
-    const selectFocusMode = vi.fn()
+    const selectViewMode = vi.fn()
     renderSurface({
-      focusMode: "focused",
+      viewMode: "focused",
       hiddenAutomated: 3,
-      selectFocusMode,
+      selectViewMode,
     })
 
     fireEvent.click(screen.getByText("View all (3 automated)"))
-    expect(selectFocusMode).toHaveBeenCalledWith("all")
+    expect(selectViewMode).toHaveBeenCalledWith("all")
+  })
+
+  it("renders a department room header and wires expand + open", () => {
+    const toggleRoomExpanded = vi.fn()
+    const onSelectRoom = vi.fn()
+    const room: DepartmentRoom = {
+      id: "platform",
+      name: "Platform",
+      departmentId: "platform",
+      isUnassigned: false,
+      sessions: [],
+      participants: [],
+      sessionCount: 2,
+      participantCount: 1,
+      lastActivity: "2026-06-22T10:00:00.000Z",
+      runningCount: 1,
+      status: "active",
+    }
+
+    renderSurface({
+      virtualItems: [{ kind: "room-header", room }],
+      selectedId: "room:platform",
+      expandedRooms: new Set(["platform"]),
+      toggleRoomExpanded,
+      onSelectRoom,
+    })
+
+    const openButton = screen.getByText("Platform").closest("button")
+    expect(openButton).toBeTruthy()
+    if (!openButton) throw new Error("room open button not found")
+    expect(openButton.getAttribute("aria-current")).toBe("page")
+    expect(screen.getByText("2 chats")).toBeTruthy()
+    expect(screen.getByText("1 person")).toBeTruthy()
+    expect(screen.getByText("1 running")).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Platform" }))
+    expect(toggleRoomExpanded).toHaveBeenCalledWith("platform")
+    expect(onSelectRoom).not.toHaveBeenCalled()
+
+    fireEvent.click(openButton)
+    expect(onSelectRoom).toHaveBeenCalledWith("platform")
   })
 
   it("renders the scheduled section and load-more button wiring", () => {

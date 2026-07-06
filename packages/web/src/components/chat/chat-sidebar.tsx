@@ -17,6 +17,8 @@ import {
 import { queryKeys } from "@/lib/query-keys"
 import { useSettings } from "@/routes/settings-provider"
 import { portalEmployeeSlug } from "@/lib/portal-slug"
+import { groupSessionsByDepartment } from "@/lib/rooms/grouping"
+import type { DepartmentRoom, RoomEmployee, RoomSession } from "@/lib/rooms/types"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -30,6 +32,7 @@ import { cn } from "@/lib/utils"
 import { SidebarListSurface } from "./sidebar-list-surface"
 import { ArchiveDialog, type ArchiveDialogTarget } from "./archive-dialog"
 import type { SidebarDeleteTarget, SidebarSharedRowProps } from "./sidebar-row-components"
+import { useSidebarViewPreferences } from "./use-sidebar-view-preferences"
 import {
   getPinnedSessions,
   getReadSessions,
@@ -41,7 +44,7 @@ import {
   saveExpandedState,
   savePinnedSessions,
 } from "./sidebar-storage"
-import type { FlatItem, Session, SidebarOrder, ViewMode } from "./sidebar-types"
+import type { FlatItem, Session, SidebarOrder } from "./sidebar-types"
 import {
   buildContactableEmployees,
   buildManagerEmployees,
@@ -72,12 +75,8 @@ interface ChatSidebarProps {
   onEmployeeSessionsAvailable?: (sessions: Session[]) => void
   onOrderComputed?: (order: SidebarOrder) => void
   onContactEmployee?: (name: string) => void
+  onSelectRoom?: (roomId: string) => void
 }
-
-type FocusMode = Extract<ViewMode, "focused" | "all">
-
-const OLDER_EXPANDED_STORAGE_KEY = "cuttlefish-sidebar-older-expanded"
-const FOCUS_MODE_STORAGE_KEY = "cuttlefish-sidebar-focus-mode"
 
 export function ChatSidebar({
   selectedId,
@@ -89,6 +88,7 @@ export function ChatSidebar({
   onEmployeeSessionsAvailable,
   onOrderComputed,
   onContactEmployee,
+  onSelectRoom,
 }: ChatSidebarProps) {
   const { pushToast } = useToast()
   const { settings } = useSettings()
@@ -126,8 +126,14 @@ export function ChatSidebar({
   const [pinnedSessions, setPinnedSessions] = useState<Set<string>>(new Set())
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
-  const [olderExpanded, setOlderExpanded] = useState(false)
-  const [focusMode, setFocusMode] = useState<FocusMode>("all")
+  const {
+    viewMode,
+    selectViewMode,
+    olderExpanded,
+    toggleOlderExpanded,
+    expandedRooms,
+    toggleRoomExpanded,
+  } = useSidebarViewPreferences()
   const [loadingMore, setLoadingMore] = useState<Set<string>>(new Set())
   const [deleteTarget, setDeleteTarget] = useState<SidebarDeleteTarget | null>(null)
   const [archiveTarget, setArchiveTarget] = useState<ArchiveDialogTarget | null>(null)
@@ -161,11 +167,6 @@ export function ChatSidebar({
     setPinnedSessions(getPinnedSessions())
     setCollapsed(loadCollapsedState())
     setExpanded(loadExpandedState())
-    try {
-      setOlderExpanded(localStorage.getItem(OLDER_EXPANDED_STORAGE_KEY) === "true")
-      const stored = localStorage.getItem(FOCUS_MODE_STORAGE_KEY)
-      if (stored === "focused" || stored === "all") setFocusMode(stored)
-    } catch {}
   }, [])
 
   useEffect(() => {
@@ -182,23 +183,6 @@ export function ChatSidebar({
   useEffect(() => {
     if (searchOpen) searchInputRef.current?.focus()
   }, [searchOpen])
-
-  const selectFocusMode = useCallback((mode: FocusMode) => {
-    setFocusMode(mode)
-    try {
-      localStorage.setItem(FOCUS_MODE_STORAGE_KEY, mode)
-    } catch {}
-  }, [])
-
-  const toggleOlderExpanded = useCallback(() => {
-    setOlderExpanded((prev) => {
-      const next = !prev
-      try {
-        localStorage.setItem(OLDER_EXPANDED_STORAGE_KEY, String(next))
-      } catch {}
-      return next
-    })
-  }, [])
 
   const toggleCronCollapsed = useCallback(() => {
     setCollapsed((prev) => {
@@ -308,8 +292,8 @@ export function ChatSidebar({
     portalName,
     pinnedSessions,
     counts,
-    viewMode: focusMode,
-  }), [sessions, search, searchResults, employeeData, portalSlug, portalName, pinnedSessions, counts, focusMode])
+    viewMode,
+  }), [sessions, search, searchResults, employeeData, portalSlug, portalName, pinnedSessions, counts, viewMode])
 
   const cronCollapsed = collapsed.has("cron")
 
@@ -339,11 +323,19 @@ export function ChatSidebar({
     [contactableEmployees, managerEmployeeNames],
   )
 
+  const rooms = useMemo<DepartmentRoom[]>(() => {
+    if (viewMode !== "rooms") return []
+    return groupSessionsByDepartment(
+      sessions as unknown as RoomSession[],
+      orgEmployees as RoomEmployee[],
+    )
+  }, [viewMode, sessions, orgEmployees])
+
   const allFlatIds = useMemo(() => buildSidebarOrder({
     searching,
     searchRows,
-    viewMode: focusMode,
-    rooms: [],
+    viewMode,
+    rooms,
     sortedCron,
     pinnedFlat,
     unpinnedFlat,
@@ -357,7 +349,8 @@ export function ChatSidebar({
   }), [
     searching,
     searchRows,
-    focusMode,
+    viewMode,
+    rooms,
     sortedCron,
     pinnedFlat,
     unpinnedFlat,
@@ -461,9 +454,9 @@ export function ChatSidebar({
   const virtualItems = useMemo(() => buildVirtualItems({
     searching,
     searchRows,
-    viewMode: focusMode,
-    rooms: [],
-    expandedRooms: new Set(),
+    viewMode,
+    rooms,
+    expandedRooms,
     cronSessions,
     cronCollapsed,
     sortedCron,
@@ -481,7 +474,9 @@ export function ChatSidebar({
   }), [
     searching,
     searchRows,
-    focusMode,
+    viewMode,
+    rooms,
+    expandedRooms,
     cronSessions,
     cronCollapsed,
     sortedCron,
@@ -592,15 +587,19 @@ export function ChatSidebar({
             aria-hidden={searchOpen}
           >
             <div className="flex items-center gap-0.5 rounded-full bg-[var(--fill-tertiary)] p-0.5 text-[11px] font-medium">
-              {(["focused", "all"] as const).map((mode) => (
+              {(["rooms", "focused", "all"] as const).map((mode) => (
                 <button
                   key={mode}
-                  onClick={() => selectFocusMode(mode)}
-                  aria-pressed={focusMode === mode}
-                  title={mode === "focused" ? "Only chats you started" : "Include automated & delegated sessions"}
+                  onClick={() => selectViewMode(mode)}
+                  aria-pressed={viewMode === mode}
+                  title={
+                    mode === "rooms" ? "Group chats into department rooms"
+                    : mode === "focused" ? "Only chats you started"
+                    : "Include automated & delegated sessions"
+                  }
                   className={cn(
                     "rounded-full px-2.5 py-1 capitalize transition-all",
-                    focusMode === mode
+                    viewMode === mode
                       ? "bg-[var(--bg-secondary)] text-foreground shadow-[var(--shadow-subtle)]"
                       : "text-muted-foreground hover:text-foreground",
                   )}
@@ -661,11 +660,15 @@ export function ChatSidebar({
       <SidebarListSurface
         loading={loading}
         search={search}
-        focusMode={focusMode}
+        viewMode={viewMode}
         hiddenAutomated={hiddenAutomated}
-        selectFocusMode={selectFocusMode}
+        selectViewMode={selectViewMode}
         virtualItems={virtualItems}
         sharedRowProps={sharedRowProps}
+        selectedId={selectedId}
+        expandedRooms={expandedRooms}
+        toggleRoomExpanded={toggleRoomExpanded}
+        onSelectRoom={onSelectRoom}
         expanded={expanded}
         handleEmployeeClick={handleEmployeeClick}
         handleMarkAllRead={handleMarkAllRead}
