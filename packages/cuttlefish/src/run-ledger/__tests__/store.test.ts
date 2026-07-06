@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type { Session } from "../../shared/types.js";
 import { RunLedgerStore } from "../store.js";
 import {
@@ -118,6 +121,31 @@ describe("RunLedgerStore lifecycle transitions", () => {
     const before = store.listEvents("run-1").length;
     store.transitionRun({ runId: "run-1", nextState: "running", at: "2026-06-30T00:02:00.000Z" });
     expect(store.listEvents("run-1")).toHaveLength(before);
+  });
+
+  it("refuses to transition out of a terminal state (STT-RL-001)", () => {
+    store.createRun({ runId: "run-1", source: "web", sourceRef: "web:1", engine: "claude" });
+    store.transitionRun({ runId: "run-1", nextState: "running", at: "2026-06-30T00:01:00.000Z" });
+    store.transitionRun({ runId: "run-1", nextState: "completed", at: "2026-06-30T00:02:00.000Z" });
+    // A completed run must never be reactivated.
+    expect(() => store.transitionRun({ runId: "run-1", nextState: "running", at: "2026-06-30T00:03:00.000Z" }))
+      .toThrow(/terminal/i);
+    // The terminal record is unchanged.
+    expect(store.getRun("run-1")?.currentState).toBe("completed");
+
+    store.createRun({ runId: "run-2", source: "web", sourceRef: "web:2", engine: "claude" });
+    store.transitionRun({ runId: "run-2", nextState: "dead_lettered", at: "2026-06-30T00:02:00.000Z" });
+    expect(() => store.transitionRun({ runId: "run-2", nextState: "blocked" })).toThrow(/terminal/i);
+  });
+
+  it("still allows recovery re-entry from non-terminal reporting states", () => {
+    store.createRun({ runId: "run-1", source: "web", sourceRef: "web:1", engine: "claude" });
+    store.transitionRun({ runId: "run-1", nextState: "running", at: "2026-06-30T00:01:00.000Z" });
+    store.transitionRun({ runId: "run-1", nextState: "interrupted", at: "2026-06-30T00:02:00.000Z" });
+    // interrupted is terminal for reporting but re-enterable by recovery.
+    expect(() => store.transitionRun({ runId: "run-1", nextState: "running", at: "2026-06-30T00:03:00.000Z" }))
+      .not.toThrow();
+    expect(store.getRun("run-1")?.currentState).toBe("running");
   });
 
   it("records a run error on a failing transition", () => {
@@ -286,5 +314,51 @@ describe("RunLedgerStore.syncSessionUpdate status mapping", () => {
     const before = makeSession({ status: "idle" });
     const after = makeSession({ status: "running" });
     expect(store.syncSessionUpdate({ before, after })).toBeUndefined();
+  });
+});
+
+describe("RunLedgerStore.open — corruption quarantine (FSR-CF-001)", () => {
+  let dir: string;
+  let dbPath: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "run-ledger-corrupt-"));
+    dbPath = path.join(dir, "run-ledger.db");
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("quarantines a corrupt DB file and boots fresh instead of throwing", () => {
+    // Write bytes that are not a valid SQLite database.
+    fs.writeFileSync(dbPath, "this is not a sqlite database at all");
+
+    // Opening must NOT throw — it should quarantine and rebuild.
+    const store = RunLedgerStore.open(dbPath);
+    try {
+      // Fresh, usable ledger.
+      store.createRun({ runId: "r1", source: "web", sourceRef: "web:1", engine: "claude" });
+      expect(store.getRun("r1")?.currentState).toBe("created");
+    } finally {
+      store.close();
+    }
+
+    // The corrupt original was renamed aside for forensics.
+    const quarantined = fs.readdirSync(dir).filter((f) => f.includes(".corrupt-"));
+    expect(quarantined.length).toBe(1);
+  });
+
+  it("opens a healthy on-disk DB normally", () => {
+    const store = RunLedgerStore.open(dbPath);
+    store.createRun({ runId: "r1", source: "web", sourceRef: "web:1", engine: "claude" });
+    store.close();
+    const reopened = RunLedgerStore.open(dbPath);
+    try {
+      expect(reopened.getRun("r1")?.currentState).toBe("created");
+      expect(fs.readdirSync(dir).filter((f) => f.includes(".corrupt-")).length).toBe(0);
+    } finally {
+      reopened.close();
+    }
   });
 });

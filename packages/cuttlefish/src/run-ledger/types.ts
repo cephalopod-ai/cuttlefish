@@ -10,6 +10,15 @@ export const CANONICAL_RUN_STATES = [
   "completed",
 ] as const;
 
+/**
+ * States a run can never leave. A `completed` or `dead_lettered` run is final —
+ * transitioning it back to an active state corrupts run history and event
+ * ordering (audit finding STT-RL-001). `failed` and `interrupted` are terminal
+ * for reporting but remain re-enterable by the recovery/retry paths, so they are
+ * deliberately NOT in this set.
+ */
+export const TERMINAL_RUN_STATES = ["completed", "dead_lettered"] as const;
+
 export const RUN_EVENT_TYPES = [
   "run_created",
   "state_transition",

@@ -21,9 +21,14 @@ import {
   runErrorRecordSchema,
   runEventRecordSchema,
   runRecordSchema,
+  TERMINAL_RUN_STATES,
 } from "./types.js";
+import { isSqliteCorruptionError, quarantineCorruptDb } from "../shared/sqlite-corruption.js";
 
 const SCHEMA_VERSION = 1;
+
+/** Thrown when a run transition would leave a terminal state (STT-RL-001). */
+export class RunLedgerTransitionError extends Error {}
 
 const CREATE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -289,6 +294,22 @@ export class RunLedgerStore {
     if (dbPath !== ":memory:") {
       fs.mkdirSync(path.dirname(dbPath), { recursive: true });
     }
+    try {
+      return RunLedgerStore.openConnection(dbPath);
+    } catch (err) {
+      // FSR-CF-001: a corrupt run-ledger file must not crash daemon boot. The
+      // sibling sessions/artifact-lineage stores already quarantine-and-rebuild;
+      // this brings the run ledger to parity. Only recover on-disk databases —
+      // an in-memory open cannot be corrupt on disk.
+      if (dbPath !== ":memory:" && isSqliteCorruptionError(err)) {
+        quarantineCorruptDb(dbPath, "run-ledger");
+        return RunLedgerStore.openConnection(dbPath);
+      }
+      throw err;
+    }
+  }
+
+  private static openConnection(dbPath: string): RunLedgerStore {
     const db = new Database(dbPath, { timeout: 5000 });
     db.pragma("journal_mode = WAL");
     db.pragma("synchronous = NORMAL");
@@ -438,6 +459,15 @@ export class RunLedgerStore {
     if (!current) throw new Error(`Run ${input.runId} not found`);
     const nextState = canonicalRunStateSchema.parse(input.nextState);
     if (current.currentState === nextState) return current;
+    // Legal-transition guard (STT-RL-001): a run in a final state
+    // (completed / dead_lettered) must never be reactivated. Retries and replays
+    // create a NEW run id rather than resurrecting the terminal one, so this
+    // never blocks a legitimate flow.
+    if ((TERMINAL_RUN_STATES as readonly string[]).includes(current.currentState)) {
+      throw new RunLedgerTransitionError(
+        `Illegal run transition ${current.currentState} → ${nextState} for ${input.runId}: ${current.currentState} is terminal`,
+      );
+    }
 
     const at = input.at ?? new Date().toISOString();
     const startedAt = nextState === "running" && !current.startedAt ? at : current.startedAt;
@@ -492,17 +522,34 @@ export class RunLedgerStore {
         runId,
       );
       if (nextState && nextState !== current.currentState) {
-        this.transitionRun({
-          runId,
-          nextState,
-          at,
-          payload: {
-            beforeStatus: input.before.status,
-            afterStatus: input.after.status,
-          },
-          errorKind: input.after.lastError ? nextState : null,
-          errorMessage: input.after.lastError,
-        });
+        try {
+          this.transitionRun({
+            runId,
+            nextState,
+            at,
+            payload: {
+              beforeStatus: input.before.status,
+              afterStatus: input.after.status,
+            },
+            errorKind: input.after.lastError ? nextState : null,
+            errorMessage: input.after.lastError,
+          });
+        } catch (err) {
+          // A session update that maps to a transition out of a terminal run
+          // (e.g. a settled session re-activated while its activeRunId still
+          // points at the completed run) must not abort the whole session-sync
+          // transaction. The run ledger keeps the terminal record; the live
+          // session lifecycle is authoritative for the session itself. Retries
+          // create a fresh run id, so this only fires on the reactivation edge.
+          if (err instanceof RunLedgerTransitionError) {
+            this.appendEvent(runId, "error_recorded", current.currentState, current.currentState, at, {
+              afterStatus: input.after.status,
+              suppressedTransition: nextState,
+            });
+          } else {
+            throw err;
+          }
+        }
       } else if (input.after.lastError && input.after.lastError !== current.lastError) {
         this.appendEvent(runId, "error_recorded", current.currentState, current.currentState, at, {
           afterStatus: input.after.status,

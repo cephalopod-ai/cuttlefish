@@ -11,7 +11,7 @@ export function isSqliteCorruptionError(err: unknown): boolean {
   );
 }
 
-export function quarantineCorruptDb(dbPath: string): void {
+export function quarantineCorruptDb(dbPath: string, label = "sessions"): void {
   const backup = `${dbPath}.corrupt-${Date.now()}`;
   try {
     fs.renameSync(dbPath, backup);
@@ -26,5 +26,5 @@ export function quarantineCorruptDb(dbPath: string): void {
       // Best-effort cleanup of WAL/shm files.
     }
   }
-  logger.warn(`Quarantined corrupt sessions DB to ${backup} — starting fresh`);
+  logger.warn(`Quarantined corrupt ${label} DB to ${backup} — starting fresh`);
 }
