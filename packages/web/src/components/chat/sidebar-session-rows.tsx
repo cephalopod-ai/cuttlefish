@@ -184,7 +184,7 @@ export const SessionRow = React.memo(function SessionRow({
 }: SessionRowProps) {
   const sessionIsActive = session.id === selectedId
   const sessionDot = getStatusDot(session, readSessions)
-  const sessionTitle = fixTitle(session.title, session.employee)
+  const sessionTitle = fixTitle(session.title ?? undefined, session.employee ?? undefined)
   const displayTitle = cleanPreview(sessionTitle) || sessionTitle
   const sessionTime = formatTime(getSessionActivity(session))
   const isPinned = pinnedSessions.has(session.id)
@@ -329,7 +329,7 @@ export const FlatSessionRow = React.memo(function FlatSessionRow({
 }: FlatSessionRowProps) {
   const isActive = session.id === selectedId
   const dot = getStatusDot(session, readSessions)
-  const rawTitle = fixTitle(session.title, session.employee)
+  const rawTitle = fixTitle(session.title ?? undefined, session.employee ?? undefined)
   const displayTitle = cleanPreview(rawTitle) || "Untitled"
   const time = formatTime(getSessionActivity(session))
   const isPinned = pinnedSessions.has(session.id)

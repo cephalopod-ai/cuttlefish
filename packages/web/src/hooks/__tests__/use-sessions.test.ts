@@ -3,11 +3,12 @@ import { QueryClient } from '@tanstack/react-query'
 import { mergeSessionsResponse, patchSessionBackgroundActivity } from '../use-sessions'
 import { queryKeys } from '@/lib/query-keys'
 import type { SessionsResponse } from '@/lib/api'
+import type { PublicSession } from '@cuttlefish/contracts'
 
-const session = (id: string, extra: Record<string, unknown> = {}) => ({ id, ...extra })
+const session = (id: string, extra: Partial<PublicSession> = {}): PublicSession => ({ id, ...extra })
 
 const resp = (
-  sessions: Record<string, unknown>[],
+  sessions: PublicSession[],
   counts: Record<string, number> = {},
   perGroup = 8,
 ): SessionsResponse => ({ sessions, counts, perGroup })

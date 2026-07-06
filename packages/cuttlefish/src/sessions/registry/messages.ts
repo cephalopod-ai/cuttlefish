@@ -2,25 +2,9 @@ import { v4 as uuidv4 } from 'uuid';
 import type { ChatBlock, ChatBlockEnvelope } from '../../shared/types.js';
 import { blockFallbackText, mergeBlock, validateBlockEnvelope } from '../../shared/blocks.js';
 import { initDb } from './core.js';
+import type { MediaAttachment as MessageMedia, SessionMessage } from '@cuttlefish/contracts';
 
-export interface MessageMedia {
-  type: 'image' | 'audio' | 'file';
-  url: string;
-  name?: string;
-  mimeType?: string;
-  size?: number;
-}
-
-export interface SessionMessage {
-  id: string;
-  role: string;
-  content: string;
-  timestamp: number;
-  media?: MessageMedia[];
-  partial?: boolean;
-  toolCall?: string;
-  blocks?: ChatBlock[];
-}
+export type { MessageMedia, SessionMessage };
 
 function parseMediaColumn(value: unknown): MessageMedia[] | undefined {
   if (typeof value !== 'string' || !value.trim()) return undefined;

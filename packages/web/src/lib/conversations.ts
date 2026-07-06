@@ -4,31 +4,21 @@
  */
 
 import type { ChatBlock } from './blocks'
+import type {
+  ChatMessage,
+  MediaAttachment as SerializedMediaAttachment,
+  MediaType,
+} from '@cuttlefish/contracts'
 
-export type MediaType = 'image' | 'audio' | 'file'
+export type { MediaType }
 
-export interface MediaAttachment {
-  type: MediaType
-  url: string
-  name?: string
-  mimeType?: string
-  duration?: number
-  waveform?: number[]
-  size?: number
-  /** Server-side file ID after upload (set by chat-pane before sending) */
-  fileId?: string
-  /** Original File object for upload (not serialized) */
+export type MediaAttachment = SerializedMediaAttachment & {
+  /** Original File object for upload (not serialized). */
   file?: File
 }
 
-export interface Message {
-  id: string
-  role: 'user' | 'assistant' | 'notification'
-  content: string
-  timestamp: number
+export interface Message extends Omit<ChatMessage, 'media' | 'blocks'> {
   media?: MediaAttachment[]
-  toolCall?: string
-  toolId?: string
   blocks?: ChatBlock[]
 }
 

@@ -47,7 +47,7 @@ interface ChatPageShellProps {
   onDeleteSession: (id: string) => void
   onDuplicateFromSidebar: (newSessionId: string) => void
   onSessionsLoaded: (sessions: { id: string }[]) => void
-  onEmployeeSessionsAvailable: (sessions: Array<{ id: string; title?: string; lastActivity?: string; createdAt?: string }>) => void
+  onEmployeeSessionsAvailable: (sessions: Array<{ id: string; title?: string | null; lastActivity?: string; createdAt?: string }>) => void
   onOrderComputed: (order: SidebarOrder) => void
   onContactEmployee: (name: string) => void
   onFileBack: () => void

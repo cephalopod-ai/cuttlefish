@@ -1,31 +1,12 @@
-import type { BackgroundActivity, Employee } from "@/lib/api"
+import type { Employee } from "@/lib/api"
+import type { PublicSession } from "@cuttlefish/contracts"
 
 /**
  * Shared types for the chat sidebar and its helper modules.
  * Extracted from chat-sidebar.tsx (audit AS-001 modularization) — no behavior change.
  */
 
-export interface Session {
-  id: string
-  connector?: string | null
-  employee?: string
-  title?: string
-  status?: string
-  source?: string
-  sourceRef?: string
-  sessionKey?: string
-  /** Set on delegated/spawned child sessions; null/empty for top-level chats. */
-  parentSessionId?: string | null
-  transportState?: string
-  queueDepth?: number
-  lastActivity?: string
-  createdAt?: string
-  /** Background work (subagents/background tasks) still running while the
-   *  session is officially idle. null/absent = none. Kept live via the
-   *  session:background WS event (cache patch in useQueryInvalidation). */
-  backgroundActivity?: BackgroundActivity | null
-  [key: string]: unknown
-}
+export type Session = PublicSession
 
 export interface SidebarOrder {
   sessionIds: string[]

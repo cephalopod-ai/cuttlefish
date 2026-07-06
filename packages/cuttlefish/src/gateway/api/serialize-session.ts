@@ -1,4 +1,5 @@
 import { isInterruptibleEngine, type Session } from "../../shared/types.js";
+import type { PublicSession } from "@cuttlefish/contracts";
 import type { ApiContext } from "./context.js";
 import { enrichRunAttachmentsForSession } from "../run-attachments.js";
 import { type ExecutionRunState } from "../employee-execution.js";
@@ -24,7 +25,7 @@ function extractExecutionRunState(session: Session): ExecutionRunState | null {
   };
 }
 
-export function serializeSession(session: Session, context: ApiContext): Session & { executionRunState?: ExecutionRunState | null } {
+export function serializeSession(session: Session, context: ApiContext): Session & PublicSession & { executionRunState?: ExecutionRunState | null } {
   const queue = context.sessionManager.getQueue();
   const queueDepth = queue.getPendingCount(session.sessionKey || session.sourceRef);
   const transportState = queue.getTransportState(session.sessionKey || session.sourceRef, session.status);

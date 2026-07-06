@@ -1,4 +1,10 @@
 import type { TalkGraphNodeWire } from '@/routes/talk/protocol'
+import type {
+  BackgroundActivity,
+  PublicSession,
+  WorkspaceProfile,
+  WorkspaceProfilesResponse,
+} from '@cuttlefish/contracts'
 import { archiveApi } from "./api-archives"
 import { approvalApi } from "./api-approvals"
 import { authFetch, del, extractErrorMessage, get, post, put } from "./api-core"
@@ -58,20 +64,11 @@ interface UploadedFile {
   mimetype: string | null
 }
 
-/**
- * Background work still running after a session's turn officially ended
- * (subagents / background tasks making API calls). Present on session rows
- * (list + detail) and pushed live via the `session:background` WS event.
- * null/absent = no background work.
- */
-export interface BackgroundActivity {
-  activeStreams: number
-  lastActivityAt: string
-}
+export type { BackgroundActivity, PublicSession }
 
 export interface SessionsResponse {
   /** Top-N most-recent sessions per group (employee / direct / cron). */
-  sessions: Record<string, unknown>[]
+  sessions: PublicSession[]
   /** Total session count per group key, so the UI can show accurate "+N more". */
   counts: Record<string, number>
   /** How many per group the server returned (the load-more threshold). */
@@ -214,17 +211,7 @@ export interface WorkOverview {
   items: WorkItem[]
 }
 
-export interface WorkspaceProfile {
-  id: string
-  label: string
-  cwd?: string
-  employee?: string
-  hasInstructions: boolean
-}
-
-export interface WorkspaceProfilesResponse {
-  profiles: WorkspaceProfile[]
-}
+export type { WorkspaceProfile, WorkspaceProfilesResponse }
 
 export type CommandCenterUsageRange = 'day' | 'week' | 'month'
 
@@ -375,14 +362,14 @@ export const api = {
   getSessions: () => get<SessionsResponse>("/api/sessions"),
   /** One group's sessions, newest first — used by the sidebar "load more" button. */
   getSessionsForGroup: (group: string, offset: number, limit = 50) =>
-    get<Record<string, unknown>[]>(
+    get<PublicSession[]>(
       `/api/sessions?group=${encodeURIComponent(group)}&offset=${offset}&limit=${limit}`,
     ),
   /** Search across ALL sessions (title / employee / id), newest first. */
   searchSessions: (query: string) =>
-    get<Record<string, unknown>[]>(`/api/sessions?q=${encodeURIComponent(query)}`),
-  getSession: (id: string) => get<Record<string, unknown>>(`/api/sessions/${id}`),
-  getSessionChildren: (id: string) => get<Record<string, unknown>[]>(`/api/sessions/${id}/children`),
+    get<PublicSession[]>(`/api/sessions?q=${encodeURIComponent(query)}`),
+  getSession: (id: string) => get<PublicSession & { messages?: import('@cuttlefish/contracts').SessionMessage[] }>(`/api/sessions/${id}`),
+  getSessionChildren: (id: string) => get<PublicSession[]>(`/api/sessions/${id}/children`),
   updateSession: (id: string, data: { title?: string; model?: string; effortLevel?: string }) =>
     put<Record<string, unknown>>(`/api/sessions/${id}`, data),
   deleteSession: (id: string) => del<Record<string, unknown>>(`/api/sessions/${id}`),

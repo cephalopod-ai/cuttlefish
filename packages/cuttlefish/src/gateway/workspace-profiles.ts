@@ -1,13 +1,8 @@
 import { validateCwd } from "../sessions/session-patch.js";
 import type { CuttlefishConfig, WorkspaceProfileConfig } from "../shared/types.js";
+import type { WorkspaceProfile } from "@cuttlefish/contracts";
 
-export interface WorkspaceProfileSummary {
-  id: string;
-  label: string;
-  cwd?: string;
-  employee?: string;
-  hasInstructions: boolean;
-}
+export type WorkspaceProfileSummary = WorkspaceProfile;
 
 export interface ResolvedWorkspaceProfile extends WorkspaceProfileSummary {
   instructions?: string;

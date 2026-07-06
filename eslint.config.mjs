@@ -29,7 +29,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["packages/cuttlefish/src/**/*.ts"],
+    files: ["packages/cuttlefish/src/**/*.ts", "packages/contracts/src/**/*.ts"],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     languageOptions: {
       ecmaVersion: "latest",
