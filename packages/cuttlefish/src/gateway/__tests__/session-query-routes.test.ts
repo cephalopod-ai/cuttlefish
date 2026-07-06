@@ -167,6 +167,7 @@ describe("session query routes", () => {
     };
     ctx.getConfig = () => config as any;
     const cwd = fs.mkdtempSync(path.join(tmpHome, "chat-cwd-"));
+    const expectedCwd = fs.realpathSync(cwd);
 
     const cap = makeRes();
     await api.handleApiRequest(
@@ -176,8 +177,8 @@ describe("session query routes", () => {
     );
 
     expect(cap.status).toBe(201);
-    expect(cap.body).toEqual(expect.objectContaining({ cwd }));
-    expect(reg.getSession(cap.body.id)?.cwd).toBe(cwd);
+    expect(cap.body).toEqual(expect.objectContaining({ cwd: expectedCwd }));
+    expect(reg.getSession(cap.body.id)?.cwd).toBe(expectedCwd);
   });
 
   it("reuses the singleton hr-manager session for new HR chat requests", async () => {
