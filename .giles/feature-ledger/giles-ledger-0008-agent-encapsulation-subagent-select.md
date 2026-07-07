@@ -64,6 +64,22 @@ Docs:
 - Full-repo `pnpm typecheck && pnpm lint && pnpm test` executed at ship time;
   results recorded in the PR description.
 
+## Follow-up (same feature, post-review — 2026-07-07)
+
+- Applied two PR review findings (gemini-code-assist) on `mid-pair-orchestrator.ts`:
+  memoized `scanOrg()` in `resolveFailoverTargets` (at most one disk scan per
+  chain walk, none when no external targets), and the review loop now terminates
+  as `degraded` when a revision pass fails on every implementer target instead
+  of re-reviewing identical unrevised output (new regression test).
+- Fixed the pre-existing CI-red `manager-delegation-enforcement.test.ts`
+  (fails on main since introduction): `runWebSession` gates on real binary
+  availability via PATH lookup, so the test blocked wherever the `claude`/`codex`
+  CLIs aren't installed (CI: parent blocked; local: specialist child blocked).
+  Test-only fix: point the test config's `engines.*.bin` at `node`, which exists
+  in every test environment; engine `run()` functions were already mocked.
+- Validation: full `cuttlefish-cli` vitest suite green after these changes
+  (243 files, 2009 passed / 1 skipped, 0 failed).
+
 ## Remaining open items
 
 - Follow-up messages on an existing session, queue replay, and notification

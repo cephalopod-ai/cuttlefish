@@ -225,8 +225,21 @@ async function runReviewLoop(params: ReviewLoopParams): Promise<void> {
       remainingChildBudget: maxChildren - childCount, deadline,
     });
     childCount += revision.childSessionsSpawned;
-    if (revision.sessionId) implementerSessionId = revision.sessionId;
-    // loop continues -> next pass reviews the revision (or the unrevised output, if the revision itself failed)
+    if (!revision.sessionId) {
+      // Every implementer target failed (or budget/deadline ran out mid-walk).
+      // Re-reviewing the identical unrevised output would only burn budget on a
+      // repeat rejection — stop here and surface the degraded state instead.
+      finalizeExecutionState(topSession.id, context, {
+        executionPhase: "degraded",
+        executionDegraded: true,
+        executionDegradedReason: `revision pass ${pass} failed on all available implementer targets`,
+        executionPass: pass,
+        executionChildCount: childCount,
+      });
+      return;
+    }
+    implementerSessionId = revision.sessionId;
+    // loop continues -> next pass reviews the revision
   }
 }
 
@@ -276,11 +289,14 @@ function resolveFailoverTargets(
   primary: { engine: string; model: string },
   context: ApiContext,
 ): ResolvedRoleTarget[] {
+  // scanOrg() reads every org YAML from disk — memoize so the chain walk costs
+  // at most one scan, and none when no target defers to an external employee.
+  let org: Map<string, Employee> | undefined;
   return resolveRoleFailoverTargets({
     role,
     primary,
     currentEmployeeName: employee.name,
-    lookupEmployee: (name) => scanOrg().get(name),
+    lookupEmployee: (name) => (org ??= scanOrg()).get(name),
     isEngineAvailable: (engine) => Boolean(context.sessionManager.getEngine(engine)),
   });
 }

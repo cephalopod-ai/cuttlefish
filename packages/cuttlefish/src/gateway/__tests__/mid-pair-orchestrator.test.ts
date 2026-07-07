@@ -537,6 +537,28 @@ describe("dispatchEmployeeSessionRun — reviewer loss policy", () => {
     expect((final.transportMeta as any).executionPhase).toBe("degraded");
   });
 
+  it("terminates as degraded when a revision pass fails on every implementer target — no repeat review of unrevised output", async () => {
+    const top = hoisted.seedTopSession();
+    hoisted.script.push({ status: "idle", assistantText: "v1" }); // implementer
+    hoisted.script.push({ status: "idle", assistantText: changesRequestedVerdict }); // reviewer pass 1
+    hoisted.script.push({ status: "error" }); // revision attempt errors; no implementer fallback configured
+    const emitted: Array<{ event: string; payload: unknown }> = [];
+    const context = makeContext(emitted);
+
+    await dispatchEmployeeSessionRun(
+      top as any, "task", fakeEngine(), baseConfig(), context,
+      midPairEmployee({ execution: { tier: "mid_pair", maxInternalPasses: 3, maxChildSessions: 10 } }),
+    );
+
+    // reviewer + failed revision only — the loop must NOT spawn a second reviewer
+    // to re-judge the identical unrevised output.
+    const roles = hoisted.createSessionMock.mock.calls.map((c) => (c[0].transportMeta as any).internalRole);
+    expect(roles).toEqual(["reviewer", "implementer"]);
+    const final = hoisted.sessionsById.get(top.id)!;
+    expect((final.transportMeta as any).executionPhase).toBe("degraded");
+    expect((final.transportMeta as any).executionDegradedReason).toMatch(/revision pass 1 failed/);
+  });
+
   it("uses the implementer failover chain for a revision pass when the override engine is missing", async () => {
     const top = hoisted.seedTopSession();
     hoisted.script.push({ status: "idle", assistantText: "v1" }); // implementer
