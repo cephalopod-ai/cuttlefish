@@ -22,13 +22,15 @@ import {
   type HermesModelDiscovery,
 } from "./hermes-models.js";
 import { discoverAiderModels, knownAiderModels, type AiderModelDiscovery } from "./aider-models.js";
+import { discoverCodexModels, type CodexModelDiscovery } from "./codex-models.js";
 
 /**
  * Model + capability registry — the single source of truth for which engines and
  * models exist and what they support (effort levels, availability).
  *
  * Sources, in precedence order per engine:
- *   1. Dynamic discovery (pi/grok), refreshed at boot and on config reload into
+ *   1. Dynamic discovery (codex/pi/grok/hermes/aider), refreshed at boot and on
+ *      config reload into
  *      snapshots that the (synchronous) registry reads.
  *   2. The optional `models:` block in config.yaml.
  *   3. Synthesis from `engines.<name>.model` (back-compat default).
@@ -128,12 +130,36 @@ export function engineUnavailableMessage(config: CuttlefishConfig, name: EngineN
 
 /** Snapshot of dynamically-discovered Pi models (null until first discovery). */
 let discoveredPiModels: ModelInfo[] | null = null;
+/** Snapshot of dynamically-discovered Codex models (null until first discovery). */
+let discoveredCodexModels: CodexModelDiscovery | null = null;
 /** Snapshot of dynamically-discovered Grok models (null until first discovery). */
 let discoveredGrokModels: GrokModelDiscovery | null = null;
 /** Snapshot of dynamically-discovered Hermes models (null until first discovery). */
 let discoveredHermesModels: HermesModelDiscovery | null = null;
 /** Snapshot of env-derived Aider models (null until first discovery). */
 let discoveredAiderModels: AiderModelDiscovery | null = null;
+
+/**
+ * Discover Codex's available models via `codex app-server --stdio` `model/list`.
+ * Never throws; on failure the registry falls back to config/synthesized entries.
+ */
+export async function refreshCodexModels(config: CuttlefishConfig): Promise<void> {
+  if (!engineAvailable(config, "codex")) {
+    discoveredCodexModels = null;
+    invalidateModelRegistry();
+    return;
+  }
+  try {
+    const discovered = await discoverCodexModels(config);
+    discoveredCodexModels = discovered.models.length > 0 ? discovered : null;
+    logger.info(`Codex model discovery: ${discovered.models.length} model(s)`);
+  } catch (err) {
+    logger.warn(`Codex model discovery failed: ${err instanceof Error ? err.message : err}`);
+    discoveredCodexModels = null;
+  } finally {
+    invalidateModelRegistry();
+  }
+}
 
 /**
  * Discover Pi's local/custom models (`pi --list-models`) and refresh the registry.
@@ -276,6 +302,10 @@ export function buildRegistry(config: CuttlefishConfig): ModelRegistry {
     const available = engineAvailable(config, name);
     // Dynamic engine model discovery overrides
     // both the config block and synthesis.
+    if (name === "codex") {
+      registry[name] = buildCodexEntry(config, block?.codex, synthesized[name], available);
+      continue;
+    }
     if (name === "pi") {
       registry[name] = buildPiEntry(config, block?.pi, synthesized[name], available);
       continue;
@@ -298,6 +328,28 @@ export function buildRegistry(config: CuttlefishConfig): ModelRegistry {
       : synthesized[name]; // engine omitted from the block → keep the synthesized entry
   }
   return registry;
+}
+
+/** Codex registry entry: discovered models > config `models.codex` block > synthesized. */
+function buildCodexEntry(
+  config: CuttlefishConfig,
+  codexBlock: EngineModelsConfig | undefined,
+  synthEntry: EngineRegistryEntry,
+  available: boolean,
+): EngineRegistryEntry {
+  const pinned = config.engines.codex?.model;
+  if (discoveredCodexModels && discoveredCodexModels.models.length > 0) {
+    const models = mergeDiscoveredCodexModels(discoveredCodexModels.models, codexBlock, pinned);
+    const valid = (id?: string) => (id && models.some((m) => m.id === id) ? id : undefined);
+    const defaultModel =
+      valid(pinned) ??
+      valid(codexBlock?.default) ??
+      valid(discoveredCodexModels.defaultModel) ??
+      models[0].id;
+    return { name: "codex", available, defaultModel, effortMechanism: "codex-config", models };
+  }
+  if (codexBlock) return fromEngineModelsConfig("codex", codexBlock, available, pinned);
+  return { ...synthEntry, available };
 }
 
 /** Grok registry entry: discovered models > config `models.grok` block > known catalog. */
@@ -388,6 +440,32 @@ function mergeDiscoveredAiderModels(
   }
   if (pinned && pinned !== "default" && !seen.has(pinned)) {
     models.push({ id: pinned, label: pinned, supportsEffort: false, effortLevels: [] });
+  }
+  return models;
+}
+
+/** Union the discovered Codex models with any `models.codex` block entries and a pinned id. */
+function mergeDiscoveredCodexModels(
+  discovered: ModelInfo[],
+  block: EngineModelsConfig | undefined,
+  pinned: string | undefined,
+): ModelInfo[] {
+  const seen = new Set(discovered.map((m) => m.id));
+  const models = [...discovered];
+  if (block) {
+    for (const m of block.models) {
+      if (seen.has(m.id)) continue;
+      seen.add(m.id);
+      models.push(modelInfoFromConfigEntry(m));
+    }
+  }
+  if (pinned && !seen.has(pinned)) {
+    models.push({
+      id: pinned,
+      label: pinned,
+      supportsEffort: false,
+      effortLevels: [],
+    });
   }
   return models;
 }

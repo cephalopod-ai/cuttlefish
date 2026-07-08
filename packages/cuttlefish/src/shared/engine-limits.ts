@@ -1,4 +1,4 @@
-import { spawn, execFile } from "node:child_process";
+import { execFile } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -11,6 +11,7 @@ import type {
   CuttlefishConfig,
 } from "./types.js";
 import { CLAUDE_LIMITS_DIR } from "./paths.js";
+import { readCodexAppServerResult } from "./codex-app-server.js";
 import { getModelRegistry } from "./models.js";
 import { resolveBin } from "./resolve-bin.js";
 import { nextKiroCreditResetAt, readKiroCreditLedger } from "./kiro-usage.js";
@@ -199,87 +200,9 @@ function creditsFromCodex(value: unknown): EngineLimitCredits | undefined {
 }
 
 async function readCodexRateLimits(config: CuttlefishConfig): Promise<JsonRecord> {
-  const bin = resolveBin("codex", config.engines.codex?.bin);
-  const initialize = {
-    id: 1,
-    method: "initialize",
-    params: {
-      clientInfo: { name: "cuttlefish", version: "0" },
-      capabilities: { experimentalApi: true },
-    },
-  };
-  const request = { id: 2, method: "account/rateLimits/read", params: null };
-
-  return new Promise((resolve, reject) => {
-    const child = spawn(bin, ["app-server", "--stdio"], { stdio: ["pipe", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    let settled = false;
-    // SIGTERM + escalation: a wedged app-server that ignores SIGTERM would
-    // otherwise outlive the probe as an orphan.
-    function killChild(): void {
-      try { child.kill("SIGTERM"); } catch { /* already gone */ }
-      const force = setTimeout(() => {
-        if (child.exitCode === null) {
-          try { child.kill("SIGKILL"); } catch { /* already gone */ }
-        }
-      }, 2_000);
-      force.unref?.();
-    }
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      killChild();
-      reject(new Error(stderr.trim() || "Timed out reading Codex rate limits"));
-    }, 5000);
-
-    function settle(value: JsonRecord): void {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      killChild();
-      resolve(value);
-    }
-
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-      for (const line of stdout.split(/\r?\n/)) {
-        const t = line.trim();
-        if (!t) continue;
-        try {
-          const msg = JSON.parse(t);
-          if (msg?.id === 2) {
-            if (msg.error) throw new Error(JSON.stringify(msg.error));
-            if (isRecord(msg.result)) settle(msg.result);
-          }
-        } catch {
-          // Ignore partial/non-JSON lines until more data arrives.
-        }
-      }
-    });
-    child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.on("error", (err) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      reject(err);
-    });
-    child.on("close", () => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      reject(new Error(stderr.trim() || "Codex app-server exited before returning rate limits"));
-    });
-    child.stdin.write(`${JSON.stringify(initialize)}\n${JSON.stringify(request)}\n`);
-    // Keep stdin OPEN until we settle or time out. `codex app-server --stdio`
-    // exits as soon as stdin closes, so the previous fixed 1s close timer raced
-    // the async rate-limit fetch and made the server exit before replying
-    // ("exited before returning rate limits"). settle()/the timeout kill the
-    // child for us, so there is no need to close stdin ourselves.
+  return readCodexAppServerResult(config, {
+    method: "account/rateLimits/read",
+    params: null,
   });
 }
 

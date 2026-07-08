@@ -10,7 +10,7 @@ import { configureLogger, logger } from "../shared/logger.js";
 import { buildKnowledgeReadProvider } from "../knowledge/read/index.js";
 import { buildKnowledgeSink } from "../knowledge/sinks/index.js";
 import { knowledgeRelayOptions, relayPendingKnowledgeOutbox } from "../knowledge/outbox-service.js";
-import { invalidateModelRegistry, refreshAiderModels, refreshGrokModels, refreshHermesModels, refreshPiModels } from "../shared/models.js";
+import { invalidateModelRegistry, refreshAiderModels, refreshCodexModels, refreshGrokModels, refreshHermesModels, refreshPiModels } from "../shared/models.js";
 import { CLAUDE_SETTINGS_DIR, GATEWAY_INFO_FILE, HOOK_RELAY_SCRIPT, CUTTLEFISH_HOME, ORCH_DB, ORG_DIR } from "../shared/paths.js";
 import { CodexEngine } from "../engines/codex.js";
 import { CodexInteractiveEngine } from "../engines/codex-interactive.js";
@@ -325,7 +325,7 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
   };
 
   const refreshDynamicModels = (cfg: CuttlefishConfig): void => {
-    void Promise.all([refreshPiModels(cfg), refreshGrokModels(cfg), refreshHermesModels(cfg), refreshAiderModels(cfg)])
+    void Promise.all([refreshCodexModels(cfg), refreshPiModels(cfg), refreshGrokModels(cfg), refreshHermesModels(cfg), refreshAiderModels(cfg)])
       .finally(() => emit("engines:updated", {}));
   };
   refreshDynamicModels(currentConfig);

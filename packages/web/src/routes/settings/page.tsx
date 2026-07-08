@@ -7,6 +7,7 @@ import { api } from "@/lib/api"
 import { useAuth } from "@/routes/auth-provider"
 import { useTheme } from "@/routes/providers"
 import { useSettings } from "@/routes/settings-provider"
+import type { EnginesResponse } from "@/lib/api"
 import { SettingsConnectorsSection } from "./settings-connectors-section"
 import type { Config } from "./settings-constants"
 import {
@@ -37,6 +38,30 @@ type FeedbackState = {
   message: string
 } | null
 
+type RegistryOption = { value: string; label: string }
+const DEFAULT_EFFORT_OPTION: RegistryOption = { value: "default", label: "Default" }
+
+export function registryEffortOptions(
+  modelRegistry: EnginesResponse | undefined,
+  engine: string,
+  model: string | undefined,
+  fallback: RegistryOption[],
+): RegistryOption[] {
+  const entry = modelRegistry?.engines?.[engine]
+  if (!entry?.models.length) return fallback
+  const selectedModel = model
+    ? entry.models.find((candidate) => candidate.id === model)
+    : entry.models.find((candidate) => candidate.id === entry.defaultModel) ?? entry.models[0]
+  if (!selectedModel) return fallback
+  const levels = selectedModel.supportsEffort ? selectedModel.effortLevels : []
+  return levels.length
+    ? [DEFAULT_EFFORT_OPTION, ...levels.map((level) => ({
+        value: level,
+        label: level.charAt(0).toUpperCase() + level.slice(1),
+      }))]
+    : [DEFAULT_EFFORT_OPTION]
+}
+
 export default function SettingsPage() {
   useBreadcrumbs([{ label: "Settings" }])
   const {
@@ -62,15 +87,12 @@ export default function SettingsPage() {
   const [showCooEmojiPicker, setShowCooEmojiPicker] = useState(false)
 
   const { data: modelRegistry } = useModelRegistry()
-  const modelOptions = (engine: string, fallback: Array<{ value: string; label: string }>) => {
+  const modelOptions = (engine: string, fallback: RegistryOption[]) => {
     const models = modelRegistry?.engines?.[engine]?.models ?? []
     return models.length ? models.map((m) => ({ value: m.id, label: m.label })) : fallback
   }
-  const effortOptions = (engine: string, fallback: Array<{ value: string; label: string }>) => {
-    const levels = Array.from(new Set((modelRegistry?.engines?.[engine]?.models ?? []).flatMap((m) => m.effortLevels)))
-    return levels.length
-      ? [{ value: "default", label: "Default" }, ...levels.map((l) => ({ value: l, label: l.charAt(0).toUpperCase() + l.slice(1) }))]
-      : fallback
+  const effortOptions = (engine: string, model: string | undefined, fallback: RegistryOption[]) => {
+    return registryEffortOptions(modelRegistry, engine, model, fallback)
   }
 
   const [config, setConfig] = useState<Config>({})

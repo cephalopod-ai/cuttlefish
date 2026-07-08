@@ -1,3 +1,4 @@
+import { useEffect } from "react"
 import { Loader2, RotateCcw, Save } from "lucide-react"
 import { formatFallbackChain, formatLineList, parseFallbackChain, parseLineList } from "./settings-config"
 import type { Config } from "./settings-constants"
@@ -13,7 +14,7 @@ interface SharedConfigProps {
 
 interface RegistryProps {
   modelOptions: (engine: string, fallback: Option[]) => Option[]
-  effortOptions: (engine: string, fallback: Option[]) => Option[]
+  effortOptions: (engine: string, model: string | undefined, fallback: Option[]) => Option[]
 }
 
 type EmailInbox = NonNullable<NonNullable<Config["email"]>["inboxes"]>[number]
@@ -379,6 +380,29 @@ export function EngineConfigurationSection({
   modelOptions,
   updateConfig,
 }: SharedConfigProps & RegistryProps) {
+  const claudeModel = config.engines?.claude?.model ?? "opus"
+  const codexModel = config.engines?.codex?.model ?? "gpt-5.5"
+  const codexPersistedEffort = config.engines?.codex?.effortLevel
+  const codexEffortFallback = [
+    { value: "default", label: "Default" },
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" },
+    { value: "high", label: "High" },
+    { value: "xhigh", label: "Extra High" },
+  ]
+  const codexEffortChoices = effortOptions("codex", codexModel, codexEffortFallback)
+  const codexPersistedEffortIsValid = codexPersistedEffort == null
+    || codexPersistedEffort === "default"
+    || codexEffortChoices.some((option) => option.value === codexPersistedEffort)
+  const codexEffortValue = codexPersistedEffortIsValid
+    ? (codexPersistedEffort ?? "default")
+    : "default"
+
+  useEffect(() => {
+    if (!codexPersistedEffort || codexPersistedEffort === "default" || codexPersistedEffortIsValid) return
+    updateConfig(["engines", "codex", "effortLevel"], "default")
+  }, [codexPersistedEffort, codexPersistedEffortIsValid, updateConfig])
+
   return (
     <Section title="Engine Configuration">
       <div className="text-[length:var(--text-caption1)] font-[var(--weight-semibold)] text-[var(--text-tertiary)] mb-[var(--space-2)]">
@@ -393,7 +417,7 @@ export function EngineConfigurationSection({
       </FieldRow>
       <FieldRow label="Model">
         <SettingsSelect
-          value={config.engines?.claude?.model ?? "opus"}
+          value={claudeModel}
           onChange={(v) => updateConfig(["engines", "claude", "model"], v)}
           options={modelOptions("claude", [
             { value: "claude-fable-5", label: "Fable 5" },
@@ -407,7 +431,7 @@ export function EngineConfigurationSection({
         <SettingsSelect
           value={config.engines?.claude?.effortLevel ?? "default"}
           onChange={(v) => updateConfig(["engines", "claude", "effortLevel"], v)}
-          options={effortOptions("claude", [
+          options={effortOptions("claude", claudeModel, [
             { value: "default", label: "Default" },
             { value: "low", label: "Low" },
             { value: "medium", label: "Medium" },
@@ -430,30 +454,21 @@ export function EngineConfigurationSection({
       </FieldRow>
       <FieldRow label="Model">
         <SettingsSelect
-          value={config.engines?.codex?.model ?? "gpt-5.5"}
-          onChange={(v) => updateConfig(["engines", "codex", "model"], v)}
-          options={modelOptions("codex", [
-            { value: "gpt-5.5", label: "GPT-5.5" },
-            { value: "gpt-5.4", label: "GPT-5.4" },
-            { value: "gpt-5.3-codex", label: "GPT-5.3 Codex" },
-            { value: "gpt-5.2-codex", label: "GPT-5.2 Codex" },
-            { value: "gpt-5.2", label: "GPT-5.2" },
-            { value: "gpt-5.1-codex-max", label: "GPT-5.1 Codex Max" },
-            { value: "gpt-5.1-codex-mini", label: "GPT-5.1 Codex Mini" },
-          ])}
+          value={codexModel}
+          onChange={(v) => {
+            updateConfig(["engines", "codex", "model"], v)
+            if (!effortOptions("codex", v, codexEffortFallback).some((option) => option.value === (codexPersistedEffort ?? "default"))) {
+              updateConfig(["engines", "codex", "effortLevel"], "default")
+            }
+          }}
+          options={modelOptions("codex", [{ value: codexModel, label: codexModel }])}
         />
       </FieldRow>
       <FieldRow label="Effort Level">
         <SettingsSelect
-          value={config.engines?.codex?.effortLevel ?? "default"}
+          value={codexEffortValue}
           onChange={(v) => updateConfig(["engines", "codex", "effortLevel"], v)}
-          options={effortOptions("codex", [
-            { value: "default", label: "Default" },
-            { value: "low", label: "Low" },
-            { value: "medium", label: "Medium" },
-            { value: "high", label: "High" },
-            { value: "xhigh", label: "Extra High" },
-          ])}
+          options={codexEffortChoices}
         />
       </FieldRow>
 

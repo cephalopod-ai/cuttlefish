@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { IncomingMessage as HttpRequest, ServerResponse } from "node:http";
 import yaml from "js-yaml";
-import { getModelRegistry, invalidateModelRegistry, refreshGrokModels, refreshHermesModels, refreshPiModels } from "../../../shared/models.js";
+import { getModelRegistry, invalidateModelRegistry, refreshCodexModels, refreshGrokModels, refreshHermesModels, refreshPiModels } from "../../../shared/models.js";
 import { collectEngineLimits } from "../../../shared/engine-limits.js";
 import { CONFIG_PATH, CUTTLEFISH_HOME, LOGS_DIR, TMP_DIR } from "../../../shared/paths.js";
 import { saveConfigAtomic, validateConfigShape } from "../../../shared/config.js";
@@ -34,6 +34,7 @@ export async function handleSystemRoutes(
 
   if (method === "POST" && pathname === "/api/engines/refresh") {
     const config = context.getConfig();
+    await refreshCodexModels(config);
     await refreshPiModels(config);
     await refreshGrokModels(config);
     await refreshHermesModels(config);
