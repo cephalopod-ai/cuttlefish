@@ -144,9 +144,12 @@
 - Failover chain entries may defer to an external org agent (`{ employee: name }`), resolving that employee's engine/model/effort at dispatch time; `execution.roles` payloads are structurally validated on create/update (unknown keys, chain cap, employee XOR engine+model, self/unknown employee references rejected).
 - All execution-profile sessions carry `executionDepth`, `executionTier`, `profileId`, and `internalRole` in `transportMeta` for traceability.
 - Feature gated: `features.multiRoleEmployeeExecution: true` must be set in daemon config.
+- The mid-pair reviewer's verdict is host-validated (`validateReviewResult`); invalid output triggers exactly one in-place JSON repair retry (same reviewer session, bounded by the wall-clock deadline) before the reviewer loss policy applies, and the recorded degraded reason distinguishes "unparseable after retry" from an engine loss.
+- The mid-pair reviewer receives deterministic changed-file/diff context (bounded `git diff HEAD` of the implementer workspace via `session.cwd`, built by `gateway/review-context.ts`); when no diff can be produced it degrades to summary-only and records the reason.
+- Degraded/fallback/review-context state is surfaced on the API `executionRunState` (from parent-session `transportMeta`): `degraded`/`degradedReason`, the now-populated `fallbackActive`, and `reviewContext` (`diff` | `summary_only`) + `reviewContextReason`.
 - Fidelity gaps:
-  - Mid-pair review flow is wired at the session-write and org-execution layers; UI review status display is deferred.
-  - Reviewer allocation uses the configured `reviewerToolProfile`; the full reviewer diff-bundle handoff from the orchestration path is not yet ported to the employee-execution path.
+  - Mid-pair review flow is wired at the session-write and org-execution layers, and degraded/fallback/review-context state is now surfaced on `executionRunState`; the web UI to display review status is still deferred.
+  - The mid-pair path passes an inline bounded diff rather than the orchestration path's full disk-backed review bundle (`patch.diff` + `metadata.json` via `createReviewBundle`); reviewer allocation still uses the configured `reviewerToolProfile`.
   - Follow-up messages, queue replay, and notification dispatch still bypass the mid-pair orchestrator (documented in `mid-pair-orchestrator.ts`).
 
 ### Kanban ticket resource context and manual-only dispatch

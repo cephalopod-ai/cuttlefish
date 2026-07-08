@@ -36,21 +36,23 @@ import type { ApiContext } from "./api/context.js";
 import {
   applyReviewerLossPolicy,
   buildReviewPacketPrompt,
+  buildReviewRepairPrompt,
   buildReviewerSystemPrompt,
   buildRevisionPrompt,
   buildRoleTransportMeta,
   generateEmployeeRunId,
   logExecutionBlocked,
   logExecutionDegraded,
-  parseReviewResult,
   resolveEffectiveExecution,
   resolveRoleFailoverTargets,
   shouldUseMidPairExecution,
+  validateReviewResult,
   type ExecutionPhase,
   type InternalRole,
   type ResolvedRoleTarget,
   type ReviewerLossOutcome,
 } from "./employee-execution.js";
+import { buildReviewContext } from "./review-context.js";
 import { scanOrg } from "./org.js";
 import { createSession, getMessages, getSession, insertMessage, updateSession } from "../sessions/registry.js";
 import { logger } from "../shared/logger.js";
@@ -155,10 +157,17 @@ async function runReviewLoop(params: ReviewLoopParams): Promise<void> {
     }
 
     const implementerSummary = readLastAssistantMessage(implementerSessionId) ?? "";
-    updateExecutionState(topSession.id, context, { executionPhase: "reviewing", executionPass: pass, executionChildCount: childCount });
+    const reviewContext = buildReviewContext({ cwd: topSession.cwd, config });
+    updateExecutionState(topSession.id, context, {
+      executionPhase: "reviewing",
+      executionPass: pass,
+      executionChildCount: childCount,
+      executionReviewContext: reviewContext.mode,
+      executionReviewContextReason: reviewContext.reason,
+    });
 
     const outcome = await runReviewerPass({
-      employee, exec, task, implementerSummary, employeeRunId, pass,
+      employee, exec, task, implementerSummary, diffContext: reviewContext.diffText, employeeRunId, pass,
       parentSession: topSession, config, context, priorVerdict,
       remainingChildBudget: maxChildren - childCount, deadline,
     });
@@ -171,6 +180,10 @@ async function runReviewLoop(params: ReviewLoopParams): Promise<void> {
 
     const verdict = outcome.verdict;
     priorVerdict = verdict.verdict;
+    if (outcome.fallbackUsed) {
+      // Sticky run-level flag: at least one reviewer fallback occurred this run.
+      updateExecutionState(topSession.id, context, { executionFallbackActive: true });
+    }
 
     if (verdict.verdict === "approved") {
       finalizeExecutionState(topSession.id, context, { executionPhase: "done", executionPass: pass, executionChildCount: childCount });
@@ -261,14 +274,24 @@ function lossOutcomeToPatch(outcome: ReviewerLossOutcome): { executionPhase: Exe
 // ---------------------------------------------------------------------------
 
 type ReviewerPassOutcome =
-  | { kind: "verdict"; verdict: ReviewResult; childSessionsSpawned: number }
+  | { kind: "verdict"; verdict: ReviewResult; childSessionsSpawned: number; fallbackUsed: boolean }
   | { kind: "unavailable"; childSessionsSpawned: number; finalOutcome: ReviewerLossOutcome };
+
+/** Result of a single reviewer session attempt (one engine/model), after an
+ *  in-place JSON repair retry when the session completed but its output was
+ *  unparseable. */
+type ReviewAttempt =
+  | { kind: "verdict"; verdict: ReviewResult }
+  | { kind: "engine_lost" }
+  | { kind: "unparseable"; detail: string };
 
 interface ReviewerPassParams {
   employee: Employee;
   exec: EmployeeExecutionConfig;
   task: string;
   implementerSummary: string;
+  /** Deterministic changed-file/diff context for the reviewer packet, when available. */
+  diffContext?: string;
   employeeRunId: string;
   pass: number;
   parentSession: Session;
@@ -302,36 +325,57 @@ function resolveFailoverTargets(
 }
 
 async function runReviewerPass(params: ReviewerPassParams): Promise<ReviewerPassOutcome> {
-  const { employee, exec, task, implementerSummary, employeeRunId, pass, parentSession, config, context, priorVerdict, remainingChildBudget, deadline } = params;
+  const { employee, exec, task, implementerSummary, diffContext, employeeRunId, pass, parentSession, config, context, priorVerdict, remainingChildBudget, deadline } = params;
   const reviewerRole = exec.roles?.reviewer;
   let spawned = 0;
 
-  const attemptReview = async (engineName: string, model: string, effortLevel: string | undefined): Promise<ReviewResult | null> => {
+  // Attempt one reviewer engine/model. Distinguishes an engine loss (missing
+  // engine / errored session) from unparseable-but-alive output, and gives the
+  // latter exactly one in-place JSON repair retry on the SAME session (no new
+  // child spawn) before giving up.
+  const attemptReview = async (engineName: string, model: string, effortLevel: string | undefined): Promise<ReviewAttempt> => {
     const reviewerEngine = context.sessionManager.getEngine(engineName);
     if (!reviewerEngine) {
       logger.warn(`[mid_pair] reviewer engine "${engineName}" not available for ${employee.name}`);
-      return null;
+      return { kind: "engine_lost" };
     }
     const reviewerSession = spawnRoleSession({
       employee, role: "reviewer", employeeRunId, parentSession, engineName, model, effortLevel,
       label: `Review pass ${pass}`, context,
     });
     spawned += 1;
-    const reviewerPrompt = `${buildReviewerSystemPrompt(exec.reviewerToolProfile ?? "read_only")}\n\n${buildReviewPacketPrompt(task, implementerSummary)}`;
+    const reviewerPrompt = `${buildReviewerSystemPrompt(exec.reviewerToolProfile ?? "read_only")}\n\n${buildReviewPacketPrompt(task, implementerSummary, diffContext)}`;
     insertMessage(reviewerSession.id, "user", reviewerPrompt);
     await dispatchWebSessionRun(reviewerSession, reviewerPrompt, reviewerEngine, config, context);
-    const settled = getSession(reviewerSession.id);
-    if (!settled || settled.status === "error" || settled.status === "interrupted") return null;
-    const raw = readLastAssistantMessage(reviewerSession.id);
-    return raw ? parseReviewResult(raw) : null;
+    let settled = getSession(reviewerSession.id);
+    if (!settled || settled.status === "error" || settled.status === "interrupted") return { kind: "engine_lost" };
+
+    const first = validateReviewResult(readLastAssistantMessage(reviewerSession.id) ?? "");
+    if (first.ok) return { kind: "verdict", verdict: first.value };
+
+    // Session completed but the verdict didn't validate. Ask once for JSON-only
+    // output, including the concrete validation error — bounded by the deadline.
+    if (Date.now() >= deadline) return { kind: "unparseable", detail: first.error };
+    logExecutionDegraded(parentSession.id, `reviewer verdict unparseable (${first.error}); requesting one JSON repair`, employeeRunId);
+    const repairPrompt = buildReviewRepairPrompt(first.error);
+    insertMessage(reviewerSession.id, "user", repairPrompt);
+    await dispatchWebSessionRun(reviewerSession, repairPrompt, reviewerEngine, config, context);
+    settled = getSession(reviewerSession.id);
+    if (!settled || settled.status === "error" || settled.status === "interrupted") {
+      return { kind: "unparseable", detail: `reviewer session failed during repair retry (${first.error})` };
+    }
+    const repaired = validateReviewResult(readLastAssistantMessage(reviewerSession.id) ?? "");
+    if (repaired.ok) return { kind: "verdict", verdict: repaired.value };
+    return { kind: "unparseable", detail: repaired.error };
   };
 
   const primaryEngine = reviewerRole?.override?.engine ?? employee.engine;
   const primaryModel = reviewerRole?.override?.model ?? employee.model;
   const primaryEffort = reviewerRole?.override?.effortLevel ?? employee.effortLevel;
 
-  const primaryVerdict = await attemptReview(primaryEngine, primaryModel, primaryEffort);
-  if (primaryVerdict) return { kind: "verdict", verdict: primaryVerdict, childSessionsSpawned: spawned };
+  const primary = await attemptReview(primaryEngine, primaryModel, primaryEffort);
+  if (primary.kind === "verdict") return { kind: "verdict", verdict: primary.verdict, childSessionsSpawned: spawned, fallbackUsed: false };
+  const primaryCause: LossCause = primary.kind === "unparseable" ? "unparseable" : "unavailable";
 
   // Primary reviewer lost. Resolve the deterministic failover plan up front:
   // ordered, deduped, self/primary/unavailable targets already filtered out.
@@ -352,16 +396,16 @@ async function runReviewerPass(params: ReviewerPassParams): Promise<ReviewerPass
       const label = target.viaEmployee
         ? `external agent "${target.viaEmployee}" (${target.engine}/${target.model})`
         : `${target.engine}/${target.model}`;
-      const fallbackVerdict = await attemptReview(target.engine, target.model, target.effortLevel);
-      if (fallbackVerdict) {
+      const fallbackAttempt = await attemptReview(target.engine, target.model, target.effortLevel);
+      if (fallbackAttempt.kind === "verdict") {
         logExecutionDegraded(parentSession.id, `reviewer replaced with fallback ${label}`, employeeRunId);
-        return { kind: "verdict", verdict: fallbackVerdict, childSessionsSpawned: spawned };
+        return { kind: "verdict", verdict: fallbackAttempt.verdict, childSessionsSpawned: spawned, fallbackUsed: true };
       }
       logger.warn(`[mid_pair] reviewer fallback ${label} did not produce a verdict for ${employee.name}`);
     }
     // Chain exhausted — re-resolve with hasFallback=false so the bounded retry
     // terminates (the policy can then only return "block" or "degrade").
-    const finalOutcome = applyReviewerLossPolicy(policy, priorVerdict, false);
+    const finalOutcome = withLossCause(primaryCause, applyReviewerLossPolicy(policy, priorVerdict, false));
     if (finalOutcome.action === "block") {
       logExecutionBlocked(parentSession.id, finalOutcome.reason, employeeRunId);
     } else if (finalOutcome.action === "degrade") {
@@ -370,9 +414,21 @@ async function runReviewerPass(params: ReviewerPassParams): Promise<ReviewerPass
     return { kind: "unavailable", childSessionsSpawned: spawned, finalOutcome };
   }
 
-  if (outcome.action === "block") logExecutionBlocked(parentSession.id, outcome.reason, employeeRunId);
-  else logExecutionDegraded(parentSession.id, outcome.reason, employeeRunId);
-  return { kind: "unavailable", childSessionsSpawned: spawned, finalOutcome: outcome };
+  const finalOutcome = withLossCause(primaryCause, outcome);
+  if (finalOutcome.action === "block") logExecutionBlocked(parentSession.id, finalOutcome.reason, employeeRunId);
+  else if (finalOutcome.action === "degrade") logExecutionDegraded(parentSession.id, finalOutcome.reason, employeeRunId);
+  return { kind: "unavailable", childSessionsSpawned: spawned, finalOutcome };
+}
+
+type LossCause = "unavailable" | "unparseable";
+
+/** Enrich a block/degrade loss reason with its specific cause so operators can
+ *  tell "reviewer output unparseable" apart from "reviewer engine unavailable".
+ *  Only the reason string is touched — the block-vs-degrade decision (and the
+ *  "prior non-approval must block" invariant) stays with applyReviewerLossPolicy. */
+function withLossCause(cause: LossCause, outcome: ReviewerLossOutcome): ReviewerLossOutcome {
+  if (outcome.action === "replace" || cause !== "unparseable") return outcome;
+  return { action: outcome.action, reason: `reviewer output could not be parsed after one repair retry — ${outcome.reason}` };
 }
 
 // ---------------------------------------------------------------------------
@@ -496,6 +552,9 @@ function updateExecutionState(
     executionDegradedReason?: string;
     executionPass?: number;
     executionChildCount?: number;
+    executionFallbackActive?: boolean;
+    executionReviewContext?: "diff" | "summary_only";
+    executionReviewContextReason?: string;
     lastError?: string;
   },
 ): void {
@@ -507,6 +566,9 @@ function updateExecutionState(
   if (patch.executionDegradedReason !== undefined) meta.executionDegradedReason = patch.executionDegradedReason;
   if (patch.executionPass !== undefined) meta.executionPass = patch.executionPass;
   if (patch.executionChildCount !== undefined) meta.executionChildCount = patch.executionChildCount;
+  if (patch.executionFallbackActive !== undefined) meta.executionFallbackActive = patch.executionFallbackActive;
+  if (patch.executionReviewContext !== undefined) meta.executionReviewContext = patch.executionReviewContext;
+  if (patch.executionReviewContextReason !== undefined) meta.executionReviewContextReason = patch.executionReviewContextReason;
 
   const updates: Record<string, unknown> = { transportMeta: meta as JsonObject };
   if (patch.lastError !== undefined) updates.lastError = patch.lastError;

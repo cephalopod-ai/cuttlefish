@@ -389,7 +389,7 @@ function makeWritable(target: string): void {
   }
 }
 
-function diffGitWorkspace(cwd: string, excludedUntracked: string[] = []): string {
+export function diffGitWorkspace(cwd: string, excludedUntracked: string[] = []): string {
   const gitRoot = findGitRoot(cwd);
   if (!gitRoot) return "";
   const diff = runGit(["diff", "HEAD", "--"], cwd);

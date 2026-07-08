@@ -118,6 +118,12 @@ export interface ExecutionRunState {
   fallbackActive: boolean;
   pass: number;
   maxPasses: number;
+  /** Whether the reviewer was given deterministic diff context or only the
+   *  implementer summary. Lets consumers tell a full-context review from a
+   *  weaker summary-only one without inferring it. */
+  reviewContext?: "diff" | "summary_only";
+  /** When reviewContext is "summary_only", why a diff could not be produced. */
+  reviewContextReason?: string;
 }
 
 export function buildExecutionRunState(
@@ -131,6 +137,8 @@ export function buildExecutionRunState(
     fallbackActive?: boolean;
     pass?: number;
     maxPasses?: number;
+    reviewContext?: "diff" | "summary_only";
+    reviewContextReason?: string;
   } = {},
 ): ExecutionRunState {
   return {
@@ -143,6 +151,8 @@ export function buildExecutionRunState(
     fallbackActive: opts.fallbackActive ?? false,
     pass: opts.pass ?? 1,
     maxPasses: opts.maxPasses ?? DEFAULT_MAX_INTERNAL_PASSES,
+    reviewContext: opts.reviewContext,
+    reviewContextReason: opts.reviewContextReason,
   };
 }
 
@@ -157,25 +167,57 @@ const VALID_VERDICTS = new Set<ReviewVerdict>([
   "needs_human_review",
 ]);
 
-export function parseReviewResult(raw: string): ReviewResult | null {
+export type ReviewResultValidation =
+  | { ok: true; value: ReviewResult }
+  | { ok: false; error: string };
+
+/**
+ * Host-owned validator for a reviewer's structured verdict. Unlike a bare
+ * JSON.parse, it reports *why* a payload is invalid so the orchestrator can issue
+ * a targeted one-shot repair request and record a specific degraded reason.
+ *
+ * The verdict shape is unchanged; only `verdict` is a hard requirement — the other
+ * fields keep their existing lenient defaults (summary → "", arrays → [],
+ * confidence → "medium") so a partial-but-well-formed verdict still validates.
+ */
+export function validateReviewResult(raw: string): ReviewResultValidation {
+  if (!raw || !raw.trim()) return { ok: false, error: "reviewer response was empty" };
+  // Strip code fences if the reviewer wrapped the JSON.
+  const cleaned = raw.replace(/^```(?:json)?\n?/m, "").replace(/\n?```$/m, "").trim();
+  let obj: unknown;
   try {
-    // Strip code fences if the reviewer wrapped the JSON
-    const cleaned = raw.replace(/^```(?:json)?\n?/m, "").replace(/\n?```$/m, "").trim();
-    const obj = JSON.parse(cleaned);
-    if (!obj || typeof obj !== "object") return null;
-    if (!VALID_VERDICTS.has(obj.verdict)) return null;
-    return {
-      verdict: obj.verdict as ReviewVerdict,
-      summary: typeof obj.summary === "string" ? obj.summary : "",
-      requiredChanges: Array.isArray(obj.requiredChanges) ? obj.requiredChanges : [],
-      riskAreas: Array.isArray(obj.riskAreas) ? obj.riskAreas : [],
-      confidence: obj.confidence === "low" || obj.confidence === "medium" || obj.confidence === "high"
-        ? obj.confidence
-        : "medium",
-    };
+    obj = JSON.parse(cleaned);
   } catch {
-    return null;
+    return { ok: false, error: "reviewer response was not valid JSON" };
   }
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+    return { ok: false, error: "reviewer response was not a JSON object" };
+  }
+  const record = obj as Record<string, unknown>;
+  if (typeof record.verdict !== "string" || !VALID_VERDICTS.has(record.verdict as ReviewVerdict)) {
+    return {
+      ok: false,
+      error: "reviewer response was missing a valid 'verdict' (expected one of: approved, changes_requested, blocked, needs_human_review)",
+    };
+  }
+  return {
+    ok: true,
+    value: {
+      verdict: record.verdict as ReviewVerdict,
+      summary: typeof record.summary === "string" ? record.summary : "",
+      requiredChanges: Array.isArray(record.requiredChanges) ? (record.requiredChanges as string[]) : [],
+      riskAreas: Array.isArray(record.riskAreas) ? (record.riskAreas as string[]) : [],
+      confidence: record.confidence === "low" || record.confidence === "medium" || record.confidence === "high"
+        ? record.confidence
+        : "medium",
+    },
+  };
+}
+
+/** Back-compat wrapper: returns the verdict or null, discarding the error detail. */
+export function parseReviewResult(raw: string): ReviewResult | null {
+  const validated = validateReviewResult(raw);
+  return validated.ok ? validated.value : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -218,16 +260,41 @@ Return ONLY the JSON object. No prose before or after.`;
 export function buildReviewPacketPrompt(
   task: string,
   implementerSummary: string,
+  diffContext?: string,
 ): string {
+  const diffSection = diffContext && diffContext.trim()
+    ? `\n\n**Changed files / diff (working tree vs HEAD):**\n${diffContext}`
+    : "";
   return `## Review Packet
 
 **Original task:**
 ${task}
 
 **Implementer output summary:**
-${implementerSummary.slice(0, 4000)}
+${implementerSummary.slice(0, 4000)}${diffSection}
 
 Please review the above and return your structured JSON verdict.`;
+}
+
+/**
+ * One-shot repair request sent to the SAME reviewer session when its previous
+ * response failed verdict validation. Includes the concrete validation error and
+ * demands JSON-only output — no prose, no markdown, no code fences.
+ */
+export function buildReviewRepairPrompt(error: string): string {
+  return `Your previous response could not be parsed as a review verdict.
+
+Problem: ${error}
+
+Reply again with ONLY the JSON verdict object — no prose, no markdown, no code fences:
+
+{
+  "verdict": "approved" | "changes_requested" | "blocked" | "needs_human_review",
+  "summary": "One or two sentence summary of your finding.",
+  "requiredChanges": ["change 1", "change 2"],
+  "riskAreas": ["area 1"],
+  "confidence": "low" | "medium" | "high"
+}`;
 }
 
 /** Prompt for a revision pass: the original task plus the reviewer's requested changes. */

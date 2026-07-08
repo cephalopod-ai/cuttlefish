@@ -123,6 +123,11 @@ vi.mock("../../sessions/registry.js", () => ({
   insertMessage: hoisted.insertMessageMock,
   getMessages: hoisted.getMessagesMock,
 }));
+// Keep the loop hermetic: never shell out to git for diff context. Fake sessions
+// also have no cwd, so buildReviewContext would short-circuit anyway.
+vi.mock("../review-context.js", () => ({
+  buildReviewContext: () => ({ mode: "summary_only", changedFiles: 0, reason: "test: no diff" }),
+}));
 
 const { dispatchEmployeeSessionRun } = await import("../mid-pair-orchestrator.js");
 
@@ -368,6 +373,47 @@ describe("dispatchEmployeeSessionRun — review loop", () => {
   });
 });
 
+describe("dispatchEmployeeSessionRun — reviewer verdict repair", () => {
+  it("repairs an unparseable verdict with one in-place retry, then approves", async () => {
+    const top = hoisted.seedTopSession();
+    hoisted.script.push({ status: "idle", assistantText: "implemented the feature" }); // implementer
+    hoisted.script.push({ status: "idle", assistantText: "sure, here's my review: looks good!" }); // reviewer: prose, not JSON
+    hoisted.script.push({ status: "idle", assistantText: approvedVerdict }); // repair on the same session: valid JSON
+    const emitted: Array<{ event: string; payload: unknown }> = [];
+    const context = makeContext(emitted);
+
+    await dispatchEmployeeSessionRun(top as any, "task", fakeEngine(), baseConfig(), context, midPairEmployee());
+
+    expect(hoisted.createSessionMock).toHaveBeenCalledTimes(1); // one reviewer session; the repair reuses it
+    const reviewerId = hoisted.createSessionMock.mock.results[0].value.id;
+    const reviewerDispatches = hoisted.dispatchCalls.filter((s) => s.id === reviewerId);
+    expect(reviewerDispatches.length).toBe(2); // initial attempt + one repair, same session
+
+    const final = hoisted.sessionsById.get(top.id)!;
+    expect((final.transportMeta as any).executionPhase).toBe("done");
+    expect((final.transportMeta as any).executionChildCount).toBe(1); // repair did not spawn a new child
+    expect((final.transportMeta as any).executionReviewContext).toBe("summary_only"); // review-context wiring is recorded
+  });
+
+  it("degrades with an 'unparseable' reason when the repair retry also fails", async () => {
+    const top = hoisted.seedTopSession();
+    hoisted.script.push({ status: "idle", assistantText: "implemented" }); // implementer
+    hoisted.script.push({ status: "idle", assistantText: "not json" }); // reviewer: bad
+    hoisted.script.push({ status: "idle", assistantText: "still not json" }); // repair: still bad
+    const emitted: Array<{ event: string; payload: unknown }> = [];
+    const context = makeContext(emitted);
+
+    // default reviewerLossPolicy replace_then_degrade, no fallback chain -> degrade
+    await dispatchEmployeeSessionRun(top as any, "task", fakeEngine(), baseConfig(), context, midPairEmployee());
+
+    expect(hoisted.createSessionMock).toHaveBeenCalledTimes(1); // one reviewer, repaired in place, then given up
+    const final = hoisted.sessionsById.get(top.id)!;
+    expect((final.transportMeta as any).executionPhase).toBe("degraded");
+    expect((final.transportMeta as any).executionDegraded).toBe(true);
+    expect((final.transportMeta as any).executionDegradedReason).toMatch(/could not be parsed after one repair retry/i);
+  });
+});
+
 describe("dispatchEmployeeSessionRun — reviewer loss policy", () => {
   it("blocks when the reviewer engine is unavailable and the policy is 'block'", async () => {
     const top = hoisted.seedTopSession();
@@ -424,6 +470,7 @@ describe("dispatchEmployeeSessionRun — reviewer loss policy", () => {
     expect(hoisted.createSessionMock.mock.calls[0][0].engine).toBe("codex");
     const final = hoisted.sessionsById.get(top.id)!;
     expect((final.transportMeta as any).executionPhase).toBe("done");
+    expect((final.transportMeta as any).executionFallbackActive).toBe(true); // fallback reviewer is observable
   });
 
   it("falls through to a final block/degrade resolution when the fallback also fails", async () => {

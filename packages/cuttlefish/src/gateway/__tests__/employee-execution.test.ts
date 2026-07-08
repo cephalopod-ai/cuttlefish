@@ -3,6 +3,7 @@ import type { CuttlefishConfig, Employee } from "../../shared/types.js";
 import {
   applyReviewerLossPolicy,
   buildReviewPacketPrompt,
+  buildReviewRepairPrompt,
   buildReviewerSystemPrompt,
   buildRevisionPrompt,
   buildRoleTransportMeta,
@@ -12,6 +13,7 @@ import {
   resolveEffectiveExecution,
   resolveRoleFailoverTargets,
   shouldUseMidPairExecution,
+  validateReviewResult,
 } from "../employee-execution.js";
 
 function config(overrides: Partial<CuttlefishConfig> = {}): CuttlefishConfig {
@@ -141,6 +143,48 @@ describe("parseReviewResult", () => {
   it("returns null for valid JSON that isn't an object", () => {
     expect(parseReviewResult("42")).toBeNull();
     expect(parseReviewResult("[1,2,3]")).toBeNull();
+  });
+});
+
+describe("validateReviewResult", () => {
+  it("returns ok with the parsed verdict for clean JSON", () => {
+    const result = validateReviewResult(JSON.stringify({
+      verdict: "approved", summary: "ok", requiredChanges: [], riskAreas: [], confidence: "high",
+    }));
+    expect(result).toEqual({
+      ok: true,
+      value: { verdict: "approved", summary: "ok", requiredChanges: [], riskAreas: [], confidence: "high" },
+    });
+  });
+
+  it("returns ok for fenced JSON, applying lenient field defaults", () => {
+    const raw = "```json\n" + JSON.stringify({ verdict: "changes_requested", summary: "needs tests" }) + "\n```";
+    const result = validateReviewResult(raw);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.verdict).toBe("changes_requested");
+      expect(result.value.requiredChanges).toEqual([]); // defaulted
+      expect(result.value.confidence).toBe("medium"); // defaulted
+    }
+  });
+
+  it("reports a specific error for empty, non-JSON, non-object, and bad-verdict input", () => {
+    expect(validateReviewResult("")).toEqual({ ok: false, error: "reviewer response was empty" });
+    expect(validateReviewResult("   ")).toEqual({ ok: false, error: "reviewer response was empty" });
+    expect(validateReviewResult("not json").ok).toBe(false);
+    expect((validateReviewResult("not json") as { error: string }).error).toMatch(/not valid JSON/);
+    expect((validateReviewResult("[1,2,3]") as { error: string }).error).toMatch(/not a JSON object/);
+    expect((validateReviewResult(JSON.stringify({ verdict: "meh" })) as { error: string }).error).toMatch(/valid 'verdict'/);
+  });
+});
+
+describe("buildReviewRepairPrompt", () => {
+  it("includes the validation error and demands JSON-only output", () => {
+    const prompt = buildReviewRepairPrompt("reviewer response was not valid JSON");
+    expect(prompt).toContain("reviewer response was not valid JSON");
+    expect(prompt).toMatch(/ONLY the JSON/);
+    expect(prompt).toMatch(/no code fences/i);
+    expect(prompt).toContain('"verdict"');
   });
 });
 
@@ -283,6 +327,15 @@ describe("prompt builders", () => {
     expect(prompt).toContain("Add a healthz endpoint");
     expect(prompt).toContain("x".repeat(4000));
     expect(prompt).not.toContain("x".repeat(4001));
+  });
+
+  it("buildReviewPacketPrompt appends a changed-files/diff section only when diff context is provided", () => {
+    const withDiff = buildReviewPacketPrompt("task", "summary", "diff --git a/x b/x\n+added line");
+    expect(withDiff).toContain("Changed files / diff");
+    expect(withDiff).toContain("+added line");
+    const withoutDiff = buildReviewPacketPrompt("task", "summary");
+    expect(withoutDiff).not.toContain("Changed files / diff");
+    expect(buildReviewPacketPrompt("task", "summary", "   ")).not.toContain("Changed files / diff"); // blank diff ignored
   });
 
   it("buildRevisionPrompt includes the task, prior summary, and required changes", () => {

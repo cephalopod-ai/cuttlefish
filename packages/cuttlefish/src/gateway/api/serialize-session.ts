@@ -22,6 +22,10 @@ function extractExecutionRunState(session: Session): ExecutionRunState | null {
     fallbackActive: meta["executionFallbackActive"] === true,
     pass: typeof meta["executionPass"] === "number" ? meta["executionPass"] : 1,
     maxPasses: typeof meta["executionMaxPasses"] === "number" ? meta["executionMaxPasses"] : 1,
+    reviewContext: meta["executionReviewContext"] === "diff" || meta["executionReviewContext"] === "summary_only"
+      ? meta["executionReviewContext"]
+      : undefined,
+    reviewContextReason: typeof meta["executionReviewContextReason"] === "string" ? meta["executionReviewContextReason"] : undefined,
   };
 }
 
