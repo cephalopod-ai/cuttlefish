@@ -269,7 +269,7 @@ engines:
     effortLevel: medium
   codex:
     bin: codex
-    model: gpt-5.5
+    model: gpt-5.6-sol
   grok:
     bin: grok
     model: grok-build
@@ -299,10 +299,14 @@ models:
       - { id: claude-sonnet-5, label: "Sonnet 5", supportsEffort: true, effortLevels: [low, medium, high], contextWindow: 1000000 }
       - { id: claude-haiku-4-5, label: "Haiku 4.5", supportsEffort: true, effortLevels: [low, medium, high], contextWindow: 200000 }
   codex:
-    default: gpt-5.5
+    default: gpt-5.6-sol
     effortMechanism: codex-config
     models:
-      - { id: gpt-5.5, label: "GPT-5.5 Codex", supportsEffort: true, effortLevels: [low, medium, high, xhigh], contextWindow: 1050000 }
+      - { id: gpt-5.6-sol, label: "GPT-5.6 Sol", supportsEffort: true, effortLevels: [low, medium, high, xhigh], contextWindow: 1000000 }
+      - { id: gpt-5.6-terra, label: "GPT-5.6 Terra", supportsEffort: true, effortLevels: [low, medium, high, xhigh], contextWindow: 1000000 }
+      - { id: gpt-5.6-luna, label: "GPT-5.6 Luna", supportsEffort: true, effortLevels: [low, medium, high], contextWindow: 200000 }
+      - { id: gpt-5.4-mini, label: "GPT-5.4 Mini", supportsEffort: true, effortLevels: [low, medium, high], contextWindow: 200000 }
+      - { id: gpt-5.3-codex-spark, label: "GPT-5.3 Codex Spark", supportsEffort: false, effortLevels: [], contextWindow: 128000 }
   grok:
     default: grok-build
     effortMechanism: grok-flag

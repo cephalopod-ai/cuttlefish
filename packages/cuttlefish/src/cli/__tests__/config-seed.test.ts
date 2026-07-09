@@ -23,9 +23,9 @@ describe("fresh-install: talk seeding + config guidance", () => {
     expect(readFileSync(SETUP, "utf-8")).toMatch(/#\s*mcp:/);
   });
 
-  it("seeds the default gpt-5.5 Codex contextWindow at its documented 1,050,000-token size", () => {
+  it("seeds the default gpt-5.6-sol Codex contextWindow at 1,000,000 tokens", () => {
     expect(readFileSync(SETUP, "utf-8")).toMatch(
-      /id: gpt-5\.5, label: "GPT-5\.5 Codex".*contextWindow: 1050000/,
+      /id: gpt-5\.6-sol, label: "GPT-5\.6 Sol".*contextWindow: 1000000/,
     );
   });
 
