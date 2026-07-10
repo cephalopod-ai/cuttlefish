@@ -16,7 +16,7 @@ describe('MobileTabBar', () => {
     renderAt('/')
     const tabs = screen.getAllByRole('link')
     expect(tabs).toHaveLength(5)
-    for (const label of ['Chat', 'Talk', 'Organization', 'Cron', 'Settings']) {
+    for (const label of ['Chat', 'Talk', 'Organization', 'Approvals', 'Settings']) {
       expect(screen.getByRole('link', { name: label })).toBeDefined()
     }
   })
@@ -26,17 +26,17 @@ describe('MobileTabBar', () => {
     expect(
       screen.getByRole('link', { name: 'Chat' }).getAttribute('aria-current')
     ).toBe('page')
-    for (const label of ['Talk', 'Organization', 'Cron', 'Settings']) {
+    for (const label of ['Talk', 'Organization', 'Approvals', 'Settings']) {
       expect(
         screen.getByRole('link', { name: label }).getAttribute('aria-current')
       ).toBeNull()
     }
   })
 
-  it('marks the Cron tab current on "/cron"', () => {
-    renderAt('/cron')
+  it('marks the Approvals tab current on "/approvals"', () => {
+    renderAt('/approvals')
     expect(
-      screen.getByRole('link', { name: 'Cron' }).getAttribute('aria-current')
+      screen.getByRole('link', { name: 'Approvals' }).getAttribute('aria-current')
     ).toBe('page')
     expect(
       screen.getByRole('link', { name: 'Chat' }).getAttribute('aria-current')
