@@ -1,10 +1,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import {
-  MessageSquare, Users, LayoutGrid, Clock,
-  Activity, Zap, Settings, Plus, Hash,
-} from "lucide-react"
+import { MessageSquare, Users, Clock, Zap, Plus, Hash } from "lucide-react"
 import {
   Command,
   CommandInput,
@@ -16,6 +13,7 @@ import {
 } from "@/components/ui/command"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { useSettings } from "@/routes/settings-provider"
+import { VOCABULARY } from "@/lib/vocabulary"
 import { useOrg } from "@/hooks/use-employees"
 import { useCronJobs } from "@/hooks/use-cron"
 import { useSessions } from "@/hooks/use-sessions"
@@ -46,15 +44,26 @@ function saveRecent(item: RecentItem) {
   localStorage.setItem(RECENT_KEY, JSON.stringify(items.slice(0, MAX_RECENT)))
 }
 
+// Sourced from the vocabulary module so a page is never searchable under a
+// different name than its nav entry or page title (see lib/vocabulary.ts).
+// Covers every route in NAV_ITEMS so the palette can reach all of them —
+// previously several (Approvals, Archive, Talk, Limits, Orchestration) were
+// missing here even though they had nav entries, and "Command Center" was
+// wired to the cmdk <Command> wrapper component instead of an icon.
 const STATIC_PAGES = [
-  { id: "page-chat", label: "Chat", icon: MessageSquare, href: "/" },
-  { id: "page-command", label: "Command Center", icon: Command, href: "/command" },
-  { id: "page-org", label: "Organization", icon: Users, href: "/org" },
-  { id: "page-kanban", label: "Kanban", icon: LayoutGrid, href: "/kanban" },
-  { id: "page-cron", label: "Cron", icon: Clock, href: "/cron" },
-  { id: "page-logs", label: "Activity", icon: Activity, href: "/activity" },
-  { id: "page-skills", label: "Skills", icon: Zap, href: "/skills" },
-  { id: "page-settings", label: "Settings", icon: Settings, href: "/settings" },
+  { id: "page-chat", label: VOCABULARY.chat.label, icon: VOCABULARY.chat.icon, href: "/" },
+  { id: "page-talk", label: VOCABULARY.talk.label, icon: VOCABULARY.talk.icon, href: "/talk" },
+  { id: "page-command", label: VOCABULARY.commandCenter.label, icon: VOCABULARY.commandCenter.icon, href: "/command" },
+  { id: "page-org", label: VOCABULARY.organization.label, icon: VOCABULARY.organization.icon, href: "/org" },
+  { id: "page-kanban", label: VOCABULARY.kanban.label, icon: VOCABULARY.kanban.icon, href: "/kanban" },
+  { id: "page-approvals", label: VOCABULARY.approval.plural, icon: VOCABULARY.approval.icon, href: "/approvals" },
+  { id: "page-archive", label: VOCABULARY.archive.label, icon: VOCABULARY.archive.icon, href: "/archive" },
+  { id: "page-cron", label: VOCABULARY.cron.label, icon: VOCABULARY.cron.icon, href: "/cron" },
+  { id: "page-limits", label: VOCABULARY.limits.label, icon: VOCABULARY.limits.icon, href: "/limits" },
+  { id: "page-activity", label: VOCABULARY.activity.label, icon: VOCABULARY.activity.icon, href: "/activity" },
+  { id: "page-orchestration", label: VOCABULARY.orchestration.label, icon: VOCABULARY.orchestration.icon, href: "/orchestration" },
+  { id: "page-skills", label: VOCABULARY.skill.plural, icon: VOCABULARY.skill.icon, href: "/skills" },
+  { id: "page-settings", label: VOCABULARY.settings.label, icon: VOCABULARY.settings.icon, href: "/settings" },
 ]
 
 export function GlobalSearch() {

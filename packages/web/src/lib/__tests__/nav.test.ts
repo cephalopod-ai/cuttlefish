@@ -1,6 +1,21 @@
 import { describe, it, expect } from 'vitest'
 import { NAV_ITEMS, MOBILE_TAB_ITEMS, applyNavOrder } from '../nav'
 
+describe('NAV_ITEMS', () => {
+  it('includes Command Center and Orchestration in the Ops group', () => {
+    const commandCenter = NAV_ITEMS.find((item) => item.href === '/command')
+    const orchestration = NAV_ITEMS.find((item) => item.href === '/orchestration')
+    expect(commandCenter).toMatchObject({ label: 'Command Center', group: 'ops' })
+    expect(orchestration).toMatchObject({ label: 'Orchestration', group: 'ops' })
+  })
+
+  it('assigns every item to one of the three groups', () => {
+    for (const item of NAV_ITEMS) {
+      expect(['work', 'organization', 'ops']).toContain(item.group)
+    }
+  })
+})
+
 describe('MOBILE_TAB_ITEMS', () => {
   it('has exactly 5 curated entries', () => {
     expect(MOBILE_TAB_ITEMS).toHaveLength(5)
@@ -11,7 +26,7 @@ describe('MOBILE_TAB_ITEMS', () => {
       '/',
       '/talk',
       '/org',
-      '/cron',
+      '/approvals',
       '/settings',
     ])
   })

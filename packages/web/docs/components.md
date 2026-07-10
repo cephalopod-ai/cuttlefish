@@ -17,6 +17,21 @@ drifts into two names across the app (the historical example: nav said
 **Do:** `title={VOCABULARY.cron.label}`, `<Icon icon={VOCABULARY.approval.icon} />`.
 **Don't:** hardcode `"Approvals"` in a new page — import it from vocabulary.
 
+## Nav groups (`src/lib/nav.ts`)
+
+`NAV_ITEMS` carries a `group: "work" | "organization" | "ops"` per the plan's
+Section 4.2 (Work / Organization / Ops). `NavList` (the popover used on every
+non-chat route) renders a header before each contiguous run of same-group
+items; the icon-only desktop rail (`NavRibbon`) does not — it stays a flat,
+drag-reorderable strip, since inserting text headers into an icon-only,
+freely-reorderable rail is a larger visual redesign than this pass covers.
+
+**Do:** set `group` on any new `NAV_ITEMS` entry to whichever of the three it
+most belongs to.
+**Don't:** assume group headers survive a user's custom drag order perfectly
+— `NavList` groups by *adjacency* in the current order, so a reordered item
+gets its own one-off header rather than losing its label.
+
 ## `EmptyState`
 
 Zero-data state: nothing has gone wrong, there's just nothing here yet (or
@@ -103,6 +118,26 @@ approvals).
   its color.
 - **Don't:** invent a seventh tone or reach for a raw `--system-*` color
   directly when the concept is a status.
+
+## `GlobalShortcuts` / `useGoToNavigation`
+
+The app-wide keyboard layer, mounted once in `PageLayout` (every route except
+chat, which owns a richer page-local shortcut set of its own — see
+`routes/chat/page.tsx`). Two pieces:
+
+- `useGoToNavigation` (`hooks/use-go-to-navigation.ts`): press `g`, then a
+  mapped letter, to jump straight to a surface (`g o` → Organization, `g a` →
+  Approvals, ...). The full map is `GO_TO_TARGETS`, exported so the shortcut
+  sheet can document it without duplicating the list. Disabled while typing in
+  a field, while any `role="dialog"` is open, or with a modifier held.
+- `GlobalShortcuts` (`components/global-shortcuts.tsx`): binds `?` to toggle a
+  documentation sheet (reusing `ShortcutOverlay`, moved to `components/ui/`
+  since it's no longer chat-specific) listing every go-to target plus ⌘K.
+
+**Do:** add a new nav destination to `GO_TO_TARGETS` (and give it a unique,
+unused letter) when you add it to `NAV_ITEMS`.
+**Don't:** reuse a letter already in `GO_TO_TARGETS`, and don't rebind `g` at
+the page level on a non-chat route — it's reserved as the global leader key.
 
 ## `Timestamp`
 

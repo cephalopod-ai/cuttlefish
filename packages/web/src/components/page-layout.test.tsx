@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
+import { MemoryRouter } from "react-router-dom"
 import { BreadcrumbProvider, useBreadcrumbs } from "@/context/breadcrumb-context"
 import { PageLayout } from "./page-layout"
 
@@ -30,9 +31,11 @@ function PageWithBreadcrumb() {
 describe("PageLayout", () => {
   it("labels the main landmark from breadcrumbs", () => {
     render(
-      <BreadcrumbProvider>
-        <PageWithBreadcrumb />
-      </BreadcrumbProvider>,
+      <MemoryRouter>
+        <BreadcrumbProvider>
+          <PageWithBreadcrumb />
+        </BreadcrumbProvider>
+      </MemoryRouter>,
     )
 
     expect(screen.getByRole("main", { name: "Approvals" })).toBeTruthy()
@@ -40,11 +43,13 @@ describe("PageLayout", () => {
 
   it("prefers an explicit mainLabel when provided", () => {
     render(
-      <BreadcrumbProvider>
-        <PageLayout chromeless mainLabel="Chat">
-          <div>chat</div>
-        </PageLayout>
-      </BreadcrumbProvider>,
+      <MemoryRouter>
+        <BreadcrumbProvider>
+          <PageLayout chromeless mainLabel="Chat">
+            <div>chat</div>
+          </PageLayout>
+        </BreadcrumbProvider>
+      </MemoryRouter>,
     )
 
     expect(screen.getByRole("main", { name: "Chat" })).toBeTruthy()
