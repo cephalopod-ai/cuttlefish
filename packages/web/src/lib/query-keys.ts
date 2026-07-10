@@ -49,6 +49,9 @@ export const queryKeys = {
   commandCenter: {
     all: ['command-center'] as const,
   },
+  engineLimits: {
+    all: ['engine-limits'] as const,
+  },
   config: ['config'] as const,
   status: ['status'] as const,
 } as const

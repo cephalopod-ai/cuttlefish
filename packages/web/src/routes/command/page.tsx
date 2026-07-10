@@ -1,10 +1,12 @@
-import { type ReactNode, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowRight,
   Clock3,
+  Gauge,
   MessageSquarePlus,
   Radio,
+  ShieldQuestion,
   Ticket,
   Users,
 } from 'lucide-react'
@@ -12,9 +14,12 @@ import { PageLayout } from '@/components/page-layout'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/ui/empty-state'
 import { ErrorState } from '@/components/ui/error-state'
+import { KpiTile } from '@/components/ui/kpi-tile'
+import { TriageChip } from '@/components/ui/triage-chip'
 import { useBreadcrumbs } from '@/context/breadcrumb-context'
 import { useCommandCenter } from '@/hooks/use-command-center'
 import { usePageVisibility } from '@/hooks/use-page-visibility'
+import { useTriageSummary } from '@/hooks/use-triage-summary'
 import type { CommandCenterAgentUsage, CommandCenterManagerSummary, CommandCenterUsageRange } from '@/lib/api'
 
 const RANGE_OPTIONS: CommandCenterUsageRange[] = ['day', 'week', 'month']
@@ -71,49 +76,6 @@ function useUtcClock() {
   return clock
 }
 
-function MetricCard({
-  title,
-  value,
-  detail,
-  href,
-  icon,
-  emphasized,
-}: {
-  title: string
-  value: string
-  detail: string
-  href: string
-  icon: ReactNode
-  emphasized?: boolean
-}) {
-  return (
-    <Link
-      to={href}
-      className={[
-        'group relative overflow-hidden rounded-[var(--radius-xl)] border p-4 shadow-[var(--shadow-card)] transition-transform duration-150 hover:-translate-y-0.5',
-        emphasized
-          ? 'border-[color:color-mix(in_srgb,var(--accent)_55%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-fill)_65%,var(--material-regular))]'
-          : 'border-[var(--separator)] bg-[var(--material-regular)]',
-      ].join(' ')}
-    >
-      <div className="absolute inset-x-0 top-0 h-px bg-[color:color-mix(in_srgb,var(--text-primary)_22%,transparent)] opacity-70" />
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-tertiary)]">{title}</div>
-        <div className={emphasized ? 'text-[var(--accent)]' : 'text-[var(--text-secondary)]'}>{icon}</div>
-      </div>
-      <div className="mb-1.5 flex items-end gap-2">
-        <span className={emphasized ? 'text-4xl font-bold tracking-[-0.04em] text-[var(--accent)]' : 'text-4xl font-bold tracking-[-0.04em] text-[var(--text-primary)]'}>
-          {value}
-        </span>
-      </div>
-      <div className="flex items-center justify-between gap-2 text-[length:var(--text-footnote)] text-[var(--text-secondary)]">
-        <span>{detail}</span>
-        <ArrowRight size={14} className="opacity-0 transition-opacity group-hover:opacity-100" />
-      </div>
-    </Link>
-  )
-}
-
 function formatCompact(value: number): string {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
   if (value >= 1_000) return `${Math.round(value / 1_000)}K`
@@ -155,6 +117,7 @@ function managerBadge(manager: CommandCenterManagerSummary) {
 export default function CommandPage() {
   useBreadcrumbs([{ label: 'Command Center' }])
   const { data, isLoading, error, refetch } = useCommandCenter()
+  const triage = useTriageSummary()
   const [range, setRange] = useState<CommandCenterUsageRange>('day')
   const clock = useUtcClock()
 
@@ -220,13 +183,23 @@ export default function CommandPage() {
             />
           ) : (
           <>
+          {/* Triage strip — what needs the operator's attention right now,
+              each chip deep-linking to the filtered surface (Journey 1). */}
+          {!triage.isLoading && (
+            <div className="flex flex-wrap items-center gap-2">
+              <TriageChip label="Needs approval" count={triage.pendingApprovals} href="/approvals" icon={<ShieldQuestion size={14} />} />
+              <TriageChip label="Blocked" count={triage.blockedTickets} href="/kanban" icon={<Ticket size={14} />} />
+              <TriageChip label="Cron failures" count={triage.brokenCronJobs} href="/cron" icon={<Clock3 size={14} />} />
+              <TriageChip label="Limits at risk" count={triage.atRiskLimits} href="/limits" icon={<Gauge size={14} />} />
+            </div>
+          )}
           <section className="grid gap-3 xl:grid-cols-4">
             {isLoading ? (
               Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-32 rounded-[var(--radius-xl)]" />)
             ) : (
               <>
-                <MetricCard title="Agents" value={String(data?.summary?.agents ?? 0)} detail="registered across the org" href="/org" icon={<Users size={18} />} />
-                <MetricCard
+                <KpiTile title="Agents" value={String(data?.summary?.agents ?? 0)} detail="registered across the org" href="/org" icon={<Users size={18} />} />
+                <KpiTile
                   title="Running now"
                   value={String(data?.summary?.agentsRunning ?? 0)}
                   detail="live sessions across the fleet"
@@ -234,8 +207,8 @@ export default function CommandPage() {
                   icon={<Radio size={18} />}
                   emphasized
                 />
-                <MetricCard title="Cron jobs" value={String(data?.summary?.cronJobs ?? 0)} detail="scheduled automations" href="/cron" icon={<Clock3 size={18} />} />
-                <MetricCard title="Open tickets" value={String(data?.summary?.ticketsOpen ?? 0)} detail="open work across departments" href="/kanban" icon={<Ticket size={18} />} />
+                <KpiTile title="Cron jobs" value={String(data?.summary?.cronJobs ?? 0)} detail="scheduled automations" href="/cron" icon={<Clock3 size={18} />} />
+                <KpiTile title="Open tickets" value={String(data?.summary?.ticketsOpen ?? 0)} detail="open work across departments" href="/kanban" icon={<Ticket size={18} />} />
               </>
             )}
           </section>

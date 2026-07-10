@@ -16,6 +16,21 @@ export interface CuttlefishSettings {
   employeeOverrides: Record<string, EmployeeOverride>
   /** Custom order of the left nav rail, as a list of item hrefs. [] = default order. */
   navOrder: string[]
+  /** When true, landing on "/" redirects to Command Center if triage has anything outstanding. */
+  attentionAwareLanding: boolean
+  /** Per-event-class notification preferences. Only "approvals.badge" is wired to a live UI effect today. */
+  notificationPreferences: NotificationPreferences
+}
+
+export type NotificationEventClass = 'approvals' | 'ticketsBlocked' | 'cronFailures' | 'limitsAtRisk'
+export type NotificationChannel = 'badge' | 'toast'
+export type NotificationPreferences = Record<NotificationEventClass, Record<NotificationChannel, boolean>>
+
+export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
+  approvals: { badge: true, toast: false },
+  ticketsBlocked: { badge: true, toast: false },
+  cronFailures: { badge: true, toast: false },
+  limitsAtRisk: { badge: true, toast: false },
 }
 
 export const DEFAULT_PORTAL_ICON = "/brand/cuttlefish_icon_app.svg"
@@ -32,6 +47,8 @@ export const DEFAULTS: CuttlefishSettings = {
   language: "English",
   employeeOverrides: {},
   navOrder: [],
+  attentionAwareLanding: false,
+  notificationPreferences: DEFAULT_NOTIFICATION_PREFERENCES,
 }
 
 const STORAGE_KEY = 'cuttlefish-settings'
