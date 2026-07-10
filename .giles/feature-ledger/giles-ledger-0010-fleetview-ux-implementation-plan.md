@@ -40,7 +40,9 @@ Addressed four review-bot suggestions on PR #25 with doc-only amendments: keyboa
 accessible alternative for org-chart `reportsTo` reassignment (Section 6.4), query-key
 coverage for promoted domains (Section 7.2), multi-tab `storage`-event sync for
 persisted preferences (Section 7.4), and full-filtered-dataset export semantics on
-paginated surfaces (Section 11).
+paginated surfaces (Section 11). Also indexed the plan as an active proposal in
+`docs/INDEX.md` (new "Active Proposals" section) and `docs/DOCUMENTATION_INVENTORY.md`
+per review feedback, since `docs/plans/` is otherwise classified as historical archive.
 
 ## Provenance
 Authored directly in this session (remote cloud agent) from a same-day read-only
