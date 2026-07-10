@@ -54,8 +54,8 @@ artifacts unless explicitly published.
 
 - `docs/plans/2026-07-10-fleetview-ux-implementation-plan.md`: the reference
   roadmap for the FleetView web dashboard. Phases 0–6 each have an implemented,
-  scoped slice; remaining UX backlog and validation limits are recorded in their
-  corresponding Giles feature-ledger entries.
+  scoped slice; remaining UX backlog and validation limits are deliberately
+  deferred and recorded in their corresponding Giles feature-ledger entries.
 
 ## Historical Design And Planning Archives
 
