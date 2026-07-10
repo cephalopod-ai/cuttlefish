@@ -21,7 +21,8 @@
     "start": "pnpm clean && pnpm build && node packages/cuttlefish/dist/bin/cuttlefish.js start",
     "stop": "node scripts/run-cuttlefish-cli.mjs stop",
     "nuke": "node scripts/run-cuttlefish-cli.mjs nuke",
-    "status": "node scripts/run-cuttlefish-cli.mjs status"
+    "status": "node scripts/run-cuttlefish-cli.mjs status",
+    "validate:rdc-r03": "node scripts/validate-rdc-r03.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -33,7 +34,8 @@
     "globals": "^17.7.0",
     "turbo": "^2.10.3",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.62.1"
+    "typescript-eslint": "^8.62.1",
+    "yaml": "^2.9.0"
   },
   "dependencies": {
     "classic-level": "^2.0.0"
