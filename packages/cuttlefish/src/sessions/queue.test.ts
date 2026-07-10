@@ -48,3 +48,30 @@ test("SessionQueue can clear a cancellation before accepting new work", async ()
   await queue.enqueue("slack:C123", async () => { ran = true; });
   expect(ran).toBe(true);
 });
+
+test("SessionQueue bounds the paused wait and abandons a task that is never resumed (audit E6)", async () => {
+  const queue = new SessionQueue({ pauseMaxWaitMs: 30 });
+  queue.pauseQueue("slack:never-resumed");
+  let ran = false;
+  const task = queue.enqueue("slack:never-resumed", async () => {
+    ran = true;
+  });
+  await expect(task).rejects.toThrow(/paused/i);
+  expect(ran).toBe(false);
+  // Pending drains so the key is not stuck reporting queued forever.
+  expect(queue.getPendingCount("slack:never-resumed")).toBe(0);
+});
+
+test("SessionQueue still runs a paused task once it is resumed within the cap (audit E6)", async () => {
+  const queue = new SessionQueue({ pauseMaxWaitMs: 10_000 });
+  queue.pauseQueue("slack:resumed");
+  let ran = false;
+  const task = queue.enqueue("slack:resumed", async () => {
+    ran = true;
+  });
+  await new Promise((r) => setTimeout(r, 20));
+  expect(ran).toBe(false);
+  queue.resumeQueue("slack:resumed");
+  await task;
+  expect(ran).toBe(true);
+});

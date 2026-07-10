@@ -189,6 +189,10 @@ export interface CuttlefishConfig {
     alertChannel?: string;
     alertConnector?: string;
     alertThresholdMs?: number;
+    /** Max wall-clock a single cron run may hold the per-job overlap guard before
+     *  the guard is force-cleared so the schedule is not wedged forever by a hung
+     *  run (audit E2). 0 disables the watchdog. Defaults to 6h. */
+    maxRunMs?: number;
   };
   notifications?: {
     connector?: string;

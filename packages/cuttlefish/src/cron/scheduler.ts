@@ -17,6 +17,10 @@ let currentSessionManager: SessionManager;
 let currentConfig: CuttlefishConfig;
 let currentConnectors: Map<string, Connector>;
 const inFlight = new Set<string>();
+/** Which run currently owns each job's overlap guard, so a stale run's cleanup
+ *  (or its watchdog) cannot clear a newer run's guard (audit E2). */
+const activeRunId = new Map<string, string>();
+const DEFAULT_CRON_MAX_RUN_MS = 6 * 60 * 60 * 1000;
 
 export type CronRunStart =
   | { started: true; runId: string; promise: Promise<CronRunEntry> }
@@ -110,9 +114,46 @@ export function startCronJobRun(
 
   const runId = crypto.randomUUID();
   inFlight.add(job.id);
+  activeRunId.set(job.id, runId);
+
+  // Audit E2: the overlap guard previously cleared ONLY when runCronJob settled.
+  // A hung PTY, a multi-hour rate-limit wait, or a stuck route therefore wedged
+  // the schedule permanently — every future fire logged "skipped: previous run
+  // still in flight" and never ran. A watchdog force-clears this run's guard
+  // after maxRunMs so the schedule recovers; the underlying promise may still
+  // settle later (its cleanup is a no-op once another run owns the guard).
+  const releaseGuard = () => {
+    if (activeRunId.get(job.id) !== runId) return; // a newer run owns the guard now
+    activeRunId.delete(job.id);
+    inFlight.delete(job.id);
+  };
+  const maxRunMs = config?.cron?.maxRunMs ?? DEFAULT_CRON_MAX_RUN_MS;
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+  if (maxRunMs > 0) {
+    watchdog = setTimeout(() => {
+      if (activeRunId.get(job.id) !== runId) return;
+      logger.error(
+        `Cron job "${job.name}" exceeded maxRunMs (${maxRunMs}ms); clearing the overlap guard so the schedule is not wedged`,
+      );
+      appendRunLog(job.id, {
+        runId,
+        timestamp: new Date().toISOString(),
+        startedAt: new Date().toISOString(),
+        finishedAt: new Date().toISOString(),
+        status: "timed_out",
+        trigger,
+        error: `Run exceeded maxRunMs (${maxRunMs}ms) and the overlap guard was force-cleared`,
+        resultPreview: null,
+      });
+      releaseGuard();
+    }, maxRunMs);
+    watchdog.unref?.();
+  }
+
   const promise = runCronJob(job, sessionManager, config, connectors, { runId, trigger })
     .finally(() => {
-      inFlight.delete(job.id);
+      if (watchdog) clearTimeout(watchdog);
+      releaseGuard();
     });
   return { started: true, runId, promise };
 }

@@ -57,7 +57,7 @@ export interface CronJob {
   delivery?: CronDelivery;
 }
 
-export type CronRunStatus = "queued" | "running" | "success" | "error" | "skipped_overlap";
+export type CronRunStatus = "queued" | "running" | "success" | "error" | "skipped_overlap" | "timed_out";
 
 export interface CronRunEntry {
   runId: string;
