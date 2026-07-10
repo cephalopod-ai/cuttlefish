@@ -1,11 +1,11 @@
 import { Fragment, useEffect, useState, type ComponentType, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react"
 import { Link, useLocation } from "react-router-dom"
-import { Menu, Sun, Moon, Palette, Waves, Radio, Sparkles, ArrowLeftRight, PanelLeft, Command as CommandIcon } from "lucide-react"
+import { Menu, Sun, Moon, Palette, Waves, Radio, Sparkles, ArrowLeftRight, PanelLeft } from "lucide-react"
 import { useTheme } from "@/routes/providers"
 import { useSettings } from "@/routes/settings-provider"
 import { DEFAULT_PORTAL_ICON } from "@/lib/settings"
 import { THEMES, type ThemeId } from "@/lib/themes"
-import { NAV_ITEMS, applyNavOrder } from "@/lib/nav"
+import { NAV_ITEMS, NAV_GROUP_LABELS, applyNavOrder } from "@/lib/nav"
 import { useBreadcrumbs } from "@/context/breadcrumb-context"
 import { cn } from "@/lib/utils"
 import { useApprovals } from "@/hooks/use-approvals"
@@ -82,27 +82,38 @@ export function NavList({
   onNavigate?: () => void
 }) {
   const { settings } = useSettings()
+  const orderedItems = applyNavOrder(settings.navOrder)
   return (
     <div className="flex flex-col gap-0.5 p-1.5">
-      {applyNavOrder(settings.navOrder).map((item) => {
+      {orderedItems.map((item, index) => {
         const isActive = isNavItemActive(item.href, pathname)
         const Icon = item.icon
+        // A header marks each run of same-group items — including a lone
+        // item stranded mid-list by a custom drag order, so grouping never
+        // looks broken, only less tidy, when a user has reordered freely.
+        const showGroupHeader = item.group !== orderedItems[index - 1]?.group
         return (
-          <Link
-            key={item.href}
-            to={item.href}
-            onClick={onNavigate}
-            aria-current={isActive ? "page" : undefined}
-            className={cn(
-              "flex h-10 items-center gap-3 rounded-[10px] px-3 text-[length:var(--text-subheadline)] transition-colors",
-              isActive
-                ? "bg-[var(--fill-secondary)] font-[var(--weight-semibold)] text-[var(--text-primary)]"
-                : "text-[var(--text-secondary)] hover:bg-[var(--fill-secondary)] hover:text-[var(--text-primary)]",
+          <Fragment key={item.href}>
+            {showGroupHeader && (
+              <div className="mb-0.5 mt-2 px-3 text-[length:var(--text-caption2)] font-[var(--weight-bold)] uppercase tracking-[0.4px] text-[var(--text-quaternary)] first:mt-1">
+                {NAV_GROUP_LABELS[item.group]}
+              </div>
             )}
-          >
-            <Icon size={18} className="shrink-0" />
-            {item.label}
-          </Link>
+            <Link
+              to={item.href}
+              onClick={onNavigate}
+              aria-current={isActive ? "page" : undefined}
+              className={cn(
+                "flex h-10 items-center gap-3 rounded-[10px] px-3 text-[length:var(--text-subheadline)] transition-colors",
+                isActive
+                  ? "bg-[var(--fill-secondary)] font-[var(--weight-semibold)] text-[var(--text-primary)]"
+                  : "text-[var(--text-secondary)] hover:bg-[var(--fill-secondary)] hover:text-[var(--text-primary)]",
+              )}
+            >
+              <Icon size={18} className="shrink-0" />
+              {item.label}
+            </Link>
+          </Fragment>
         )
       })}
     </div>
@@ -537,8 +548,10 @@ export function PillNav({ actions }: { actions?: ReactNode }) {
   const [navOpen, setNavOpen] = useState(false)
 
   const title = items[0]?.label ?? ""
+  // Command Center and Orchestration are regular NAV_ITEMS now, so every
+  // route (including /command) resolves its icon from the same lookup.
   const navItem = NAV_ITEMS.find((n) => isNavItemActive(n.href, pathname))
-  const RouteIcon = navItem?.icon ?? (pathname.startsWith("/command") ? CommandIcon : undefined)
+  const RouteIcon = navItem?.icon
 
   return (
     <>

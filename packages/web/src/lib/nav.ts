@@ -1,33 +1,55 @@
 import type { LucideIcon } from "lucide-react"
 import { VOCABULARY } from "./vocabulary"
 
+// The three-group navigation architecture from
+// docs/plans/2026-07-10-fleetview-ux-implementation-plan.md, Section 4.2:
+// Work (day-to-day), Organization (the workforce), Ops (operator/admin
+// surfaces). Group order below also fixes NAV_ITEMS' default order.
+export type NavGroup = "work" | "organization" | "ops"
+
+export const NAV_GROUP_LABELS: Record<NavGroup, string> = {
+  work: "Work",
+  organization: "Organization",
+  ops: "Ops",
+}
+
 export interface NavItem {
   href: string
   label: string
   icon: LucideIcon
+  group: NavGroup
 }
 
 // Labels and icons are sourced from the vocabulary module (lib/vocabulary.ts)
 // so a nav entry can never say something different than the page it points
-// to — one canonical name per concept, enforced at the type level.
+// to — one canonical name per concept, enforced at the type level. Command
+// Center and Orchestration were previously reachable only by typing a URL
+// (or, for Command Center, via the rail's brand-logo link) — both are now
+// regular nav entries.
 export const NAV_ITEMS: NavItem[] = [
-  { href: "/", label: VOCABULARY.chat.label, icon: VOCABULARY.chat.icon },
-  { href: "/talk", label: VOCABULARY.talk.label, icon: VOCABULARY.talk.icon },
-  { href: "/org", label: VOCABULARY.organization.label, icon: VOCABULARY.organization.icon },
-  { href: "/kanban", label: VOCABULARY.kanban.label, icon: VOCABULARY.kanban.icon },
-  { href: "/approvals", label: VOCABULARY.approval.plural, icon: VOCABULARY.approval.icon },
-  { href: "/archive", label: VOCABULARY.archive.label, icon: VOCABULARY.archive.icon },
-  { href: "/cron", label: VOCABULARY.cron.label, icon: VOCABULARY.cron.icon },
-  { href: "/limits", label: VOCABULARY.limits.label, icon: VOCABULARY.limits.icon },
-  { href: "/activity", label: VOCABULARY.activity.label, icon: VOCABULARY.activity.icon },
-  { href: "/skills", label: VOCABULARY.skill.plural, icon: VOCABULARY.skill.icon },
-  { href: "/settings", label: VOCABULARY.settings.label, icon: VOCABULARY.settings.icon },
+  // Work
+  { href: "/", label: VOCABULARY.chat.label, icon: VOCABULARY.chat.icon, group: "work" },
+  { href: "/talk", label: VOCABULARY.talk.label, icon: VOCABULARY.talk.icon, group: "work" },
+  { href: "/kanban", label: VOCABULARY.kanban.label, icon: VOCABULARY.kanban.icon, group: "work" },
+  { href: "/approvals", label: VOCABULARY.approval.plural, icon: VOCABULARY.approval.icon, group: "work" },
+  { href: "/archive", label: VOCABULARY.archive.label, icon: VOCABULARY.archive.icon, group: "work" },
+  // Organization
+  { href: "/org", label: VOCABULARY.organization.label, icon: VOCABULARY.organization.icon, group: "organization" },
+  { href: "/skills", label: VOCABULARY.skill.plural, icon: VOCABULARY.skill.icon, group: "organization" },
+  { href: "/cron", label: VOCABULARY.cron.label, icon: VOCABULARY.cron.icon, group: "organization" },
+  { href: "/limits", label: VOCABULARY.limits.label, icon: VOCABULARY.limits.icon, group: "organization" },
+  // Ops
+  { href: "/command", label: VOCABULARY.commandCenter.label, icon: VOCABULARY.commandCenter.icon, group: "ops" },
+  { href: "/activity", label: VOCABULARY.activity.label, icon: VOCABULARY.activity.icon, group: "ops" },
+  { href: "/orchestration", label: VOCABULARY.orchestration.label, icon: VOCABULARY.orchestration.icon, group: "ops" },
+  { href: "/settings", label: VOCABULARY.settings.label, icon: VOCABULARY.settings.icon, group: "ops" },
 ]
 
-// Curated 5 for the mobile bottom tab bar (iOS caps at 5). Long-tail nav
-// (Kanban/Limits/Activity/Skills) stays reachable on the Settings screen.
+// Curated 5 for the mobile bottom tab bar (iOS caps at 5). Approvals over
+// Cron: attention beats configuration on a small screen. Long-tail nav
+// stays reachable via the popover/settings screen.
 // Derived from NAV_ITEMS by href so icons/labels stay in sync with the source.
-const MOBILE_TAB_HREFS = ["/", "/talk", "/org", "/cron", "/settings"] as const
+const MOBILE_TAB_HREFS = ["/", "/talk", "/org", "/approvals", "/settings"] as const
 export const MOBILE_TAB_ITEMS: NavItem[] = MOBILE_TAB_HREFS.map(
   (href) => NAV_ITEMS.find((item) => item.href === href)!,
 )

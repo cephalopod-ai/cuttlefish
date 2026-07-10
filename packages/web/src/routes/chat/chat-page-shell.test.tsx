@@ -43,7 +43,7 @@ vi.mock("@/components/chat/file-open-context", () => ({
   FileOpenContext: { Provider: ({ children }: { children: React.ReactNode }) => <>{children}</> },
 }))
 
-vi.mock("@/components/chat/shortcut-overlay", () => ({
+vi.mock("@/components/ui/shortcut-overlay", () => ({
   ShortcutOverlay: () => <div data-testid="shortcut-overlay">shortcuts</div>,
 }))
 
