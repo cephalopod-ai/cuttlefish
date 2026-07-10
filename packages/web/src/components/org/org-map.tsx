@@ -123,6 +123,7 @@ function OrgMapInner({ employees, hierarchy, selectedName, onNodeClick, onReassi
         snapBack() // no drop target, dropped on the current manager, or would create a cycle
         return
       }
+      setReassignError(null) // clear any stale error from a prior failed attempt
       setPendingReassign({ employee: draggedEmployee, manager: targetEmployee })
     },
     [employees, getIntersectingNodes, onReassign, snapBack],

@@ -451,16 +451,17 @@ export default function KanbanPage() {
   }
 
   function handleMoveTicket(ticketId: string, status: TicketStatus) {
-    setTickets((prev) => {
-      const previousStatus = prev[ticketId]?.status
-      const next = moveTicket(prev, ticketId, status)
-      persistBoardChange(next, targetForTicket(next[ticketId]), () => {
-        if (previousStatus === undefined) return
-        // Revert just this ticket's column instead of loadData()'s full
-        // refetch — a true optimistic-update rollback.
-        setTickets((current) => moveTicket(current, ticketId, previousStatus))
-      })
-      return next
+    // Computed and applied outside the updater — persistBoardChange's API
+    // call is a side effect, and state updaters must stay pure (React may
+    // invoke one more than once, e.g. under Strict Mode).
+    const previousStatus = tickets[ticketId]?.status
+    if (previousStatus === undefined || previousStatus === status) return
+    const next = moveTicket(tickets, ticketId, status)
+    setTickets(next)
+    persistBoardChange(next, targetForTicket(next[ticketId]), () => {
+      // Revert just this ticket's column instead of loadData()'s full
+      // refetch — a true optimistic-update rollback.
+      setTickets((current) => moveTicket(current, ticketId, previousStatus))
     })
   }
 
