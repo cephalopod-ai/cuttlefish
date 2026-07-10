@@ -41,8 +41,9 @@ export { loadRawTranscript, scheduleTranscriptBackfill } from "./transcript-back
 const HOOK_BODY_MAX_BYTES = 64 * 1024;
 const SESSION_LIST_PER_GROUP = 50;
 
-/** maxToolCalls was accepted on an employee's execution profile but never
- *  enforced — resolve it here for the hook endpoint's PreToolUse counter. */
+/** maxToolCalls is resolved here for the hook endpoint's PreToolUse counter,
+ *  which enforces the cap (gateway/hook-endpoint.ts: getMaxToolCalls →
+ *  toolCallCounts). Returns undefined when the employee configured no cap. */
 function resolveMaxToolCallsForSession(cuttlefishSessionId: string): number | undefined {
   const session = getSession(cuttlefishSessionId);
   if (!session?.employee) return undefined;

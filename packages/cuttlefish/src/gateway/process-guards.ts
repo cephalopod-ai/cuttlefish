@@ -1,4 +1,5 @@
 import { logger } from "../shared/logger.js";
+import { recordUncaughtException, recordUnhandledRejection } from "../shared/process-health.js";
 
 let installed = false;
 
@@ -13,9 +14,13 @@ export function installProcessErrorHandlers(): void {
   process.on("uncaughtException", (err) => {
     logger.error(`Uncaught exception: ${err?.stack ?? err}`);
     // Do NOT re-throw or exit — keep the gateway (and the whole org) alive.
+    // Audit E1: but RECORD it so the health endpoint reports a degraded/unstable
+    // state instead of a false healthy — Node's post-exception state is undefined.
+    recordUncaughtException(err);
   });
   process.on("unhandledRejection", (reason) => {
     const msg = reason instanceof Error ? (reason.stack ?? reason.message) : String(reason);
     logger.error(`Unhandled promise rejection: ${msg}`);
+    recordUnhandledRejection();
   });
 }

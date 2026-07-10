@@ -452,7 +452,9 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
       if (!engine) throw new Error(`Engine "${runningSession.engine}" not available`);
       void dispatchWebSessionRun(
         runningSession,
-        buildEmailIngestPrompt(message),
+        // Audit G-04: dispatch the content-screened worker text, not the raw body,
+        // so span-sanitization is applied on the email path too.
+        buildEmailIngestPrompt(message, screened.workerText),
         engine,
         currentConfig,
         apiContext,

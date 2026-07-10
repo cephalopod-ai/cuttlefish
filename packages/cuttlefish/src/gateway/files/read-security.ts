@@ -84,6 +84,8 @@ function assessSingleResolvedPath(resolved: string): FileReadAssessment {
   if (isInsidePath(resolved, path.join(home, ".ssh"))) return { allowed: false, reason: "Refusing to read SSH secrets" };
   if (isInsidePath(resolved, path.join(cuttlefishHome, "secrets"))) return { allowed: false, reason: "Refusing to read Cuttlefish secrets" };
   if (isInsidePath(resolved, GATEWAY_INFO_FILE)) return { allowed: false, reason: "Refusing to read the Cuttlefish gateway admin token" };
+  // Audit D-F9/F-06: config.yaml holds connector bot tokens / signing secrets.
+  if (isInsidePath(resolved, path.join(cuttlefishHome, "config.yaml"))) return { allowed: false, reason: "Refusing to read the Cuttlefish config (connector credentials)" };
   if (segments.includes(".claude") && (base.startsWith("auth") || base.startsWith(".credentials"))) return { allowed: false, reason: "Refusing to read Claude auth files" };
   if (segments.includes(".codex") && base === "auth.json") return { allowed: false, reason: "Refusing to read Codex auth files" };
   if (segments.includes(".aws") && base === "credentials") return { allowed: false, reason: "Refusing to read AWS credentials" };

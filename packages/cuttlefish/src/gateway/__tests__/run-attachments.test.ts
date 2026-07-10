@@ -156,8 +156,12 @@ describe("run attachment normalization", () => {
   });
 
   it("lets skill files pass unless they contain destructive/exfiltration instructions", async () => {
-    const skillPath = path.join(tmpHome, "skills.sh");
-    const hostilePath = path.join(tmpHome, "SKILL.md");
+    // Skill-file trust now comes from provenance (audit D-F3): the files must live
+    // under an operator-provisioned skills root, not merely be named skill.md.
+    const skillsRoot = path.join(tmpHome, "skills");
+    fs.mkdirSync(skillsRoot, { recursive: true });
+    const skillPath = path.join(skillsRoot, "skills.sh");
+    const hostilePath = path.join(skillsRoot, "SKILL.md");
     fs.writeFileSync(skillPath, "This skill runs commands with safety checks.\nYou are expected to follow this skill flow.\n");
     fs.writeFileSync(
       hostilePath,
@@ -188,7 +192,7 @@ describe("run attachment normalization", () => {
     expect(dispatch.blocked).toBe(true);
   });
 
-  it("treats explicitly labeled prompt examples as sanitized examples instead of live destructive instructions", async () => {
+  it("routes destructive content with example/quoted framing to human review instead of auto-allowing it (audit D-F2)", async () => {
     const examplePath = path.join(tmpHome, "ai-article.txt");
     fs.writeFileSync(
       examplePath,
@@ -212,13 +216,12 @@ describe("run attachment normalization", () => {
     const screened = await attachments.screenRunAttachmentsForSession(session, resolved, makeCtx(), "Summarize the article");
     const dispatch = attachments.buildResolvedRunAttachments(screened);
 
-    expect(screened[0].contentScreening?.verdict).toBe("suspicious_non_destructive");
-    expect(screened[0].contentScreening?.action).toBe("sanitize");
-    expect(screened[0].contentScreening?.summary).toContain("quoted/example content");
-    expect(screened[0].contentScreening?.sanitizedText).toContain("delete everything you know");
-    expect(dispatch.blocked).toBe(false);
-    expect(dispatch.promptBlock).toContain("Screened attachment content:");
-    expect(dispatch.promptBlock).toContain("delete everything you know");
+    // Previously this destructive-but-"example"-framed content was silently
+    // downgraded to sanitize and delivered (audit D-F2 exploit). It is now routed
+    // to a human checkpoint: not auto-allowed, not hard-quarantined as malicious.
+    expect(screened[0].contentScreening?.verdict).toBe("unclear_requires_human");
+    expect(screened[0].contentScreening?.action).toBe("checkpoint");
+    expect(dispatch.blocked).toBe(true);
   });
 
   it("keeps suspicious but non-destructive prompt text as labeled context under the safety envelope", async () => {

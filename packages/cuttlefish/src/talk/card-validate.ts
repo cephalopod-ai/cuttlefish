@@ -17,6 +17,31 @@ type Result = { ok: true; card: Card } | { ok: false; error: string };
 
 const JOB_STATUSES = new Set(["queued", "running", "done", "error"]);
 
+/**
+ * Audit G-02/I-3: card URLs come from the orchestrator LLM and are rendered by
+ * the web client — an `<img src>` fires a zero-click GET, so an injected model
+ * can turn a card into an exfiltration beacon or a `javascript:`/`file:` sink.
+ * Reject any scheme other than http/https/data and relative paths. (The stronger
+ * mitigation — proxying/blocking remote-image auto-load or host-allowlisting — is
+ * a web-renderer change tracked separately; this closes the scheme-based sinks
+ * and gives the renderer a validated value.)
+ */
+function isSafeCardUrl(url: string): boolean {
+  const trimmed = url.trim();
+  if (trimmed === "") return false;
+  // Relative path or fragment/query — same-origin, safe.
+  if (/^(?:\/(?!\/)|\.{1,2}\/|#|\?)/.test(trimmed)) return true;
+  // data: images are inline (no network fetch to an attacker host).
+  if (/^data:image\//i.test(trimmed)) return true;
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    // Not an absolute URL and not a recognized relative form → reject.
+    return false;
+  }
+}
+
 // All 13 renderer card types are accepted; taste rules (DO/WATCH-first, 1–2 cards) live in the persona.
 
 function isObject(v: unknown): v is Record<string, unknown> {
@@ -107,6 +132,9 @@ function checkImages(images: unknown): string | null {
     if (!isObject(img) || !isString(img.src)) {
       return "image-grid images must be objects with string src";
     }
+    if (!isSafeCardUrl(img.src)) {
+      return "image-grid image src must be an http(s), data:image, or relative URL";
+    }
   }
   return null;
 }
@@ -194,6 +222,7 @@ export function validateCard(input: unknown): Result {
 
     case "image":
       if (!isString(input.src)) return { ok: false, error: "image card requires string src" };
+      if (!isSafeCardUrl(input.src)) return { ok: false, error: "image card src must be an http(s), data:image, or relative URL" };
       break;
 
     case "image-grid": {
@@ -204,6 +233,7 @@ export function validateCard(input: unknown): Result {
 
     case "link":
       if (!isString(input.url)) return { ok: false, error: "link card requires string url" };
+      if (!isSafeCardUrl(input.url)) return { ok: false, error: "link card url must be an http(s) or relative URL" };
       if (!isString(input.label)) return { ok: false, error: "link card requires string label" };
       break;
 

@@ -12,6 +12,7 @@ import type { ApiContext } from "./api/context.js";
 import { scanOrg } from "./org.js";
 import { SECURITY_REVIEWER_EMPLOYEE_NAME } from "./security-review.js";
 import { logger } from "../shared/logger.js";
+import { SKILLS_DIR, CLAUDE_SKILLS_DIR, AGENTS_SKILLS_DIR } from "../shared/paths.js";
 
 const MAX_SCREENED_TEXT_BYTES = 128 * 1024;
 const MAX_SCREENED_TEXT_CHARS = 16_000;
@@ -96,13 +97,38 @@ function isSkillContentSource(source: UntrustedContentSource): boolean {
   return source === "skill_file";
 }
 
+/**
+ * Skill-file trust must come from PROVENANCE, not from an attacker-supplied
+ * filename or a `/skills/` path segment (audit D-F3/G-07): naming an uploaded
+ * file `skill.md` or nesting it under any `skills/` dir must NOT grant the
+ * lenient skill-file screening path. Only files that physically resolve inside
+ * an operator-controlled skills root are trusted as skill content.
+ */
+function isUnderOperatorSkillsRoot(resolvedAbsPath: string): boolean {
+  const roots = [SKILLS_DIR, CLAUDE_SKILLS_DIR, AGENTS_SKILLS_DIR].filter(Boolean);
+  let real = resolvedAbsPath;
+  try {
+    real = fs.realpathSync(resolvedAbsPath);
+  } catch {
+    // Unresolvable path: fall back to the resolved input; the prefix check below still applies.
+  }
+  return roots.some((root) => {
+    const rootWithSep = root.endsWith(path.sep) ? root : root + path.sep;
+    return real === root || real.startsWith(rootWithSep);
+  });
+}
+
 function inferContentSourceForAttachment(attachment: RunAttachment): UntrustedContentSource {
   const location = attachment.resolvedPath ?? attachment.path ?? "";
   if (!location) return "attachment";
-  const normalized = location.toLowerCase();
-  const fileName = path.basename(normalized);
-  if (SKILL_FILENAMES.has(fileName)) return "skill_file";
-  if (normalized.includes(SKILL_DIR_MARKER)) return "skill_file";
+  // Only an operator-provisioned skills root confers skill-file trust; a matching
+  // basename or `/skills/` segment on an arbitrary attachment path does not.
+  if (path.isAbsolute(location) && isUnderOperatorSkillsRoot(location)) {
+    const fileName = path.basename(location.toLowerCase());
+    if (SKILL_FILENAMES.has(fileName) || location.toLowerCase().includes(SKILL_DIR_MARKER)) {
+      return "skill_file";
+    }
+  }
   return "attachment";
 }
 
@@ -150,41 +176,62 @@ function sanitizeText(text: string, spans: string[]): string {
 function heuristicClassification(text: string, source: UntrustedContentSource): ContentScreeningResult {
   const destructive = containsDestructivePattern(text);
   const exampleContext = containsExampleContext(text);
-  const spans = isSkillContentSource(source) ? [] : heuristicSpans(text);
+  const isSkill = isSkillContentSource(source);
+  const spans = isSkill ? [] : heuristicSpans(text);
+  // Audit D-F2/G-03: an "example"/"for example" phrase must NOT silently downgrade
+  // destructive/exfiltrative content into the allowed "sanitize" path on untrusted
+  // (connector/email/attachment) sources — that was a trivial, LLM-free bypass.
+  //   - untrusted + destructive + example framing  → unclear_requires_human
+  //     (CHECKPOINT: a human decides, so a genuine "article quoting an attack" is
+  //      not silently blocked, and a real exfil dressed up as an "example" is not
+  //      silently delivered).
+  //   - untrusted + destructive + no framing       → destructive_or_exfiltrative
+  //     (QUARANTINE).
+  //   - operator skill file (trusted by provenance) may treat example framing as
+  //     instructional content.
   const verdict: ContentScreeningVerdict = destructive
-    ? exampleContext
-      ? isSkillContentSource(source)
+    ? isSkill
+      ? exampleContext
         ? "instructional_but_in_scope"
-        : "suspicious_non_destructive"
-      : "destructive_or_exfiltrative"
-    : isSkillContentSource(source)
+        : "destructive_or_exfiltrative"
+      : exampleContext
+        ? "unclear_requires_human"
+        : "destructive_or_exfiltrative"
+    : isSkill
       ? spans.length > 0
         ? "instructional_but_in_scope"
         : "benign"
       : spans.length > 0
-      ? "suspicious_non_destructive"
-      : "benign";
+        ? "suspicious_non_destructive"
+        : "benign";
   return {
     source,
     verdict,
     action: verdictToAction(verdict, source),
     screener: SECURITY_REVIEWER_EMPLOYEE_NAME,
     summary: destructive
-      ? exampleContext
-        ? "Heuristic screening found destructive-looking prompt text, but it was explicitly labeled as quoted/example content and was downgraded for sanitization."
-        : "Heuristic screening found exfiltration/destructive instruction patterns in untrusted content."
-      : isSkillContentSource(source)
-      ? "No destructive prompt-injection indicators were found in this skill file."
-      : spans.length > 0
-        ? "Heuristic screening found instruction-shaped text in untrusted content."
-        : "No prompt-injection indicators were found by heuristic screening.",
+      ? isSkill && exampleContext
+        ? "Heuristic screening found destructive-looking text in a trusted skill file, labeled as quoted/example content."
+        : !isSkill && exampleContext
+          ? "Heuristic screening found destructive-looking text with example/quoted framing in untrusted content; routed to human review rather than auto-allowed."
+          : "Heuristic screening found exfiltration/destructive instruction patterns in untrusted content."
+      : isSkill
+        ? "No destructive prompt-injection indicators were found in this skill file."
+        : spans.length > 0
+          ? "Heuristic screening found instruction-shaped text in untrusted content."
+          : "No prompt-injection indicators were found by heuristic screening.",
     suspiciousSpans: spans,
+    // Non-destructive suspicious/instructional content is delivered as framed
+    // evidence (the screenUntrustedText wrapper marks it non-executable), so its
+    // text is preserved here — that is intentional and unchanged. The D-F2 fix
+    // lives in the `verdict` above: a destructive/exfiltration match on untrusted
+    // content is no longer downgraded, so it becomes quarantine (blocked) and its
+    // text never reaches the worker at all.
     sanitizedText:
-      isSkillContentSource(source) ||
+      isSkill ||
       verdict === "benign" ||
       verdict === "suspicious_non_destructive" ||
-      verdict === "instructional_but_in_scope" ||
-      exampleContext
+      verdict === "instructional_but_in_scope"
         ? clampText(text, MAX_PROMPT_TEXT_CHARS)
         : clampText(sanitizeText(text, spans), MAX_PROMPT_TEXT_CHARS),
     occurredAt: new Date().toISOString(),
@@ -314,7 +361,29 @@ export async function screenUntrustedText(
 ): Promise<ScreenedTextOutcome> {
   const heuristic = heuristicClassification(input.text, input.source);
   const reviewer = await classifyWithSecurityOfficer(input, context);
-  const screening = reviewer ?? heuristic;
+  let screening = reviewer ?? heuristic;
+  // Audit D-F4/G-09: the LLM screener's verdict is injectable, so it must not be
+  // able to clear a deterministic destructive/exfiltration match on untrusted
+  // (non-skill) content. Apply the heuristic destructive pattern as a hard FLOOR:
+  // if raw patterns fire but the chosen verdict is not quarantine/checkpoint,
+  // escalate to quarantine and deliver code-sanitized text rather than trusting
+  // any reviewer-produced body.
+  const destructiveFloor =
+    input.source !== "skill_file" &&
+    containsDestructivePattern(input.text) &&
+    !containsExampleContext(input.text) && // example-framed destructive is routed to checkpoint, not hard-quarantined
+    screening.action !== "quarantine" &&
+    screening.action !== "checkpoint";
+  if (destructiveFloor) {
+    screening = {
+      ...screening,
+      verdict: "destructive_or_exfiltrative",
+      action: "quarantine",
+      summary:
+        "Deterministic destructive/exfiltration patterns matched untrusted content; escalated to quarantine regardless of the model screener verdict.",
+      sanitizedText: clampText(sanitizeText(input.text, heuristic.suspiciousSpans), MAX_PROMPT_TEXT_CHARS),
+    };
+  }
   const blocked = screening.action === "quarantine" || screening.action === "checkpoint";
   const workerText =
     screening.action === "allow"

@@ -920,6 +920,10 @@ export async function handleOrgRoutes(
         json(res, { reason: result.reason, error: "Ticket resource path or URL is invalid for this gateway." }, 400);
         return true;
       }
+      if (result.reason === "resource-blocked") {
+        json(res, { reason: result.reason, error: "Ticket resource was blocked by untrusted-content screening." }, 409);
+        return true;
+      }
       if (result.reason.startsWith("orchestration-")) {
         json(res, { reason: result.reason, error: result.reason }, 409);
         return true;
