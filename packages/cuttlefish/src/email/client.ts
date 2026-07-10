@@ -40,6 +40,10 @@ export class ImapEmailMailboxClient implements EmailMailboxClient {
       host: inbox.imapHost,
       port: inbox.imapPort ?? 993,
       secure: inbox.useTls !== false,
+      // Audit H7: bound the external mailbox boundary so a hung/slow IMAP server
+      // cannot wedge the ingest poll indefinitely.
+      greetingTimeout: 15_000,
+      socketTimeout: 60_000,
       auth: {
         user: inbox.username,
         pass: inbox.password,
@@ -82,6 +86,10 @@ export class ImapEmailMailboxClient implements EmailMailboxClient {
       host: inbox.imapHost,
       port: inbox.imapPort ?? 993,
       secure: inbox.useTls !== false,
+      // Audit H7: bound the external mailbox boundary so a hung/slow IMAP server
+      // cannot wedge the ingest poll indefinitely.
+      greetingTimeout: 15_000,
+      socketTimeout: 60_000,
       auth: { user: inbox.username, pass: inbox.password },
     });
     await client.connect();
