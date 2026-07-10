@@ -125,7 +125,14 @@ export default function OrchestrationPage() {
 
         <div className="flex-1 overflow-y-auto px-[var(--space-6)] py-[var(--space-4)] min-h-0">
           {(error || actionError) && (
-            <ErrorState className="mb-[var(--space-3)]" message={error ?? actionError ?? ""} onRetry={() => void refresh()} />
+            <ErrorState
+              className="mb-[var(--space-3)]"
+              message={error ?? actionError ?? ""}
+              onRetry={() => {
+                setActionError(null)
+                void refresh()
+              }}
+            />
           )}
           {data && (
             <div className="mb-[var(--space-3)] lg:hidden">

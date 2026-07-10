@@ -1,5 +1,5 @@
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { renderMarkdown } from "@/lib/sanitize";
 import { PageLayout } from "@/components/page-layout";
@@ -41,6 +41,10 @@ export default function SkillsPage() {
   const [skillContentError, setSkillContentError] = useState<string | null>(null);
   const [contentLoading, setContentLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  // Tracks which skill's content fetch is the most recently requested, so a
+  // slower earlier response can't overwrite a newer selection if a user
+  // clicks multiple skill cards in quick succession.
+  const activeSkillRef = useRef<string | null>(null);
 
   const loadSkills = useCallback(() => {
     setLoading(true);
@@ -48,7 +52,7 @@ export default function SkillsPage() {
     api
       .getSkills()
       .then((data) => setSkills(data as Skill[]))
-      .catch((err) => setError(err.message))
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load skills."))
       .finally(() => setLoading(false));
   }, []);
 
@@ -57,6 +61,7 @@ export default function SkillsPage() {
   }, [loadSkills]);
 
   function openSkill(skill: Skill) {
+    activeSkillRef.current = skill.name;
     setSelectedSkill(skill);
     setDialogOpen(true);
     setContentLoading(true);
@@ -65,6 +70,7 @@ export default function SkillsPage() {
     api
       .getSkill(skill.name)
       .then((data) => {
+        if (activeSkillRef.current !== skill.name) return;
         const d = data as Record<string, unknown>;
         setSkillContent(
           (d.content as string) ||
@@ -72,11 +78,17 @@ export default function SkillsPage() {
             JSON.stringify(d, null, 2),
         );
       })
-      .catch((err) => setSkillContentError(err instanceof Error ? err.message : "Failed to load skill content."))
-      .finally(() => setContentLoading(false));
+      .catch((err) => {
+        if (activeSkillRef.current !== skill.name) return;
+        setSkillContentError(err instanceof Error ? err.message : "Failed to load skill content.");
+      })
+      .finally(() => {
+        if (activeSkillRef.current === skill.name) setContentLoading(false);
+      });
   }
 
   function closeDialog() {
+    activeSkillRef.current = null;
     setDialogOpen(false);
     setSelectedSkill(null);
     setSkillContent(null);
