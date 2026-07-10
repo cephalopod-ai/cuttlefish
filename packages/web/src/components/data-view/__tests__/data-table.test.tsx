@@ -23,10 +23,19 @@ const ROWS: Row[] = [
 describe("DataTable", () => {
   it("renders every row and column", () => {
     render(<DataTable columns={COLUMNS} rows={ROWS} getRowKey={(r) => r.id} />)
-    expect(screen.getByText("Alpha")).toBeTruthy()
-    expect(screen.getByText("Bravo")).toBeTruthy()
-    expect(screen.getByText("Charlie")).toBeTruthy()
-    expect(screen.getByRole("columnheader", { name: /Name/ })).toBeTruthy()
+    const table = within(screen.getByRole("table"))
+    expect(table.getByText("Alpha")).toBeTruthy()
+    expect(table.getByText("Bravo")).toBeTruthy()
+    expect(table.getByText("Charlie")).toBeTruthy()
+    expect(table.getByRole("columnheader", { name: /Name/ })).toBeTruthy()
+  })
+
+  it("also renders every row as a mobile card, mirroring the table", () => {
+    render(<DataTable columns={COLUMNS} rows={ROWS} getRowKey={(r) => r.id} />)
+    // The card list is the second `role="row"` group in the DOM (CSS, not
+    // jsdom, decides which is visible at a given viewport width).
+    const rows = screen.getAllByText("Alpha")
+    expect(rows.length).toBe(2)
   })
 
   it("renders the empty state instead of a table when there are no rows", () => {
@@ -97,7 +106,7 @@ describe("DataTable", () => {
   it("calls onRowClick with the clicked row", () => {
     const onRowClick = vi.fn()
     render(<DataTable columns={COLUMNS} rows={ROWS} getRowKey={(r) => r.id} onRowClick={onRowClick} />)
-    const row = screen.getByText("Alpha").closest('[role="row"]')
+    const row = within(screen.getByRole("table")).getByText("Alpha").closest('[role="row"]')
     expect(row).toBeTruthy()
     fireEvent.click(row!)
     expect(onRowClick).toHaveBeenCalledWith(ROWS[1])
@@ -107,6 +116,27 @@ describe("DataTable", () => {
     const manyRows: Row[] = Array.from({ length: 200 }, (_, i) => ({ id: `r${i}`, name: `Row ${i}`, score: i }))
     render(<DataTable columns={COLUMNS} rows={manyRows} getRowKey={(r) => r.id} virtualizeThreshold={50} />)
     expect(screen.getByRole("table")).toBeTruthy()
+  })
+
+  it("skips the mobile card list once virtualized (row height is table-only)", () => {
+    const manyRows: Row[] = Array.from({ length: 200 }, (_, i) => ({ id: `r${i}`, name: `Row ${i}`, score: i }))
+    const { container } = render(
+      <DataTable columns={COLUMNS} rows={manyRows} getRowKey={(r) => r.id} virtualizeThreshold={50} />,
+    )
+    // Only one top-level DataTable container (the table) — the mobile card
+    // list is skipped entirely once virtualized, not just visually hidden.
+    expect(container.children.length).toBe(1)
+    expect(container.children[0].getAttribute("role")).toBe("table")
+  })
+
+  it("mobile card click fires onRowClick, same as the table row", () => {
+    const onRowClick = vi.fn()
+    render(<DataTable columns={COLUMNS} rows={ROWS} getRowKey={(r) => r.id} onRowClick={onRowClick} />)
+    const cards = screen.getAllByText("Alpha")
+    const card = cards[1].closest('[role="row"]')
+    expect(card).toBeTruthy()
+    fireEvent.click(card!)
+    expect(onRowClick).toHaveBeenCalledWith(ROWS[1])
   })
 
   it("sorts nullish sortValue results to the end regardless of direction", () => {
