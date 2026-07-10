@@ -178,14 +178,25 @@ function heuristicClassification(text: string, source: UntrustedContentSource): 
   const exampleContext = containsExampleContext(text);
   const isSkill = isSkillContentSource(source);
   const spans = isSkill ? [] : heuristicSpans(text);
-  // Audit D-F2/G-03: an "example"/"for example" phrase must NOT downgrade a
-  // destructive/exfiltrative verdict on untrusted (connector/email/attachment)
-  // content out of quarantine. Only an operator-provisioned skill file (trusted
-  // by provenance, not by name) may be treated as instructional example content.
+  // Audit D-F2/G-03: an "example"/"for example" phrase must NOT silently downgrade
+  // destructive/exfiltrative content into the allowed "sanitize" path on untrusted
+  // (connector/email/attachment) sources — that was a trivial, LLM-free bypass.
+  //   - untrusted + destructive + example framing  → unclear_requires_human
+  //     (CHECKPOINT: a human decides, so a genuine "article quoting an attack" is
+  //      not silently blocked, and a real exfil dressed up as an "example" is not
+  //      silently delivered).
+  //   - untrusted + destructive + no framing       → destructive_or_exfiltrative
+  //     (QUARANTINE).
+  //   - operator skill file (trusted by provenance) may treat example framing as
+  //     instructional content.
   const verdict: ContentScreeningVerdict = destructive
-    ? isSkill && exampleContext
-      ? "instructional_but_in_scope"
-      : "destructive_or_exfiltrative"
+    ? isSkill
+      ? exampleContext
+        ? "instructional_but_in_scope"
+        : "destructive_or_exfiltrative"
+      : exampleContext
+        ? "unclear_requires_human"
+        : "destructive_or_exfiltrative"
     : isSkill
       ? spans.length > 0
         ? "instructional_but_in_scope"
@@ -201,18 +212,26 @@ function heuristicClassification(text: string, source: UntrustedContentSource): 
     summary: destructive
       ? isSkill && exampleContext
         ? "Heuristic screening found destructive-looking text in a trusted skill file, labeled as quoted/example content."
-        : "Heuristic screening found exfiltration/destructive instruction patterns in untrusted content."
+        : !isSkill && exampleContext
+          ? "Heuristic screening found destructive-looking text with example/quoted framing in untrusted content; routed to human review rather than auto-allowed."
+          : "Heuristic screening found exfiltration/destructive instruction patterns in untrusted content."
       : isSkill
         ? "No destructive prompt-injection indicators were found in this skill file."
         : spans.length > 0
           ? "Heuristic screening found instruction-shaped text in untrusted content."
           : "No prompt-injection indicators were found by heuristic screening.",
     suspiciousSpans: spans,
-    // Deliver span-stripped text whenever we are not fully trusting the source.
-    // Audit D-F2: previously `suspicious_non_destructive` and example-context
-    // paths passed the RAW text through, defeating the sanitize action.
+    // Non-destructive suspicious/instructional content is delivered as framed
+    // evidence (the screenUntrustedText wrapper marks it non-executable), so its
+    // text is preserved here — that is intentional and unchanged. The D-F2 fix
+    // lives in the `verdict` above: a destructive/exfiltration match on untrusted
+    // content is no longer downgraded, so it becomes quarantine (blocked) and its
+    // text never reaches the worker at all.
     sanitizedText:
-      isSkill || verdict === "benign"
+      isSkill ||
+      verdict === "benign" ||
+      verdict === "suspicious_non_destructive" ||
+      verdict === "instructional_but_in_scope"
         ? clampText(text, MAX_PROMPT_TEXT_CHARS)
         : clampText(sanitizeText(text, spans), MAX_PROMPT_TEXT_CHARS),
     occurredAt: new Date().toISOString(),
@@ -352,6 +371,7 @@ export async function screenUntrustedText(
   const destructiveFloor =
     input.source !== "skill_file" &&
     containsDestructivePattern(input.text) &&
+    !containsExampleContext(input.text) && // example-framed destructive is routed to checkpoint, not hard-quarantined
     screening.action !== "quarantine" &&
     screening.action !== "checkpoint";
   if (destructiveFloor) {
