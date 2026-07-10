@@ -18,6 +18,8 @@ import {
   resolveIncomingRunAttachments,
   setRunAttachmentsOnTransportMeta,
 } from "./run-attachments.js";
+import { screenAttachmentContent } from "./content-screening.js";
+import type { RunAttachment } from "../shared/types.js";
 
 export type DispatchTicketFailureReason =
   | "no-assignee"
@@ -29,6 +31,7 @@ export type DispatchTicketFailureReason =
   | "already-running"
   | "manual-only"
   | "invalid-resource"
+  | "resource-blocked"
   | "orchestration-unavailable"
   | "orchestration-worker-unmapped"
   | "orchestration-busy";
@@ -110,9 +113,22 @@ async function resolveTicketResources(ticket: BoardTicket, context: ApiContext) 
       intendedUse: "Ticket-linked URL context",
     });
   }
-  if (specs.length === 0) return { attachments: [], promptBlock: null, engineAttachments: [] };
+  if (specs.length === 0) return { attachments: [], promptBlock: null, engineAttachments: [], blocked: false };
   const attachments = await resolveIncomingRunAttachments(specs, context);
-  return buildResolvedRunAttachments(attachments);
+  // Audit D-F1: a board ticket can originate from a connector, so its linked
+  // resource content is untrusted and MUST be content-screened before it reaches
+  // the engine — matching the /api/sessions path (session-write.ts). A session
+  // does not exist yet at resolve time, so screen per-attachment and fail closed
+  // (reject the dispatch) if any resource is quarantine/checkpoint, rather than
+  // silently handing raw destructive/exfiltration content to the agent.
+  const screened: RunAttachment[] = [];
+  let blocked = false;
+  for (const attachment of attachments) {
+    const outcome = await screenAttachmentContent(attachment, context, "Ticket-linked resource context");
+    screened.push(outcome.attachment);
+    if (outcome.blocked) blocked = true;
+  }
+  return { ...buildResolvedRunAttachments(screened), blocked };
 }
 
 function priorityForTicket(ticket: BoardTicket): TaskPriority {
@@ -349,6 +365,12 @@ export async function dispatchTicket(
     } catch (err) {
       logger.info(`[ticket-dispatch] skipped ${department}/${ticketId}: invalid-resource`);
       return { ok: false, reason: "invalid-resource" };
+    }
+    if (resolvedResources.blocked) {
+      // Audit D-F1: fail closed — a ticket resource screened as destructive/
+      // exfiltrative is not handed to the engine.
+      logger.warn(`[ticket-dispatch] blocked ${department}/${ticketId}: ticket resource failed content screening`);
+      return { ok: false, reason: "resource-blocked" };
     }
     const dispatchTransportMeta = {
       ...(resolvedResources.attachments.length > 0

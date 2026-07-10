@@ -13,11 +13,20 @@ function nonEmpty(value: string | null | undefined, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
-export function buildEmailIngestPrompt(message: EmailMessageRecord): string {
+/**
+ * @param screenedBody When provided (audit G-04), the already content-screened
+ *   worker text is used as the email body instead of the raw `message.textBody`,
+ *   so span-sanitization from `screenUntrustedText` is not discarded on the email
+ *   ingest path (the connector path already dispatches `screened.workerText`).
+ */
+export function buildEmailIngestPrompt(message: EmailMessageRecord, screenedBody?: string): string {
   const subject = nonEmpty(message.subject, "(no subject)");
   const from = nonEmpty(message.fromAddress, "unknown sender");
   const receivedAt = nonEmpty(message.receivedAt, "unknown time");
-  const rawBody = message.textBody.trim() || "[No plain-text body available. Review the attached artifacts and HTML body if needed.]";
+  const rawBody =
+    typeof screenedBody === "string" && screenedBody.trim()
+      ? screenedBody
+      : message.textBody.trim() || "[No plain-text body available. Review the attached artifacts and HTML body if needed.]";
   const body = wrapUntrustedMessage(rawBody, { source: "email", user: from });
   const attachmentLines = message.attachments.length > 0
     ? message.attachments.map((attachment) => `- ${attachment.filename} (${attachment.contentType}, ${attachment.size} bytes)`).join("\n")
