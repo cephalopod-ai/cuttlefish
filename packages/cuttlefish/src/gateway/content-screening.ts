@@ -104,18 +104,29 @@ function isSkillContentSource(source: UntrustedContentSource): boolean {
  * lenient skill-file screening path. Only files that physically resolve inside
  * an operator-controlled skills root are trusted as skill content.
  */
-function isUnderOperatorSkillsRoot(resolvedAbsPath: string): boolean {
-  const roots = [SKILLS_DIR, CLAUDE_SKILLS_DIR, AGENTS_SKILLS_DIR].filter(Boolean);
-  let real = resolvedAbsPath;
+function canonicalizePathForContainment(candidate: string): string {
+  const absolute = path.resolve(candidate);
   try {
-    real = fs.realpathSync(resolvedAbsPath);
+    return fs.realpathSync(absolute);
   } catch {
-    // Unresolvable path: fall back to the resolved input; the prefix check below still applies.
+    // A missing path cannot escape through a symlink, so the normalized absolute
+    // path is the safest available comparison value.
+    return absolute;
   }
-  return roots.some((root) => {
-    const rootWithSep = root.endsWith(path.sep) ? root : root + path.sep;
-    return real === root || real.startsWith(rootWithSep);
-  });
+}
+
+function isPathInsideRoot(candidate: string, root: string): boolean {
+  const relative = path.relative(root, candidate);
+  return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative));
+}
+
+function isUnderOperatorSkillsRoot(resolvedAbsPath: string): boolean {
+  const candidate = canonicalizePathForContainment(resolvedAbsPath);
+  return [SKILLS_DIR, CLAUDE_SKILLS_DIR, AGENTS_SKILLS_DIR]
+    .filter(Boolean)
+    // Canonicalize both sides. On macOS, for example, a candidate under /tmp
+    // realpaths to /private/tmp while the configured root remains /tmp.
+    .some((root) => isPathInsideRoot(candidate, canonicalizePathForContainment(root)));
 }
 
 function inferContentSourceForAttachment(attachment: RunAttachment): UntrustedContentSource {

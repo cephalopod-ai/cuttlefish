@@ -23,12 +23,10 @@
  * to board-sync.ts (which only ticket-syncs employee-bound sessions), so a review
  * pass never appears as a phantom new card on the kanban board.
  *
- * Known gap: follow-up messages on an existing session
- * (POST /api/sessions/:id/message), queue-replay after a gateway restart
- * (resumePendingWebQueueItems / dispatchPendingQueueItem), and notification
- * dispatch (dispatchSessionNotification) still call dispatchWebSessionRun
- * directly and bypass mid_pair. Only the two *new-dispatch* entry points (chat's
- * first message, board dispatch) are wired through this orchestrator.
+ * Follow-up messages, queue replay after a gateway restart, and notification
+ * dispatch resolve the session employee and use this wrapper too. Role-child
+ * sessions deliberately invoke the base dispatcher because their parentSessionId
+ * prevents recursive execution profiles.
  */
 import { randomUUID } from "node:crypto";
 import type { dispatchWebSessionRun as DispatchWebSessionRunFn } from "./api/session-dispatch.js";

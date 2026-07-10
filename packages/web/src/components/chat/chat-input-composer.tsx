@@ -151,7 +151,7 @@ export function ChatInputComposer({
                 : 'bg-[var(--fill-tertiary)] text-[var(--text-quaternary)] cursor-default'
           }`}
           // Reef's --accent-bg is a gradient, so the active-send fill + glow are set
-          // inline (a Tailwind bg-[var()] arbitrary class can't render a gradient value).
+          // inline (an arbitrary Tailwind background utility cannot render a gradient value).
           style={!showStop && hasContent ? { background: 'var(--accent-bg)', boxShadow: 'var(--accent-glow)' } : undefined}
         >
           <span className={`absolute inset-0 flex items-center justify-center transition-all duration-200 ease-in-out ${showStop ? 'opacity-0 scale-50' : 'opacity-100 scale-100'}`}>
