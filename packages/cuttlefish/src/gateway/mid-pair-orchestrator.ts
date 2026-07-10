@@ -248,11 +248,27 @@ async function runReviewLoop(params: ReviewLoopParams): Promise<void> {
       updateExecutionState(topSession.id, context, { executionFallbackActive: true });
     }
 
-    if (verdict.verdict === "approved") {
+    // Audit A-F3: the gate is the operator's trust anchor, so it must be arithmetic,
+    // not a transcription of the reviewer's self-labeled verdict. An "approved"
+    // verdict that still lists unaddressed requiredChanges is contradictory — demote
+    // it to changes_requested so the implementer revises instead of shipping the
+    // required changes unaddressed as a green "done".
+    const effectiveVerdict =
+      verdict.verdict === "approved" && (verdict.requiredChanges?.length ?? 0) > 0
+        ? "changes_requested"
+        : verdict.verdict;
+    if (effectiveVerdict !== verdict.verdict) {
+      logger.info(
+        `[mid_pair] reviewer returned "approved" with ${verdict.requiredChanges!.length} required change(s); ` +
+        `treating as changes_requested (session ${topSession.id})`,
+      );
+    }
+
+    if (effectiveVerdict === "approved") {
       finalizeExecutionState(topSession.id, context, { executionPhase: "done", executionPass: pass, executionChildCount: childCount });
       return;
     }
-    if (verdict.verdict === "blocked") {
+    if (effectiveVerdict === "blocked") {
       finalizeExecutionState(topSession.id, context, {
         executionPhase: "failed",
         executionPass: pass,
@@ -261,7 +277,7 @@ async function runReviewLoop(params: ReviewLoopParams): Promise<void> {
       });
       return;
     }
-    if (verdict.verdict === "needs_human_review") {
+    if (effectiveVerdict === "needs_human_review") {
       finalizeExecutionState(topSession.id, context, {
         executionPhase: "failed",
         executionDegraded: true,
@@ -272,7 +288,7 @@ async function runReviewLoop(params: ReviewLoopParams): Promise<void> {
       return;
     }
 
-    // verdict.verdict === "changes_requested"
+    // effectiveVerdict === "changes_requested" (incl. an "approved" verdict that still had requiredChanges)
     if (pass >= maxPasses) {
       finalizeExecutionState(topSession.id, context, {
         executionPhase: "degraded",

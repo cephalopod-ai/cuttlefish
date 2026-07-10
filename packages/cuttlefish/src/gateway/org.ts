@@ -31,6 +31,7 @@ import { logger } from "../shared/logger.js";
 import { getModelRegistry, effortLevelsForModel } from "../shared/models.js";
 import { resolveModelAlias } from "../sessions/session-patch.js";
 import { findDisallowedCliFlag } from "../shared/cli-flag-policy.js";
+import { getAllParents } from "./org-hierarchy.js";
 
 /**
  * Reserved `org/` subdirectories that hold HR / Org-Steward artifacts (change
@@ -1172,6 +1173,15 @@ export function createEmployeeYaml(employee: EmployeeCreate): boolean {
 export function deleteEmployeeYaml(name: string): boolean {
   const filePath = findEmployeeYamlPath(name);
   if (!filePath) return false;
+  // Audit §7.2: defense-in-depth — the reports-guard previously lived ONLY in the
+  // HTTP delete route, so a non-route caller (CLI, a direct util call) could delete
+  // a manager and orphan their reports. Refuse here too if anyone still reports to
+  // this employee (primary or matrix reportsTo link).
+  const dependents = [...scanOrg().values()].filter((emp) => getAllParents(emp.reportsTo).includes(name));
+  if (dependents.length > 0) {
+    logger.warn(`Refusing to delete "${name}" via deleteEmployeeYaml: ${dependents.length} employee(s) still report to them`);
+    return false;
+  }
   try {
     fs.unlinkSync(filePath);
     return true;
