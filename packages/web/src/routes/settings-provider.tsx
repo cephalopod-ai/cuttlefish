@@ -2,8 +2,11 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import {
   type CuttlefishSettings,
+  type NotificationEventClass,
+  type NotificationChannel,
   DEFAULTS,
   DEFAULT_PORTAL_ICON,
+  DEFAULT_NOTIFICATION_PREFERENCES,
   loadSettings,
   saveSettings,
   hexToAccentFill,
@@ -23,6 +26,8 @@ interface SettingsContextValue {
   setOperatorName: (name: string | null) => void
   setLanguage: (language: string) => void
   setNavOrder: (order: string[]) => void
+  setAttentionAwareLanding: (enabled: boolean) => void
+  setNotificationPreference: (eventClass: NotificationEventClass, channel: NotificationChannel, enabled: boolean) => void
   resetAll: () => void
 }
 
@@ -38,6 +43,8 @@ const SettingsContext = createContext<SettingsContextValue>({
   setOperatorName: () => {},
   setLanguage: () => {},
   setNavOrder: () => {},
+  setAttentionAwareLanding: () => {},
+  setNotificationPreference: () => {},
   resetAll: () => {},
 })
 
@@ -162,6 +169,26 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     [update],
   )
 
+  const setAttentionAwareLanding = useCallback(
+    (enabled: boolean) => {
+      update((prev) => ({ ...prev, attentionAwareLanding: enabled }))
+    },
+    [update],
+  )
+
+  const setNotificationPreference = useCallback(
+    (eventClass: NotificationEventClass, channel: NotificationChannel, enabled: boolean) => {
+      update((prev) => ({
+        ...prev,
+        notificationPreferences: {
+          ...prev.notificationPreferences,
+          [eventClass]: { ...prev.notificationPreferences[eventClass], [channel]: enabled },
+        },
+      }))
+    },
+    [update],
+  )
+
   const resetAll = useCallback(() => {
     update(() => ({
       accentColor: null,
@@ -175,6 +202,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       language: "English",
       employeeOverrides: {},
       navOrder: [],
+      attentionAwareLanding: false,
+      notificationPreferences: DEFAULT_NOTIFICATION_PREFERENCES,
     }))
   }, [update])
 
@@ -192,6 +221,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         setOperatorName,
         setLanguage,
         setNavOrder,
+        setAttentionAwareLanding,
+        setNotificationPreference,
         resetAll,
       }}
     >

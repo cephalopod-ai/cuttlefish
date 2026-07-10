@@ -330,6 +330,7 @@ export function NavRibbon({
   const { data: pendingApprovals = [] } = useApprovals("pending")
   const { theme, setTheme } = useTheme()
   const { settings, setNavOrder } = useSettings()
+  const approvalsBadgeEnabled = settings.notificationPreferences.approvals.badge
   const portalName = settings.portalName ?? "Cuttlefish"
   const cycleTheme = () => {
     const ids = THEMES.map((t) => t.id)
@@ -463,7 +464,7 @@ export function NavRibbon({
               label={item.label}
               href={item.href}
               isActive={isNavItemActive(item.href, pathname)}
-              badgeCount={item.href === "/approvals" ? pendingApprovals.length : undefined}
+              badgeCount={item.href === "/approvals" && approvalsBadgeEnabled ? pendingApprovals.length : undefined}
               onClick={item.href === "/" ? onChatIconClick : undefined}
               draggable
               dragging={draggingHref === item.href}

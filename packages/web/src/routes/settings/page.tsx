@@ -14,6 +14,7 @@ import {
   AppearanceSection,
   BrandingSection,
   CooEmojiSection,
+  NotificationsSection,
   PairingSection,
   ResetSection,
 } from "./settings-page-sections"
@@ -73,6 +74,8 @@ export default function SettingsPage() {
     setPortalEmoji,
     setLanguage,
     setNavOrder,
+    setAttentionAwareLanding,
+    setNotificationPreference,
     resetAll,
   } = useSettings()
   const { theme, setTheme } = useTheme()
@@ -259,6 +262,12 @@ export default function SettingsPage() {
             setPortalSubtitle={setPortalSubtitle}
             setSubtitleValue={setSubtitleValue}
             subtitleValue={subtitleValue}
+          />
+          <NotificationsSection
+            attentionAwareLanding={settings.attentionAwareLanding}
+            setAttentionAwareLanding={setAttentionAwareLanding}
+            notificationPreferences={settings.notificationPreferences}
+            setNotificationPreference={setNotificationPreference}
           />
           <PairingSection
             authState={auth.authState}

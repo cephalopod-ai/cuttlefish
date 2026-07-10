@@ -88,6 +88,22 @@ describe("NavRibbon", () => {
     expect(screen.getByLabelText("3 approvals waiting")).toBeTruthy()
   })
 
+  it("hides the approvals badge when the approvals-badge notification preference is off", () => {
+    useApprovalsMock.mockReturnValue({ data: [{ id: "a1" }] })
+    localStorage.setItem(
+      "cuttlefish-settings",
+      JSON.stringify({ notificationPreferences: { approvals: { badge: false, toast: false } } }),
+    )
+    render(
+      <SettingsProvider>
+        <MemoryRouter initialEntries={["/org"]}>
+          <NavRibbon listOpen />
+        </MemoryRouter>
+      </SettingsProvider>,
+    )
+    expect(screen.queryByLabelText(/approvals? waiting/i)).toBeNull()
+  })
+
   it("keeps the nav brand icon fixed even when the COO icon setting is an avatar id", () => {
     localStorage.setItem("cuttlefish-settings", JSON.stringify({ portalEmoji: "aquatic:octopus" }))
     const { container } = render(

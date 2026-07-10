@@ -3,9 +3,9 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ClientProviders } from './routes/client-providers'
 import { lazyRoute } from './lib/lazy-route'
+import LandingRoute from './routes/landing-route'
 import './routes/globals.css'
 
-const ChatPage = lazyRoute(() => import('./routes/chat/page'), 'chat')
 const CommandPage = lazyRoute(() => import('./routes/command/page'), 'command')
 const CronPage = lazyRoute(() => import('./routes/cron/page'), 'cron')
 const KanbanPage = lazyRoute(() => import('./routes/kanban/page'), 'kanban')
@@ -63,7 +63,7 @@ function App() {
         <ClientProviders>
           <Suspense fallback={<RouteLoading />}>
             <Routes>
-              <Route path="/" element={<ChatPage />} />
+              <Route path="/" element={<LandingRoute />} />
               <Route path="/chat" element={<Navigate to="/" replace />} />
               <Route path="/command" element={<CommandPage />} />
               <Route path="/cron" element={<CronPage />} />

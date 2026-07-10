@@ -8,8 +8,8 @@ import type { ThemeId } from "@/lib/themes"
 import { api } from "@/lib/api"
 import type { AuthState, PairedDevice, PairingCode } from "@/lib/auth"
 import { ACCENT_PRESETS } from "./settings-constants"
-import { Section } from "./settings-fields"
-import { DEFAULT_PORTAL_ICON } from "@/lib/settings"
+import { Section, FieldRow, FieldHint, ToggleSwitch } from "./settings-fields"
+import { DEFAULT_PORTAL_ICON, type NotificationEventClass, type NotificationChannel, type NotificationPreferences } from "@/lib/settings"
 import { EmployeeAvatar } from "@/components/ui/employee-avatar"
 import { iconPatchFromPickerValue } from "@/lib/employee-icon"
 
@@ -334,6 +334,77 @@ export function BrandingSection({
           </select>
         </div>
       </div>
+    </Section>
+  )
+}
+
+const NOTIFICATION_EVENT_LABELS: Record<NotificationEventClass, string> = {
+  approvals: "Needs approval",
+  ticketsBlocked: "Blocked tickets",
+  cronFailures: "Cron failures",
+  limitsAtRisk: "Limits at risk",
+}
+
+interface NotificationsSectionProps {
+  attentionAwareLanding: boolean
+  setAttentionAwareLanding: (enabled: boolean) => void
+  notificationPreferences: NotificationPreferences
+  setNotificationPreference: (eventClass: NotificationEventClass, channel: NotificationChannel, enabled: boolean) => void
+}
+
+/** Only the "Needs approval" badge toggle is wired to a live UI effect (the
+ *  nav-rail approvals badge). The other rows and the toast column are
+ *  scaffolded preferences with no emitting event yet — see the Phase 5
+ *  ledger entry. */
+export function NotificationsSection({
+  attentionAwareLanding,
+  setAttentionAwareLanding,
+  notificationPreferences,
+  setNotificationPreference,
+}: NotificationsSectionProps) {
+  return (
+    <Section title="Notifications">
+      <FieldRow label="Land on Command Center when action is needed">
+        <ToggleSwitch checked={attentionAwareLanding} onChange={setAttentionAwareLanding} />
+      </FieldRow>
+      <FieldHint>
+        When on, opening the app takes you straight to Command Center if approvals, blocked
+        tickets, cron failures, or limits need attention. Otherwise you land on Chat.
+      </FieldHint>
+
+      <div className="mt-[var(--space-4)] flex flex-col gap-[var(--space-2)]">
+        <div className="grid grid-cols-[1fr_60px_60px] items-center gap-[var(--space-2)] text-[length:var(--text-caption1)] font-[var(--weight-semibold)] text-[var(--text-tertiary)] uppercase tracking-[var(--tracking-wide)]">
+          <span>Event</span>
+          <span className="text-center">Badge</span>
+          <span className="text-center">Toast</span>
+        </div>
+        {(Object.keys(NOTIFICATION_EVENT_LABELS) as NotificationEventClass[]).map((eventClass) => (
+          <div
+            key={eventClass}
+            className="grid grid-cols-[1fr_60px_60px] items-center gap-[var(--space-2)] py-[var(--space-1)]"
+          >
+            <span className="text-[length:var(--text-subheadline)] text-[var(--text-secondary)]">
+              {NOTIFICATION_EVENT_LABELS[eventClass]}
+            </span>
+            <span className="flex justify-center">
+              <ToggleSwitch
+                checked={notificationPreferences[eventClass].badge}
+                onChange={(v) => setNotificationPreference(eventClass, "badge", v)}
+              />
+            </span>
+            <span className="flex justify-center">
+              <ToggleSwitch
+                checked={notificationPreferences[eventClass].toast}
+                onChange={(v) => setNotificationPreference(eventClass, "toast", v)}
+              />
+            </span>
+          </div>
+        ))}
+      </div>
+      <FieldHint>
+        Only the approvals badge is wired to a live indicator today (the nav-rail badge). The
+        other toggles are saved but not yet connected to a notification surface.
+      </FieldHint>
     </Section>
   )
 }

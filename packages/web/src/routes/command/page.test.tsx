@@ -39,6 +39,28 @@ vi.mock('@/hooks/use-command-center', () => ({
   useCommandCenter: () => commandCenterState,
 }))
 
+const triageState = vi.hoisted(() => ({
+  approvals: [] as unknown[],
+  cronJobs: [] as { scheduleValid?: boolean }[],
+  limits: { generatedAt: '', default: '', engines: {} } as {
+    generatedAt: string
+    default: string
+    engines: Record<string, { windows?: { usedPercent?: number }[] }>
+  },
+}))
+
+vi.mock('@/hooks/use-approvals', () => ({
+  useApprovals: () => ({ data: triageState.approvals, isLoading: false }),
+}))
+
+vi.mock('@/hooks/use-cron', () => ({
+  useCronJobs: () => ({ data: triageState.cronJobs, isLoading: false }),
+}))
+
+vi.mock('@/hooks/use-engine-limits', () => ({
+  useEngineLimits: () => ({ data: triageState.limits, isLoading: false }),
+}))
+
 import CommandPage from './page'
 
 describe('CommandPage', () => {
@@ -111,6 +133,36 @@ describe('CommandPage', () => {
       expect(container.innerHTML).not.toContain('NaN')
     } finally {
       commandCenterState.data = prevData
+    }
+  })
+
+  it('renders the triage strip with attention counts from each source', () => {
+    const prevApprovals = triageState.approvals
+    const prevCronJobs = triageState.cronJobs
+    const prevLimits = triageState.limits
+    triageState.approvals = [{ id: 'a1' }, { id: 'a2' }]
+    triageState.cronJobs = [{ scheduleValid: false }, { scheduleValid: true }]
+    triageState.limits = {
+      generatedAt: '',
+      default: '',
+      engines: { claude: { windows: [{ usedPercent: 92 }] } },
+    }
+    try {
+      render(
+        <MemoryRouter>
+          <CommandPage />
+        </MemoryRouter>,
+      )
+      expect(screen.getByText('Needs approval')).toBeTruthy()
+      expect(screen.getByRole('link', { name: /Needs approval/i }).getAttribute('href')).toBe('/approvals')
+      expect(screen.getByText('Cron failures')).toBeTruthy()
+      expect(screen.getByRole('link', { name: /Cron failures/i }).getAttribute('href')).toBe('/cron')
+      expect(screen.getByText('Limits at risk')).toBeTruthy()
+      expect(screen.getByRole('link', { name: /Limits at risk/i }).getAttribute('href')).toBe('/limits')
+    } finally {
+      triageState.approvals = prevApprovals
+      triageState.cronJobs = prevCronJobs
+      triageState.limits = prevLimits
     }
   })
 })
