@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import type { EmailAttachmentRecord, EmailConfig, EmailInboxConfig, EmailInboxHealth, EmailMessageRecord } from "../shared/types.js";
+import type { EmailAttachmentRecord, EmailConfig, EmailInboxHealth, EmailMessageRecord, PublicEmailInboxConfig } from "../shared/types.js";
 import { FILES_DIR } from "../shared/paths.js";
 import { logger } from "../shared/logger.js";
 import { sanitizeUploadFilename } from "../gateway/files/storage.js";
@@ -29,12 +29,25 @@ export function emailSenderAllowed(allowFrom: string[] | undefined, fromAddress:
   });
 }
 
-function failedEmailAuth(authResults: string | null): string | null {
-  if (!authResults) return null;
+/**
+ * Whether a message carries trustworthy, aligned authentication that may
+ * auto-trigger an agent run (AR-02). Fail-closed: auto-ingest of untrusted
+ * external mail requires the receiving MTA's `Authentication-Results` header to
+ * report an explicit DMARC, DKIM, or SPF *pass*. Everything else is untrusted and
+ * leaves the message cached for manual review rather than auto-run:
+ *   - a missing header (spoofable `From` with no verification at all);
+ *   - a duplicate / array-valued header (dropped to `null` upstream in
+ *     `normalize.ts`'s `headerMap`, so an injected second header cannot forge a
+ *     pass — it arrives here as `null`);
+ *   - `none` / `neutral` / `softfail` / `temperror` / `permerror` results;
+ *   - an outright `fail` on any mechanism, even if another reports pass (e.g. a
+ *     forwarded/spoofed message with `spf=pass` but `dkim=fail`).
+ */
+export function emailAuthTrusted(authResults: string | null): boolean {
+  if (!authResults) return false;
   const normalized = authResults.toLowerCase();
-  if (normalized.includes("spf=fail")) return "SPF";
-  if (normalized.includes("dkim=fail")) return "DKIM";
-  return null;
+  if (/\b(?:dmarc|dkim|spf)=(?:fail|softfail|temperror|permerror)\b/.test(normalized)) return false;
+  return /\b(?:dmarc|dkim|spf)=pass\b/.test(normalized);
 }
 import type { EmailMailboxClient } from "./client.js";
 import { normalizeEmail, MAX_RAW_MESSAGE_BYTES } from "./normalize.js";
@@ -119,9 +132,13 @@ export class EmailService {
     this.timer = null;
   }
 
-  listInboxes(): Array<EmailInboxConfig & { health?: EmailInboxHealth }> {
+  listInboxes(): Array<PublicEmailInboxConfig & { health?: EmailInboxHealth }> {
     const healthByInbox = new Map(listEmailInboxHealth().map((entry) => [entry.inboxId, entry]));
-    return (this.config.inboxes ?? []).map((inbox) => ({ ...inbox, health: healthByInbox.get(inbox.id) }));
+    // Strip the IMAP password before it can reach any API response (AR-10).
+    return (this.config.inboxes ?? []).map(({ password: _password, ...inbox }) => ({
+      ...inbox,
+      health: healthByInbox.get(inbox.id),
+    }));
   }
 
   listMessages(inboxId: string, limit = 20): EmailMessageRecord[] {
@@ -208,11 +225,14 @@ export class EmailService {
         if (inbox.autoIngest === true && (!inbox.allowFrom || inbox.allowFrom.length === 0)) {
           logger.warn(`[email] Inbox "${inbox.id}" has autoIngest enabled but no allowFrom — all mail cached, none auto-ingested`);
         }
-        const failedAuth = failedEmailAuth(persisted.authResults);
-        if (failedAuth) {
-          logger.warn(`[email] Skipping auto-ingest for inbox "${inbox.id}" because Authentication-Results reported ${failedAuth} failure`);
+        // Fail-closed authentication gate: an allowlisted sender is necessary but
+        // not sufficient — the message must also carry trustworthy aligned
+        // authentication, or a forged `From` could auto-start an agent (AR-02).
+        const authTrusted = emailAuthTrusted(persisted.authResults);
+        if (inbox.autoIngest === true && !alreadyHandled && senderAllowed && !authTrusted) {
+          logger.warn(`[email] Skipping auto-ingest for inbox "${inbox.id}" because Authentication-Results did not report a trusted SPF/DKIM/DMARC pass`);
         }
-        if (inbox.autoIngest === true && !alreadyHandled && senderAllowed && !failedAuth && this.onAutoIngest) {
+        if (inbox.autoIngest === true && !alreadyHandled && senderAllowed && authTrusted && this.onAutoIngest) {
           // Durable claim written BEFORE dispatch so a replay after a mid-dispatch
           // crash sees `dispatching` and does not re-run the agent.
           persistEmailMessageWithState(
