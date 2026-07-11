@@ -73,11 +73,14 @@ export function serveStatic(
 
   const root = path.resolve(webDir);
   const resolved = path.resolve(filePath);
-  // Containment must respect a path-separator boundary: a bare `startsWith(root)`
-  // also accepts a sibling directory that shares the prefix (webDir `/tmp/web`
-  // would match `/tmp/web_evil/secret`). Require an exact match or a `root + sep`
-  // prefix so sibling-prefix traversal is rejected (AR-05).
-  if (resolved !== root && !resolved.startsWith(root + path.sep)) {
+  // Containment via path.relative so it respects a real path boundary: a sibling
+  // directory that merely shares the prefix (webDir `/tmp/web` vs
+  // `/tmp/web_evil/secret`) yields a `..`-prefixed relative path and is rejected
+  // (AR-05). Using path.relative also stays correct when `root` is a filesystem
+  // root (`/`, `C:\`) — where a `root + sep` prefix check would double the
+  // separator and wrongly 403 every file.
+  const rel = path.relative(root, resolved);
+  if (rel !== "" && (rel === ".." || rel.startsWith(".." + path.sep) || path.isAbsolute(rel))) {
     res.writeHead(403);
     res.end("Forbidden");
     return true;

@@ -65,7 +65,21 @@ function resolveImageSrc(src: string, w = 400, h = 240): string {
  * paths are not remote and load normally. (AR-11)
  */
 function isRemoteImageUrl(src: string): boolean {
-  return /^(https?:)?\/\//i.test(src.trim())
+  const trimmed = src.trim()
+  // Protocol-relative (`//host/…`) is always remote.
+  if (/^\/\//.test(trimmed)) return true
+  try {
+    // Parse as an absolute URL. A relative/same-origin path throws (no base) and
+    // is treated as non-remote; an absolute URL is remote only if its origin
+    // differs from the app's. Using the URL parser (not a regex) closes bypasses
+    // like `https:evil.com` that a scheme regex would miss, and keeps `data:`
+    // (inline, no network) non-remote. (AR-11)
+    const url = new URL(trimmed)
+    if (url.protocol === "data:") return false
+    return url.origin !== window.location.origin
+  } catch {
+    return false
+  }
 }
 
 /**

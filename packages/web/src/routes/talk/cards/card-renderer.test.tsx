@@ -19,6 +19,17 @@ describe("CardRenderer image cards — remote auto-fetch gating (AR-11)", () => 
     expect(img?.getAttribute("src")).toBe("https://attacker.example/beacon.png")
   })
 
+  it("gates scheme-only and protocol-relative bypass forms (AR-11)", () => {
+    for (const src of ["//evil.example/x.png", "https:evil.example/x.png"]) {
+      const { unmount } = render(
+        <CardRenderer card={{ id: "c1", type: "image", src, alt: "x" }} />,
+      )
+      expect(document.querySelector("img")).toBeNull()
+      expect(screen.getByRole("button", { name: /load image/i })).toBeTruthy()
+      unmount()
+    }
+  })
+
   it("loads relative/same-origin images immediately (not remote)", () => {
     const card: ImageCard = { id: "c1", type: "image", src: "/assets/local.png", alt: "x" }
     render(<CardRenderer card={card} />)
