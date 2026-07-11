@@ -132,6 +132,7 @@
 - `packages/cuttlefish/src/shared/types/operations.ts`
 - `packages/cuttlefish/src/gateway/api/routes/session-write.ts`
 - `packages/cuttlefish/src/gateway/org.ts`
+- `packages/cuttlefish/src/gateway/org-validation.ts` (employee create/update request validation; re-exported by `org.ts`)
 - `packages/cuttlefish/src/gateway/run-web-session.ts`
 - Employees can now carry an `execution` config block defining a multi-role execution profile.
 - Execution tiers: `solo` (default, unchanged behavior) and `mid_pair` (implementer + reviewer pair).

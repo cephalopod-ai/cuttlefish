@@ -21,13 +21,28 @@ vi.mock("../../shared/logger.js", () => ({
   },
 }));
 
-import { scanOrg } from "../org.js";
+import {
+  scanOrg,
+  validateEmployeeCreate as validateEmployeeCreateFromFacade,
+  validateEmployeeUpdate as validateEmployeeUpdateFromFacade,
+} from "../org.js";
+import {
+  validateEmployeeCreate,
+  validateEmployeeUpdate,
+} from "../org-validation.js";
 
 function writeYaml(subdir: string, filename: string, content: string) {
   const dir = path.join(tmpDir, subdir);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, filename), content, "utf-8");
 }
+
+describe("org facade validation compatibility", () => {
+  it("re-exports the validation implementations without changing the public import path", () => {
+    expect(validateEmployeeCreateFromFacade).toBe(validateEmployeeCreate);
+    expect(validateEmployeeUpdateFromFacade).toBe(validateEmployeeUpdate);
+  });
+});
 
 describe("scanOrg — alwaysNotify field", () => {
   beforeEach(() => {
