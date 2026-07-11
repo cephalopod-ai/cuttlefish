@@ -20,6 +20,17 @@
   - `/file` for file viewing.
 - `/redesign` is development-only and is not part of the public operator surface.
 
+### Talk hook structure
+
+- `packages/web/src/routes/talk/use-talk.ts` remains the public Talk state hook
+  used by `talk-provider.tsx`; its public type exports remain available from that
+  path.
+- `use-talk-session-lifecycle.ts` owns the gated orchestrator bootstrap,
+  rehydration/reconnect, and engine/model selection effects, while
+  `talk-side-state.ts` restores persisted dock labels and dismiss tombstones.
+- This is an internal ownership split only; the `/talk` route's provider, API,
+  WebSocket, and operator behavior are unchanged.
+
 ### Kanban ticket live session inspector
 - `packages/web/src/components/kanban/ticket-detail-panel.tsx`
 - `packages/cuttlefish/src/gateway/api/routes/org.ts`

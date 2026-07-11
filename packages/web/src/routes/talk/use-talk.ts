@@ -17,7 +17,7 @@
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react"
 import { useGateway } from "@/hooks/use-gateway"
-import { useStt, type SttState } from "@/hooks/use-stt"
+import { useStt } from "@/hooks/use-stt"
 import { useSpeak } from "./use-speak"
 import { stripMarkdown } from "@/lib/strip-markdown"
 import { api } from "@/lib/api"
@@ -43,158 +43,18 @@ import { whisperFor } from "./talk-whisper"
 import { joinStreamChunks } from "./stream-text"
 import { channelHue } from "./channel-identity"
 import { focusNode, deriveLabel, type DockSideMap, type DockSideState } from "./work-dock-layout"
-import { messagesToEntries, snapshotDelegationChips } from "./rehydrate"
+import { MAX_CARDS, loadSideState } from "./talk-side-state"
+import { useTalkSessionLifecycle } from "./use-talk-session-lifecycle"
+import type { TalkEngineInfo, TtsStatus, UseTalkReturn, VoiceMode } from "./use-talk-types"
 import {
   loadTargetThread,
-  saveTargetThread,
   loadThreadLabels,
   saveThreadLabel,
   removeThreadLabel,
-  loadDismissedThreads,
   addDismissedThread,
 } from "./talk-storage"
 
-/**
- * Build the dock side-state map from the existing talk-storage localStorage
- * (label overrides + dismiss tombstones). Reusing the same keys migrates any
- * previously-persisted thread renames/dismissals onto the graph-node dock with
- * no data conversion. Hue is derived (channel-identity), not persisted; the
- * route target is the separate `targetThreadId`, so neither lives here.
- */
-function loadSideState(): DockSideMap {
-  const m: DockSideMap = new Map()
-  for (const [id, labelOverride] of Object.entries(loadThreadLabels())) {
-    m.set(id, { ...(m.get(id) ?? {}), labelOverride })
-  }
-  for (const id of loadDismissedThreads()) {
-    m.set(id, { ...(m.get(id) ?? {}), dismissed: true })
-  }
-  return m
-}
-
-/** Most recent cards kept on the surface at once (older ones drift out). */
-const MAX_CARDS = 6
-
-export type TtsStatus =
-  | { kind: "idle" }
-  | { kind: "downloading"; progress: number }
-  | { kind: "ready" }
-  | { kind: "error"; message: string }
-
-/** Which voice actually produced the most recent spoken turn. `neural` = the
- *  gateway streamed Kokoro audio (talk:audio) and it played; `fallback` = the
- *  browser Web-Speech synth (or caption-only). null → nothing spoken yet. This
- *  makes a silent Kokoro break visible instead of degrading unnoticed. */
-export type VoiceMode = "neural" | "fallback" | null
-
-/** Active orchestrator engine/model + the available set, for the picker. */
-export interface TalkEngineInfo {
-  engine: string | null
-  model: string | null
-  fallback: boolean
-  reason: string | null
-  available: string[]
-  /** False until GET /api/talk/engine has resolved — so an empty `available`
-   *  before the first fetch isn't mistaken for "no engine installed". */
-  loaded: boolean
-}
-
-export interface UseTalkReturn {
-  state: AvatarState
-  /** Short under-orb hint of the orchestrator's latest tool_use while thinking
-   *  (routing… / searching… / preparing a card… / working…). Null when not thinking. */
-  whisper: string | null
-  /** This talk session's id (orchestratorId) — the `sessionId` for talkDelegate
-   *  calls. Null until the orchestrator session is bootstrapped. */
-  orchestratorId: string | null
-  /** The persistent conversation: user lines, AURA replies, delegation chips. */
-  rows: StreamRow[]
-  /**
-   * Full delegation-graph: every session in the talk tree at any depth. Depth-1
-   * nodes are the COO threads (WorkTree root rows); depth-2+ are employee
-   * descendants (indented sub-rows). Nodes persist and NEVER auto-hide — idle nodes
-   * are dimmed by the renderer. This is the SINGLE source for the work rail.
-   */
-  graph: GraphNode[]
-  /**
-   * Advisory per-node overlay keyed by sessionId: live "now doing" line while a
-   * node works + sanitized final-report excerpt on completion. Renders alongside
-   * the graph (the structural source); a missing entry just renders nothing.
-   */
-  activity: ActivityMap
-  /** Per-node UI side-state (rename overrides + dismiss tombstones) for the dock. */
-  sideState: DockSideMap
-  /** Hue of the focused (most-recent running depth-1) node — drives the orb
-   *  morph; undefined → AURA's amber identity. */
-  focusHue: number | undefined
-  /** The thread the next dispatch is routed to continue (null → new thread). */
-  targetThreadId: string | null
-  /** Detail cards the orchestrator pushed for the current answer(s). */
-  cards: Card[]
-  /** Blocking cards (approval/choice) the user has acted on — un-pinned from the
-   *  bottom strip optimistically before the orchestrator dismisses them. */
-  resolvedCardIds: ReadonlySet<string>
-  /** Resolve a card's inline anchor to a stream row id (null → render at end). */
-  cardAnchorFor: (cardId: string) => string | null
-  /** 0..1 while listening/speaking (server audio), undefined → orb self-animates. */
-  level: number | undefined
-  connected: boolean
-  listening: boolean
-  sttAvailable: boolean | null
-  /** Last speech-to-text failure (null when none). Surfaced so a failed turn
-   * isn't silent; tapping the mic again clears it and retries. */
-  sttError: string | null
-  ttsStatus: TtsStatus
-  /** Voice that produced the last spoken turn (neural Kokoro vs Web-Speech). */
-  voiceMode: VoiceMode
-  /** Silent/text mode: when true AURA doesn't speak; replies are read. */
-  muted: boolean
-  /** Toggle silent/text mode (persisted; silences any in-flight speech). */
-  toggleMute: () => void
-  /** Type-to-talk: send a typed message via the same path as a voice turn. */
-  sendText: (text: string) => void
-  /** Raw STT lifecycle state — drives the whisper-model-download modal. */
-  sttState: SttState
-  /** 0..100 while the whisper model downloads (null otherwise). */
-  sttDownloadProgress: number | null
-  /** Kick off the local whisper model download (progress streams over WS). */
-  startSttDownload: () => void
-  /** Dismiss the download modal and return the avatar to idle. */
-  dismissSttDownload: () => void
-  /** Active orchestrator engine/model + available engines (for the picker). */
-  engineInfo: TalkEngineInfo
-  /** Switch the orchestrator ENGINE — persists then RE-BOOTSTRAPS the session so
-   *  the new engine is adopted immediately (a live PTY can't swap mid-turn). */
-  switchEngine: (engine: string) => void
-  /** Switch the orchestrator MODEL — applies on the live session's next turn. */
-  switchModel: (model: string) => void
-  /** Route the next dispatch to continue an existing thread (null → new). */
-  selectThread: (id: string | null) => void
-  /** Rename a thread's topic label (UI-only). */
-  renameThread: (id: string, label: string) => void
-  /** Remove a thread chip (does not kill the gateway session). */
-  dismissThread: (id: string) => void
-  /**
-   * Begin the heavy bootstrap (create/reuse the orchestrator session, probe TTS,
-   * rehydrate). Idempotent. TalkPage calls this on mount; the provider is
-   * globally mounted but stays dormant until a page activates it.
-   */
-  activate: () => void
-  /**
-   * Action channel: a decision-card button sends a synthetic user message back
-   * to the orchestrator (reuses the same sendMessage path as the mic). The
-   * message carries a machine `[card-action …]` tag the orchestrator interprets.
-   */
-  cardAction: (message: string) => void
-  startListening: () => void
-  stop: () => void
-  /**
-   * Interrupt the current spoken reply: stops Web-Speech / server audio
-   * playback and returns the avatar to idle. Playback-stop only — it does not
-   * re-open the mic or cancel the (already-finished) backend turn.
-   */
-  stopSpeaking: () => void
-}
+export type { TalkEngineInfo, TtsStatus, UseTalkReturn, VoiceMode } from "./use-talk-types"
 
 export function useTalk(): UseTalkReturn {
   const gateway = useGateway()
@@ -743,138 +603,22 @@ export function useTalk(): UseTalkReturn {
     return () => { unsub() }
   }, [gateway, appendAssistantText, appendAssistantRow, finalizeAssistant, markSpoken, addSystem, patchSide, dispatchGraph, startLevelLoop, stopLevelLoop, upsertCard, patchCard, dismissCard, clearCards])
 
-  // ---- Server rehydration --------------------------------------------------
-  // Replay the reused orchestrator session so the transcript + COO thread chips
-  // survive a full reload / mobile tab-discard. Non-clobbering: a live transcript
-  // is never overwritten, and thread rebuilds MERGE (additive) so a reconnect
-  // can pick up threads created while the socket was down without dropping live
-  // ones. Cards are intentionally NOT rehydrated — they are transient; the
-  // orchestrator re-pushes any decision card it still wants on screen.
-  const rehydrate = useCallback(async (orchId: string) => {
-    try {
-      const [session, graphSnap] = await Promise.all([
-        api.getSession(orchId).catch(() => undefined),
-        api.getTalkGraph(orchId).catch(() => undefined),
-      ])
-      if (orchestratorIdRef.current !== orchId) return // superseded
-      // Seed the ConversationStream from the server snapshot — user/assistant
-      // lines AND system delegation chips. Non-clobbering: only seed when the
-      // stream is still empty (a live conversation is never overwritten).
-      const allEntries = messagesToEntries(session as Record<string, unknown> | undefined)
-      if (allEntries.length && rowsRef.current.length === 0) rehydrateRows(allEntries)
-
-      // The dock rebuilds straight from the graph snapshot — the single source.
-      // (Child sessions are no longer mirrored into a separate thread store.)
-      const snapNodes = graphSnap?.nodes ?? []
-      if (snapNodes.length) dispatchGraph({ type: "snapshot", nodes: snapNodes })
-      // Rebuild the delegation ThreadCards: live cards are inserted by the
-      // talk:graph "added" delta, which a reload can't replay. This runs AFTER
-      // rehydrateRows above (dispatches process in order), so rebuilt cards
-      // append after history — the original live insertion position is
-      // approximated by append-at-end, which is acceptable (cards mostly trail
-      // the turn that spawned them). The conversation reducer dedups by row id,
-      // so chips already added live (or by a prior reconnect) are no-ops.
-      for (const chip of snapshotDelegationChips(snapNodes)) addSystem(chip)
-      // Drop a persisted target selection that no longer maps to a live node.
-      setTargetThreadId((cur) => {
-        if (!cur) return cur
-        const exists =
-          snapNodes.some((n) => n.id === cur) || graphRef.current.some((n) => n.id === cur)
-        return exists ? cur : null
-      })
-    } catch {
-      /* best-effort; a later reconnect rehydrate will retry */
-    }
-  }, [dispatchGraph, rehydrateRows, addSystem])
-
-  // Marks that the bootstrap has kicked off the INITIAL rehydrate, so the
-  // reconnect effect below only gates on it (never consumes it) — otherwise the
-  // first genuine reconnect (the first firing where orch is non-null) would be
-  // swallowed and a mobile tab-resume right after load wouldn't re-pull.
-  const didInitialReconnectRef = useRef(false)
-
-  // Create (or reuse) the orchestrator session and rehydrate it. Extracted so an
-  // ENGINE switch can RE-BOOTSTRAP: the POST /api/talk/session reuse-guard refuses
-  // to reuse a session whose engine differs from the freshly-resolved one, so a
-  // plain re-create lands the new engine on a fresh session id.
-  const bootstrapSession = useCallback(async () => {
-    try {
-      const r = await api.talkCreateSession()
-      setOrchestratorId(r.sessionId)
-      // Re-apply the current mute state to the (possibly brand-new) session id so
-      // the gateway skips synthesis from the first turn when we're in silent mode.
-      if (mutedRef.current) void api.talkSetMuted({ sessionId: r.sessionId, muted: true }).catch(() => {})
-      void rehydrate(r.sessionId)
-      didInitialReconnectRef.current = true
-    } catch { /* surfaced via connection hint */ }
-  }, [rehydrate])
-
-  // Refresh the active orchestrator engine/model + the available engine set.
-  const refreshEngineInfo = useCallback(async () => {
-    try {
-      const e = await api.talkEngineGet()
-      setEngineInfo({
-        engine: e.engine, model: e.model, fallback: e.fallback, reason: e.reason, available: e.available, loaded: true,
-      })
-    } catch { /* keep prior info */ }
-  }, [])
-
-  // ---- Bootstrap orchestrator + probe TTS/engine (gated on activation) ------
-  useEffect(() => {
-    if (!activated) return
-    let alive = true
-    void bootstrapSession()
-    void refreshEngineInfo()
-    api.talkStatus()
-      .then((s) => {
-        if (!alive) return
-        if (s.ttsDownloading) setTtsStatus({ kind: "downloading", progress: s.progress ?? 0 })
-        else if (s.ttsAvailable) setTtsStatus({ kind: "ready" })
-        else setTtsStatus({ kind: "idle" })
-      })
-      .catch(() => {})
-    return () => { alive = false }
-  }, [activated, bootstrapSession, refreshEngineInfo])
-
-  // ---- Engine / model switching --------------------------------------------
-  // Engine: persist then re-bootstrap (new-chat-only). Model: persist only
-  // (applies on the live session's next turn — the backend mutates it for us).
-  const switchEngine = useCallback((engine: string) => {
-    void (async () => {
-      try {
-        const r = await api.talkEngineSet({ engine })
-        setEngineInfo((prev) => ({
-          ...prev, engine: r.engine, model: r.model, fallback: r.fallback, reason: r.reason, available: r.available,
-        }))
-        await bootstrapSession()
-      } catch { /* leave prior engine; fallback surfaced in the picker */ }
-    })()
-  }, [bootstrapSession])
-
-  const switchModel = useCallback((model: string) => {
-    void (async () => {
-      try {
-        const r = await api.talkEngineSet({ model })
-        setEngineInfo((prev) => ({
-          ...prev, engine: r.engine, model: r.model, fallback: r.fallback, reason: r.reason, available: r.available,
-        }))
-      } catch { /* keep prior */ }
-    })()
-  }, [])
-
-  // ---- Persist the routed-thread selection ---------------------------------
-  useEffect(() => { saveTargetThread(targetThreadId) }, [targetThreadId])
-
-  // ---- Re-rehydrate after a WS reconnect (mobile tab-resume) ----------------
-  // Only GATES on the bootstrap's initial-rehydrate flag (set in the bootstrap
-  // effect, not consumed here), so the first real reconnect after load re-pulls.
-  useEffect(() => {
-    if (!activated) return
-    const orch = orchestratorIdRef.current
-    if (!orch) return
-    if (!didInitialReconnectRef.current) return // bootstrap hasn't rehydrated yet
-    void rehydrate(orch)
-  }, [activated, gateway.connectionSeq, rehydrate])
+  const { switchEngine, switchModel } = useTalkSessionLifecycle({
+    activated,
+    connectionSeq: gateway.connectionSeq,
+    targetThreadId,
+    mutedRef,
+    orchestratorIdRef,
+    rowsRef,
+    graphRef,
+    setOrchestratorId,
+    setTargetThreadId,
+    setTtsStatus,
+    setEngineInfo,
+    rehydrateRows,
+    addSystem,
+    dispatchGraph,
+  })
 
   // ---- Whisper model download (mic tap on a fresh install) -----------------
   // When the mic tap finds no local STT model, useStt flips to "no-model"; drop
