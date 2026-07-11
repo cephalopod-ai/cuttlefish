@@ -27,6 +27,19 @@ const RAW_EMAIL = Buffer.from([
   "",
 ].join("\r\n"));
 
+/** RAW_EMAIL with a stamped `Authentication-Results` header (the trusted MTA's). */
+function withAuthResults(auth: string): Buffer {
+  return Buffer.from(RAW_EMAIL.toString("utf-8").replace(
+    "MIME-Version: 1.0",
+    `MIME-Version: 1.0\r\nAuthentication-Results: ${auth}`,
+  ));
+}
+
+/** A message that passes the fail-closed auth gate (AR-02) and may auto-ingest. */
+const RAW_EMAIL_AUTHED = withAuthResults(
+  "mx.example; spf=pass smtp.mailfrom=support@example.com; dkim=pass header.d=example.com; dmarc=pass",
+);
+
 describe("EmailService", () => {
   beforeEach(() => {
     vi.resetModules();
@@ -39,7 +52,7 @@ describe("EmailService", () => {
 
     reg.initDb();
     const client = new FakeEmailMailboxClient();
-    client.setMessages("ops", [{ providerMessageId: "uid-1", raw: RAW_EMAIL }]);
+    client.setMessages("ops", [{ providerMessageId: "uid-1", raw: RAW_EMAIL_AUTHED }]);
     const onAutoIngest = vi.fn(async () => "session-email-1");
 
     const service = new EmailService({
@@ -79,7 +92,7 @@ describe("EmailService", () => {
 
     reg.initDb();
     const client = new FakeEmailMailboxClient();
-    client.setMessages("ops", [{ providerMessageId: "uid-err", raw: RAW_EMAIL }]);
+    client.setMessages("ops", [{ providerMessageId: "uid-err", raw: RAW_EMAIL_AUTHED }]);
     const onAutoIngest = vi.fn(async () => {
       throw new Error("engine unavailable");
     });
@@ -284,5 +297,91 @@ describe("EmailService", () => {
     const inboxes = service.listInboxes();
     expect(inboxes.find((inbox) => inbox.id === "broken")?.health?.status).toBe("error");
     expect(inboxes.find((inbox) => inbox.id === "healthy")?.health?.status).toBe("ok");
+  });
+
+  it.each([
+    ["a missing Authentication-Results header", RAW_EMAIL],
+    ["spf=softfail", withAuthResults("mx.example; spf=softfail smtp.mailfrom=support@example.com")],
+    ["spf=neutral", withAuthResults("mx.example; spf=neutral smtp.mailfrom=support@example.com")],
+    ["dmarc=fail (even with spf=pass)", withAuthResults("mx.example; spf=pass smtp.mailfrom=support@example.com; dmarc=fail")],
+    ["dkim=temperror", withAuthResults("mx.example; dkim=temperror header.d=example.com")],
+  ])("fails closed and does not auto-ingest with %s (AR-02)", async (_label, raw) => {
+    const reg = await import("../../sessions/registry.js");
+    const { FakeEmailMailboxClient } = await import("../client.js");
+    const { EmailService } = await import("../service.js");
+    reg.initDb();
+
+    const client = new FakeEmailMailboxClient();
+    client.setMessages("ops", [{ providerMessageId: "uid-unauth", raw }]);
+    const onAutoIngest = vi.fn(async () => "session-x");
+
+    const service = new EmailService({
+      enabled: true,
+      inboxes: [{
+        id: "ops",
+        address: "ops@example.com",
+        username: "ops@example.com",
+        password: "secret",
+        imapHost: "imap.example.com",
+        autoIngest: true,
+        allowFrom: ["support@example.com"],
+      }],
+    }, { client, onAutoIngest });
+
+    const result = await service.checkInbox("ops");
+    expect(onAutoIngest).not.toHaveBeenCalled();
+    expect(result.messages[0].status).toBe("cached");
+  });
+
+  it("auto-ingests only when authentication passes (AR-02)", async () => {
+    const reg = await import("../../sessions/registry.js");
+    const { FakeEmailMailboxClient } = await import("../client.js");
+    const { EmailService } = await import("../service.js");
+    reg.initDb();
+
+    const client = new FakeEmailMailboxClient();
+    client.setMessages("ops", [{
+      providerMessageId: "uid-dkim",
+      raw: withAuthResults("mx.example; dkim=pass header.d=example.com"),
+    }]);
+    const onAutoIngest = vi.fn(async () => "session-ok");
+
+    const service = new EmailService({
+      enabled: true,
+      inboxes: [{
+        id: "ops",
+        address: "ops@example.com",
+        username: "ops@example.com",
+        password: "secret",
+        imapHost: "imap.example.com",
+        autoIngest: true,
+        allowFrom: ["support@example.com"],
+      }],
+    }, { client, onAutoIngest });
+
+    const result = await service.checkInbox("ops");
+    expect(onAutoIngest).toHaveBeenCalledTimes(1);
+    expect(result.messages[0].status).toBe("ingested");
+  });
+
+  it("never returns the IMAP password in the inbox listing DTO (AR-10)", async () => {
+    const { EmailService } = await import("../service.js");
+    const service = new EmailService({
+      enabled: true,
+      inboxes: [{
+        id: "ops",
+        address: "ops@example.com",
+        username: "ops@example.com",
+        password: "super-secret",
+        imapHost: "imap.example.com",
+      }],
+    }, { client: new (await import("../client.js")).FakeEmailMailboxClient() });
+
+    const inboxes = service.listInboxes();
+    expect(inboxes).toHaveLength(1);
+    expect(inboxes[0]).not.toHaveProperty("password");
+    expect(JSON.stringify(inboxes)).not.toContain("super-secret");
+    // Non-secret fields still surface for the dashboard.
+    expect(inboxes[0].address).toBe("ops@example.com");
   });
 });

@@ -43,6 +43,9 @@ const silentLogger = {
   error: () => {},
 };
 
+/** Hard cap on a single downloaded WhatsApp media attachment (AR-08). */
+const WHATSAPP_MAX_MEDIA_BYTES = 25 * 1024 * 1024;
+
 export class WhatsAppConnector implements Connector {
   name = "whatsapp";
   private sock: WASocket | null = null;
@@ -304,10 +307,32 @@ export class WhatsAppConnector implements Connector {
     const hasMedia = message.message?.imageMessage || message.message?.documentMessage || message.message?.audioMessage;
     if (hasMedia && this.sock) {
       try {
-        const buffer = await downloadMediaMessage(message, "buffer", {}, {
+        // Skip up front when the declared media size exceeds the cap, and reject
+        // afterward if the buffered bytes still exceed it — a compromised peer
+        // must not be able to exhaust memory/temp disk with huge media (AR-08).
+        const media = message.message?.imageMessage ?? message.message?.documentMessage ?? message.message?.audioMessage;
+        const declaredLen = Number((media as { fileLength?: unknown } | undefined)?.fileLength?.toString?.() ?? 0);
+        if (Number.isFinite(declaredLen) && declaredLen > WHATSAPP_MAX_MEDIA_BYTES) {
+          throw new Error(`WhatsApp media exceeds ${WHATSAPP_MAX_MEDIA_BYTES} byte limit (declared ${declaredLen})`);
+        }
+        // Stream chunk-by-chunk and enforce the cap dynamically: a peer that lies
+        // about fileLength (declares small, sends large) is aborted mid-transfer
+        // rather than being fully buffered into memory first (AR-08).
+        const stream = await downloadMediaMessage(message, "stream", {}, {
           logger: silentLogger as never,
           reuploadRequest: this.sock.updateMediaMessage,
-        });
+        }) as import("node:stream").Readable;
+        const chunks: Buffer[] = [];
+        let totalBytes = 0;
+        for await (const chunk of stream) {
+          totalBytes += (chunk as Buffer).length;
+          if (totalBytes > WHATSAPP_MAX_MEDIA_BYTES) {
+            stream.destroy();
+            throw new Error(`WhatsApp media exceeds ${WHATSAPP_MAX_MEDIA_BYTES} byte limit`);
+          }
+          chunks.push(chunk as Buffer);
+        }
+        const buffer = Buffer.concat(chunks);
         const ext = message.message?.imageMessage ? "jpg"
           : message.message?.audioMessage ? "ogg"
           : "bin";

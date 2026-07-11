@@ -3,17 +3,18 @@ import http from "node:http";
 import path from "node:path";
 import { compressStream, isCompressibleExt, pickEncoding } from "../compress.js";
 
-function hostnameOf(hostHeader: string | undefined): string | null {
+function authorityOf(hostHeader: string | undefined): string | null {
+  // Normalize a Host header to a lowercase `host[:port]` authority for comparison.
   if (!hostHeader) return null;
   try {
-    return new URL(`http://${hostHeader}`).hostname.toLowerCase();
+    return new URL(`http://${hostHeader}`).host.toLowerCase();
   } catch {
     return null;
   }
 }
 
 export function isAllowedCorsOrigin(origin: string | undefined, requestHost?: string): boolean {
-  if (!origin) return true;
+  if (!origin) return true; // No Origin header — same-origin navigation or a CLI/curl client.
   let parsed: URL;
   try {
     parsed = new URL(origin);
@@ -21,13 +22,16 @@ export function isAllowedCorsOrigin(origin: string | undefined, requestHost?: st
     return false;
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
-  const host = parsed.hostname.toLowerCase();
-  if (host === "localhost" || host.endsWith(".localhost") || host === "127.0.0.1" || host === "0.0.0.0" || host === "::1" || host === "[::1]") {
-    return true;
-  }
-  const reqHostname = hostnameOf(requestHost);
-  if (reqHostname && reqHostname === host) return true;
-  return false;
+  // Same-origin only: the Origin's authority (host *and* port) must equal the
+  // request's Host header. There is deliberately no blanket loopback grant — a
+  // different local app (e.g. a page on http://localhost:3999 targeting the
+  // gateway on localhost:8888) is cross-origin and same-*site* on loopback, so
+  // reflecting it with credentialed CORS would let it read authenticated
+  // responses. Comparing the full authority (not just the hostname) closes that
+  // per-port hole (AR-06).
+  const reqAuthority = authorityOf(requestHost);
+  if (!reqAuthority) return false;
+  return parsed.host.toLowerCase() === reqAuthority;
 }
 
 export function setCorsHeaders(req: http.IncomingMessage, res: http.ServerResponse): boolean {
@@ -67,8 +71,16 @@ export function serveStatic(
   let filePath = path.join(webDir, urlPath);
   if (filePath.endsWith("/")) filePath = path.join(filePath, "index.html");
 
+  const root = path.resolve(webDir);
   const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(webDir))) {
+  // Containment via path.relative so it respects a real path boundary: a sibling
+  // directory that merely shares the prefix (webDir `/tmp/web` vs
+  // `/tmp/web_evil/secret`) yields a `..`-prefixed relative path and is rejected
+  // (AR-05). Using path.relative also stays correct when `root` is a filesystem
+  // root (`/`, `C:\`) — where a `root + sep` prefix check would double the
+  // separator and wrongly 403 every file.
+  const rel = path.relative(root, resolved);
+  if (rel !== "" && (rel === ".." || rel.startsWith(".." + path.sep) || path.isAbsolute(rel))) {
     res.writeHead(403);
     res.end("Forbidden");
     return true;

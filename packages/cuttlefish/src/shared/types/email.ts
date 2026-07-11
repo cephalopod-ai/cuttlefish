@@ -18,6 +18,14 @@ export interface EmailInboxConfig {
   maxMessageBytes?: number;
 }
 
+/**
+ * Inbox shape safe to return over the API. The IMAP `password` is a secret and
+ * must never be serialized to a client — even on a loopback listener a local
+ * untrusted process could read it (AR-10). `EmailService.listInboxes()` returns
+ * this redacted view.
+ */
+export type PublicEmailInboxConfig = Omit<EmailInboxConfig, "password">;
+
 export interface EmailConfig {
   enabled?: boolean;
   pollIntervalSeconds?: number;
