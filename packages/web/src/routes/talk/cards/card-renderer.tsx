@@ -10,6 +10,7 @@
  * springy mount/unmount, stagger and presence tracking are owned by CardStack.
  */
 import type { JSX } from "react"
+import { useState } from "react"
 import {
   AlertTriangle,
   ArrowDown,
@@ -54,6 +55,76 @@ function resolveImageSrc(src: string, w = 400, h = 240): string {
     /^(https?:)?\/\//.test(src) || src.startsWith("/") || src.includes("/")
   if (looksLikeUrlOrPath) return src
   return `https://picsum.photos/seed/${encodeURIComponent(src)}/${w}/${h}`
+}
+
+/**
+ * Whether a card image src points at a remote host (an absolute http(s) or
+ * protocol-relative URL). Card src values come from the orchestrator LLM, so an
+ * injected model could turn an auto-loaded `<img>` into a zero-click exfil beacon
+ * or intranet probe. Bare seeds (picsum placeholders) and relative/same-origin
+ * paths are not remote and load normally. (AR-11)
+ */
+function isRemoteImageUrl(src: string): boolean {
+  return /^(https?:)?\/\//i.test(src.trim())
+}
+
+/**
+ * A card image that only fetches a *remote* URL after an explicit click, so
+ * viewing a card never triggers an automatic cross-origin request. Same-origin /
+ * relative / placeholder images render immediately.
+ */
+function CardImage({
+  src,
+  alt,
+  w,
+  h,
+  className,
+}: {
+  src: string
+  alt: string
+  w: number
+  h: number
+  className?: string
+}): JSX.Element {
+  const remote = isRemoteImageUrl(src)
+  const [loaded, setLoaded] = useState(!remote)
+  if (!loaded) {
+    return (
+      <button
+        type="button"
+        className={className}
+        onClick={() => setLoaded(true)}
+        title={`Load image from ${hostnameOf(src)}`}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 8,
+          width: "100%",
+          minHeight: Math.min(Math.max(h, 96), 160),
+          border: "1px dashed color-mix(in srgb, currentColor 30%, transparent)",
+          borderRadius: 8,
+          background: "transparent",
+          color: "inherit",
+          font: "inherit",
+          cursor: "pointer",
+          padding: 12,
+        }}
+      >
+        <Globe size={16} aria-hidden />
+        <span>Load image from {hostnameOf(src)}</span>
+      </button>
+    )
+  }
+  return (
+    <img
+      className={className}
+      src={resolveImageSrc(src, w, h)}
+      alt={alt}
+      loading="lazy"
+      draggable={false}
+    />
+  )
 }
 
 /** Best-effort hostname for a link's source line. */
@@ -160,13 +231,7 @@ function ListBody({ card }: { card: ListCard }) {
 function ImageBody({ card }: { card: ImageCard }) {
   return (
     <figure className="jt-card__body" style={{ margin: 0 }}>
-      <img
-        className="jt-img"
-        src={resolveImageSrc(card.src, 400, 240)}
-        alt={card.alt ?? ""}
-        loading="lazy"
-        draggable={false}
-      />
+      <CardImage className="jt-img" src={card.src} alt={card.alt ?? ""} w={400} h={240} />
       {card.caption ? (
         <figcaption className="jt-img__caption">{card.caption}</figcaption>
       ) : null}
@@ -178,13 +243,13 @@ function ImageGridBody({ card }: { card: ImageGridCard }) {
   return (
     <div className="jt-grid jt-card__body">
       {card.images.map((img, i) => (
-        <img
+        <CardImage
           className="jt-img"
           key={`${img.src}-${i}`}
-          src={resolveImageSrc(img.src, 300, 220)}
+          src={img.src}
           alt={img.alt ?? ""}
-          loading="lazy"
-          draggable={false}
+          w={300}
+          h={220}
         />
       ))}
     </div>
