@@ -44,6 +44,12 @@ describe("deliverConnectorReply", () => {
     expect(slack.replyMessage).toHaveBeenCalledWith(slack.target, "hello world");
   });
 
+  it("redacts secret-shaped output before automatic connector delivery", async () => {
+    await deliverConnectorReply(makeSession(), "API_KEY=very-secret-value", map);
+
+    expect(slack.replyMessage).toHaveBeenCalledWith(slack.target, "API_KEY=[REDACTED]");
+  });
+
   it("does not deliver for source 'web'", async () => {
     await deliverConnectorReply(makeSession({ source: "web" }), "hi", map);
     expect(slack.replyMessage).not.toHaveBeenCalled();

@@ -9,6 +9,7 @@ import {
   getFilesByIds,
   getSession,
   insertMessage,
+  listChildSessions,
   listPendingQueueItems,
   listAllPendingQueueItems,
   listSessions,
@@ -19,6 +20,7 @@ import { FILES_DIR } from "../../shared/paths.js";
 import { logger } from "../../shared/logger.js";
 import { isInterruptibleEngine, type ArchiveKind, type Employee, type Engine, type CuttlefishConfig, type Session } from "../../shared/types.js";
 import { maybeEmitTalkGraph } from "../../talk/graph.js";
+import { claimManagerDelegationSynthesis, markManagerDelegationSynthesisDispatched } from "../../sessions/manager-delegation.js";
 import { runWebSession } from "../run-web-session.js";
 import type { ApiContext } from "./context.js";
 
@@ -325,13 +327,24 @@ export async function dispatchSessionNotification(
 ): Promise<void> {
   const existingSession = getSession(sessionId);
   if (!existingSession) return;
-  const session = maybeRevertEngineOverride(existingSession);
+  let session = maybeRevertEngineOverride(existingSession);
   const engine = context.sessionManager.getEngine(session.engine);
   if (!engine) throw new Error(`Engine "${session.engine}" not available`);
 
   const banner = displayMessage && displayMessage.trim() ? displayMessage : message;
   insertMessage(session.id, "notification", banner);
   context.emit("session:notification", { sessionId: session.id, message: banner });
+  const synthesis = claimManagerDelegationSynthesis(
+    session.id,
+    session.transportMeta,
+    listChildSessions(session.id),
+  );
+  if (!synthesis.shouldDispatch) return;
+  if (synthesis.tracked) {
+    session = updateSession(session.id, {
+      transportMeta: markManagerDelegationSynthesisDispatched(session.transportMeta),
+    }) ?? session;
+  }
   context.sessionManager.getQueue().clearCancelled(session.sessionKey || session.sourceRef || session.id);
   const [employee, { dispatchEmployeeSessionRun }] = await Promise.all([
     resolveDispatchEmployeeForSession(session),

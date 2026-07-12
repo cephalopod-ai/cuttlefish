@@ -115,6 +115,51 @@ describe("manager delegation enforcement", () => {
     expect(reg.getMessages(parent.id).some((message) => message.role === "assistant" && message.content.includes("Delegated specialist work"))).toBe(true);
     expect(events.some((entry) => entry.event === "manager:delegated")).toBe(true);
   });
+
+  it("does not restore an engine resume id from a quietly interrupted turn", async () => {
+    const reg = await import("../../sessions/registry.js");
+    const { runWebSession } = await import("../run-web-session.js");
+    const interruptedRun = vi.fn<Engine["run"]>(async () => ({
+      sessionId: "stale-grok-session",
+      result: "",
+      error: "Interrupted by user",
+    }));
+    const engine = fakeEngine("grok", interruptedRun);
+    const config = {
+      gateway: { host: "127.0.0.1", port: 8888 },
+      engines: { default: "grok", grok: { bin: "node", model: "grok-4.5" } },
+      portal: { portalName: "Cuttlefish" },
+    } as unknown as CuttlefishConfig;
+    const context = {
+      getConfig: () => config,
+      connectors: new Map(),
+      emit: vi.fn(),
+      sessionManager: {
+        getEngine: () => engine,
+        getEngines: () => new Map([["grok", engine]]),
+        getQueue: () => new SessionQueue(),
+      },
+      startTime: Date.now(),
+    } as any;
+    const session = reg.createSession({
+      engine: "grok",
+      source: "web",
+      sourceRef: "web:stopped-grok",
+      sessionKey: "web:stopped-grok",
+      model: "grok-4.5",
+      prompt: "resume freshly",
+    });
+    reg.insertMessage(session.id, "user", "resume freshly");
+
+    await runWebSession(session, "resume freshly", engine, config, context);
+
+    expect(interruptedRun).toHaveBeenCalledTimes(1);
+    expect(reg.getSession(session.id)).toMatchObject({
+      status: "idle",
+      engineSessionId: null,
+      lastError: null,
+    });
+  });
 });
 
 async function waitFor(predicate: () => boolean): Promise<void> {

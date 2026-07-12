@@ -36,6 +36,7 @@ import { markEmailMessageRunFailed } from "../email/store.js";
 import type { OrchestrationRuntime } from "../orchestration/runtime.js";
 import { initDb, clearAllPartialMessages, createSession, getInterruptedSessions, getSession, getSessionBySessionKey, listSessions, recoverStaleQueueItems, recoverStaleSessions, updateSession } from "../sessions/registry.js";
 import { SessionManager } from "../sessions/manager.js";
+import { wrapScreenedUntrustedMessage } from "../sessions/untrusted-input.js";
 import { initStt } from "../stt/stt.js";
 import { shutdownTalkTts } from "../talk/tts-stream.js";
 import { loadJobs } from "../cron/jobs.js";
@@ -81,9 +82,8 @@ const __dirname = path.dirname(__filename);
 export { isAllowedCorsOrigin, serveStatic };
 
 function screenNotificationPrompt(text: string, source: string, workerText: string): string {
-  return text === workerText
-    ? workerText
-    : `[BEGIN UNTRUSTED MESSAGE via ${source} — sanitized before execution]\n${workerText}\n[END UNTRUSTED MESSAGE]`;
+  void text;
+  return wrapScreenedUntrustedMessage(workerText, source);
 }
 
 export async function startGateway(config: CuttlefishConfig): Promise<GatewayCleanup> {

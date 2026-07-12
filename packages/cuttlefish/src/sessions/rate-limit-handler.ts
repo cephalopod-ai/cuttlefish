@@ -28,6 +28,7 @@ import { resolveEffort } from "../shared/effort.js";
 import { effortLevelsForModel, engineAvailable, isKnownEngine } from "../shared/models.js";
 import { computeNextRetryDelayMs, computeRateLimitDeadlineMs, detectRateLimit } from "../shared/rateLimit.js";
 import { recordEngineRateLimit } from "../shared/usage-status.js";
+import { runWithEngineEnvironment } from "../shared/engine-env.js";
 import { getSession, getMessages, updateSession, patchSessionTransportMeta } from "./registry.js";
 
 const WAIT_CANCEL_POLL_MS = 5000;
@@ -161,6 +162,8 @@ export interface RateLimitHandlerOpts {
   mcpConfigPath?: string;
   /** Optional attachment file paths from the original turn (preserved on retry). */
   attachments?: string[];
+  /** Per-session API credential, injected only into engine subprocesses. */
+  sessionToken?: string;
   /** The current cuttlefish config (used to look up rateLimitStrategy + fallbackEngine + fallback engineConfig). */
   config: CuttlefishConfig;
   /** Map of available engines (for fallback lookup). */
@@ -186,7 +189,7 @@ export interface RateLimitHandlerOpts {
 export async function handleRateLimit(opts: RateLimitHandlerOpts): Promise<RateLimitOutcome> {
   const {
     session, prompt, systemPrompt, engineConfig, effortLevel, cliFlags,
-    mcpConfigPath, attachments, config, engines, employee, engine,
+    mcpConfigPath, attachments, sessionToken, config, engines, employee, engine,
     rateLimit, originalResult, hooks,
   } = opts;
   const sourceEngine = session.engine;
@@ -257,7 +260,9 @@ export async function handleRateLimit(opts: RateLimitHandlerOpts): Promise<RateL
 
         let fallbackResult: EngineResult;
         try {
-          fallbackResult = await fallbackEngine.run({
+          fallbackResult = await runWithEngineEnvironment(
+            sessionToken ? { CUTTLEFISH_SESSION_TOKEN: sessionToken } : {},
+            () => fallbackEngine.run({
             prompt: fallbackPrompt,
             resumeSessionId: fallbackResume,
             systemPrompt,
@@ -269,7 +274,8 @@ export async function handleRateLimit(opts: RateLimitHandlerOpts): Promise<RateL
             attachments: attachments?.length ? attachments : undefined,
             sessionId: session.id,
             ...(hooks.onFallbackStream ? { onStream: hooks.onFallbackStream } : {}),
-          });
+            }),
+          );
         } catch (err) {
           // The engineOverride + engine switch were persisted BEFORE this run. If
           // the fallback engine throws, leaving them in place would strand the
@@ -361,7 +367,9 @@ export async function handleRateLimit(opts: RateLimitHandlerOpts): Promise<RateL
       await hooks.onRetryAttempt?.({ attempt });
       logger.info(`Session ${session.id} retrying after usage limit (attempt ${attempt})`);
 
-      const retryResult = await engine.run({
+      const retryResult = await runWithEngineEnvironment(
+        sessionToken ? { CUTTLEFISH_SESSION_TOKEN: sessionToken } : {},
+        () => engine.run({
         prompt,
         resumeSessionId: currentSession.engineSessionId ?? undefined,
         systemPrompt,
@@ -375,7 +383,8 @@ export async function handleRateLimit(opts: RateLimitHandlerOpts): Promise<RateL
         sessionId: session.id,
         source: session.source,
         ...(hooks.onRetryStream ? { onStream: hooks.onRetryStream } : {}),
-      });
+        }),
+      );
 
       const retryInterrupted = retryResult.error?.startsWith("Interrupted");
       const retryRateLimit = !retryInterrupted ? detectRateLimit(retryResult) : { limited: false as const };

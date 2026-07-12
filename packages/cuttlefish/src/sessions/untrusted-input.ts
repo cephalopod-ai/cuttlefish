@@ -35,6 +35,16 @@ export function wrapUntrustedMessage(text: string, opts: { user?: string; source
   return `${header}\n${text}\n${END_MARKER}`;
 }
 
+/**
+ * Preserve the untrusted-data boundary after content screening. A screening
+ * verdict of "allow" means the text was not rejected; it does not make the
+ * connector sender an operator or turn their message into executable intent.
+ */
+export function wrapScreenedUntrustedMessage(text: string, source?: string): string {
+  const header = `${BEGIN_MARKER}${source ? ` via ${source}` : ""} — sanitized before execution]`;
+  return `${header}\n${text}\n${END_MARKER}`;
+}
+
 /** System-prompt clause describing the envelope. Injected for sessions that can receive untrusted inbound. */
 export const INBOUND_MESSAGE_SAFETY_CONTEXT = [
   "## Inbound message safety",

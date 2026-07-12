@@ -505,9 +505,14 @@
 
 ### Smart manager delegation discipline
 - Employee sessions with one or more direct reports receive a default-on manager delegation discipline block in their runtime context. The block requires a delegate-vs-inline decision before substantive work, lists concise direct-report specialties, and distinguishes smart delegation from delegation just for appearances.
-- Runtime execution also enforces strong specialty matches before the manager model runs: when a manager prompt matches one or more direct-report specialties, the gateway creates child sessions for those reports, records the enforced prompt hash and expected child ids in `transportMeta`, and leaves the manager session ready to synthesize the existing child-completion callbacks. Child-result callback turns and explicit no-delegation prompts—including separated wording such as “do not use tools, call APIs, delegate”—are exempt. A manager split records each expected child completion before its callback wakes the parent, so only the final report dispatches one synthesis turn.
+- Runtime execution also enforces strong specialty matches before the manager model runs: when a manager prompt matches one or more direct-report specialties, the gateway creates child sessions for those reports, records the enforced prompt hash and expected child ids in `transportMeta`, and leaves the manager session ready to synthesize the existing child-completion callbacks. Child-result callback turns and explicit no-delegation prompts—including separated wording such as “do not use tools, call APIs, delegate”—are exempt. Final synthesis waits for every started child’s durable lifecycle, then takes a one-per-prompt claim and persists the dispatch marker, so stale or overlapping callbacks cannot queue an additional synthesis turn.
 - Runtime execution logs a debug-only `manager_delegation` telemetry record for eligible manager sessions with child-session counts before and after the engine run or enforced delegation.
 - Manual live behavior can be sampled with `node packages/cuttlefish/scripts/delegation-live-harness.mjs --employee <manager-slug>` against a running gateway. The harness is not part of CI because it depends on live model behavior and local credentials.
+
+### Stopped Grok session recovery
+
+- Stopping a running Grok session clears its stale engine resume id before the next operator message is queued, so the next Grok turn starts fresh instead of restoring a locally terminated CLI session.
+- A late completion from the stopped or superseded turn cannot restore its old resume id.
 
 ### `GET /api/org/departments/:name/tickets/:id/session`
 - Best-effort ticket-to-session resolver for the kanban panel.
@@ -548,3 +553,11 @@
   session-scoped caller claims a manager identity other than its own bound employee.
 - An employee's `execution.maxToolCalls` (if configured) is now enforced per engine
   session via the internal hook endpoint instead of being silently ignored.
+
+
+### Security hardening for scoped sessions and connector turns
+
+- Session-scoped agent tokens cannot archive sessions, remove installed skills, or change the shared Talk engine/model configuration. Talk delegation also verifies that a scoped token’s body-supplied Talk session id is its own.
+- With no `gateway.fileReadRoots` configured, local-file reads are restricted to Cuttlefish-managed storage. Operators can add explicit project roots or use the documented `allowArbitraryFileRead` escape hatch for a local install.
+- Content that passed inbound screening remains wrapped as untrusted data. Automatic connector replies redact secret-shaped text before delivery.
+- Per-session API credentials are supplied only to the engine subprocess as `CUTTLEFISH_SESSION_TOKEN`; their raw value is not embedded in model-visible context.

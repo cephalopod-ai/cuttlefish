@@ -13,6 +13,10 @@ describe("scopedTokenForbidden — operator control plane", () => {
     expect(scopedTokenForbidden("GET", "/api/instances")).toBe(true);
     expect(scopedTokenForbidden("POST", "/api/auth/pair")).toBe(true);
     expect(scopedTokenForbidden("POST", "/api/org/employees")).toBe(true);
+    expect(scopedTokenForbidden("POST", "/api/archives")).toBe(true);
+    expect(scopedTokenForbidden("DELETE", "/api/archives/archive-1")).toBe(true);
+    expect(scopedTokenForbidden("POST", "/api/talk/engine")).toBe(true);
+    expect(scopedTokenForbidden("DELETE", "/api/skills/playtest")).toBe(true);
   });
 
   it("blocks human-oversight writes (approvals, checkpoints) but allows reads", () => {
@@ -40,6 +44,8 @@ describe("scopedTokenForbidden — operator control plane", () => {
     expect(scopedTokenForbidden("POST", "/api/sessions")).toBe(false);
     expect(scopedTokenForbidden("POST", "/api/sessions/s-1/message")).toBe(false);
     expect(scopedTokenForbidden("POST", "/api/files")).toBe(false);
+    expect(scopedTokenForbidden("GET", "/api/skills")).toBe(false);
+    expect(scopedTokenForbidden("GET", "/api/talk/engine")).toBe(false);
   });
 
   it("blocks path-traversal, redundant-slash, and case bypass attempts", () => {

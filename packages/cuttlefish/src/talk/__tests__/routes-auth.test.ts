@@ -126,4 +126,26 @@ describe("handleTalkApi delegate auth", () => {
       }),
     );
   });
+
+  it("rejects a scoped session token that names another Talk session in the delegate body", async () => {
+    const fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    const cap = makeRes();
+    const request = makeReq({ sessionId: "talk-1", thread: "new", brief: "start child" });
+    (request as IncomingMessage & { cuttlefishPrincipal?: unknown }).cuttlefishPrincipal = {
+      kind: "session",
+      sessionId: "session-elsewhere",
+    };
+    const context = {
+      apiToken: "route-api-token",
+      emit: vi.fn(),
+      getConfig: () => ({ gateway: { port: 8888 }, engines: { default: "claude", claude: { bin: "claude" } } }),
+    } as any;
+
+    await handleTalkApi(request, cap.res, context);
+
+    expect(cap.status).toBe(403);
+    expect(cap.body).toEqual({ error: "Forbidden: session-scoped token cannot target another session" });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 });

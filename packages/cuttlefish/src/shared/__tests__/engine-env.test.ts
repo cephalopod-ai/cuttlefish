@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { buildEngineEnv, ENGINE_ENV_SECRET_DENYLIST } from "../engine-env.js";
+import { buildEngineEnv, ENGINE_ENV_SECRET_DENYLIST, runWithEngineEnvironment } from "../engine-env.js";
 
 const ORIGINAL_ENV = { ...process.env };
 
@@ -58,5 +58,17 @@ describe("buildEngineEnv", () => {
 
     expect(env.TERM).toBe("xterm-256color");
     expect(env.ANTHROPIC_API_KEY).toBe("explicit");
+  });
+
+  it("passes a scoped per-turn credential without inheriting host session credentials", async () => {
+    process.env.CUTTLEFISH_SESSION_TOKEN = "host-session-token";
+    expect(buildEngineEnv({}).CUTTLEFISH_SESSION_TOKEN).toBeUndefined();
+
+    const token = await runWithEngineEnvironment(
+      { CUTTLEFISH_SESSION_TOKEN: "turn-session-token" },
+      async () => buildEngineEnv({}).CUTTLEFISH_SESSION_TOKEN,
+    );
+
+    expect(token).toBe("turn-session-token");
   });
 });

@@ -470,6 +470,8 @@ export async function handleTalkApi(
     if (method === "POST" && pathname === "/api/talk/delegate") {
       const parsed = await readJsonBody(req, res);
       if (!parsed.ok) return true;
+      const body = (parsed.body ?? {}) as { sessionId?: unknown };
+      if (rejectCrossSessionBody(body.sessionId)) return true;
       const config = context.getConfig();
       const base = gatewayBaseUrl({ port: config.gateway?.port || 8888, host: config.gateway?.host });
       const headers = jsonApiHeaders(context.apiToken ?? context.gatewayAuthToken);

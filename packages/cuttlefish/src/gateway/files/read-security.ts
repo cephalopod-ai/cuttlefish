@@ -117,7 +117,13 @@ export function isAllowedReadPath(
   };
   if (gateway.allowArbitraryFileRead === true) return true;
   const roots = gateway.fileReadRoots;
-  if (!Array.isArray(roots) || roots.length === 0) return true;
+  // A missing allowlist must never silently become host-wide file access. The
+  // documented default is Cuttlefish-managed state only; operators who need a
+  // project directory must opt in with gateway.fileReadRoots, and the explicit
+  // allowArbitraryFileRead escape hatch remains available for local installs.
+  if (!Array.isArray(roots) || roots.length === 0) {
+    return isInsidePath(realpathOrResolved(absPath), realpathOrResolved(CUTTLEFISH_HOME));
+  }
   const resolved = realpathOrResolved(absPath);
   return roots.some((root) => isInsidePath(resolved, realpathOrResolved(root)));
 }

@@ -95,6 +95,10 @@ describe("isAllowedReadPath — root policy", () => {
     expect(files.isAllowedReadPath("/etc/hosts", ctx({ allowArbitraryFileRead: true }))).toBe(true);
   });
 
+  it("defaults to Cuttlefish-managed paths and rejects host paths without an allowlist", () => {
+    expect(files.isAllowedReadPath(path.join(os.tmpdir(), "host-file.txt"), ctx({}))).toBe(false);
+  });
+
   it("rejects symlinks that point outside configured roots", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "cuttlefish-read-root-"));
     const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "cuttlefish-read-outside-"));

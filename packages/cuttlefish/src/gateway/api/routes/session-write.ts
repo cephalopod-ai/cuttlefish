@@ -14,6 +14,7 @@ import {
   getSession,
   hasPendingQueueItemBefore,
   insertMessage,
+  listChildSessions,
   type UpdateSessionFields,
   updateSession,
 } from "../../../sessions/registry.js";
@@ -52,7 +53,7 @@ import {
 import { HR_EMPLOYEE_NAME, HR_SESSION_KEY } from "../../org-policy.js";
 import { findHrSessionProfileConflict, getReusableHrSession } from "../../hr-session.js";
 import { acknowledgeLeaderAck } from "../../../sessions/leader-ack.js";
-import { markManagerDelegationSynthesisDispatched, resolveManagerDelegationSynthesis } from "../../../sessions/manager-delegation.js";
+import { claimManagerDelegationSynthesis, markManagerDelegationSynthesisDispatched } from "../../../sessions/manager-delegation.js";
 import { dispatchEmployeeSessionRun } from "../../mid-pair-orchestrator.js";
 import { buildWorkspaceProfilePrompt, resolveWorkspaceProfile, type ResolvedWorkspaceProfile } from "../../workspace-profiles.js";
 
@@ -246,7 +247,16 @@ export async function handleSessionWriteRoutes(
     context.sessionManager.getQueue().clearQueue(session.sessionKey || session.sourceRef || session.id);
     const stopped = killResult.interruptible > 0 || session.status !== "running";
     if (stopped) {
-      updateSession(params.id, { status: "idle", lastActivity: new Date().toISOString(), lastError: null });
+      // Current Grok releases cannot resume a turn that was terminated locally:
+      // passing the retained id makes the next message attempt a remote restore
+      // and fail with a 404. A genuine Grok Stop therefore starts the next turn
+      // fresh, while engines with supported resume semantics keep their ids.
+      updateSession(params.id, {
+        status: "idle",
+        lastActivity: new Date().toISOString(),
+        lastError: null,
+        ...(wasRunning && session.engine === "grok" ? { engineSessionId: null } : {}),
+      });
       context.emit("session:stopped", { sessionId: params.id });
     }
     json(res, {
@@ -656,7 +666,7 @@ export async function handleSessionWriteRoutes(
       notFound(res);
       return true;
     }
-    const session = maybeRevertEngineOverride(existingSession);
+    let session = maybeRevertEngineOverride(existingSession);
     const parsed = await readJsonBody(req, res);
     if (!parsed.ok) return true;
     const body = parsed.body as any;
@@ -717,7 +727,16 @@ export async function handleSessionWriteRoutes(
     );
     if (isNotification) {
       context.emit("session:notification", { sessionId: session.id, message: displayMessage });
-      const synthesis = resolveManagerDelegationSynthesis(session);
+      // Two child callbacks can enter this route before either request finishes
+      // reading its JSON body. Re-read the parent immediately before claiming a
+      // final synthesis so the second callback observes the first one's durable
+      // marker instead of dispatching the parent again from a stale snapshot.
+      const currentSession = getSession(session.id) ?? session;
+      const synthesis = claimManagerDelegationSynthesis(
+        currentSession.id,
+        currentSession.transportMeta,
+        listChildSessions(currentSession.id),
+      );
       if (!synthesis.shouldDispatch) {
         json(res, {
           status: "notification_recorded",
@@ -727,9 +746,9 @@ export async function handleSessionWriteRoutes(
         return true;
       }
       if (synthesis.tracked) {
-        updateSession(session.id, {
-          transportMeta: markManagerDelegationSynthesisDispatched(session.transportMeta),
-        });
+        session = updateSession(currentSession.id, {
+          transportMeta: markManagerDelegationSynthesisDispatched(currentSession.transportMeta),
+        }) ?? currentSession;
       }
     } else if (acknowledgeLeaderAck(session.id, session, { acknowledgedBy: session.parentSessionId ?? null })) {
       context.emit("session:updated", { sessionId: session.id });

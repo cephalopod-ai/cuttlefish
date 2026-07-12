@@ -159,6 +159,18 @@ describe("buildContext — config awareness", () => {
     expect(out).toContain("http://127.0.0.1:8899");
   });
 
+  it("references the scoped credential environment variable without embedding its value in model context", () => {
+    const config = {
+      gateway: { host: "127.0.0.1", port: 8899 },
+      engines: { default: "claude", claude: { model: "opus" } },
+    } as unknown as CuttlefishConfig;
+    const secret = "session:opaque-capability-token";
+    const out = buildContext({ ...baseOpts, config, sessionToken: secret });
+
+    expect(out).toContain("$CUTTLEFISH_SESSION_TOKEN");
+    expect(out).not.toContain(secret);
+  });
+
   it("omits the configuration section when no config is passed", () => {
     const out = buildContext({ ...baseOpts });
     expect(out).not.toContain("## Current configuration");

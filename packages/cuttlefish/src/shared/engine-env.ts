@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
 const SECRET_DENYLIST: ReadonlySet<string> = new Set([
   "ANTHROPIC_API_KEY",
   "ANTHROPIC_AUTH_TOKEN",
@@ -13,6 +15,7 @@ const SECRET_DENYLIST: ReadonlySet<string> = new Set([
   "GCLOUD_SERVICE_KEY",
   "CUTTLEFISH_GATEWAY_TOKEN",
   "CUTTLEFISH_INTERNAL_TOKEN",
+  "CUTTLEFISH_SESSION_TOKEN",
 ]);
 
 const SECRET_PREFIX_DENYLIST = ["TWILIO_"] as const;
@@ -20,6 +23,20 @@ const SECRET_PREFIX_DENYLIST = ["TWILIO_"] as const;
 export interface EngineEnvOptions {
   stripPrefixes?: string[];
   allowUnsafeTokens?: boolean;
+}
+
+const turnEnvironment = new AsyncLocalStorage<Record<string, string>>();
+
+/**
+ * Scope an explicitly granted per-turn credential to subprocesses spawned by
+ * the current engine run. It never mutates process.env, so concurrent sessions
+ * cannot observe one another's credentials.
+ */
+export function runWithEngineEnvironment<T>(
+  additions: Record<string, string>,
+  run: () => T,
+): T {
+  return turnEnvironment.run({ ...additions }, run);
 }
 
 export function buildEngineEnv(
@@ -33,7 +50,7 @@ export function buildEngineEnv(
     if (opts.stripPrefixes?.some((prefix) => key.startsWith(prefix))) continue;
     result[key] = value;
   }
-  return { ...result, ...additions };
+  return { ...result, ...(turnEnvironment.getStore() ?? {}), ...additions };
 }
 
 export const ENGINE_ENV_SECRET_DENYLIST = SECRET_DENYLIST;

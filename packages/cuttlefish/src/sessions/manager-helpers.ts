@@ -1,5 +1,6 @@
 import type { Connector, Employee, EngineResult, IncomingMessage, KnowledgeSink, Session } from "../shared/types.js";
 import { logger } from "../shared/logger.js";
+import { redactText } from "../shared/redact.js";
 import { emitSessionSummaryBestEffort, knowledgeRelayOptions } from "../knowledge/outbox-service.js";
 import { notifyParentSession } from "./callbacks.js";
 import {
@@ -122,7 +123,7 @@ export async function finalizeManagedSessionTurn(input: {
     await input.connector.setTypingStatus(input.target.channel, input.threadTs, "").catch(() => {});
   }
   if (!input.wasInterrupted) {
-    await input.connector.replyMessage(input.target, responseText);
+    await input.connector.replyMessage(input.target, redactText(responseText));
   }
   if (input.decorateMessages && input.capabilities.reactions) {
     await input.connector.removeReaction(input.target, "eyes").catch(() => {});

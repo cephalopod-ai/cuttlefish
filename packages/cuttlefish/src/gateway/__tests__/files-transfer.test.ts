@@ -64,4 +64,10 @@ describe("resolveFileSpec (CF2-202)", () => {
     const result = transfer.resolveFileSpec({ file }, fakeContext());
     expect(result.buffer.toString()).toBe("plain content");
   });
+
+  it("refuses a host path outside Cuttlefish-managed storage when no roots are configured", () => {
+    const outside = path.join(os.tmpdir(), `cuttlefish-transfer-host-${Date.now()}.txt`);
+    fs.writeFileSync(outside, "plain content");
+    expect(() => transfer.resolveFileSpec({ file: outside }, fakeContext())).toThrow(/fileReadRoots/);
+  });
 });

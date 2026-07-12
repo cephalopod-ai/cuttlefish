@@ -819,7 +819,7 @@ function buildApiReferenceSummary(gatewayUrl: string, portalName: string, employ
 function buildApiReference(gatewayUrl: string, portalName: string, employee?: Employee, directReportCount = 0, sessionToken?: string): string {
   const header = `## ${portalName} Gateway API (base URL: ${gatewayUrl})`;
   const authLine = sessionToken
-    ? `Your session token (valid for 30 days): \`${sessionToken}\` — send as \`Authorization: Bearer <token>\` to authenticate API calls. Do not share or log this token.`
+    ? `For session-scoped gateway calls, use \`Authorization: Bearer "$CUTTLEFISH_SESSION_TOKEN"\`. The gateway injects that credential into this engine process; never print, log, or place it in a message.`
     : `Privileged endpoints require local gateway auth; the web UI and built-in delegation tools handle this automatically.`;
   const attachmentsLine =
     `- Push a file/image into this chat (web view): \`curl -X POST ${gatewayUrl}/api/sessions/<your-session-id>/attachments -H 'Content-Type: application/json' -d '{"path":"/abs/path","text":"caption"}'\``;

@@ -14,6 +14,7 @@ import { logger } from "../shared/logger.js";
 import { CUTTLEFISH_HOME } from "../shared/paths.js";
 import { resolveEffort } from "../shared/effort.js";
 import { resolveEngineInvocation } from "../shared/engine-arg-resolver.js";
+import { runWithEngineEnvironment } from "../shared/engine-env.js";
 import { detectRateLimit } from "../shared/rateLimit.js";
 import {
   handleRateLimit,
@@ -191,6 +192,9 @@ export async function runWebSession(
   if (enforcedDelegation) return;
 
   try {
+    const scopedSessionToken = context.apiToken
+      ? createScopedSessionToken(currentSession.id, context.apiToken)
+      : undefined;
 
     const systemPrompt = buildContext({
       source: currentSession.source,
@@ -201,7 +205,7 @@ export async function runWebSession(
       connectors: Array.from(context.connectors.keys()),
       config,
       sessionId: currentSession.id,
-      sessionToken: context.apiToken ? createScopedSessionToken(currentSession.id, context.apiToken) : undefined,
+      sessionToken: scopedSessionToken,
       hierarchy: orgHierarchy,
       voicePersona: currentSession.source === "talk" ? getOrchestratorPersona() : undefined,
       talkThreads:
@@ -518,7 +522,9 @@ export async function runWebSession(
         cliFlags: employee?.cliFlags,
       });
 
-      result = await engine.run({
+      result = await runWithEngineEnvironment(
+        scopedSessionToken ? { CUTTLEFISH_SESSION_TOKEN: scopedSessionToken } : {},
+        () => engine.run({
       prompt: contextPacket?.prompt ?? promptToRun,
       resumeSessionId: currentSession.engineSessionId ?? undefined,
       systemPrompt: contextPacket?.systemPrompt ?? systemPrompt,
@@ -601,7 +607,8 @@ export async function runWebSession(
         });
         logger.info(`Web session ${currentSession.id} recovered by late Stop after a failed turn`);
       },
-      });
+        }),
+      );
       } finally {
         if (stallWatchdog) clearInterval(stallWatchdog);
       }
@@ -721,6 +728,7 @@ export async function runWebSession(
         engines: context.sessionManager.getEngines(),
         employee,
         engine,
+        sessionToken: scopedSessionToken,
         rateLimit,
         originalResult: result,
         hooks: {
@@ -881,7 +889,10 @@ export async function runWebSession(
     }
 
     const completedSession = updateSession(currentSession.id, {
-      ...(result.sessionId?.trim() ? { engineSessionId: result.sessionId } : {}),
+      // A stopped/superseded turn can settle after its replacement has already
+      // cleared or changed the resume id. Never let that stale completion put
+      // its engine session id back onto the durable session record.
+      ...(!quietPreempted && result.sessionId?.trim() ? { engineSessionId: result.sessionId } : {}),
       ...(typeof result.contextTokens === "number" ? { lastContextTokens: result.contextTokens } : {}),
       status: quietPreempted ? "idle" : (result.error ? "error" : "idle"),
       lastActivity: new Date().toISOString(),

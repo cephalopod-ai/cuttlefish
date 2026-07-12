@@ -67,6 +67,12 @@ export function scopedTokenForbidden(method: string | undefined, rawPathname: st
   if (pathname.startsWith("/api/connectors/") && (pathname.endsWith("/incoming") || pathname.endsWith("/proxy"))) {
     return true;
   }
+  // Archives delete arbitrary sessions named in a request body, so they cannot
+  // be constrained by the session id carried in a scoped token. Installed
+  // skills and Talk engine switches likewise mutate operator-wide state.
+  if (pathname === "/api/archives" || pathname.startsWith("/api/archives/")) return true;
+  if (pathname === "/api/skills" || pathname.startsWith("/api/skills/")) return m !== "GET";
+  if (pathname === "/api/talk/engine" && m !== "GET") return true;
   // Org roster is readable; mutations (create/rename/rank/cliFlags/delete) are not.
   if ((pathname === "/api/org" || pathname.startsWith("/api/org/")) && m !== "GET") return true;
   // Human-oversight control plane: an agent must never approve its own security

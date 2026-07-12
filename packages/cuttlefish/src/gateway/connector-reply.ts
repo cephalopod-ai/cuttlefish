@@ -1,4 +1,5 @@
 import { logger } from "../shared/logger.js";
+import { redactText } from "../shared/redact.js";
 import type { Session, Connector } from "../shared/types.js";
 import { recordDroppedNotification } from "../shared/process-health.js";
 
@@ -83,7 +84,7 @@ export async function deliverConnectorReply(
       // like success here. Treat a missing message id as a delivery failure so
       // the retry engages and — if all attempts fail — the drop is SURFACED, not
       // silently reported as answered.
-      const messageId = await connector.replyMessage(target, text);
+      const messageId = await connector.replyMessage(target, redactText(text));
       if (messageId !== undefined) return; // delivery confirmed
       throw new Error(lastError);
     } catch (err) {

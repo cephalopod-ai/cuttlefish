@@ -26,6 +26,7 @@ import { buildContextPacket, contextManagerMode, logContextPacketMetadata } from
 import { SessionQueue } from "./queue.js";
 import { CUTTLEFISH_HOME } from "../shared/paths.js";
 import { logger } from "../shared/logger.js";
+import { redactText } from "../shared/redact.js";
 import { resolveEffort } from "../shared/effort.js";
 import { resolveEngineInvocation } from "../shared/engine-arg-resolver.js";
 import { effortLevelsForModel, engineAvailable, isKnownEngine, engineUnavailableMessage } from "../shared/models.js";
@@ -47,6 +48,7 @@ import { finalizeManagedSessionTurn, maybeRevertEngineOverride, mergeTransportMe
 import { isUntrustedSource, wrapUntrustedMessage } from "./untrusted-input.js";
 import { handleSessionCommand, resetSession } from "./session-commands.js";
 import { createScopedSessionToken } from "../gateway/auth.js";
+import { runWithEngineEnvironment } from "../shared/engine-env.js";
 import type { ContentScreeningResult } from "../shared/types.js";
 export { mergeTransportMeta } from "./manager-helpers.js";
 
@@ -74,7 +76,7 @@ function replyMessageLogged(
   text: string,
   sessionId: string,
 ): Promise<unknown> {
-  return Promise.resolve(connector.replyMessage(target, text)).catch((err) => {
+  return Promise.resolve(connector.replyMessage(target, redactText(text))).catch((err) => {
     logger.warn(
       `Session ${sessionId}: connector ${connector.name ?? "?"} failed to deliver a reply (persisted to transcript): ${err instanceof Error ? err.message : String(err)}`,
     );
@@ -274,6 +276,9 @@ export class SessionManager {
     } catch { /* fallback to filesystem scan in context builder */ }
 
     try {
+      const scopedSessionToken = this.apiToken
+        ? createScopedSessionToken(session.id, this.apiToken)
+        : undefined;
       const systemPrompt = buildContext({
         source: session.source,
         channel: msg.channel,
@@ -284,7 +289,7 @@ export class SessionManager {
         connectors: this.connectorNames,
         config: this.config,
         sessionId: session.id,
-        sessionToken: this.apiToken ? createScopedSessionToken(session.id, this.apiToken) : undefined,
+        sessionToken: scopedSessionToken,
         channelName: (msg.transportMeta?.channelName as string) || undefined,
         hierarchy,
       });
@@ -424,7 +429,9 @@ export class SessionManager {
           });
       if (contextPacket) logContextPacketMetadata(contextPacket.metadata, session.id);
 
-      const result = await engine.run({
+      const result = await runWithEngineEnvironment(
+        scopedSessionToken ? { CUTTLEFISH_SESSION_TOKEN: scopedSessionToken } : {},
+        () => engine.run({
         prompt: contextPacket?.prompt ?? promptToRun,
         resumeSessionId: session.engineSessionId ?? undefined,
         systemPrompt: contextPacket?.systemPrompt ?? systemPrompt,
@@ -455,7 +462,8 @@ export class SessionManager {
           void replyMessageLogged(connector, target, labelled, session.id);
           logger.info(`Session ${session.id} recovered by late Stop after a failed turn`);
         },
-      });
+        }),
+      );
 
       const wasInterrupted = result.error?.startsWith("Interrupted");
 
@@ -497,6 +505,7 @@ export class SessionManager {
           engines: this.engines,
           employee,
           engine,
+          sessionToken: scopedSessionToken,
           rateLimit,
           originalResult: result,
           hooks: {

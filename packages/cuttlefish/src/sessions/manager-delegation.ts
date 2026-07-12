@@ -29,6 +29,7 @@ const CALLBACK_PREFIX_RE = /^(?:📩|⚠️|🔄)?\s*(?:employee|thread)\s+["`]/
 const EXPLICIT_INLINE_RE = /\b(?:do(?:\s+it)?\s+yourself|don't\s+delegate|do\s+not\s+delegate|do\s+not\s+(?:(?:use|call|create|write|read|modify|run|access)\b[^.!?\n]{0,120}\bdelegate)|no\s+delegation|stay\s+inline|handle\s+inline)\b/i;
 
 type ManagerDelegationEnforcementMeta = {
+  promptHash?: unknown;
   childSessionIds?: unknown;
   completedChildSessionIds?: unknown;
   synthesisDispatched?: unknown;
@@ -39,6 +40,8 @@ export type ManagerDelegationSynthesisDecision =
   | { tracked: false; shouldDispatch: true; pendingChildSessionIds: [] }
   | { tracked: true; shouldDispatch: false; pendingChildSessionIds: string[]; reason: "waiting_for_children" | "already_dispatched" }
   | { tracked: true; shouldDispatch: true; pendingChildSessionIds: [] };
+
+const activeSynthesisClaims = new Set<string>();
 
 export interface ManagerDelegationTelemetry {
   event: "manager_delegation";
@@ -178,6 +181,7 @@ export function buildManagerDelegationTelemetry(input: {
  */
 export function resolveManagerDelegationSynthesis(
   session: Pick<Session, "transportMeta">,
+  childSessions?: ReadonlyArray<Pick<Session, "id" | "status" | "transportMeta">>,
 ): ManagerDelegationSynthesisDecision {
   const meta = asRecord(session.transportMeta);
   const enforcement = asRecord(meta?.managerDelegationEnforcement) as ManagerDelegationEnforcementMeta | null;
@@ -196,10 +200,34 @@ export function resolveManagerDelegationSynthesis(
       : [],
   );
   const pendingChildSessionIds = childSessionIds.filter((id) => !completedChildSessionIds.has(id));
-  if (pendingChildSessionIds.length > 0) {
-    return { tracked: true, shouldDispatch: false, pendingChildSessionIds, reason: "waiting_for_children" };
+  const livePendingChildSessionIds = pendingManagerDelegationChildren(childSessionIds, childSessions);
+  const pending = livePendingChildSessionIds ?? pendingChildSessionIds;
+  if (pending.length > 0) {
+    return { tracked: true, shouldDispatch: false, pendingChildSessionIds: pending, reason: "waiting_for_children" };
   }
   return { tracked: true, shouldDispatch: true, pendingChildSessionIds: [] };
+}
+
+/**
+ * Claim a completed manager delegation before dispatch. The durable marker
+ * remains the recovery record; this process-local guard closes the window where
+ * callback requests overlap or stale metadata arrives after a prior claim.
+ */
+export function claimManagerDelegationSynthesis(
+  sessionId: string,
+  transportMeta: Session["transportMeta"],
+  childSessions?: ReadonlyArray<Pick<Session, "id" | "status" | "transportMeta">>,
+): ManagerDelegationSynthesisDecision {
+  const decision = resolveManagerDelegationSynthesis({ transportMeta }, childSessions);
+  if (!decision.tracked || !decision.shouldDispatch) return decision;
+  const enforcement = asRecord(asRecord(transportMeta)?.managerDelegationEnforcement) as ManagerDelegationEnforcementMeta | null;
+  const promptHash = typeof enforcement?.promptHash === "string" ? enforcement.promptHash : "current";
+  const claimKey = `${sessionId}:${promptHash}`;
+  if (activeSynthesisClaims.has(claimKey)) {
+    return { tracked: true, shouldDispatch: false, pendingChildSessionIds: [], reason: "already_dispatched" };
+  }
+  activeSynthesisClaims.add(claimKey);
+  return decision;
 }
 
 /** Record an enforced child callback before its notification wakes the parent. */
@@ -242,6 +270,33 @@ export function markManagerDelegationSynthesisDispatched(
       synthesisDispatchedAt: now,
     },
   } as Session["transportMeta"];
+}
+
+function pendingManagerDelegationChildren(
+  childSessionIds: string[],
+  childSessions: ReadonlyArray<Pick<Session, "id" | "status" | "transportMeta">> | undefined,
+): string[] | null {
+  if (!childSessions) return null;
+  const byId = new Map(childSessions.map((child) => [child.id, child]));
+  const hasLiveRunEvidence = childSessionIds.some((id) => {
+    const child = byId.get(id);
+    if (!child) return false;
+    if (child.status !== "idle") return true;
+    const meta = asRecord(child.transportMeta);
+    return typeof meta?.activeRunId === "string" || typeof meta?.latestRunId === "string";
+  });
+  // Unit-created child sessions do not have a lifecycle record. Once a real
+  // child has started, its lifecycle state is a stronger barrier than a stale
+  // callback snapshot that may incorrectly list it as complete.
+  if (!hasLiveRunEvidence) return null;
+  return childSessionIds.filter((id) => {
+    const child = byId.get(id);
+    if (!child) return false;
+    if (child.status === "error" || child.status === "interrupted") return false;
+    if (child.status !== "idle") return true;
+    const meta = asRecord(child.transportMeta);
+    return typeof meta?.activeRunId !== "string" && typeof meta?.latestRunId !== "string";
+  });
 }
 
 function compactPersona(persona: string): string {

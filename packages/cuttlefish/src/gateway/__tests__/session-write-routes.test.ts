@@ -310,8 +310,13 @@ describe("POST /api/sessions/:id/stop on an idle session (I-4)", () => {
   it("reports wasRunning: true when a live turn was actually interrupted", async () => {
     const { api, reg } = await setup();
     const ctx = makeCtx(api);
-    const session = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:stop-live", prompt: "seed" });
-    reg.updateSession(session.id, { status: "running" });
+    const session = reg.createSession({
+      engine: "claude",
+      source: "web",
+      sourceRef: "web:stop-live",
+      prompt: "seed",
+    });
+    reg.updateSession(session.id, { status: "running", engineSessionId: "claude-resume-id" });
     hoisted.killSessionEngines.mockReturnValue({ interruptible: 1 });
 
     const cap = makeRes();
@@ -319,6 +324,40 @@ describe("POST /api/sessions/:id/stop on an idle session (I-4)", () => {
 
     expect(cap.status).toBe(200);
     expect(cap.body).toEqual(expect.objectContaining({ status: "stopped", stopped: true, wasRunning: true }));
+    expect(reg.getSession(session.id)?.engineSessionId).toBe("claude-resume-id");
+  });
+
+  it("clears a stopped Grok resume id so a follow-up starts a fresh turn", async () => {
+    const { api, reg } = await setup();
+    const ctx = makeCtx(api);
+    ctx.getConfig = () => ({ gateway: {}, engines: { default: "grok", grok: { bin: "grok", model: "grok-4.5" } }, portal: {} }) as any;
+    ctx.sessionManager.getEngine = () => ({ name: "grok" }) as any;
+    const session = reg.createSession({
+      engine: "grok",
+      source: "web",
+      sourceRef: "web:stop-grok",
+      prompt: "seed",
+    });
+    reg.updateSession(session.id, { status: "running", engineSessionId: "stale-grok-session" });
+    hoisted.killSessionEngines.mockReturnValue({ interruptible: 1 });
+
+    const stop = makeRes();
+    await api.handleApiRequest(makeReq("POST", `/api/sessions/${session.id}/stop`), stop.res, ctx);
+
+    expect(stop.status).toBe(200);
+    expect(reg.getSession(session.id)).toMatchObject({ status: "idle", engineSessionId: null });
+
+    const followUp = makeRes();
+    await api.handleApiRequest(
+      makeJsonReq("POST", `/api/sessions/${session.id}/message`, { message: "continue freshly" }),
+      followUp.res,
+      ctx,
+    );
+
+    expect(followUp.status).toBe(200);
+    expect(hoisted.dispatchEmployeeSessionRun).toHaveBeenCalledTimes(1);
+    const dispatched = hoisted.dispatchEmployeeSessionRun.mock.calls as unknown[][];
+    expect(dispatched[0]?.[0]).toMatchObject({ engine: "grok", engineSessionId: null });
   });
 
   it("reports wasRunning: false even if the engine reports interruptible > 0 for an already-idle session", async () => {
@@ -397,5 +436,85 @@ describe("session notification aggregation", () => {
     expect(duplicateNotification.status).toBe(200);
     expect(duplicateNotification.body).toMatchObject({ status: "notification_recorded" });
     expect(hoisted.dispatchEmployeeSessionRun).toHaveBeenCalledTimes(1);
+  });
+
+  it("claims a fully completed manager synthesis once when notification requests overlap", async () => {
+    const { api, reg } = await setup();
+    const ctx = makeCtx(api);
+    ctx.getConfig = () => ({ gateway: {}, engines: { default: "claude", claude: { bin: "node", model: "sonnet" } }, portal: {} }) as any;
+    ctx.sessionManager.getEngine = () => ({ name: "claude" }) as any;
+
+    const parent = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:parent-overlap", prompt: "parent" });
+    const firstChild = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:child-overlap-a", parentSessionId: parent.id, prompt: "child a" });
+    const secondChild = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:child-overlap-b", parentSessionId: parent.id, prompt: "child b" });
+    reg.updateSession(parent.id, {
+      transportMeta: {
+        managerDelegationEnforcement: {
+          childSessionIds: [firstChild.id, secondChild.id],
+          completedChildSessionIds: [firstChild.id, secondChild.id],
+          synthesisDispatched: false,
+        },
+      } as any,
+    });
+
+    const firstNotification = makeRes();
+    const secondNotification = makeRes();
+    await Promise.all([
+      api.handleApiRequest(
+        makeJsonReq("POST", `/api/sessions/${parent.id}/message`, { message: "child a callback", role: "notification" }),
+        firstNotification.res,
+        ctx,
+      ),
+      api.handleApiRequest(
+        makeJsonReq("POST", `/api/sessions/${parent.id}/message`, { message: "child b callback", role: "notification" }),
+        secondNotification.res,
+        ctx,
+      ),
+    ]);
+
+    expect(firstNotification.status).toBe(200);
+    expect(secondNotification.status).toBe(200);
+    expect(hoisted.dispatchEmployeeSessionRun).toHaveBeenCalledTimes(1);
+    expect((reg.getSession(parent.id)?.transportMeta as any)?.managerDelegationEnforcement?.synthesisDispatched).toBe(true);
+    expect([firstNotification.body?.status, secondNotification.body?.status]).toContain("notification_recorded");
+  });
+
+  it("waits for a child still running even if a stale callback ledger says every child completed", async () => {
+    const { api, reg } = await setup();
+    const ctx = makeCtx(api);
+    ctx.getConfig = () => ({ gateway: {}, engines: { default: "claude", claude: { bin: "node", model: "sonnet" } }, portal: {} }) as any;
+    ctx.sessionManager.getEngine = () => ({ name: "claude" }) as any;
+
+    const parent = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:parent-live-barrier", prompt: "parent" });
+    const firstChild = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:child-live-a", parentSessionId: parent.id, prompt: "child a" });
+    const secondChild = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:child-live-b", parentSessionId: parent.id, prompt: "child b" });
+    reg.updateSession(firstChild.id, {
+      status: "idle",
+      transportMeta: { activeRunId: "child-a-run", latestRunId: "child-a-run" } as any,
+    });
+    reg.updateSession(secondChild.id, {
+      status: "running",
+      transportMeta: { activeRunId: "child-b-run", latestRunId: "child-b-run" } as any,
+    });
+    reg.updateSession(parent.id, {
+      transportMeta: {
+        managerDelegationEnforcement: {
+          childSessionIds: [firstChild.id, secondChild.id],
+          completedChildSessionIds: [firstChild.id, secondChild.id],
+          synthesisDispatched: false,
+        },
+      } as any,
+    });
+
+    const notification = makeRes();
+    await api.handleApiRequest(
+      makeJsonReq("POST", `/api/sessions/${parent.id}/message`, { message: "first child callback", role: "notification" }),
+      notification.res,
+      ctx,
+    );
+
+    expect(notification.status).toBe(200);
+    expect(notification.body).toMatchObject({ status: "notification_recorded", pendingChildSessionIds: [secondChild.id] });
+    expect(hoisted.dispatchEmployeeSessionRun).not.toHaveBeenCalled();
   });
 });
