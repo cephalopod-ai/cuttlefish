@@ -6,7 +6,9 @@
 - `POST /webhooks/twilio/sms`
 - Cuttlefish sends outbound SMS through Twilio's official Node helper library.
   Signed, form-encoded inbound SMS webhooks are accepted only from configured
-  `allowFrom` numbers and create or continue a sender-scoped session.
+  `allowFrom` numbers and create or continue a sender-scoped session. Inbound
+  SMS is treated as untrusted data, screened before it reaches an engine, and
+  cannot use its scoped session credential to send automated outbound SMS.
 - The webhook does not accept gateway credentials: it requires Twilio's
   `X-Twilio-Signature` validation against the exact configured HTTPS URL and
   returns empty TwiML while Cuttlefish generates its asynchronous SMS reply.

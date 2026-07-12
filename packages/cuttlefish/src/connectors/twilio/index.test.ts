@@ -3,6 +3,7 @@ import type http from "node:http";
 import { describe, expect, it, vi } from "vitest";
 import Twilio from "twilio";
 import { TwilioConnector } from "./index.js";
+import { isUntrustedSource } from "../../sessions/untrusted-input.js";
 
 const config = {
   fromNumber: "+15551234567",
@@ -64,6 +65,7 @@ describe("TwilioConnector", () => {
       text: "hello from SMS",
       replyContext: { channel: "+15557654321", from: "+15551234567", messageSid: params.MessageSid },
     }));
+    expect(isUntrustedSource(received.mock.calls[0]?.[0]?.source)).toBe(true);
 
     const duplicate = makeResponse();
     await connector.handleInboundWebhook(makeRequest(body, signature), duplicate.response);

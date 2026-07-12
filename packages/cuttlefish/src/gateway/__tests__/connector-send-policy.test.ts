@@ -52,6 +52,14 @@ describe("authorizeConnectorSend", () => {
     expect(r.reason).toMatch(/may not send outbound/);
   });
 
+  it("rejects a Twilio SMS session from sending through Twilio", () => {
+    const r = authorizeConnectorSend({ kind: "session", sessionId: "s1" }, "twilio", {
+      getSession: fakeGetSession({ connector: "twilio", source: "twilio" }),
+    });
+    expect(r.allowed).toBe(false);
+    expect(r.reason).toMatch(/may not send outbound/);
+  });
+
   it("rejects when the caller session no longer exists", () => {
     const r = authorizeConnectorSend({ kind: "session", sessionId: "gone" }, "slack", {
       getSession: fakeGetSession(undefined),

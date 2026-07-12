@@ -50,10 +50,14 @@ configured in Twilio, including any path and query string.
 4. Restart Cuttlefish from the source checkout (`pnpm cuttlefish start`).
 
 Twilio sends form-encoded inbound SMS payloads to this URL. Cuttlefish verifies
-the `X-Twilio-Signature` with Twilio's official helper before routing an SMS, and
-returns empty TwiML immediately; the agent response is sent later through the
-Messages API. Unsigned, oversized, duplicate, and non-allowlisted requests do
-not reach an agent.
+the `X-Twilio-Signature` with Twilio's official helper before routing an SMS,
+then treats the message as untrusted data and screens it before an engine can
+act on it. The inbound session's scoped credential cannot directly call an
+outbound SMS send endpoint; completed-turn replies continue through the
+gateway's centralized redaction and delivery path. Cuttlefish returns empty
+TwiML immediately; the connector response is sent later through the Messages
+API. Unsigned, oversized, duplicate, and non-allowlisted requests do not reach
+an agent.
 
 Use a real TLS certificate for public deployments. Twilio's official guides cover
 [sending SMS](https://www.twilio.com/docs/messaging/quickstart),
