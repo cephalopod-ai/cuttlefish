@@ -6,16 +6,16 @@ describe("parseGrokModels", () => {
     const parsed = parseGrokModels(`
 You are logged in with grok.com.
 
-Default model: grok-build
+Default model: grok-4.5
 
 Available models:
-  * grok-build (default)
+  * grok-4.5 (default)
   - grok-composer-2.5-fast
 `);
 
-    expect(parsed.defaultModel).toBe("grok-build");
-    expect(parsed.models.map((m) => m.id)).toEqual(["grok-build", "grok-composer-2.5-fast"]);
-    expect(parsed.models.map((m) => m.label)).toEqual(["Grok Build", "Grok Composer 2.5 Fast"]);
+    expect(parsed.defaultModel).toBe("grok-4.5");
+    expect(parsed.models.map((m) => m.id)).toEqual(["grok-4.5", "grok-composer-2.5-fast"]);
+    expect(parsed.models.map((m) => m.label)).toEqual(["Grok 4.5", "Grok Composer 2.5 Fast"]);
     expect(parsed.models[0].supportsEffort).toBe(true);
     expect(parsed.models[0].effortLevels).toEqual(["low", "medium", "high", "xhigh", "max"]);
   });
@@ -24,8 +24,8 @@ Available models:
 describe("knownGrokModels", () => {
   it("keeps the known Grok catalog available before dynamic discovery completes", () => {
     const known = knownGrokModels();
-    expect(known.defaultModel).toBe("grok-build");
-    expect(known.models.map((m) => m.id)).toEqual(["grok-build", "grok-composer-2.5-fast"]);
+    expect(known.defaultModel).toBe("grok-4.5");
+    expect(known.models.map((m) => m.id)).toEqual(["grok-4.5", "grok-composer-2.5-fast"]);
   });
 
   it("preserves an unknown pinned model as the default", () => {

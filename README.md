@@ -105,7 +105,7 @@ Cuttlefish detects whichever agent CLIs are on your `PATH` and makes them interc
 |--------|-----------|---------|-------|--------|
 | **claude** | Anthropic Claude Code - first-party, subscription-friendly | `npm install -g @anthropic-ai/claude-code` | Chat (PTY + live stream) · CLI (xterm) | low / medium / high |
 | **codex** | OpenAI Codex CLI | `npm install -g @openai/codex` | Chat · CLI (xterm) | low / medium / high / xhigh |
-| **grok** | xAI Grok CLI | `npm install -g @xai-official/grok` (run `grok` once to auth) | Chat · CLI (xterm) | low / medium / high / xhigh / max |
+| **grok** | xAI Grok Build CLI | `curl -fsSL https://x.ai/cli/install.sh \| bash` (or `npm install -g @xai-official/grok`; run `grok` once to auth) | Chat · CLI (xterm) | low / medium / high / xhigh / max |
 | **antigravity** | Antigravity CLI (`agy`) | see Antigravity docs | CLI (xterm) | - |
 | **pi** | Pi coding agent CLI | see Pi CLI docs | Chat | - |
 | **hermes** | NousResearch Hermes - open-source, model-agnostic agent | `curl -fsSL https://hermes-agent.nousresearch.com/install.sh \| bash` | Chat (ACP streaming) · CLI (xterm view) | - |

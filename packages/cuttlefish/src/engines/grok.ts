@@ -9,7 +9,8 @@ import { tailTranscriptLines, type TranscriptTailer } from "./transcript-tailer.
 import { stripDisallowedCliFlags } from "../shared/cli-flag-policy.js";
 import { capAppend, ENGINE_LINE_BUF_MAX, ENGINE_OUTPUT_MAX } from "../shared/cap-append.js";
 
-export const GROK_DEFAULT_MODEL = "grok-build";
+export const GROK_DEFAULT_MODEL = "grok-4.5";
+const LEGACY_GROK_BUILD_MODEL = "grok-build";
 export const GROK_SESSIONS_DIR = path.join(os.homedir(), ".grok", "sessions");
 
 const STDERR_MAX = 10 * 1024;
@@ -36,9 +37,20 @@ export function grokCliFlags(flags: string[] | undefined): string[] {
   return stripDisallowedCliFlags(flags ?? []).filter((flag) => flag !== "--chrome");
 }
 
+/**
+ * `grok-build` was Cuttlefish's pre-0.2.93 default, but the current CLI no
+ * longer accepts it as a model id. Omit that legacy pin so the installed CLI
+ * selects its own current default. This keeps older config.yaml files working
+ * without forcing a model migration on users running a different CLI release.
+ */
+export function grokCliModel(model: string | undefined): string | undefined {
+  return model === LEGACY_GROK_BUILD_MODEL ? undefined : model;
+}
+
 export function buildGrokHeadlessArgs(opts: EngineRunOpts, prompt: string, sessionId: string): string[] {
   const args = ["--no-auto-update"];
-  if (opts.model) args.push("--model", opts.model);
+  const model = grokCliModel(opts.model);
+  if (model) args.push("--model", model);
   if (opts.effortLevel && opts.effortLevel !== "default") args.push("--effort", opts.effortLevel);
   if (opts.cwd) args.push("--cwd", opts.cwd);
   if (opts.resumeSessionId) args.push("--resume", sessionId);
@@ -514,7 +526,7 @@ export class GrokEngine implements InterruptibleEngine {
 
     const bin = resolveBin("grok", opts.bin);
     const args = buildGrokHeadlessArgs(opts, prompt, grokSessionId);
-    logger.info(`Grok engine starting: ${bin} --model ${opts.model || "default"} (session: ${grokSessionId})`);
+    logger.info(`Grok engine starting: ${bin} --model ${grokCliModel(opts.model) || "default"} (session: ${grokSessionId})`);
     const transcriptBaseline = listTranscriptStats();
 
     return new Promise((resolve, reject) => {

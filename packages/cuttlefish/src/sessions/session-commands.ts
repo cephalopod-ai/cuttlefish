@@ -131,7 +131,7 @@ export async function handleSessionCommand(
       `Claude: ${deps.config.engines.claude.model}`,
       `Codex: ${deps.config.engines.codex.model}`,
       ...(deps.config.engines.antigravity ? [`Antigravity: ${deps.config.engines.antigravity.model ?? "Gemini 3.5 Flash (Medium)"}`] : []),
-      ...(deps.config.engines.grok ? [`Grok: ${deps.config.engines.grok.model ?? "grok-build"}`] : []),
+      ...(deps.config.engines.grok ? [`Grok: ${deps.config.engines.grok.model ?? "grok-4.5"}`] : []),
       ...(deps.config.engines.ollama ? [`Ollama: ${deps.config.engines.ollama.model ?? "gemma4"}`] : []),
       ...(deps.config.engines.kilo ? [`Kilo: ${deps.config.engines.kilo.model ?? "default"}`] : []),
       "Connectors:",

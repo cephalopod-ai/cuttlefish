@@ -74,7 +74,7 @@ describe("Grok interactive protocol helpers", () => {
     const args = buildGrokInteractiveArgs({
       prompt: "",
       cwd: "/workspace",
-      model: "grok-build",
+      model: "grok-4.5",
       effortLevel: "xhigh",
       cliFlags: ["--chrome", "--custom"],
     } as any);
@@ -82,7 +82,7 @@ describe("Grok interactive protocol helpers", () => {
     expect(args).toContain("--no-auto-update");
     expect(args).toContain("--no-alt-screen");
     expect(args).toContain("--always-approve");
-    expect(args[args.indexOf("--model") + 1]).toBe("grok-build");
+    expect(args[args.indexOf("--model") + 1]).toBe("grok-4.5");
     expect(args[args.indexOf("--effort") + 1]).toBe("xhigh");
     expect(args[args.indexOf("--cwd") + 1]).toBe("/workspace");
     expect(args).not.toContain("--session-id");
@@ -97,7 +97,7 @@ describe("Grok interactive protocol helpers", () => {
     const args = buildGrokInteractiveArgs({
       prompt: "",
       cwd: "/workspace",
-      model: "grok-build",
+      model: "grok-4.5",
     } as any, "grok-session-1");
 
     expect(args[args.indexOf("--resume") + 1]).toBe("grok-session-1");
@@ -108,10 +108,16 @@ describe("Grok interactive protocol helpers", () => {
     const args = buildGrokInteractiveArgs({
       prompt: "",
       cwd: "/workspace",
-      model: "grok-build",
+      model: "grok-4.5",
     } as any, "sess-1", "system instructions");
 
     expect(args[args.indexOf("--system-prompt-override") + 1]).toBe("system instructions");
+  });
+
+  it("does not pass the removed grok-build pin to an interactive CLI", () => {
+    const args = buildGrokInteractiveArgs({ prompt: "", model: "grok-build" } as any);
+
+    expect(args).not.toContain("--model");
   });
 
   it("parses transcript lines through the shared Grok JSON parser", () => {
@@ -165,13 +171,13 @@ describe("GrokInteractiveEngine", () => {
   it("forwards model/session into idle-spawned PTY args", () => {
     engine.ensureIdleSpawn("cuttlefish-session", {
       engineSessionId: "grok-session",
-      model: "grok-build",
+      model: "grok-4.5",
       cwd: "/tmp",
       cols: 100,
       rows: 40,
     });
     const args = spawnCalls[spawnCalls.length - 1]!.args;
-    expect(args[args.indexOf("--model") + 1]).toBe("grok-build");
+    expect(args[args.indexOf("--model") + 1]).toBe("grok-4.5");
     expect(args[args.indexOf("--resume") + 1]).toBe("grok-session");
     lifecycle.dispose();
   });
@@ -179,7 +185,7 @@ describe("GrokInteractiveEngine", () => {
   it("respawns an idle PTY when effort changes", () => {
     engine.ensureIdleSpawn("cuttlefish-session", {
       engineSessionId: "grok-session",
-      model: "grok-build",
+      model: "grok-4.5",
       effortLevel: "low",
       cwd: "/tmp",
     });
@@ -188,7 +194,7 @@ describe("GrokInteractiveEngine", () => {
 
     engine.ensureIdleSpawn("cuttlefish-session", {
       engineSessionId: "grok-session",
-      model: "grok-build",
+      model: "grok-4.5",
       effortLevel: "high",
       cwd: "/tmp",
     });
@@ -203,7 +209,7 @@ describe("GrokInteractiveEngine", () => {
   it("disables inherited Claude/Cursor MCP compatibility for PTY launches", () => {
     engine.ensureIdleSpawn("cuttlefish-session", {
       engineSessionId: "grok-session",
-      model: "grok-build",
+      model: "grok-4.5",
       cwd: "/tmp",
     });
     const env = spawnCalls[spawnCalls.length - 1]!.opts.env;
@@ -215,7 +221,7 @@ describe("GrokInteractiveEngine", () => {
   it("answers Grok terminal cursor-position queries", () => {
     engine.ensureIdleSpawn("cuttlefish-session", {
       engineSessionId: "grok-session",
-      model: "grok-build",
+      model: "grok-4.5",
       cwd: "/tmp",
     });
     const call = spawnCalls[spawnCalls.length - 1]!;
@@ -230,7 +236,7 @@ describe("GrokInteractiveEngine", () => {
       systemPrompt: "system instructions\nwith a newline",
       sessionId: "cuttlefish-run-1",
       cwd: "/tmp",
-      model: "grok-build",
+      model: "grok-4.5",
     } as any);
 
     const call = spawnCalls[spawnCalls.length - 1]!;

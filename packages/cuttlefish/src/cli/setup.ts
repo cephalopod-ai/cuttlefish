@@ -272,7 +272,7 @@ engines:
     model: gpt-5.6-sol
   grok:
     bin: grok
-    model: grok-build
+    model: grok-4.5
   hermes:
     bin: hermes
     model: openai-codex:gpt-5.5
@@ -308,10 +308,10 @@ models:
       - { id: gpt-5.4-mini, label: "GPT-5.4 Mini", supportsEffort: true, effortLevels: [low, medium, high], contextWindow: 200000 }
       - { id: gpt-5.3-codex-spark, label: "GPT-5.3 Codex Spark", supportsEffort: false, effortLevels: [], contextWindow: 128000 }
   grok:
-    default: grok-build
+    default: grok-4.5
     effortMechanism: grok-flag
     models:
-      - { id: grok-build, label: "Grok Build", supportsEffort: true, effortLevels: [low, medium, high, xhigh, max], contextWindow: 256000 }
+      - { id: grok-4.5, label: "Grok 4.5", supportsEffort: true, effortLevels: [low, medium, high, xhigh, max] }
       - { id: grok-composer-2.5-fast, label: "Grok Composer 2.5 Fast", supportsEffort: true, effortLevels: [low, medium, high, xhigh, max], contextWindow: 256000 }
   ollama:
     default: gemma4
@@ -422,7 +422,7 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
     ok(`grok found at ${grokPath}`);
   } else {
     fail("grok not found");
-    info("Install with: npm install -g @xai-official/grok");
+    info("Install with: curl -fsSL https://x.ai/cli/install.sh | bash (or npm install -g @xai-official/grok)");
   }
 
   // 4a. Check for hermes binary

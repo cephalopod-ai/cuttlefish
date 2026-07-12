@@ -5,7 +5,7 @@ import { logger } from "./logger.js";
 export const GROK_EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"];
 
 const GROK_MODEL_LABELS: Record<string, string> = {
-  "grok-build": "Grok Build",
+  "grok-4.5": "Grok 4.5",
   "grok-composer-2.5-fast": "Grok Composer 2.5 Fast",
 };
 
@@ -28,19 +28,19 @@ function grokModelInfo(id: string): ModelInfo {
 }
 
 export function knownGrokModels(pinned?: string): GrokModelDiscovery {
-  const ids = ["grok-build", "grok-composer-2.5-fast"];
+  const ids = ["grok-4.5", "grok-composer-2.5-fast"];
   if (pinned && !ids.includes(pinned)) ids.unshift(pinned);
   return {
-    defaultModel: pinned || "grok-build",
+    defaultModel: pinned || "grok-4.5",
     models: ids.map(grokModelInfo),
   };
 }
 
 /** Parse `grok models` output:
  *
- *   Default model: grok-build
+ *   Default model: grok-4.5
  *   Available models:
- *     * grok-build (default)
+ *     * grok-4.5 (default)
  *     - grok-composer-2.5-fast
  */
 export function parseGrokModels(output: string): GrokModelDiscovery {

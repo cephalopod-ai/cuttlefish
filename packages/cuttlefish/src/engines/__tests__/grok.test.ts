@@ -100,7 +100,7 @@ async function runWith(
     prompt: "hello",
     cwd: "/tmp",
     sessionId: "cuttlefish-session-1",
-    model: "grok-build",
+    model: "grok-4.5",
     onStream: (d: StreamDelta) => deltas.push(d),
     ...opts,
   } as any);
@@ -123,7 +123,7 @@ describe("GrokEngine args", () => {
     const args = buildGrokHeadlessArgs({
       prompt: "ignored",
       cwd: "/workspace",
-      model: "grok-build",
+      model: "grok-4.5",
       effortLevel: "high",
       cliFlags: ["--chrome", "--some-grok-flag"],
     } as any, "do work", "sess-1");
@@ -132,7 +132,7 @@ describe("GrokEngine args", () => {
     expect(args).toContain("--always-approve");
     expect(args).toContain("--output-format");
     expect(args[args.indexOf("--output-format") + 1]).toBe("streaming-json");
-    expect(args[args.indexOf("--model") + 1]).toBe("grok-build");
+    expect(args[args.indexOf("--model") + 1]).toBe("grok-4.5");
     expect(args[args.indexOf("--effort") + 1]).toBe("high");
     expect(args[args.indexOf("--cwd") + 1]).toBe("/workspace");
     expect(args).not.toContain("--session-id");
@@ -149,6 +149,12 @@ describe("GrokEngine args", () => {
     } as any, "do work", "sess-1");
 
     expect(args).not.toContain("--effort");
+  });
+
+  it("omits the removed grok-build pin so existing config uses the CLI default", () => {
+    const args = buildGrokHeadlessArgs({ prompt: "ignored", model: "grok-build" } as any, "do work", "sess-1");
+
+    expect(args).not.toContain("--model");
   });
 
   it("uses --resume for headless follow-up turns", () => {
@@ -473,7 +479,7 @@ describe("GrokEngine run", () => {
       prompt: "hatch an employee",
       cwd: "/tmp",
       sessionId: "cuttlefish-session-hang",
-      model: "grok-build",
+      model: "grok-4.5",
       onStream: (d: StreamDelta) => deltas.push(d),
     } as any);
 
@@ -514,7 +520,7 @@ describe("GrokEngine run", () => {
       prompt: "do a tool-heavy thing",
       cwd: "/tmp",
       sessionId: "cuttlefish-session-exit-backstop",
-      model: "grok-build",
+      model: "grok-4.5",
       onStream: (d: StreamDelta) => deltas.push(d),
     } as any);
 
@@ -557,7 +563,7 @@ describe("GrokEngine run", () => {
       prompt: "read a file",
       cwd: "/tmp",
       sessionId: "cuttlefish-session-tool",
-      model: "grok-build",
+      model: "grok-4.5",
       onStream: (d: StreamDelta) => deltas.push(d),
     } as any);
 
@@ -631,7 +637,7 @@ describe("GrokEngine run", () => {
       prompt: "read the right file",
       cwd: "/tmp",
       sessionId: "cuttlefish-session-filter",
-      model: "grok-build",
+      model: "grok-4.5",
       onStream: (d: StreamDelta) => deltas.push(d),
     } as any);
 

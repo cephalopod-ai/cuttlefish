@@ -486,10 +486,10 @@ export function EngineConfigurationSection({
       </FieldRow>
       <FieldRow label="Model">
         <SettingsSelect
-          value={config.engines?.grok?.model ?? "grok-build"}
+          value={config.engines?.grok?.model === "grok-build" ? "grok-4.5" : config.engines?.grok?.model ?? "grok-4.5"}
           onChange={(v) => updateConfig(["engines", "grok", "model"], v)}
           options={modelOptions("grok", [
-            { value: "grok-build", label: "Grok Build" },
+            { value: "grok-4.5", label: "Grok 4.5" },
             { value: "grok-composer-2.5-fast", label: "Grok Composer 2.5 Fast" },
           ])}
         />

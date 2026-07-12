@@ -494,7 +494,7 @@ function buildConfigContext(config: CuttlefishConfig, gatewayUrl: string, sessio
     lines.push(`- Antigravity model: ${config.engines.antigravity.model ?? "Gemini 3.5 Flash (Medium)"}`);
   }
   if (config.engines.grok) {
-    lines.push(`- Grok model: ${config.engines.grok.model ?? "grok-build"}`);
+    lines.push(`- Grok model: ${config.engines.grok.model ?? "grok-4.5"}`);
   }
   if (config.engines.ollama) {
     lines.push(`- Ollama model: ${config.engines.ollama.model ?? "gemma4"}`);

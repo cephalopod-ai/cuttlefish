@@ -25,9 +25,9 @@ describe("synthesizeFromEngineConfig (backward-compat fallback)", () => {
     expect(reg.claude.defaultModel).toBe("opus");
     expect(reg.codex.models[0].id).toBe("gpt-5.5");
     expect(reg.antigravity.models[0].id).toBe("Gemini 3.5 Flash (Medium)");
-    expect(reg.grok.defaultModel).toBe("grok-build");
-    expect(reg.grok.models.map((m) => m.id)).toEqual(["grok-build", "grok-composer-2.5-fast"]);
-    expect(reg.grok.models.map((m) => m.label)).toEqual(["Grok Build", "Grok Composer 2.5 Fast"]);
+    expect(reg.grok.defaultModel).toBe("grok-4.5");
+    expect(reg.grok.models.map((m) => m.id)).toEqual(["grok-4.5", "grok-composer-2.5-fast"]);
+    expect(reg.grok.models.map((m) => m.label)).toEqual(["Grok 4.5", "Grok Composer 2.5 Fast"]);
     expect(reg.ollama.models[0].id).toBe("gemma4");
     expect(reg.kilo.models[0].id).toBe("default");
   });
@@ -52,7 +52,7 @@ describe("synthesizeFromEngineConfig (backward-compat fallback)", () => {
   it("uses the pinned Grok model as default while keeping the known Grok catalog", () => {
     const reg = synthesizeFromEngineConfig(cfg({ grok: { bin: "grok", model: "grok-composer-2.5-fast" } }));
     expect(reg.grok.defaultModel).toBe("grok-composer-2.5-fast");
-    expect(reg.grok.models.map((m) => m.id)).toEqual(["grok-build", "grok-composer-2.5-fast"]);
+    expect(reg.grok.models.map((m) => m.id)).toEqual(["grok-4.5", "grok-composer-2.5-fast"]);
   });
 });
 
@@ -94,10 +94,10 @@ describe("getModelRegistry with a models: block", () => {
       { grok: { bin: "grok", model: "grok-composer-2.5-fast" } },
       {
         grok: {
-          default: "grok-build",
+          default: "grok-4.5",
           effortMechanism: "grok-flag",
           models: [
-            { id: "grok-build", label: "Grok Build", supportsEffort: true, effortLevels: ["low", "medium", "high", "xhigh", "max"], contextWindow: 256000 },
+            { id: "grok-4.5", label: "Grok 4.5", supportsEffort: true, effortLevels: ["low", "medium", "high", "xhigh", "max"] },
             { id: "grok-composer-2.5-fast", label: "Grok Composer 2.5 Fast", supportsEffort: true, effortLevels: ["low", "medium", "high", "xhigh", "max"], contextWindow: 256000 },
           ],
         },
@@ -105,8 +105,8 @@ describe("getModelRegistry with a models: block", () => {
     ));
 
     expect(reg.grok.defaultModel).toBe("grok-composer-2.5-fast");
-    expect(reg.grok.models[0].label).toBe("Grok Build");
-    expect(reg.grok.models[0].contextWindow).toBe(256000);
+    expect(reg.grok.models[0].label).toBe("Grok 4.5");
+    expect(reg.grok.models[0].contextWindow).toBeUndefined();
   });
 });
 

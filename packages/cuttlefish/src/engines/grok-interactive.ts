@@ -12,6 +12,7 @@ import { tailTranscriptLines, type TranscriptTailer } from "./transcript-tailer.
 import type { PtyControlEvent, PtyIdleSpawnOpts, PtyViewEngine } from "./pty-view-engine.js";
 import {
   GROK_SESSIONS_DIR,
+  grokCliModel,
   grokCliFlags,
   parseGrokJsonLine,
   type GrokParsedLine,
@@ -123,7 +124,8 @@ export function buildGrokInteractiveArgs(
   systemPromptOverride?: string,
 ): string[] {
   const args = ["--no-auto-update", "--no-alt-screen", "--always-approve"];
-  if (opts.model) args.push("--model", opts.model);
+  const model = grokCliModel(opts.model);
+  if (model) args.push("--model", model);
   if (opts.effortLevel && opts.effortLevel !== "default") args.push("--effort", opts.effortLevel);
   if (opts.cwd) args.push("--cwd", opts.cwd);
   if (sessionId) args.push("--resume", sessionId);
