@@ -5,6 +5,7 @@ import { CUTTLEFISH_HOME, ORG_DIR, CRON_JOBS, DOCS_DIR } from "../shared/paths.j
 import { gatewayBaseUrl } from "../gateway/gateway-info.js";
 import { INBOUND_MESSAGE_SAFETY_CONTEXT, isUntrustedSource } from "../sessions/untrusted-input.js";
 import { buildManagerDelegationDiscipline, resolveSupervisedNodes } from "./manager-delegation.js";
+import { describeGrokModelForOperator } from "../shared/grok-models.js";
 
 /**
  * Token budget strategy:
@@ -494,7 +495,7 @@ function buildConfigContext(config: CuttlefishConfig, gatewayUrl: string, sessio
     lines.push(`- Antigravity model: ${config.engines.antigravity.model ?? "Gemini 3.5 Flash (Medium)"}`);
   }
   if (config.engines.grok) {
-    lines.push(`- Grok model: ${config.engines.grok.model ?? "grok-4.5"}`);
+    lines.push(`- Grok model: ${describeGrokModelForOperator(config.engines.grok.model)}`);
   }
   if (config.engines.ollama) {
     lines.push(`- Ollama model: ${config.engines.ollama.model ?? "gemma4"}`);

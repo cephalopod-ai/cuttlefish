@@ -1,4 +1,4 @@
-import { getSession, listSessionsBySource } from "./registry.js";
+import { getSession, listSessionsBySource, updateSession } from "./registry.js";
 import { loadConfig } from "../shared/config.js";
 import { assertFetchOk, jsonApiHeaders } from "../gateway/internal-auth.js";
 import { logger } from "../shared/logger.js";
@@ -8,6 +8,7 @@ import { gatewayBaseUrl, readGatewayInfo } from "../gateway/gateway-info.js";
 import { hydrateAllAttachments, talkSessionsAttachedTo } from "../talk/attachments.js";
 import type { SessionNotificationOptions, SessionNotificationSink } from "./notification-sink.js";
 import { markLeaderAckPending, shouldSuppressLeaderAckCallback } from "./leader-ack.js";
+import { recordManagerDelegationChildCompletion } from "./manager-delegation.js";
 
 /**
  * Notify the parent session that a child session has replied.
@@ -33,6 +34,10 @@ export function notifyParentSession(
   }
 
   const parent = getSession(childSession.parentSessionId);
+  if (parent) {
+    const transportMeta = recordManagerDelegationChildCompletion(parent.transportMeta, childSession.id);
+    if (transportMeta !== parent.transportMeta) updateSession(parent.id, { transportMeta });
+  }
   markLeaderAckPending(childSession, {
     leaderSessionId: childSession.parentSessionId,
     leaderName: parent?.employee ?? parent?.title ?? null,

@@ -50,8 +50,9 @@ import {
   redispatchPendingWebQueueItemsForSessionKey,
 } from "../session-dispatch.js";
 import { HR_EMPLOYEE_NAME, HR_SESSION_KEY } from "../../org-policy.js";
-import { getReusableHrSession } from "../../hr-session.js";
+import { findHrSessionProfileConflict, getReusableHrSession } from "../../hr-session.js";
 import { acknowledgeLeaderAck } from "../../../sessions/leader-ack.js";
+import { markManagerDelegationSynthesisDispatched, resolveManagerDelegationSynthesis } from "../../../sessions/manager-delegation.js";
 import { dispatchEmployeeSessionRun } from "../../mid-pair-orchestrator.js";
 import { buildWorkspaceProfilePrompt, resolveWorkspaceProfile, type ResolvedWorkspaceProfile } from "../../workspace-profiles.js";
 
@@ -522,6 +523,26 @@ export async function handleSessionWriteRoutes(
     const sessionKey = singletonSessionKey ?? `web:${Date.now()}`;
     const userId = resolveUserHeader(req.headers, config.gateway.userHeader);
     const existingSingletonSession = singletonSessionKey ? getReusableHrSession() : undefined;
+    const requestedHrProfile = existingSingletonSession
+      ? {
+          ...(body.engine !== undefined ? { engine: engineName } : {}),
+          ...(body.model !== undefined && selection.model !== undefined ? { model: selection.model } : {}),
+          ...(body.effortLevel !== undefined && selection.effortLevel !== undefined ? { effortLevel: selection.effortLevel } : {}),
+          ...(body.cwd !== undefined || workspaceProfile?.cwd !== undefined ? { cwd: cwd ?? null } : {}),
+        }
+      : undefined;
+    const hrProfileConflict = existingSingletonSession && requestedHrProfile
+      ? findHrSessionProfileConflict(existingSingletonSession, requestedHrProfile)
+      : null;
+    if (hrProfileConflict && existingSingletonSession) {
+      json(res, {
+        error: `HR singleton session cannot switch ${hrProfileConflict.field} from ${hrProfileConflict.existing ?? "default"} to ${hrProfileConflict.requested ?? "default"}; continue it without an override or start a separate non-HR session.`,
+        code: "hr_singleton_profile_conflict",
+        sessionId: existingSingletonSession.id,
+        field: hrProfileConflict.field,
+      }, 409);
+      return true;
+    }
     let session = existingSingletonSession
       ? maybeRevertEngineOverride(existingSingletonSession)
       : createSession({
@@ -696,6 +717,20 @@ export async function handleSessionWriteRoutes(
     );
     if (isNotification) {
       context.emit("session:notification", { sessionId: session.id, message: displayMessage });
+      const synthesis = resolveManagerDelegationSynthesis(session);
+      if (!synthesis.shouldDispatch) {
+        json(res, {
+          status: "notification_recorded",
+          sessionId: session.id,
+          ...(synthesis.reason === "waiting_for_children" ? { pendingChildSessionIds: synthesis.pendingChildSessionIds } : {}),
+        });
+        return true;
+      }
+      if (synthesis.tracked) {
+        updateSession(session.id, {
+          transportMeta: markManagerDelegationSynthesisDispatched(session.transportMeta),
+        });
+      }
     } else if (acknowledgeLeaderAck(session.id, session, { acknowledgedBy: session.parentSessionId ?? null })) {
       context.emit("session:updated", { sessionId: session.id });
     }

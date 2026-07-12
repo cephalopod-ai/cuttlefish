@@ -105,6 +105,11 @@ describe("manager delegation enforcement", () => {
       parentSessionId: parent.id,
       engine: "codex",
     });
+    expect((reg.getSession(parent.id)?.transportMeta as any)?.managerDelegationEnforcement).toMatchObject({
+      childSessionIds: [children[0].id],
+      completedChildSessionIds: [],
+      synthesisDispatched: false,
+    });
     await waitFor(() => specialistRun.mock.calls.length === 1);
     expect(specialistRun).toHaveBeenCalledTimes(1);
     expect(reg.getMessages(parent.id).some((message) => message.role === "assistant" && message.content.includes("Delegated specialist work"))).toBe(true);

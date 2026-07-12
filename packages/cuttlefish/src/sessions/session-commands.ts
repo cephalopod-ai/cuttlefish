@@ -25,6 +25,7 @@ import {
 } from "./registry.js";
 import type { SessionQueue } from "./queue.js";
 import { logger } from "../shared/logger.js";
+import { describeGrokModelForOperator } from "../shared/grok-models.js";
 import { loadJobs } from "../cron/jobs.js";
 import { setCronJobEnabled, triggerCronJob } from "../cron/scheduler.js";
 
@@ -131,7 +132,7 @@ export async function handleSessionCommand(
       `Claude: ${deps.config.engines.claude.model}`,
       `Codex: ${deps.config.engines.codex.model}`,
       ...(deps.config.engines.antigravity ? [`Antigravity: ${deps.config.engines.antigravity.model ?? "Gemini 3.5 Flash (Medium)"}`] : []),
-      ...(deps.config.engines.grok ? [`Grok: ${deps.config.engines.grok.model ?? "grok-4.5"}`] : []),
+      ...(deps.config.engines.grok ? [`Grok: ${describeGrokModelForOperator(deps.config.engines.grok.model)}`] : []),
       ...(deps.config.engines.ollama ? [`Ollama: ${deps.config.engines.ollama.model ?? "gemma4"}`] : []),
       ...(deps.config.engines.kilo ? [`Kilo: ${deps.config.engines.kilo.model ?? "default"}`] : []),
       "Connectors:",

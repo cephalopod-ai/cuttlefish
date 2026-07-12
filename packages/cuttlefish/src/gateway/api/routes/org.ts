@@ -351,9 +351,15 @@ export async function handleOrgRoutes(
       notFound(res);
       return true;
     }
+    const availableServices = buildOrgServices(registry);
     const provider = findServiceProvider(registry, serviceName);
     if (!provider) {
-      notFound(res);
+      json(res, {
+        error: `No active provider is registered for service "${serviceName}"`,
+        code: "no_service_provider",
+        requestedService: serviceName,
+        availableServices,
+      }, 422);
       return true;
     }
     const engine = context.sessionManager.getEngine(provider.employee.engine);

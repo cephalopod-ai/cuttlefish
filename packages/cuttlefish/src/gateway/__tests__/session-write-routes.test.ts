@@ -103,9 +103,10 @@ function makeCtx(api: Awaited<ReturnType<typeof setup>>["api"]) {
       getEngine: () => undefined,
       getQueue: () => ({
         getPendingCount: () => 0,
-        getTransportState: (_key: string, status: string) => status,
-        resumeQueue: vi.fn(),
-        clearQueue: vi.fn(),
+      getTransportState: (_key: string, status: string) => status,
+      resumeQueue: vi.fn(),
+      clearQueue: vi.fn(),
+      clearCancelled: vi.fn(),
       }),
     },
   } as unknown as import("../api.js").ApiContext;
@@ -226,6 +227,49 @@ describe("POST /api/sessions prompt validation (I-1)", () => {
     expect(dispatchedPrompt).toContain("Use the billing repo conventions.");
     expect(dispatchedPrompt).toContain("### Operator request\nImplement invoices.");
   });
+
+  it("refuses to append an explicit Grok profile request to a legacy HR singleton", async () => {
+    const { api, reg } = await setup();
+    const ctx = makeCtx(api);
+    ctx.getConfig = () => ({
+      gateway: {},
+      engines: {
+        default: "claude",
+        claude: { bin: "node", model: "sonnet" },
+        grok: { bin: "node", model: "grok-4.5" },
+      },
+      portal: {},
+    }) as any;
+    ctx.sessionManager.getEngine = (name: string) => ({ name }) as any;
+
+    const existing = reg.createSession({
+      engine: "claude",
+      source: "web",
+      sourceRef: "web:legacy-hr",
+      employee: "hr-manager",
+      model: "sonnet",
+      prompt: "existing HR work",
+    });
+    reg.insertMessage(existing.id, "user", "existing HR work");
+
+    const cap = makeRes();
+    await api.handleApiRequest(
+      makeJsonReq("POST", "/api/sessions", {
+        employee: "hr-manager",
+        engine: "grok",
+        model: "grok-4.5",
+        effortLevel: "high",
+        prompt: "new isolated HR request",
+      }),
+      cap.res,
+      ctx,
+    );
+
+    expect(cap.status).toBe(409);
+    expect(cap.body).toMatchObject({ code: "hr_singleton_profile_conflict", sessionId: existing.id, field: "engine" });
+    expect(reg.getMessages(existing.id).map((message) => message.content)).toEqual(["existing HR work"]);
+    expect(hoisted.dispatchEmployeeSessionRun).not.toHaveBeenCalled();
+  });
 });
 
 describe("POST /api/sessions/bulk-delete duplicate ids (I-2)", () => {
@@ -293,5 +337,65 @@ describe("POST /api/sessions/:id/stop on an idle session (I-4)", () => {
 
     expect(cap.status).toBe(200);
     expect(cap.body).toEqual(expect.objectContaining({ status: "stopped", stopped: true, wasRunning: false }));
+  });
+});
+
+describe("session notification aggregation", () => {
+  it("waits for all enforced manager children and dispatches exactly one synthesis", async () => {
+    const { api, reg } = await setup();
+    const ctx = makeCtx(api);
+    ctx.getConfig = () => ({ gateway: {}, engines: { default: "claude", claude: { bin: "node", model: "sonnet" } }, portal: {} }) as any;
+    ctx.sessionManager.getEngine = () => ({ name: "claude" }) as any;
+
+    const parent = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:parent", prompt: "parent" });
+    const firstChild = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:child-a", parentSessionId: parent.id, prompt: "child a" });
+    const secondChild = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:child-b", parentSessionId: parent.id, prompt: "child b" });
+    reg.updateSession(parent.id, {
+      transportMeta: {
+        managerDelegationEnforcement: {
+          childSessionIds: [firstChild.id, secondChild.id],
+          completedChildSessionIds: [firstChild.id],
+          synthesisDispatched: false,
+        },
+      } as any,
+    });
+    const firstNotification = makeRes();
+    await api.handleApiRequest(
+      makeJsonReq("POST", `/api/sessions/${parent.id}/message`, { message: "first child complete", role: "notification" }),
+      firstNotification.res,
+      ctx,
+    );
+    expect(firstNotification.status).toBe(200);
+    expect(firstNotification.body).toMatchObject({ status: "notification_recorded", pendingChildSessionIds: [secondChild.id] });
+    expect(hoisted.dispatchEmployeeSessionRun).not.toHaveBeenCalled();
+
+    reg.updateSession(parent.id, {
+      transportMeta: {
+        managerDelegationEnforcement: {
+          childSessionIds: [firstChild.id, secondChild.id],
+          completedChildSessionIds: [firstChild.id, secondChild.id],
+          synthesisDispatched: false,
+        },
+      } as any,
+    });
+    const finalNotification = makeRes();
+    await api.handleApiRequest(
+      makeJsonReq("POST", `/api/sessions/${parent.id}/message`, { message: "second child complete", role: "notification" }),
+      finalNotification.res,
+      ctx,
+    );
+    expect(finalNotification.status).toBe(200);
+    expect(hoisted.dispatchEmployeeSessionRun).toHaveBeenCalledTimes(1);
+    expect((reg.getSession(parent.id)?.transportMeta as any)?.managerDelegationEnforcement?.synthesisDispatched).toBe(true);
+
+    const duplicateNotification = makeRes();
+    await api.handleApiRequest(
+      makeJsonReq("POST", `/api/sessions/${parent.id}/message`, { message: "duplicate child callback", role: "notification" }),
+      duplicateNotification.res,
+      ctx,
+    );
+    expect(duplicateNotification.status).toBe(200);
+    expect(duplicateNotification.body).toMatchObject({ status: "notification_recorded" });
+    expect(hoisted.dispatchEmployeeSessionRun).toHaveBeenCalledTimes(1);
   });
 });

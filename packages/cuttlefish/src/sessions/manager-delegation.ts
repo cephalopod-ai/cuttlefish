@@ -1,4 +1,4 @@
-import type { Employee, OrgHierarchy, OrgNode } from "../shared/types.js";
+import type { Employee, OrgHierarchy, OrgNode, Session } from "../shared/types.js";
 import { getAllParents } from "../gateway/org-hierarchy.js";
 
 const MAX_ROSTER_LINES = 8;
@@ -26,7 +26,19 @@ const DOMAIN_ALIASES: Record<string, string[]> = {
 };
 
 const CALLBACK_PREFIX_RE = /^(?:📩|⚠️|🔄)?\s*(?:employee|thread)\s+["`]/i;
-const EXPLICIT_INLINE_RE = /\b(?:do(?:\s+it)?\s+yourself|don't\s+delegate|do\s+not\s+delegate|no\s+delegation|stay\s+inline|handle\s+inline)\b/i;
+const EXPLICIT_INLINE_RE = /\b(?:do(?:\s+it)?\s+yourself|don't\s+delegate|do\s+not\s+delegate|do\s+not\s+(?:(?:use|call|create|write|read|modify|run|access)\b[^.!?\n]{0,120}\bdelegate)|no\s+delegation|stay\s+inline|handle\s+inline)\b/i;
+
+type ManagerDelegationEnforcementMeta = {
+  childSessionIds?: unknown;
+  completedChildSessionIds?: unknown;
+  synthesisDispatched?: unknown;
+  synthesisDispatchedAt?: unknown;
+};
+
+export type ManagerDelegationSynthesisDecision =
+  | { tracked: false; shouldDispatch: true; pendingChildSessionIds: [] }
+  | { tracked: true; shouldDispatch: false; pendingChildSessionIds: string[]; reason: "waiting_for_children" | "already_dispatched" }
+  | { tracked: true; shouldDispatch: true; pendingChildSessionIds: [] };
 
 export interface ManagerDelegationTelemetry {
   event: "manager_delegation";
@@ -159,8 +171,87 @@ export function buildManagerDelegationTelemetry(input: {
   };
 }
 
+/**
+ * An enforced manager split should synthesize once, after its known direct
+ * children settle. Without this barrier every child callback re-runs the
+ * manager and can repeat a completed action.
+ */
+export function resolveManagerDelegationSynthesis(
+  session: Pick<Session, "transportMeta">,
+): ManagerDelegationSynthesisDecision {
+  const meta = asRecord(session.transportMeta);
+  const enforcement = asRecord(meta?.managerDelegationEnforcement) as ManagerDelegationEnforcementMeta | null;
+  const childSessionIds = enforcement && Array.isArray(enforcement.childSessionIds)
+    ? enforcement.childSessionIds.filter((value): value is string => typeof value === "string" && value.length > 0)
+    : [];
+  if (childSessionIds.length === 0) {
+    return { tracked: false, shouldDispatch: true, pendingChildSessionIds: [] };
+  }
+  if (enforcement?.synthesisDispatched === true) {
+    return { tracked: true, shouldDispatch: false, pendingChildSessionIds: [], reason: "already_dispatched" };
+  }
+  const completedChildSessionIds = new Set(
+    Array.isArray(enforcement?.completedChildSessionIds)
+      ? enforcement.completedChildSessionIds.filter((value): value is string => typeof value === "string" && value.length > 0)
+      : [],
+  );
+  const pendingChildSessionIds = childSessionIds.filter((id) => !completedChildSessionIds.has(id));
+  if (pendingChildSessionIds.length > 0) {
+    return { tracked: true, shouldDispatch: false, pendingChildSessionIds, reason: "waiting_for_children" };
+  }
+  return { tracked: true, shouldDispatch: true, pendingChildSessionIds: [] };
+}
+
+/** Record an enforced child callback before its notification wakes the parent. */
+export function recordManagerDelegationChildCompletion(
+  transportMeta: Session["transportMeta"],
+  childSessionId: string,
+): Session["transportMeta"] {
+  const meta = asRecord(transportMeta) ?? {};
+  const enforcement = asRecord(meta.managerDelegationEnforcement) as ManagerDelegationEnforcementMeta | null;
+  const childSessionIds = enforcement && Array.isArray(enforcement.childSessionIds)
+    ? enforcement.childSessionIds.filter((value): value is string => typeof value === "string" && value.length > 0)
+    : [];
+  if (!enforcement || !childSessionIds.includes(childSessionId)) return transportMeta;
+  const completedChildSessionIds = Array.isArray(enforcement.completedChildSessionIds)
+    ? enforcement.completedChildSessionIds.filter((value): value is string => typeof value === "string" && value.length > 0)
+    : [];
+  if (completedChildSessionIds.includes(childSessionId)) return transportMeta;
+  return {
+    ...meta,
+    managerDelegationEnforcement: {
+      ...enforcement,
+      completedChildSessionIds: [...completedChildSessionIds, childSessionId],
+    },
+  } as Session["transportMeta"];
+}
+
+/** Mark the one parent synthesis dispatch for an enforced manager split. */
+export function markManagerDelegationSynthesisDispatched(
+  transportMeta: Session["transportMeta"],
+  now = new Date().toISOString(),
+): Session["transportMeta"] {
+  const meta = asRecord(transportMeta) ?? {};
+  const enforcement = asRecord(meta.managerDelegationEnforcement);
+  if (!enforcement) return transportMeta;
+  return {
+    ...meta,
+    managerDelegationEnforcement: {
+      ...enforcement,
+      synthesisDispatched: true,
+      synthesisDispatchedAt: now,
+    },
+  } as Session["transportMeta"];
+}
+
 function compactPersona(persona: string): string {
   return persona.replace(/\s+/g, " ").trim().slice(0, PERSONA_EXCERPT_CHARS);
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
 }
 
 function isCallbackOrSynthesisPrompt(prompt: string): boolean {

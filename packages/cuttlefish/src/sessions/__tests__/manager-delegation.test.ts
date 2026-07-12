@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   buildManagerDelegationPlan,
   buildManagerDelegationTelemetry,
+  recordManagerDelegationChildCompletion,
+  resolveManagerDelegationSynthesis,
   resolveSupervisedNodes,
 } from "../manager-delegation.js";
 import type { Employee, OrgHierarchy } from "../../shared/types.js";
@@ -151,5 +153,28 @@ describe("manager delegation helpers", () => {
       prompt: "Do not delegate; handle this security token review yourself.",
       supervisedNodes,
     }).enforced).toBe(false);
+
+    expect(buildManagerDelegationPlan({
+      manager: lead,
+      prompt: "Do not use tools, call APIs, delegate, or create files; keep this security token review report-only.",
+      supervisedNodes,
+    }).enforced).toBe(false);
+  });
+
+  it("waits for every recorded child callback before allowing one manager synthesis", () => {
+    const initial = {
+      managerDelegationEnforcement: {
+        childSessionIds: ["child-a", "child-b"],
+        completedChildSessionIds: [],
+        synthesisDispatched: false,
+      },
+    } as any;
+    const afterFirst = recordManagerDelegationChildCompletion(initial, "child-a");
+    expect(resolveManagerDelegationSynthesis({ transportMeta: afterFirst } as any)).toMatchObject({
+      shouldDispatch: false,
+      pendingChildSessionIds: ["child-b"],
+    });
+    const afterSecond = recordManagerDelegationChildCompletion(afterFirst, "child-b");
+    expect(resolveManagerDelegationSynthesis({ transportMeta: afterSecond } as any)).toMatchObject({ shouldDispatch: true });
   });
 });

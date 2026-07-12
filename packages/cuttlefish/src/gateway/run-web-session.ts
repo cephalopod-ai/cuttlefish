@@ -1005,6 +1005,12 @@ async function enforceManagerDelegationIfNeeded(input: {
 
   const now = new Date().toISOString();
   const delegatedTo: string[] = [];
+  const childSessionIds: string[] = [];
+  const delegatedChildren: Array<{
+    child: Session;
+    match: typeof runnableMatches[number];
+    engine: import("../shared/types.js").Engine;
+  }> = [];
   for (const match of runnableMatches) {
     const child = createSession({
       engine: match.employee.engine,
@@ -1032,25 +1038,13 @@ async function enforceManagerDelegationIfNeeded(input: {
       portalName: config.portal?.portalName,
     });
     delegatedTo.push(match.employee.name);
+    childSessionIds.push(child.id);
     insertMessage(child.id, "user", match.prompt);
     maybeEmitTalkGraph(child.id, "added", { getSession, emit: context.emit });
 
     const childEngine = context.sessionManager.getEngine(match.employee.engine);
     if (!childEngine) continue;
-    void context.sessionManager.getQueue().enqueue(child.sessionKey || child.sourceRef, async () => {
-      context.emit("session:started", { sessionId: child.id });
-      await runWebSession(child, match.prompt, childEngine, config, context, input.attachments, input.resourceContext);
-    }).catch((err) => {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      logger.error(`[manager-delegation] delegated child ${child.id} dispatch error: ${errMsg}`);
-      updateSession(child.id, {
-        status: "error",
-        lastActivity: new Date().toISOString(),
-        lastError: errMsg,
-      });
-      context.emit("session:completed", { sessionId: child.id, result: null, error: errMsg });
-      maybeEmitTalkGraph(child.id, "completed", { getSession, emit: context.emit });
-    });
+    delegatedChildren.push({ child, match, engine: childEngine });
   }
 
   if (delegatedTo.length === 0) return false;
@@ -1066,13 +1060,37 @@ async function enforceManagerDelegationIfNeeded(input: {
       managerDelegationEnforcement: {
         promptHash,
         delegatedTo,
+        childSessionIds,
+        completedChildSessionIds: [],
         reason: plan.reason,
         occurredAt: now,
+        synthesisDispatched: false,
       },
     } as any,
     lastActivity: now,
     lastError: null,
   });
+
+  // Persist the expected-child barrier before any child can finish and send a
+  // callback. Starting children inside the creation loop left a small fast-run
+  // race where an immediate result could wake the parent before this metadata
+  // existed, bypassing the one-synthesis guard.
+  for (const { child, match, engine: childEngine } of delegatedChildren) {
+    void context.sessionManager.getQueue().enqueue(child.sessionKey || child.sourceRef, async () => {
+      context.emit("session:started", { sessionId: child.id });
+      await runWebSession(child, match.prompt, childEngine, config, context, input.attachments, input.resourceContext);
+    }).catch((err) => {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      logger.error(`[manager-delegation] delegated child ${child.id} dispatch error: ${errMsg}`);
+      updateSession(child.id, {
+        status: "error",
+        lastActivity: new Date().toISOString(),
+        lastError: errMsg,
+      });
+      context.emit("session:completed", { sessionId: child.id, result: null, error: errMsg });
+      maybeEmitTalkGraph(child.id, "completed", { getSession, emit: context.emit });
+    });
+  }
   input.logTelemetry();
   context.emit("session:updated", { sessionId: session.id });
   context.emit("manager:delegated", {

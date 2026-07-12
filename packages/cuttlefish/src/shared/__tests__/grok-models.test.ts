@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { knownGrokModels, parseGrokModels } from "../grok-models.js";
+import { describeGrokModelForOperator, knownGrokModels, parseGrokModels } from "../grok-models.js";
 
 describe("parseGrokModels", () => {
   it("parses the default and available model rows from `grok models`", () => {
@@ -32,5 +32,12 @@ describe("knownGrokModels", () => {
     const known = knownGrokModels("custom-grok");
     expect(known.defaultModel).toBe("custom-grok");
     expect(known.models[0].id).toBe("custom-grok");
+  });
+});
+
+describe("describeGrokModelForOperator", () => {
+  it("labels legacy grok-build configuration as the current CLI-default behavior", () => {
+    expect(describeGrokModelForOperator("grok-build")).toBe("grok-4.5 (CLI default via legacy grok-build compatibility)");
+    expect(describeGrokModelForOperator("grok-composer-2.5-fast")).toBe("grok-composer-2.5-fast");
   });
 });

@@ -161,7 +161,7 @@ describe("POST /api/org/cross-request", () => {
     expect(hoisted.dispatchEmployeeSessionRun).toHaveBeenCalledTimes(1);
   });
 
-  it("returns 404 when the requested service is not provided", async () => {
+  it("returns an actionable no-provider response when the requested service is not provided", async () => {
     const { api } = await setup();
     const cap = makeRes();
 
@@ -171,7 +171,12 @@ describe("POST /api/org/cross-request", () => {
       prompt: "Need help",
     }), cap.res, makeCtx());
 
-    expect(cap.status).toBe(404);
+    expect(cap.status).toBe(422);
+    expect(cap.body).toMatchObject({
+      code: "no_service_provider",
+      requestedService: "does-not-exist",
+      availableServices: [{ name: "code-review", provider: { name: "platform-dev" } }],
+    });
     expect(hoisted.dispatchEmployeeSessionRun).not.toHaveBeenCalled();
   });
 });

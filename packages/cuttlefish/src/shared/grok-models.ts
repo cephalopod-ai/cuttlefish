@@ -18,6 +18,16 @@ export function labelGrokModel(id: string): string {
   return GROK_MODEL_LABELS[id] ?? id;
 }
 
+/**
+ * `grok-build` is retained only as a compatibility sentinel. Operator-facing
+ * status must describe the current CLI behavior instead of presenting that
+ * retired id as though it were the model that will run.
+ */
+export function describeGrokModelForOperator(model?: string): string {
+  if (model === "grok-build") return "grok-4.5 (CLI default via legacy grok-build compatibility)";
+  return model?.trim() || "grok-4.5";
+}
+
 function grokModelInfo(id: string): ModelInfo {
   return {
     id,

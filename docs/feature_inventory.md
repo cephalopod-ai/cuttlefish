@@ -134,6 +134,7 @@
 - The edit surface additionally exposes per-role sub-agent selection (`packages/web/src/components/org/role-agent-config.tsx`) for the implementer and reviewer roles: engine/model/effort overrides with inherit-from-employee defaults (e.g. routing simple review work to a cheaper model), plus an ordered failover chain of up to 5 targets per role where each target is either a backup agent (engine + model) or a defer-to-external-agent entry referencing another org employee. The detail panel summarizes the configured per-role plan.
 - `packages/web/src/components/org/employee-detail.tsx` displays an execution profile summary in the detail panel when a profile is configured.
 - Fresh-install seed personas place Parliamentarian and Senior Security Officer in `compliance`, HR / Org Steward as the `personnel` department manager, and Assistant in `general`. HR / Org Steward advises on organizational planning, agent coordination patterns, and model/budget/resource fit while remaining a review/advisory role rather than a runtime orchestrator or resource manager. New manager-hire guidance defaults managers to the COO/root reporting line unless the user explicitly says otherwise.
+- `hr-manager` retains its reusable singleton thread for ordinary continuation. A request that explicitly selects an incompatible engine, model, effort level, or working directory now returns `409 { code: "hr_singleton_profile_conflict" }` before writing the prompt into that historical thread.
 
 ### Workspace profiles
 - `packages/cuttlefish/src/gateway/workspace-profiles.ts`
@@ -149,7 +150,7 @@
 - `packages/cuttlefish/src/gateway/api/routes/org.ts`
 - Employees can declare services with `provides: [{ name, description }]` in their org YAML.
 - `GET /api/org/services` returns active service providers, deduped by service name with higher-rank providers winning ties.
-- `POST /api/org/cross-request` accepts `{ fromEmployee, service, prompt, parentSessionId? }`, resolves the active provider for the service, creates a provider-owned web session with a cross-service brief, dispatches it on the provider's configured engine/model, and returns `{ sessionId, provider, route, managers, service }`.
+- `POST /api/org/cross-request` accepts `{ fromEmployee, service, prompt, parentSessionId? }`, resolves the active provider for the service, creates a provider-owned web session with a cross-service brief, dispatches it on the provider's configured engine/model, and returns `{ sessionId, provider, route, managers, service }`. When no active provider offers the requested service, it returns `422` with `code: "no_service_provider"`, the requested service, and the available-service inventory.
 - The created session records `transportMeta.crossRequest` with the requester, service, provider, route, and manager chain for traceability.
 
 ### Multi-role employee execution
@@ -504,7 +505,7 @@
 
 ### Smart manager delegation discipline
 - Employee sessions with one or more direct reports receive a default-on manager delegation discipline block in their runtime context. The block requires a delegate-vs-inline decision before substantive work, lists concise direct-report specialties, and distinguishes smart delegation from delegation just for appearances.
-- Runtime execution also enforces strong specialty matches before the manager model runs: when a manager prompt matches one or more direct-report specialties, the gateway creates child sessions for those reports, records the enforced prompt hash in `transportMeta`, and leaves the manager session ready to synthesize the existing child-completion callbacks. Child-result callback turns and explicit no-delegation prompts are exempt.
+- Runtime execution also enforces strong specialty matches before the manager model runs: when a manager prompt matches one or more direct-report specialties, the gateway creates child sessions for those reports, records the enforced prompt hash and expected child ids in `transportMeta`, and leaves the manager session ready to synthesize the existing child-completion callbacks. Child-result callback turns and explicit no-delegation prompts—including separated wording such as “do not use tools, call APIs, delegate”—are exempt. A manager split records each expected child completion before its callback wakes the parent, so only the final report dispatches one synthesis turn.
 - Runtime execution logs a debug-only `manager_delegation` telemetry record for eligible manager sessions with child-session counts before and after the engine run or enforced delegation.
 - Manual live behavior can be sampled with `node packages/cuttlefish/scripts/delegation-live-harness.mjs --employee <manager-slug>` against a running gateway. The harness is not part of CI because it depends on live model behavior and local credentials.
 
