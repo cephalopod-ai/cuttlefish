@@ -47,6 +47,10 @@ artifacts unless explicitly published.
 
 ## Session and Audit Log Summaries
 
+- `docs/logs/session/072026/2026-07-12-program-manager-live-playtest.md`:
+  live Program Manager role playtest covering manual department-manager
+  delegation from simple through complex scenarios; records the confirmed HR
+  singleton parent-link failure and cleanup evidence.
 - `docs/logs/session/072026/2026-07-12-agent-skills-audit-sweep.md`:
   extended current-branch MCP agent-skills audit summary; records ten confirmed
   baseline residuals, their local repair closure, and static-only UI/Giles limits.
