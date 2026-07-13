@@ -563,7 +563,12 @@
 
 ### Security hardening for scoped sessions and connector turns
 
-- Session-scoped agent tokens cannot archive sessions, remove installed skills, or change the shared Talk engine/model configuration. Talk delegation also verifies that a scoped token’s body-supplied Talk session id is its own.
+- Session-scoped agent tokens cannot access operator-wide email, artifact, knowledge,
+  filesystem-discovery, oversight, orchestration, or work-summary collections; they
+  remain limited to documented own-session/delegation, connector-send, roster/status,
+  and attachment operations. They also cannot archive sessions, remove installed
+  skills, or change the shared Talk engine/model configuration. Talk delegation
+  verifies that a scoped token’s body-supplied Talk session id is its own.
 - With no `gateway.fileReadRoots` configured, local-file reads are restricted to Cuttlefish-managed storage. Operators can add explicit project roots or use the documented `allowArbitraryFileRead` escape hatch for a local install.
 - Content that passed inbound screening remains wrapped as untrusted data. Automatic connector replies redact secret-shaped text before delivery.
 - Per-session API credentials are supplied only to the engine subprocess as `CUTTLEFISH_SESSION_TOKEN`; their raw value is not embedded in model-visible context.
