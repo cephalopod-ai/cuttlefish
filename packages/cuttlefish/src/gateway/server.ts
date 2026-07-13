@@ -87,6 +87,14 @@ function screenNotificationPrompt(text: string, source: string, workerText: stri
   return wrapScreenedUntrustedMessage(workerText, source);
 }
 
+function configuredConnectorNames(config: CuttlefishConfig): string[] {
+  const names: string[] = [];
+  if (config.connectors?.slack?.appToken && config.connectors?.slack?.botToken) names.push("slack");
+  if (config.connectors?.whatsapp) names.push("whatsapp");
+  if (config.connectors?.twilio) names.push("twilio");
+  return names;
+}
+
 export async function startGateway(config: CuttlefishConfig): Promise<GatewayCleanup> {
   const bootId = randomUUID().slice(0, 8);
 
@@ -276,15 +284,13 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
     aider: aiderInteractiveEngine,
   };
 
-  const connectorNames: string[] = [];
-  if (config.connectors?.slack?.appToken && config.connectors?.slack?.botToken) connectorNames.push("slack");
-  if (config.connectors?.whatsapp) connectorNames.push("whatsapp");
+  const connectorNames = configuredConnectorNames(config);
 
   const sessionManager = new SessionManager(config, engines, connectorNames, gatewayAuthToken);
   let employeeRegistry = scanOrg();
   logger.info(`Loaded ${employeeRegistry.size} employee(s) from org directory`);
 
-  const { connectors, connectorMap, reloadConnectorInstances, handleTwilioWebhook } = startConfiguredConnectors({
+  const { connectors, connectorMap, reloadConfiguredConnectors, reloadConnectorInstances, handleTwilioWebhook } = startConfiguredConnectors({
     config,
     sessionManager,
     getEmployeeRegistry: () => employeeRegistry,
@@ -584,6 +590,15 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
       }
       currentConfig = nextConfig;
       apiContext.config = currentConfig;
+      sessionManager.setConnectorNames(configuredConnectorNames(currentConfig));
+      void reloadConfiguredConnectors(currentConfig).then((result) => {
+        if (result.errors.length > 0) {
+          logger.warn(`Connector reload completed with ${result.errors.length} error(s): ${result.errors.join("; ")}`);
+        }
+        emit("connectors:reloaded", result);
+      }).catch((connectorErr) => {
+        logger.error(`Failed to reload configured connectors: ${connectorErr instanceof Error ? connectorErr.message : connectorErr}`);
+      });
       emailService.setConfig(currentConfig.email);
       emailService.start();
       sessionManager.setConfig(currentConfig);

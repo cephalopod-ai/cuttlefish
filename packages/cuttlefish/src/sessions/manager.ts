@@ -125,6 +125,9 @@ export class SessionManager {
   setConfig(config: CuttlefishConfig): void {
     this.config = config;
   }
+  setConnectorNames(connectorNames: string[]): void {
+    this.connectorNames = [...new Set(connectorNames)];
+  }
   setNotificationSink(sink: SessionNotificationSink): void {
     this.notificationSink = sink;
   }

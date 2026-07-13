@@ -19,6 +19,10 @@
 - Twilio credentials are loaded from a source-checkout `.env` and excluded from
   agent subprocess environments. The connector is disabled until its
   non-secret configuration is present in `~/.cuttlefish/config.yaml`.
+- Config reloads and `POST /api/connectors/reload` remove active connector
+  routes before shutdown, then rebuild Slack, WhatsApp, Twilio, and configured
+  instances from the current configuration. A newer reload cannot restore an
+  older connector configuration after it has been revoked.
 
 ## Web UI
 
