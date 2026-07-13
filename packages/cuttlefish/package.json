@@ -35,7 +35,7 @@
     "better-sqlite3": "^11.8.0",
     "busboy": "^1.6.0",
     "chokidar": "^5.0.0",
-    "commander": "^13.1.0",
+    "commander": "^15.0.0",
     "imapflow": "^1.4.7",
     "js-yaml": "^4.1.0",
     "mailparser": "^3.9.14",
