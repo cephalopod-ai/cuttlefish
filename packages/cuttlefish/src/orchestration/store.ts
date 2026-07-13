@@ -73,6 +73,24 @@ export class OrchestrationStore {
     return this.db.transaction(fn)();
   }
 
+  /**
+   * Serialize a read-modify-write scheduler mutation across gateway processes.
+   * SQLite's ordinary deferred transaction permits two schedulers to read the
+   * same snapshot before either writes; acquiring the write lock first makes
+   * the second process load the committed snapshot after the first finishes.
+   */
+  transactionImmediate<T>(fn: () => T): T {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const result = fn();
+      this.db.exec("COMMIT");
+      return result;
+    } catch (err) {
+      if (this.db.inTransaction) this.db.exec("ROLLBACK");
+      throw err;
+    }
+  }
+
   applySnapshotDelta(before: SchedulerSnapshot, after: SchedulerSnapshot): void {
     applySnapshotDeltaToDb(this.db, before, after);
   }

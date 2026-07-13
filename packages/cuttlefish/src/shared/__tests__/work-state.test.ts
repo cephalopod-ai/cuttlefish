@@ -32,9 +32,13 @@ describe("deriveWorkState — precedence", () => {
     expect(deriveWorkState({ status: "interrupted" })).toBe("blocked");
   });
 
-  it("idle → completed", () => {
-    expect(deriveWorkState({ status: "idle" })).toBe("completed");
-    expect(deriveWorkState({ status: "idle", transportState: "idle" })).toBe("completed");
+  it("idle after a durable run → completed", () => {
+    expect(deriveWorkState({ status: "idle", hasRun: true })).toBe("completed");
+    expect(deriveWorkState({ status: "idle", transportState: "idle", hasRun: true })).toBe("completed");
+  });
+
+  it("never-run idle sessions remain queued", () => {
+    expect(deriveWorkState({ status: "idle", hasRun: false })).toBe("queued");
   });
 
   it("queued does not override an active approval", () => {

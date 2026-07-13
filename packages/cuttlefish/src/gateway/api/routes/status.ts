@@ -427,6 +427,7 @@ export async function handleStatusRoutes(
         status: session.status,
         transportState,
         approvalRequired: pendingApprovalSessionIds.has(session.id),
+        hasRun: typeof session.transportMeta?.latestRunId === "string",
         cron: session.source === "cron",
       });
       counts[workState]++;

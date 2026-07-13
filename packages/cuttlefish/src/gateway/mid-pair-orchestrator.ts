@@ -52,7 +52,7 @@ import {
 } from "./employee-execution.js";
 import { buildReviewContext } from "./review-context.js";
 import { scanOrg } from "./org.js";
-import { createSession, getMessages, getSession, insertMessage, updateSession } from "../sessions/registry.js";
+import { createSession, getMessages, getSession, insertMessage, patchSessionTransportMeta, updateSession } from "../sessions/registry.js";
 import { notifyAttachedTalkSessions } from "../sessions/callbacks.js";
 import { maybeEmitTalkGraph } from "../talk/graph.js";
 import { logger } from "../shared/logger.js";
@@ -143,26 +143,23 @@ async function dispatchEmployeeSessionRunInner(
 
   const exec = resolveEffectiveExecution(employee!);
   const employeeRunId = generateEmployeeRunId();
-  const tagged = updateSession(session.id, {
-    transportMeta: {
-      ...((session.transportMeta as Record<string, unknown> | null) ?? {}),
-      employeeRunId,
-      executionTier: "mid_pair",
-      executionPhase: "implementing" satisfies ExecutionPhase,
-      executionDepth: 0,
-      executionPass: 1,
-      executionMaxPasses: exec.maxInternalPasses,
-      executionChildCount: 0,
-      // A session can be redispatched onto (board-ticket recovery/retry) — reset
-      // every observability field a prior run may have left behind so a clean
-      // new run can't inherit a stale degraded/fallback/review-context report.
-      executionDegraded: false,
-      executionDegradedReason: null,
-      executionFallbackActive: false,
-      executionReviewContext: null,
-      executionReviewContextReason: null,
-    } as JsonObject,
-  }) ?? session;
+  const tagged = patchSessionTransportMeta(session.id, {
+    employeeRunId,
+    executionTier: "mid_pair",
+    executionPhase: "implementing" satisfies ExecutionPhase,
+    executionDepth: 0,
+    executionPass: 1,
+    executionMaxPasses: exec.maxInternalPasses,
+    executionChildCount: 0,
+    // A session can be redispatched onto (board-ticket recovery/retry) — reset
+    // every observability field a prior run may have left behind so a clean
+    // new run can't inherit a stale degraded/fallback/review-context report.
+    executionDegraded: false,
+    executionDegradedReason: null,
+    executionFallbackActive: false,
+    executionReviewContext: null,
+    executionReviewContextReason: null,
+  } as JsonObject) ?? session;
 
   const dispatchWebSessionRun = await getDispatchWebSessionRun();
   await dispatchWebSessionRun(tagged, prompt, engine, config, context, opts);
@@ -648,28 +645,34 @@ function updateExecutionState(
     status?: Session["status"];
   },
 ): void {
-  const session = getSession(sessionId);
-  if (!session) return;
-  const meta: Record<string, unknown> = { ...((session.transportMeta as Record<string, unknown> | null) ?? {}) };
-  if (patch.executionPhase !== undefined) meta.executionPhase = patch.executionPhase;
-  if (patch.executionDegraded !== undefined) meta.executionDegraded = patch.executionDegraded;
-  if (patch.executionDegradedReason !== undefined) meta.executionDegradedReason = patch.executionDegradedReason;
-  if (patch.executionPass !== undefined) meta.executionPass = patch.executionPass;
-  if (patch.executionChildCount !== undefined) meta.executionChildCount = patch.executionChildCount;
-  if (patch.executionFallbackActive !== undefined) meta.executionFallbackActive = patch.executionFallbackActive;
+  const metaPatch: Record<string, unknown> = {};
+  if (patch.executionPhase !== undefined) metaPatch.executionPhase = patch.executionPhase;
+  if (patch.executionDegraded !== undefined) metaPatch.executionDegraded = patch.executionDegraded;
+  if (patch.executionDegradedReason !== undefined) metaPatch.executionDegradedReason = patch.executionDegradedReason;
+  if (patch.executionPass !== undefined) metaPatch.executionPass = patch.executionPass;
+  if (patch.executionChildCount !== undefined) metaPatch.executionChildCount = patch.executionChildCount;
+  if (patch.executionFallbackActive !== undefined) metaPatch.executionFallbackActive = patch.executionFallbackActive;
   // Written as a pair, not independently: reviewContextReason only has meaning
   // relative to the mode it was recorded under. If we only wrote the reason
   // when it's defined, a stale reason from an earlier "summary_only" pass would
   // survive into a later "diff" pass (reason undefined), producing a
   // self-contradictory reviewContext:"diff" + a leftover "no diff" reason.
-  // Setting meta.executionReviewContextReason = undefined here is intentional —
-  // JSON.stringify drops undefined values on persist, correctly clearing it.
   if (patch.executionReviewContext !== undefined) {
-    meta.executionReviewContext = patch.executionReviewContext;
-    meta.executionReviewContextReason = patch.executionReviewContextReason;
+    metaPatch.executionReviewContext = patch.executionReviewContext;
+    if (patch.executionReviewContextReason !== undefined) {
+      metaPatch.executionReviewContextReason = patch.executionReviewContextReason;
+    }
   }
 
-  const updates: Record<string, unknown> = { transportMeta: meta as JsonObject };
+  const updatedMeta = patchSessionTransportMeta(sessionId, (current) => {
+    const next = { ...current, ...metaPatch };
+    if (patch.executionReviewContext !== undefined && patch.executionReviewContextReason === undefined) {
+      delete next.executionReviewContextReason;
+    }
+    return next as JsonObject;
+  });
+  if (!updatedMeta) return;
+  const updates: Record<string, unknown> = {};
   if (patch.lastError !== undefined) updates.lastError = patch.lastError;
   // The implementer settles before its reviewer starts. Keep the parent
   // visibly active for review/revision work instead of exposing idle while a

@@ -124,7 +124,7 @@ describe("maybeEmitTalkGraph", () => {
 // In-memory attachment deps for seeding the real attachments module.
 const attachDeps = {
   getSession,
-  updateSessionMeta: () => {},
+  patchSessionMeta: () => {},
 };
 
 describe("attachment nodes in buildGraphSnapshot", () => {

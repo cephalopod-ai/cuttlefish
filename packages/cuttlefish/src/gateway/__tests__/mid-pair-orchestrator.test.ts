@@ -71,6 +71,20 @@ const hoisted = vi.hoisted(() => {
     return updated;
   });
 
+  const patchSessionTransportMetaMock = vi.fn((id: string, patch: Record<string, unknown> | ((current: Record<string, unknown>) => Record<string, unknown> | null)) => {
+    const current = sessionsById.get(id);
+    if (!current) return undefined;
+    const nextMeta = typeof patch === "function"
+      ? patch({ ...(current.transportMeta ?? {}) })
+      : { ...(current.transportMeta ?? {}), ...patch };
+    const updated = {
+      ...current,
+      transportMeta: nextMeta,
+    };
+    sessionsById.set(id, updated);
+    return updated;
+  });
+
   const insertMessageMock = vi.fn((id: string, role: string, content: string) => {
     const msgs = messagesById.get(id) ?? [];
     msgs.push({ role, content });
@@ -94,13 +108,14 @@ const hoisted = vi.hoisted(() => {
 
   return {
     sessionsById, messagesById, script, dispatchCalls,
-    dispatchWebSessionRunMock, createSessionMock, getSessionMock, updateSessionMock, insertMessageMock, getMessagesMock,
+    dispatchWebSessionRunMock, createSessionMock, getSessionMock, updateSessionMock, patchSessionTransportMetaMock, insertMessageMock, getMessagesMock,
     buildReviewContextMock,
     reset: () => {
       sessionsById.clear();
       messagesById.clear();
       script.length = 0;
       dispatchCalls.length = 0;
+      patchSessionTransportMetaMock.mockClear();
       nextId = 1;
       buildReviewContextMock.mockReset();
       buildReviewContextMock.mockImplementation(() => ({ mode: "summary_only" as const, changedFiles: 0, reason: "test: no diff" }));
@@ -137,6 +152,7 @@ vi.mock("../../sessions/registry.js", () => ({
   createSession: hoisted.createSessionMock,
   getSession: hoisted.getSessionMock,
   updateSession: hoisted.updateSessionMock,
+  patchSessionTransportMeta: hoisted.patchSessionTransportMetaMock,
   insertMessage: hoisted.insertMessageMock,
   getMessages: hoisted.getMessagesMock,
 }));

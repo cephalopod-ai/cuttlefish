@@ -28,9 +28,7 @@ export class PersistentMatrixScheduler {
     };
     this.scheduler = this.hydrateScheduler();
     if (opts.expireOnHydrate !== false) {
-      const before = this.scheduler.createSnapshot();
-      const expired = this.scheduler.expireLeases(this.now());
-      if (expired.length > 0) this.persistOrRehydrate(before);
+      this.expireLeases(this.now());
     }
   }
 
@@ -44,71 +42,76 @@ export class PersistentMatrixScheduler {
   }
 
   requestAllocation(request: AllocationRequest, opts: AllocationRequestOptions = {}): AllocationResult {
-    return this.commitMutation(() => this.scheduler.requestAllocation(request, opts));
+    return this.commitMutation((scheduler) => scheduler.requestAllocation(request, opts));
   }
 
   tryAllocationNow(request: AllocationRequest, opts: AllocationRequestOptions = {}): AllocationResult {
-    return this.commitMutation(() => this.scheduler.requestAllocation(request, { ...opts, queueOnBlock: false }));
+    return this.commitMutation((scheduler) => scheduler.requestAllocation(request, { ...opts, queueOnBlock: false }));
   }
 
   heartbeatLease(leaseId: string, coordinatorId?: string): Lease {
-    return this.commitMutation(() => this.scheduler.heartbeatLease(leaseId, coordinatorId));
+    return this.commitMutation((scheduler) => scheduler.heartbeatLease(leaseId, coordinatorId));
   }
 
   releaseLease(leaseId: string, coordinatorId?: string): Lease {
-    return this.commitMutation(() => this.scheduler.releaseLease(leaseId, coordinatorId));
+    return this.commitMutation((scheduler) => scheduler.releaseLease(leaseId, coordinatorId));
   }
 
   expireLeases(now?: Date): Lease[] {
-    return this.commitMutation(() => this.scheduler.expireLeases(now));
+    return this.commitMutation((scheduler) => scheduler.expireLeases(now));
   }
 
   retryQueued(opts: AllocationRequestOptions = {}): AllocationResult[] {
-    return this.commitMutation(() => this.scheduler.retryQueued(opts));
+    return this.commitMutation((scheduler) => scheduler.retryQueued(opts));
   }
 
   validateLeaseForWorker(workerId: string, leaseId: string, taskId: string, coordinatorId: string): LeaseValidationResult {
-    return this.scheduler.validateLeaseForWorker(workerId, leaseId, taskId, coordinatorId);
+    return this.refreshScheduler().validateLeaseForWorker(workerId, leaseId, taskId, coordinatorId);
   }
 
   listLeases(): Lease[] {
-    return this.scheduler.listLeases();
+    return this.refreshScheduler().listLeases();
   }
 
   listAllocations(): Allocation[] {
-    return this.scheduler.listAllocations();
+    return this.refreshScheduler().listAllocations();
   }
 
   listQueue(): QueueItem[] {
-    return this.scheduler.listQueue();
+    return this.refreshScheduler().listQueue();
   }
 
   listTelemetry(): TelemetryEvent[] {
-    return this.scheduler.listTelemetry();
+    return this.refreshScheduler().listTelemetry();
   }
 
   createSnapshot(): SchedulerSnapshot {
-    return this.scheduler.createSnapshot();
+    return this.refreshScheduler().createSnapshot();
   }
 
   resolveLease(selector: { leaseId?: string; taskId?: string; role?: string; workerId?: string }): Lease {
-    return this.scheduler.resolveLease(selector);
+    return this.refreshScheduler().resolveLease(selector);
   }
 
-  private commitMutation<T>(mutate: () => T): T {
-    const before = this.scheduler.createSnapshot();
-    const result = mutate();
-    this.persistOrRehydrate(before);
-    return result;
-  }
-
-  private persistOrRehydrate(before: SchedulerSnapshot): void {
+  private commitMutation<T>(mutate: (scheduler: MatrixScheduler) => T): T {
     try {
-      this.store.applySnapshotDelta(before, this.scheduler.createSnapshot());
+      return this.store.transactionImmediate(() => {
+        const scheduler = this.hydrateScheduler();
+        const before = scheduler.createSnapshot();
+        const result = mutate(scheduler);
+        this.store.applySnapshotDelta(before, scheduler.createSnapshot());
+        this.scheduler = scheduler;
+        return result;
+      });
     } catch (err) {
       this.scheduler = this.hydrateScheduler();
       throw err;
     }
+  }
+
+  private refreshScheduler(): MatrixScheduler {
+    this.scheduler = this.hydrateScheduler();
+    return this.scheduler;
   }
 
   private hydrateScheduler(): MatrixScheduler {

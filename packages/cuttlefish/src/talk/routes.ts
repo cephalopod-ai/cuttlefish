@@ -29,6 +29,7 @@ import {
   getSession,
   getSessionBySessionKey,
   listChildSessions,
+  patchSessionTransportMeta,
   updateSession,
   searchSessions,
   searchMessages,
@@ -218,8 +219,8 @@ export async function handleTalkApi(
       }
       const graphAttachmentDeps = {
         getSession,
-        updateSessionMeta: (id: string, transportMeta: JsonObject | null) =>
-          updateSession(id, { transportMeta }),
+        patchSessionMeta: (id: string, patch: JsonObject) =>
+          patchSessionTransportMeta(id, patch),
       };
       json(res, {
         rootId: root.id,
@@ -475,12 +476,11 @@ export async function handleTalkApi(
       const config = context.getConfig();
       const base = gatewayBaseUrl({ port: config.gateway?.port || 8888, host: config.gateway?.host });
       const headers = jsonApiHeaders(context.apiToken ?? context.gatewayAuthToken);
-      // Attachments persist by merging into the talk session's transport_meta;
-      // updateSessionMeta wraps the generic updateSession meta writer.
+      // Attachments persist through the registry's atomic meta-patch primitive.
       const attachmentDeps = {
         getSession,
-        updateSessionMeta: (id: string, transportMeta: JsonObject | null) =>
-          updateSession(id, { transportMeta }),
+        patchSessionMeta: (id: string, patch: JsonObject) =>
+          patchSessionTransportMeta(id, patch),
       };
       const result = await delegateToThread(parsed.body, {
         getSession,

@@ -50,6 +50,8 @@ describe("GET /api/work", () => {
     reg.updateSession(waiting.id, { status: "waiting" });
     const idle = reg.createSession({ engine: "claude", source: "web", sourceRef: "w:idle", prompt: "x" });
     reg.updateSession(idle.id, { status: "idle" });
+    reg.patchSessionTransportMeta(idle.id, { latestRunId: "idle-completed-run" });
+    const neverRun = reg.createSession({ engine: "claude", source: "web", sourceRef: "w:new", prompt: "x" });
     // A session with a pending approval must classify as waiting_on_human even
     // though its status is "running".
     const gated = reg.createSession({ engine: "claude", source: "web", sourceRef: "w:gate", prompt: "x" });
@@ -72,8 +74,10 @@ describe("GET /api/work", () => {
     expect(body.counts.failed).toBe(1);           // errored
     expect(body.counts.blocked).toBe(1);          // waiting (non-approval)
     expect(body.counts.completed).toBe(1);        // idle
+    expect(body.counts.queued).toBe(1);           // created, never dispatched
     expect(body.counts.waiting_on_human).toBe(1); // gated (approval beats running)
-    expect(body.items.length).toBe(5);
+    expect(body.items.length).toBe(6);
+    expect((body.items as Array<{ sessionId: string; workState: string }>).find((item) => item.sessionId === neverRun.id)?.workState).toBe("queued");
   });
 
   it("serves command-center summary counts, manager chat roster, and usage buckets", async () => {

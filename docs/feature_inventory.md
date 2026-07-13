@@ -119,6 +119,8 @@
 - `/orchestration` shows real orchestration status, workers, running leases,
   blocked queue items, durable continuations, dual-lane selection manifests,
   managed worktrees, and telemetry/cost summaries.
+- The Workers DataView supports named local saved views that reapply its search,
+  sort, and visible-column state.
 - Dashboard actions are deliberately limited to safe backend actions: retry a
   continuation only when it is `failed`, select or apply a dual-lane winner,
   pause/resume the global queue or one queued task, create/extend/cancel

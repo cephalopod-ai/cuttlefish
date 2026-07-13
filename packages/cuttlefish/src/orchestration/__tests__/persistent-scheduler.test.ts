@@ -38,6 +38,22 @@ describe("PersistentMatrixScheduler", () => {
     reopened.close();
   });
 
+  it("serializes independently opened schedulers from the latest persisted snapshot", () => {
+    const first = PersistentMatrixScheduler.open(config(), { dbPath, now: () => fixedNow, expireOnHydrate: false });
+    const second = PersistentMatrixScheduler.open(config(), { dbPath, now: () => fixedNow, expireOnHydrate: false });
+
+    expect(first.requestAllocation(request({ taskId: "task-first" })).ok).toBe(true);
+    const blocked = second.requestAllocation(request({ taskId: "task-second", coordinatorId: "coord-second" }));
+
+    expect(blocked.ok).toBe(false);
+    expect(second.listLeases().filter((lease) => lease.state === "running")).toMatchObject([
+      { taskId: "task-first", workerId: "codexSenior" },
+    ]);
+    expect(first.listQueue()).toMatchObject([{ taskId: "task-second", coordinatorId: "coord-second" }]);
+    first.close();
+    second.close();
+  });
+
   it("persists queued work and resumes it after a release across restart", () => {
     const first = PersistentMatrixScheduler.open(config(), { dbPath, now: () => fixedNow });
     const running = first.requestAllocation(request({ taskId: "task-1" }));

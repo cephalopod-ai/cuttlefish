@@ -9,7 +9,7 @@ import { effortLevelsForModel, engineAvailable, isKnownEngine, engineUnavailable
 import { createApproval } from "./approvals.js";
 import { buildContext } from "../sessions/context.js";
 import { buildContextPacket, contextManagerMode, logContextPacketMetadata } from "../sessions/context-manager/index.js";
-import { beginSessionRun, createSession, listChildSessions, getSession, updateSession, patchSessionTransportMeta, insertMessage, insertPartialMessage, updatePartialMessage, deletePartialMessages, finalizePartialMessages, getMessages } from "../sessions/registry.js";
+import { createSession, listChildSessions, getSession, updateSession, patchSessionTransportMeta, insertMessage, insertPartialMessage, updatePartialMessage, deletePartialMessages, finalizePartialMessages, getMessages } from "../sessions/registry.js";
 import { logger } from "../shared/logger.js";
 import { CUTTLEFISH_HOME } from "../shared/paths.js";
 import { resolveEffort } from "../shared/effort.js";
@@ -41,6 +41,7 @@ import { positiveNumberOr, resolveStallLeaderName, resolveTurnStallWatchdogConfi
 export { resolveStallLeaderName, resolveTurnStallWatchdogConfig, shouldNotifyLeaderReviewOnStall, shouldRetrySameEngineAfterStall } from "./turn-stall-policy.js";
 import { isExecutionDepthBlocked } from "./employee-execution.js";
 import { createScopedSessionToken } from "./auth.js";
+import { prepareWebSessionRun } from "./web-session-preflight.js";
 
 export function resolveFallbackContinuationSession(
   updated: Session | undefined,
@@ -61,55 +62,15 @@ export function resolveFallbackContinuationSession(
 export async function runWebSession(
   session: Session,
   prompt: string,
-  engine: Engine,
-  config: CuttlefishConfig,
+  initialEngine: Engine,
+  initialConfig: CuttlefishConfig,
   context: ApiContext,
   attachments?: string[],
   resourceContext?: string | null,
 ): Promise<void> {
-  let currentSession = getSession(session.id);
-  if (!currentSession) {
-    logger.info(`Skipping deleted web session ${session.id} before run start`);
-    return;
-  }
-  currentSession = beginSessionRun({
-    sessionId: currentSession.id,
-    prompt,
-    transportMeta: currentSession.transportMeta,
-  }) ?? currentSession;
-  config = context.getConfig();
-  // Role sessions (mid_pair reviewer / revision-implementer, executionDepth ≥ 1)
-  // are internal/silent — see the notifyParentSession suppression note below.
-  // Computed this early so it also covers the engine-unavailable early return.
-  const isRoleChildSession = isExecutionDepthBlocked(currentSession.transportMeta as Record<string, unknown> | undefined);
-  const preferredPtyView = context.ptyViewEngines?.[session.engine] === engine;
-  const runtimeEngine =
-    (preferredPtyView ? context.ptyViewEngines?.[currentSession.engine] : undefined)
-    ?? context.sessionManager.getEngine(currentSession.engine);
-  if (!runtimeEngine) {
-    const errMsg = `Engine "${currentSession.engine}" not available`;
-    logger.error(`Web session ${currentSession.id} blocked: ${errMsg}`);
-    insertMessage(currentSession.id, "assistant", `⛔ ${errMsg}`);
-    const erroredSession = updateSession(currentSession.id, {
-      status: "error",
-      lastActivity: new Date().toISOString(),
-      lastError: errMsg,
-    });
-    context.emit("session:completed", { sessionId: currentSession.id, result: null, error: errMsg });
-    maybeEmitTalkGraph(currentSession.id, "completed", { getSession, emit: context.emit });
-    if (erroredSession) notifyParentSession(erroredSession, { error: errMsg }, { alwaysNotify: isRoleChildSession ? false : undefined, sink: context.notificationSink });
-    return;
-  }
-  engine = runtimeEngine;
-  logger.info(`Web session ${currentSession.id} running engine "${currentSession.engine}" (model: ${currentSession.model || "default"})`);
-
-  const currentStatus = getSession(currentSession.id);
-  if (currentStatus && currentStatus.status !== "running") {
-    updateSession(currentSession.id, {
-      status: "running",
-      lastActivity: new Date().toISOString(),
-    });
-  }
+  const prepared = prepareWebSessionRun({ session, prompt, engine: initialEngine, config: initialConfig, context });
+  if (!prepared) return;
+  let { currentSession, config, engine, isRoleChildSession } = prepared;
 
   let employee: import("../shared/types.js").Employee | undefined;
   if (currentSession.employee) {

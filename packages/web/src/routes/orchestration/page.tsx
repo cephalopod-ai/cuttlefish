@@ -10,10 +10,12 @@ import {
   DensityToggle,
   ColumnConfigMenu,
   ExportMenu,
+  SavedViewsMenu,
   useViewPreferences,
   type DataTableColumn,
   type SortState,
   type ExportColumn,
+  type SavedView,
 } from "@/components/data-view"
 import { useBreadcrumbs } from "@/context/breadcrumb-context"
 import {
@@ -59,6 +61,8 @@ const WORKTREE_COLUMNS: DataTableColumn<WorktreeSummary>[] = [
   { key: "created", label: "Created", render: (w) => formatDate(w.createdAt), sortValue: (w) => w.createdAt },
 ]
 
+type WorkerViewFilters = { search: string }
+
 export default function OrchestrationPage() {
   useBreadcrumbs([{ label: "Orchestration" }])
   const [data, setData] = useState<OrchestrationDashboardData | null>(null)
@@ -73,7 +77,13 @@ export default function OrchestrationPage() {
   const [workersSort, setWorkersSort] = useState<SortState | null>(null)
   const [worktreesSort, setWorktreesSort] = useState<SortState | null>(null)
   const [telemetrySort, setTelemetrySort] = useState<SortState | null>(null)
-  const { preferences: viewPrefs, setDensity, setHiddenColumns } = useViewPreferences("orchestration")
+  const {
+    preferences: viewPrefs,
+    setDensity,
+    setHiddenColumns,
+    saveView,
+    deleteView,
+  } = useViewPreferences<WorkerViewFilters>("orchestration")
 
   const refresh = useCallback(async () => {
     setRefreshing(true)
@@ -221,6 +231,14 @@ export default function OrchestrationPage() {
                   onDensityChange={setDensity}
                   hiddenColumns={viewPrefs.hiddenColumns}
                   onHiddenColumnsChange={setHiddenColumns}
+                  savedViews={viewPrefs.savedViews}
+                  onApplySavedView={(view) => {
+                    setWorkersSearch(view.filters.search)
+                    setWorkersSort(view.sort)
+                    setHiddenColumns(view.hiddenColumns)
+                  }}
+                  onSaveView={saveView}
+                  onDeleteView={deleteView}
                 />
               </TabsContent>
               <TabsContent value="Queue">
@@ -382,6 +400,10 @@ function WorkersTab({
   onDensityChange,
   hiddenColumns,
   onHiddenColumnsChange,
+  savedViews,
+  onApplySavedView,
+  onSaveView,
+  onDeleteView,
 }: {
   workers: WorkerSummary[]
   search: string
@@ -392,6 +414,10 @@ function WorkersTab({
   onDensityChange: (density: "comfortable" | "compact") => void
   hiddenColumns: string[]
   onHiddenColumnsChange: (hiddenColumns: string[]) => void
+  savedViews: SavedView<WorkerViewFilters>[]
+  onApplySavedView: (view: SavedView<WorkerViewFilters>) => void
+  onSaveView: (view: Omit<SavedView<WorkerViewFilters>, "id">) => void
+  onDeleteView: (id: string) => void
 }) {
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -423,6 +449,16 @@ function WorkersTab({
             columns={WORKER_COLUMNS.map((c) => ({ key: c.key, label: c.label, required: c.required }))}
             hiddenColumns={hiddenColumns}
             onChange={onHiddenColumnsChange}
+          />
+          <SavedViewsMenu
+            savedViews={savedViews}
+            pinnedViewId={null}
+            currentFilters={{ search }}
+            currentSort={sort}
+            currentHiddenColumns={hiddenColumns}
+            onApply={onApplySavedView}
+            onSave={onSaveView}
+            onDelete={onDeleteView}
           />
           <ExportMenu rows={filtered} columns={WORKER_EXPORT_COLUMNS} filenamePrefix="orchestration-workers" />
         </div>

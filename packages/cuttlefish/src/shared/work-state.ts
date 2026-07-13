@@ -30,6 +30,8 @@ export interface WorkStateInput {
   transportState?: "idle" | "queued" | "running" | "error" | "interrupted";
   /** True when a model-fallback (or other) approval is pending for this session. */
   approvalRequired?: boolean;
+  /** Whether a durable session run has started at least once. */
+  hasRun?: boolean;
   /** Forward-compat: set for cron-bound sessions. Reserved; does not change the
    *  lifecycle state today (a cron session is classified by its run state). */
   cron?: boolean;
@@ -43,7 +45,8 @@ export interface WorkStateInput {
  *   4. transportState "queued"       → queued
  *   5. running (status|transport)    → running
  *   6. status "interrupted"          → blocked
- *   7. otherwise (idle)              → completed
+ *   7. never-run idle                → queued
+ *   8. otherwise (idle)              → completed
  */
 export function deriveWorkState(input: WorkStateInput): WorkState {
   if (input.approvalRequired) return "waiting_on_human";
@@ -52,6 +55,7 @@ export function deriveWorkState(input: WorkStateInput): WorkState {
   if (input.transportState === "queued") return "queued";
   if (input.status === "running" || input.transportState === "running") return "running";
   if (input.status === "interrupted") return "blocked";
+  if (input.hasRun === false) return "queued";
   return "completed";
 }
 

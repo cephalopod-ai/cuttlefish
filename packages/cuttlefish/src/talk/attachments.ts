@@ -12,7 +12,7 @@
  * This module is deliberately LEAF-level: it imports no other talk module (no
  * graph.ts / delegate.ts) so T8's wake-on-completion can `import
  * { talkSessionsAttachedTo }` without a cycle. Persistence is injected
- * (getSession / updateSessionMeta) exactly like delegate.ts injects its deps;
+ * (getSession / patchSessionMeta) exactly like delegate.ts injects its deps;
  * the in-memory map is hydrated lazily from meta on first touch per talk session.
  * Module-level Maps + a `__resetForTest` seam follow the mute-state / tts-stream
  * precedent for per-session module state.
@@ -31,11 +31,10 @@ export interface Attachment {
   since: number;
 }
 
-/** Injected persistence — mirrors the registry transport_meta read/write pair. */
+/** Injected persistence — uses the registry's atomic transport_meta patch seam. */
 export interface AttachmentDeps {
   getSession: (id: string) => Session | undefined;
-  /** Replace the talk session's full transportMeta (we merge talkAttachments in). */
-  updateSessionMeta: (id: string, transportMeta: JsonObject | null) => void;
+  patchSessionMeta: (id: string, patch: JsonObject) => void;
 }
 
 export type AttachResult =
@@ -79,13 +78,11 @@ function hydrate(talkId: string, deps: Pick<AttachmentDeps, "getSession">): void
   if (map.size > 0) attachmentsByTalk.set(talkId, map);
 }
 
-/** Persist the current attachment set, preserving other transport_meta keys. */
+/** Persist the current attachment set without replacing concurrent metadata. */
 function persist(talkId: string, deps: AttachmentDeps): void {
-  const existing = deps.getSession(talkId)?.transportMeta ?? {};
   const map = attachmentsByTalk.get(talkId);
   const arr: Attachment[] = map ? [...map.values()] : [];
-  const next: JsonObject = { ...existing, talkAttachments: arr as unknown as JsonValue };
-  deps.updateSessionMeta(talkId, next);
+  deps.patchSessionMeta(talkId, { talkAttachments: arr as unknown as JsonValue });
 }
 
 /**

@@ -47,6 +47,9 @@ artifacts unless explicitly published.
 
 ## Session and Audit Log Summaries
 
+- `docs/logs/session/072026/2026-07-13-deferred-backlog-repair-campaign.md`:
+  repair-campaign record for the reopened architecture, scheduler-integrity,
+  work-state, and Workers DataView backlog items.
 - `docs/logs/session/072026/2026-07-13-hr-human-only-routing-repair.md`:
   repair evidence for making HR / Org Steward human-only after the Program
   Manager playtest, including live rejection probes and full validation.

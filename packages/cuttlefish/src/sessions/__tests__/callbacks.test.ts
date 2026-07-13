@@ -501,7 +501,7 @@ describe("notifyParentSession — attached talk-session wakes", () => {
     // Seed an attachment in the (real) attachments module.
     attach("talk-1", "child-001", "observe", {
       getSession: () => talkSession,
-      updateSessionMeta: () => {},
+      patchSessionMeta: () => {},
     });
     // Parent ('elsewhere') resolves to nothing; only talk-1 is a live talk session.
     vi.mocked(getSession).mockImplementation((id: string) =>
@@ -526,7 +526,7 @@ describe("notifyParentSession — attached talk-session wakes", () => {
   it("does NOT double-wake an owned child (parent IS the talk session)", async () => {
     attach("talk-1", "child-001", "observe", {
       getSession: () => talkSession,
-      updateSessionMeta: () => {},
+      patchSessionMeta: () => {},
     });
     vi.mocked(getSession).mockImplementation((id: string) =>
       id === "talk-1" ? talkSession : undefined,
@@ -576,7 +576,7 @@ describe("notifyParentSession — attached talk-session wakes", () => {
     };
     attach("talk-1", "child-001", "observe", {
       getSession: () => talkSession,
-      updateSessionMeta: () => {},
+      patchSessionMeta: () => {},
     });
     vi.mocked(getSession).mockImplementation((id: string) =>
       id === "talk-1" ? talkSession : undefined,

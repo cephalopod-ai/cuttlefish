@@ -11,8 +11,8 @@ import type { JsonObject, Session } from "../../shared/types.js";
 
 /**
  * Fake meta store: mirrors the registry's transport_meta column. getSession
- * returns a session shell carrying the stored transportMeta; updateSessionMeta
- * writes the full transportMeta back (exactly how routes.ts wires updateSession).
+ * returns a session shell carrying the stored transportMeta; patchSessionMeta
+ * merges a patch in place (exactly how routes.ts wires registry persistence).
  */
 function makeDeps(): AttachmentDeps & { store: Map<string, JsonObject | null> } {
   const store = new Map<string, JsonObject | null>();
@@ -20,8 +20,8 @@ function makeDeps(): AttachmentDeps & { store: Map<string, JsonObject | null> } 
     store,
     getSession: (id: string): Session | undefined =>
       ({ id, transportMeta: store.get(id) ?? null }) as unknown as Session,
-    updateSessionMeta: (id: string, transportMeta: JsonObject | null) => {
-      store.set(id, transportMeta);
+    patchSessionMeta: (id: string, patch: JsonObject) => {
+      store.set(id, { ...(store.get(id) ?? {}), ...patch });
     },
   };
 }

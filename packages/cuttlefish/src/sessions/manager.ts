@@ -12,7 +12,6 @@ import type {
 import { isInterruptibleEngine } from "../shared/types.js";
 import {
   accumulateSessionCost,
-  createSession,
   getSession,
   getSessionBySessionKey,
   getMessages,
@@ -32,32 +31,25 @@ import { resolveEngineInvocation } from "../shared/engine-arg-resolver.js";
 import { effortLevelsForModel, engineAvailable, isKnownEngine, engineUnavailableMessage } from "../shared/models.js";
 import { detectRateLimit, isDeadSessionError } from "../shared/rateLimit.js";
 import { getClaudeExpectedResetAt, isLikelyNearClaudeUsageLimit } from "../shared/usageAwareness.js";
-import { getRecordedReset, usageConfig } from "../shared/usage-status.js";
 import { checkBudget } from "../gateway/budgets.js";
 import { markTranscriptSyncedThrough } from "../gateway/external-turns.js";
 import { resolveMcpServers, writeMcpConfigFile, cleanupMcpConfigFile } from "../mcp/resolver.js";
 import {
   handleRateLimit,
   rateLimitFallbackNotice,
-  rateLimitPausedNotice,
   rateLimitSummary,
   rateLimitTimeoutError,
   rateLimitWaitingNotice,
 } from "./rate-limit-handler.js";
-import { finalizeManagedSessionTurn, maybeRevertEngineOverride, mergeTransportMeta } from "./manager-helpers.js";
+import { finalizeManagedSessionTurn, mergeTransportMeta } from "./manager-helpers.js";
 import { isUntrustedSource, wrapUntrustedMessage } from "./untrusted-input.js";
 import { handleSessionCommand, resetSession } from "./session-commands.js";
 import { createScopedSessionToken } from "../gateway/auth.js";
 import { runWithEngineEnvironment } from "../shared/engine-env.js";
 import type { ContentScreeningResult } from "../shared/types.js";
+import { SessionDispatcher, type RouteOptions } from "./session-dispatcher.js";
 export { mergeTransportMeta } from "./manager-helpers.js";
-
-export type RouteOptions = {
-  employee?: Employee;
-  engine?: string;
-  model?: string;
-  title?: string;
-};
+export type { RouteOptions } from "./session-dispatcher.js";
 
 type UntrustedContentGateResult =
   | { action: "allow"; prompt: string; screening: ContentScreeningResult }
@@ -156,72 +148,12 @@ export class SessionManager {
 
   async route(msg: IncomingMessage, connector: Connector, opts: RouteOptions = {}): Promise<{ sessionId: string } | void> {
     if (await this.handleCommand(msg, connector)) return;
-
-    let session = getSessionBySessionKey(msg.sessionKey);
-    if (!session) {
-      session = createSession({
-        engine: opts.engine ?? opts.employee?.engine ?? this.config.engines.default,
-        source: msg.source,
-        sourceRef: msg.sessionKey,
-        connector: msg.connector,
-        sessionKey: msg.sessionKey,
-        replyContext: msg.replyContext,
-        messageId: msg.messageId,
-        transportMeta: msg.transportMeta,
-        employee: opts.employee?.name ?? undefined,
-        model: opts.model ?? opts.employee?.model ?? undefined,
-        effortLevel: opts.employee?.effortLevel ?? undefined,
-        title: opts.title,
-        prompt: msg.text,
-        portalName: this.config.portal?.portalName,
-      });
-      logger.info(
-        `Created new session ${session.id} for ${msg.sessionKey}` +
-        (opts.employee ? ` (employee: ${opts.employee.name})` : ""),
-      );
-    } else {
-      const mergedMeta = mergeTransportMeta(session.transportMeta, msg.transportMeta);
-      session = updateSession(session.id, {
-        replyContext: msg.replyContext,
-        messageId: msg.messageId ?? null,
-        transportMeta: mergedMeta,
-        ...(opts.model ? { model: opts.model } : {}),
-      }) ?? session;
-    }
-
-    session = maybeRevertEngineOverride(session);
-    this.queue.clearCancelled(msg.sessionKey);
-
-    const target = connector.reconstructTarget(msg.replyContext);
-    target.messageTs ??= msg.messageId;
-
-    const attachmentPaths = msg.attachments
-      .map((attachment) => attachment.localPath)
-      .filter((filePath): filePath is string => !!filePath);
-
-    if (session.status === "waiting") {
-      const recordedReset = getRecordedReset(session.engine, usageConfig(this.config).fallbackWindowMins);
-      const expectedResetAt = typeof recordedReset === "number" ? new Date(recordedReset * 1000) : getClaudeExpectedResetAt();
-      const resumeText = expectedResetAt
-        ? expectedResetAt.toLocaleString("en-GB", { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
-        : null;
-      await connector.replyMessage(
-        target,
-        rateLimitPausedNotice(session.engine, resumeText),
-      ).catch(() => {});
-    }
-
-    if (session.status === "running" && this.queue.isRunning(msg.sessionKey) && connector.getCapabilities().reactions) {
-      await connector.addReaction(target, "clock1").catch(() => {});
-    }
-
-    const sessionId = session.id;
-
-    await this.queue.enqueue(msg.sessionKey, () =>
-      this.runSession(session!, msg, attachmentPaths, connector, target, opts.employee),
-    );
-
-    return { sessionId };
+    return new SessionDispatcher({
+      config: this.config,
+      queue: this.queue,
+      runTurn: (session, incoming, attachments, replyConnector, target, employee) =>
+        this.runSession(session, incoming, attachments, replyConnector, target, employee),
+    }).route(msg, connector, opts);
   }
 
   private async runSession(

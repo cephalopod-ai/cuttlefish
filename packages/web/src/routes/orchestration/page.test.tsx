@@ -36,6 +36,7 @@ const stopLeaseMock = vi.mocked(stopOrchestrationLease)
 
 beforeEach(() => {
   vi.clearAllMocks()
+  window.localStorage.clear()
 })
 
 describe("OrchestrationPage", () => {
@@ -159,6 +160,27 @@ describe("OrchestrationPage", () => {
     fireEvent.click(openaiButtons[0])
 
     await waitFor(() => expect(selectMock).toHaveBeenCalledWith("select-task", "dual-coord", "openai"))
+  })
+
+  it("saves and reapplies a Workers DataView filter", async () => {
+    const prompt = vi.spyOn(window, "prompt").mockReturnValue("Mock workers")
+    loadMock.mockResolvedValue(sampleData())
+    render(<OrchestrationPage />)
+
+    await screen.findByRole("tab", { name: "Workers" })
+    activateTab("Workers")
+    const search = await screen.findByRole("textbox", { name: "Search workers" })
+    fireEvent.change(search, { target: { value: "mock" } })
+    openSavedViews()
+    fireEvent.click(await screen.findByText("Save current view…"))
+    expect(prompt).toHaveBeenCalledWith("Name this view")
+
+    fireEvent.change(search, { target: { value: "no-match" } })
+    expect(await screen.findByText("No workers match this search.")).toBeTruthy()
+    openSavedViews()
+    fireEvent.click(await screen.findByText("Mock workers"))
+    expect((search as HTMLInputElement).value).toBe("mock")
+    prompt.mockRestore()
   })
 
   it("has no axe-core structural/semantic violations (color-contrast excluded — jsdom has no real paint)", async () => {
@@ -290,4 +312,13 @@ function activateTab(name: string) {
   fireEvent.pointerUp(tab, { button: 0, ctrlKey: false, pointerType: "mouse" })
   fireEvent.mouseUp(tab, { button: 0, ctrlKey: false })
   fireEvent.click(tab)
+}
+
+function openSavedViews() {
+  const button = screen.getByRole("button", { name: "Saved views" })
+  fireEvent.pointerDown(button, { button: 0, ctrlKey: false, pointerType: "mouse" })
+  fireEvent.mouseDown(button, { button: 0, ctrlKey: false })
+  fireEvent.pointerUp(button, { button: 0, ctrlKey: false, pointerType: "mouse" })
+  fireEvent.mouseUp(button, { button: 0, ctrlKey: false })
+  fireEvent.click(button)
 }
