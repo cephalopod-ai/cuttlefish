@@ -121,6 +121,18 @@ provides:
   - name: code-review
     description: Review PRs and provide feedback
 `);
+  writeEmployee("personnel", "hr-manager", `
+name: hr-manager
+displayName: HR Manager
+department: personnel
+rank: manager
+engine: claude
+model: sonnet
+persona: Advise the human operator.
+provides:
+  - name: org-advice
+    description: Human-only organization advice
+`);
 });
 
 describe("POST /api/org/cross-request", () => {
@@ -177,6 +189,26 @@ describe("POST /api/org/cross-request", () => {
       requestedService: "does-not-exist",
       availableServices: [{ name: "code-review", provider: { name: "platform-dev" } }],
     });
+    expect(hoisted.dispatchEmployeeSessionRun).not.toHaveBeenCalled();
+  });
+
+  it("does not expose the human-only HR role as a cross-service provider", async () => {
+    const { api, reg } = await setup();
+    const cap = makeRes();
+
+    await api.handleApiRequest(makeJsonReq("POST", "/api/org/cross-request", {
+      fromEmployee: "content-writer",
+      service: "org-advice",
+      prompt: "Assess this manager request",
+    }), cap.res, makeCtx());
+
+    expect(cap.status).toBe(422);
+    expect(cap.body).toMatchObject({
+      code: "no_service_provider",
+      requestedService: "org-advice",
+      availableServices: [{ name: "code-review", provider: { name: "platform-dev" } }],
+    });
+    expect(reg.listSessions()).toHaveLength(0);
     expect(hoisted.dispatchEmployeeSessionRun).not.toHaveBeenCalled();
   });
 });

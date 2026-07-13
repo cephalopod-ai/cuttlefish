@@ -151,6 +151,7 @@
 - `packages/web/src/components/org/employee-detail.tsx` displays an execution profile summary in the detail panel when a profile is configured.
 - Fresh-install seed personas place Parliamentarian and Senior Security Officer in `compliance`, HR / Org Steward as the `personnel` department manager, and Assistant in `general`. HR / Org Steward advises on organizational planning, agent coordination patterns, and model/budget/resource fit while remaining a review/advisory role rather than a runtime orchestrator or resource manager. New manager-hire guidance defaults managers to the COO/root reporting line unless the user explicitly says otherwise.
 - `hr-manager` retains its reusable singleton thread for ordinary continuation. A request that explicitly selects an incompatible engine, model, effort level, or working directory now returns `409 { code: "hr_singleton_profile_conflict" }` before writing the prompt into that historical thread.
+- HR / Org Steward is human-only: only a direct, top-level human-operator session may use `hr-manager`. Agent-session requests and parented child sessions return `403 { code: "hr_human_only" }`; HR is excluded from cross-service discovery/routing and automated board dispatch; leader-ack timeouts fall back to an executive or manual human review instead of paging HR.
 
 ### Workspace profiles
 - `packages/cuttlefish/src/gateway/workspace-profiles.ts`

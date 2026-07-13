@@ -95,6 +95,15 @@ describe("ticket dispatch resolution", () => {
     });
   });
 
+  it("keeps HR tickets manual-only for both manager and named-assignee routing", () => {
+    const registry = new Map<string, Employee>([
+      ["hr-manager", employee({ name: "hr-manager", department: "personnel", rank: "manager" })],
+    ]);
+    const hrTicket = ticket({ assignee: "hr-manager" });
+    expect(resolveDispatchEmployee("personnel", hrTicket, registry, true)).toEqual({ reason: "manual-only" });
+    expect(resolveDispatchEmployee("personnel", hrTicket, registry, false)).toEqual({ reason: "manual-only" });
+  });
+
   it("still dispatches to active (or lifecycle-unset) assignees", () => {
     const active = new Map<string, Employee>([["worker", employee({ name: "worker", lifecycle: "active" })]]);
     expect(resolveDispatchEmployee("software-delivery", ticket(), active, false).employee?.name).toBe("worker");

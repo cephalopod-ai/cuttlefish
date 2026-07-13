@@ -270,6 +270,48 @@ describe("POST /api/sessions prompt validation (I-1)", () => {
     expect(reg.getMessages(existing.id).map((message) => message.content)).toEqual(["existing HR work"]);
     expect(hoisted.dispatchEmployeeSessionRun).not.toHaveBeenCalled();
   });
+
+  it("reserves HR for direct human top-level sessions", async () => {
+    const { api, reg } = await setup();
+    const ctx = makeCtx(api);
+    ctx.getConfig = () => ({
+      gateway: {},
+      engines: { default: "claude", claude: { bin: "node", model: "sonnet" } },
+      portal: {},
+    }) as any;
+    ctx.sessionManager.getEngine = () => ({ name: "claude" }) as any;
+
+    const direct = makeRes();
+    await api.handleApiRequest(
+      makeJsonReq("POST", "/api/sessions", { employee: "hr-manager", prompt: "Direct operator request" }),
+      direct.res,
+      ctx,
+    );
+    expect(direct.status).toBe(201);
+    const hrSession = reg.getSession(String(direct.body.id));
+    expect(hrSession?.employee).toBe("hr-manager");
+
+    const agentRequest = makeJsonReq("POST", "/api/sessions", { employee: "hr-manager", prompt: "Agent request" });
+    agentRequest.cuttlefishPrincipal = { kind: "session", sessionId: "program-manager-session" };
+    const agent = makeRes();
+    await api.handleApiRequest(agentRequest, agent.res, ctx);
+    expect(agent.status).toBe(403);
+    expect(agent.body).toMatchObject({ code: "hr_human_only" });
+
+    const parented = makeRes();
+    await api.handleApiRequest(
+      makeJsonReq("POST", "/api/sessions", {
+        employee: "hr-manager",
+        parentSessionId: "program-manager-session",
+        prompt: "Delegated HR request",
+      }),
+      parented.res,
+      ctx,
+    );
+    expect(parented.status).toBe(403);
+    expect(parented.body).toMatchObject({ code: "hr_human_only" });
+    expect(reg.getMessages(hrSession!.id).map((message) => message.content)).toEqual(["Direct operator request"]);
+  });
 });
 
 describe("POST /api/sessions/bulk-delete duplicate ids (I-2)", () => {

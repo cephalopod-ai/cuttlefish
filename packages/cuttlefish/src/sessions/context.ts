@@ -559,7 +559,7 @@ function buildOrgContext(hierarchy?: import("../shared/types.js").OrgHierarchy):
 
       lines.push(`\nFull persona/details: \`GET /api/org/employees/:name\` or the YAML under \`${ORG_DIR}/\`. Create new employees by writing YAML files there.`);
       lines.push(`Managers and executives may switch a report's engine/model/effort via \`PATCH /api/org/employees/:name\` with \`{"managerName":"<manager>","engine":"...","model":"...","effortLevel":"..."}\`.`);
-      lines.push(`Before a significant model change, managers may ask \`hr-manager\` to sanity-check cost, overlap, and org-fit concerns; use the direct PATCH path when the change is straightforward and within the manager's scope.`);
+      lines.push(`HR / Org Steward is human-only: managers must not delegate or route requests to \`hr-manager\`. Escalate significant model, overlap, and org-fit questions to the human operator.`);
       return lines.join("\n");
     }
 
@@ -806,6 +806,7 @@ function buildApiReferenceSummary(gatewayUrl: string, portalName: string, employ
       `- Spawn a child session: \`POST ${gatewayUrl}/api/sessions\` with \`{prompt, employee?, parentSessionId}\``,
       `- Follow up on a child session: \`POST ${gatewayUrl}/api/sessions/:id/message\` with \`{message}\``,
       `- Read a child's latest replies: \`GET ${gatewayUrl}/api/sessions/:id?last=N\``,
+      `- Do not delegate or route work to \`hr-manager\`; HR accepts direct top-level human-operator requests only.`,
     ].join("\n");
   }
   return [
@@ -813,6 +814,7 @@ function buildApiReferenceSummary(gatewayUrl: string, portalName: string, employ
     `- Delegate to another employee: \`POST ${gatewayUrl}/api/sessions\` with \`{prompt, employee, parentSessionId}\``,
     `- Follow up on a child session: \`POST ${gatewayUrl}/api/sessions/:id/message\` with \`{message}\``,
     `- Read a child's latest replies: \`GET ${gatewayUrl}/api/sessions/:id?last=N\``,
+    `- Do not delegate or route work to \`hr-manager\`; HR accepts direct top-level human-operator requests only.`,
   ].join("\n");
 }
 
@@ -831,6 +833,7 @@ function buildApiReference(gatewayUrl: string, portalName: string, employee?: Em
       `- Set \`employee\` to an org slug to delegate; omit it to spawn a direct/COO child session.`,
       `- Follow up on a child session: \`POST ${gatewayUrl}/api/sessions/:id/message\` with \`{message}\``,
       `- Read a child's latest replies: \`GET ${gatewayUrl}/api/sessions/:id?last=N\``,
+      `- Do not delegate or route work to \`hr-manager\`; HR accepts direct top-level human-operator requests only.`,
       `- Valid \`employee\` values are the slugs in \`GET ${gatewayUrl}/api/org\` or \`ls ${ORG_DIR}/\``,
       attachmentsLine,
       `Full endpoint table: CLAUDE.md / AGENTS.md.`,
@@ -847,6 +850,7 @@ function buildApiReference(gatewayUrl: string, portalName: string, employee?: Em
       `- Delegate to another employee: \`POST ${gatewayUrl}/api/sessions\` with \`{prompt, employee, parentSessionId}\``,
       `- Follow up on a child session: \`POST ${gatewayUrl}/api/sessions/:id/message\` with \`{message}\``,
       `- Read a child's latest replies: \`GET ${gatewayUrl}/api/sessions/:id?last=N\``,
+      `- Do not delegate or route work to \`hr-manager\`; HR accepts direct top-level human-operator requests only.`,
       `- Valid \`employee\` values are the slugs in your chain of command, \`GET ${gatewayUrl}/api/org\`, or \`ls ${ORG_DIR}/\``,
       attachmentsLine,
       `Full endpoint table: CLAUDE.md / AGENTS.md.`,

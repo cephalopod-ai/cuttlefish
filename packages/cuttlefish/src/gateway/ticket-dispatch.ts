@@ -10,6 +10,7 @@ import {
 } from "../orchestration/telemetry.js";
 import { dispatchEmployeeSessionRun } from "./mid-pair-orchestrator.js";
 import { findEmployee, isActiveEmployee, scanOrg } from "./org.js";
+import { HR_EMPLOYEE_NAME } from "./org-policy.js";
 import { boardLock, boardPath, readBoardArray, writeBoardTicketsWithinLock, type BoardTicket } from "./board-service.js";
 import type { ApiContext } from "./api/context.js";
 import { orgWorkerIdForName, orgWorkerRoleForName } from "./org-worker-bridge.js";
@@ -153,6 +154,7 @@ export function resolveDispatchEmployee(
     const manager = findDepartmentManager(department, registry);
     if (!manager) return { reason: "no-manager" };
     if (!isActiveEmployee(manager)) return { reason: "employee-not-active" };
+    if (manager.name === HR_EMPLOYEE_NAME) return { reason: "manual-only" };
     return { employee: manager };
   }
   const assignee = typeof ticket.assignee === "string" ? ticket.assignee.trim() : "";
@@ -163,6 +165,7 @@ export function resolveDispatchEmployee(
   // Draft/disabled/retired employees must not receive work — availability is a
   // first-class dispatch gate, not an advisory badge.
   if (!isActiveEmployee(employee)) return { reason: "employee-not-active" };
+  if (employee.name === HR_EMPLOYEE_NAME) return { reason: "manual-only" };
   return { employee };
 }
 

@@ -52,6 +52,7 @@ import {
 } from "../session-dispatch.js";
 import { HR_EMPLOYEE_NAME, HR_SESSION_KEY } from "../../org-policy.js";
 import { findHrSessionProfileConflict, getReusableHrSession } from "../../hr-session.js";
+import type { GatewayPrincipal } from "../../auth.js";
 import { acknowledgeLeaderAck } from "../../../sessions/leader-ack.js";
 import { claimManagerDelegationSynthesis, markManagerDelegationSynthesisDispatched } from "../../../sessions/manager-delegation.js";
 import { dispatchEmployeeSessionRun } from "../../mid-pair-orchestrator.js";
@@ -527,6 +528,19 @@ export async function handleSessionWriteRoutes(
       ? buildWorkspaceProfilePrompt(workspaceProfile, prompt)
       : prompt;
     const employeeName = coercePortalEmployee(body.employee, config.portal?.portalName);
+    const principal = (req as HttpRequest & { cuttlefishPrincipal?: GatewayPrincipal }).cuttlefishPrincipal;
+    const isParentedRequest = typeof body.parentSessionId === "string" && body.parentSessionId.trim().length > 0;
+    // HR is an operator-facing advisory lane. It is deliberately not a worker
+    // that managers, agents, or orchestration flows can delegate to; otherwise
+    // singleton reuse can cross-contaminate a human HR thread and lose a child
+    // callback. Human operators retain direct, top-level HR access.
+    if (employeeName === HR_EMPLOYEE_NAME && (isParentedRequest || principal?.kind === "session")) {
+      json(res, {
+        error: "HR / Org Steward accepts direct top-level requests from a human operator only",
+        code: "hr_human_only",
+      }, 403);
+      return true;
+    }
     let employeeDefaults: { engine: string; model: string; effortLevel?: string } | undefined;
     if (employeeName) {
       const { scanOrg } = await import("../../org.js");

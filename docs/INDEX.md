@@ -47,6 +47,9 @@ artifacts unless explicitly published.
 
 ## Session and Audit Log Summaries
 
+- `docs/logs/session/072026/2026-07-13-hr-human-only-routing-repair.md`:
+  repair evidence for making HR / Org Steward human-only after the Program
+  Manager playtest, including live rejection probes and full validation.
 - `docs/logs/session/072026/2026-07-12-program-manager-live-playtest.md`:
   live Program Manager role playtest covering manual department-manager
   delegation from simple through complex scenarios; records the confirmed HR

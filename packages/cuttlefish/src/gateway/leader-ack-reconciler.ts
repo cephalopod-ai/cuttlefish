@@ -1,5 +1,4 @@
 import { getMessages, getSession, insertMessage, listSessions } from "../sessions/registry.js";
-import { HR_EMPLOYEE_NAME } from "./org-policy.js";
 import { resolveOrgHierarchy, withPortalExecutive } from "./org-hierarchy.js";
 import { scanOrg } from "./org.js";
 import { logger } from "../shared/logger.js";
@@ -42,18 +41,15 @@ function formatDurationMinutes(ms: number): number {
 function escalationRecipientFor(child: Session, config: CuttlefishConfig): Employee | null {
   const registry = withPortalExecutive(scanOrg(), config.portal?.portalName);
   const hierarchy = resolveOrgHierarchy(registry);
-  const hr = registry.get(HR_EMPLOYEE_NAME) ?? null;
   const currentLeader = child.parentSessionId ? getSession(child.parentSessionId)?.employee ?? null : null;
-  if (hr && currentLeader !== HR_EMPLOYEE_NAME) return hr;
   if (!hierarchy.root) return null;
   const executive = registry.get(hierarchy.root) ?? null;
   if (!executive) return null;
-  if (currentLeader && executive.name === currentLeader && hr) return hr;
   return executive.name === currentLeader ? null : executive;
 }
 
 function escalationTargetLabel(recipient: Employee | null): string {
-  return recipient?.displayName || recipient?.name || "HR/COO";
+  return recipient?.displayName || recipient?.name || "manual human review";
 }
 
 function buildChildEscalationMessage(child: Session, timeoutMs: number, recipient: Employee | null, ackLeaderName: string | null): string {
@@ -128,7 +124,7 @@ export function sweepLeaderAcknowledgements(deps: LeaderAckReconcilerDeps): numb
     // Every completed child turn re-arms a fresh pending cycle (markLeaderAckPending),
     // including turns that are just administrative follow-up (e.g. HR sending a closing
     // note into the worker session). Without a cap, each of those re-arms times out
-    // 10 minutes later and pages HR again, forever, on the exact same underlying handoff.
+    // 10 minutes later and repeats the escalation forever on the same handoff.
     // Once this session lineage has already escalated maxEscalations times, stop paging
     // and settle quietly instead — a human already saw this once.
     if ((ack.escalationCount ?? 0) >= maxEscalations) {
@@ -137,7 +133,7 @@ export function sweepLeaderAcknowledgements(deps: LeaderAckReconcilerDeps): numb
         now: new Date(now).toISOString(),
       });
       deps.emit("session:updated", { sessionId: session.id });
-      logger.warn(`[leader-ack] session ${session.id} hit repeat timeout after ${ack.escalationCount ?? 0} prior escalation(s); suppressing duplicate escalation instead of re-paging HR`);
+      logger.warn(`[leader-ack] session ${session.id} hit repeat timeout after ${ack.escalationCount ?? 0} prior escalation(s); suppressing duplicate escalation`);
       continue;
     }
 

@@ -11,6 +11,7 @@ import { archiveEmployeeBoardTickets, BoardConflictError, defaultBoardState, rea
 import { resolveBestSessionForTicket, resolveTicketSessionFallbackState, resolveTicketSessionFailureReason, resolveTicketSessionStalled, shouldExposeSessionForTicket } from "../../ticket-session-resolver.js";
 import { dispatchTicket } from "../../ticket-dispatch.js";
 import { RESERVED_ORG_DIRS, isActiveEmployee, scanOrg } from "../../org.js";
+import { HR_EMPLOYEE_NAME } from "../../org-policy.js";
 import { resolveUserHeader } from "../../connector-reply.js";
 import type { ApiContext } from "../context.js";
 import { matchRoute } from "../match-route.js";
@@ -66,6 +67,7 @@ function computeExecutionProfileSummary(emp: Employee): ExecutionProfileSummary 
 function buildOrgServices(registry: Map<string, Employee>): OrgServiceSummary[] {
   const services = new Map<string, OrgServiceSummary>();
   for (const employee of registry.values()) {
+    if (employee.name === HR_EMPLOYEE_NAME) continue;
     if (!isActiveEmployee(employee) || !Array.isArray(employee.provides)) continue;
     for (const service of employee.provides) {
       const key = service.name.trim().toLowerCase();
@@ -103,6 +105,7 @@ function findServiceProvider(registry: Map<string, Employee>, serviceName: strin
   if (!key) return null;
   let best: { employee: Employee; service: { name: string; description: string } } | null = null;
   for (const employee of registry.values()) {
+    if (employee.name === HR_EMPLOYEE_NAME) continue;
     if (!isActiveEmployee(employee) || !Array.isArray(employee.provides)) continue;
     for (const service of employee.provides) {
       if (service.name.trim().toLowerCase() !== key) continue;
@@ -394,6 +397,13 @@ export async function handleOrgRoutes(
         requestedService: serviceName,
         availableServices,
       }, 422);
+      return true;
+    }
+    if (provider.employee.name === HR_EMPLOYEE_NAME) {
+      json(res, {
+        error: "HR / Org Steward accepts direct top-level requests from a human operator only",
+        code: "hr_human_only",
+      }, 403);
       return true;
     }
     const engine = context.sessionManager.getEngine(provider.employee.engine);

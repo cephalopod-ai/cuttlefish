@@ -27,7 +27,7 @@ beforeEach(() => {
 });
 
 describe("leader acknowledgement reconciler", () => {
-  it("escalates overdue pending leader acknowledgements to hr-manager", async () => {
+  it("marks overdue executive handoffs for manual human review instead of paging HR", async () => {
     const parent = reg.createSession({
       engine: "claude",
       source: "web",
@@ -68,15 +68,10 @@ describe("leader acknowledgement reconciler", () => {
     const updated = reg.getSession(child.id);
     expect(ack.readLeaderAckMeta(updated)).toMatchObject({
       state: "escalated",
-      escalatedTo: "hr-manager",
+      escalatedTo: "manual-review",
     });
-    expect(dispatchEscalation).toHaveBeenCalledTimes(1);
-    const escalationCalls = dispatchEscalation.mock.calls as unknown[][];
-    const firstEscalation = escalationCalls[0]?.[0] as Record<string, unknown> | undefined;
-    expect(firstEscalation).toMatchObject({
-      recipient: expect.objectContaining({ name: "hr-manager" }),
-    });
-    expect(reg.getMessages(child.id).some((message) => message.content.includes("Escalated to HR Manager"))).toBe(true);
+    expect(dispatchEscalation).not.toHaveBeenCalled();
+    expect(reg.getMessages(child.id).some((message) => message.content.includes("Escalated to manual human review"))).toBe(true);
   });
 
   it("acknowledges instead of escalating when the parent already marked the child report no-op", async () => {
@@ -266,9 +261,9 @@ describe("leader acknowledgement reconciler", () => {
       dispatchEscalation,
     });
 
-    // Must NOT escalate (page HR) a second time for the same session lineage.
+    // Must NOT repeat a manual-review escalation for the same session lineage.
     expect(escalated).toBe(0);
-    expect(dispatchEscalation).toHaveBeenCalledTimes(1); // still just the first call
+    expect(dispatchEscalation).not.toHaveBeenCalled();
     expect(ack.readLeaderAckMeta(reg.getSession(child.id))).toMatchObject({
       state: "acknowledged",
     });
