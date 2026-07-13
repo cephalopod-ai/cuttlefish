@@ -47,6 +47,9 @@ artifacts unless explicitly published.
 
 ## Session and Audit Log Summaries
 
+- `docs/logs/session/072026/2026-07-12-agent-skills-audit-sweep.md`:
+  current-branch MCP agent-skills audit summary; records five verified residuals,
+  the repaired Twilio/security boundaries, and static-only UI/Giles limitations.
 - `docs/logs/session/072026/2026-07-12-twenty-scenario-live-playtest.md`:
   July 2026 live playtest summary — twenty gateway scenarios covering solo,
   review, failover, Grok recovery, and manager delegation; durable findings and
