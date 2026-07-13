@@ -386,6 +386,61 @@ describe("PUT /api/org/departments/:name/board — assignee department boundary"
     });
     expect(JSON.parse(fs.readFileSync(path.join(softwareDir, "board.json"), "utf-8"))).toEqual([]);
   });
+
+  it("allows an unrelated ticket deletion when an unchanged legacy card has a stale assignee", async () => {
+    const softwareDir = path.join(orgDir, "software-delivery");
+    fs.mkdirSync(softwareDir, { recursive: true });
+    fs.writeFileSync(path.join(softwareDir, "worker.yaml"), [
+      "name: worker",
+      "displayName: Worker",
+      "department: software-delivery",
+      "rank: employee",
+      "engine: claude",
+      "model: opus",
+      "persona: worker",
+    ].join("\n"));
+    const stale = {
+      id: "stale-session",
+      title: "Old playtest artifact",
+      description: "completed",
+      status: "done",
+      priority: "medium",
+      complexity: "medium",
+      assignee: "removed-playtester",
+      source: "session",
+      sessionId: "deleted-session",
+      createdAt: "2026-07-13T00:00:00.000Z",
+      updatedAt: "2026-07-13T00:00:00.000Z",
+    };
+    const removable = {
+      id: "remove-me",
+      title: "Remove me",
+      description: "",
+      status: "blocked",
+      priority: "medium",
+      complexity: "medium",
+      assignee: "worker",
+      createdAt: "2026-07-13T00:00:00.000Z",
+      updatedAt: "2026-07-13T00:00:00.000Z",
+    };
+    fs.writeFileSync(path.join(softwareDir, "board.json"), JSON.stringify([stale, removable]));
+
+    const cap = makeRes();
+    await handleApiRequest(
+      makeReq("PUT", "/api/org/departments/software-delivery/board", {
+        tickets: [stale],
+        deletedIds: [removable.id],
+        deletedVersions: { [removable.id]: removable.updatedAt },
+      }),
+      cap.res,
+      ctx,
+    );
+
+    expect(cap.status).toBe(200);
+    const board = JSON.parse(fs.readFileSync(path.join(softwareDir, "board.json"), "utf-8"));
+    expect(board.tickets.map((ticket: { id: string }) => ticket.id)).toEqual([stale.id]);
+    expect(board.deletedTickets.map((ticket: { id: string }) => ticket.id)).toEqual([removable.id]);
+  });
 });
 
 describe("PUT /api/org/departments/:name/board — optimistic concurrency", () => {

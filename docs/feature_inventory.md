@@ -81,6 +81,9 @@
 - The retention window defaults to 3 days and is configurable from 0 to 7 days in the kanban UI.
 - `0` means immediate purge.
 - Tickets remain restorable from the "Recently deleted" section until their retention window expires.
+- Deleting a session archives its session-generated tickets; deleting an employee
+  archives that employee's assigned tickets, so neither lifecycle action leaves
+  a dangling board reference.
 
 ### Kanban optimistic save protection
 - `packages/cuttlefish/src/gateway/board-service.ts`
@@ -93,6 +96,9 @@
 - Date fields `createdAt`, `updatedAt`, and `baseUpdatedAt` are now guarded at
   serialization time; missing or invalid timestamps fall back to `Date.now()` to
   prevent "Invalid Date" / `"Invalid time value"` errors on save.
+- An unchanged legacy ticket carried in a whole-board save cannot block deletion
+  of another ticket because of its stale assignee; newly created or edited
+  tickets still require an active employee in the same department.
 
 ### Kanban ticket card time display
 - `packages/web/src/components/kanban/ticket-card.tsx`
