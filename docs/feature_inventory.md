@@ -436,8 +436,17 @@
 - `POST /api/knowledge/outbox/flush` runs one best-effort relay pass.
 - `POST /api/knowledge/search` and `POST /api/knowledge/context` proxy
   provider-neutral lookup requests when a read provider is configured.
+- Webhook reads and acknowledgements enforce configured timeouts and explicit
+  response-body limits, including streamed responses without a declared length.
 - Local SQLite/session state remains authoritative; no downstream service is
   required for core Cuttlefish workflows.
+
+### Remote file transfer
+- `packages/cuttlefish/src/gateway/files/transfer.ts`
+- `POST /api/files/transfer` sends a managed or explicitly allowed local file
+  to a configured remote gateway. Destinations must match the `remotes`
+  allowlist, individual source files are capped at 50 MiB, and remote requests
+  have a two-minute timeout plus bounded success and error response bodies.
 
 ### Exportable run bundles
 - `packages/cuttlefish/src/gateway/run-bundles.ts`

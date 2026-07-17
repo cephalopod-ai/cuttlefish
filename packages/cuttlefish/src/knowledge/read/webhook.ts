@@ -7,6 +7,10 @@ import type {
   KnowledgeSearchResponse,
 } from "../../shared/types.js";
 import { validateUrlForServerFetch } from "../../shared/ssrf-guard.js";
+import { readResponseJson, readResponseText } from "../../shared/fetch-response.js";
+
+const MAX_KNOWLEDGE_RESPONSE_BYTES = 2 * 1024 * 1024;
+const MAX_KNOWLEDGE_ERROR_BYTES = 64 * 1024;
 
 export class WebhookKnowledgeReadProvider implements KnowledgeReadProvider {
   readonly name = "webhook";
@@ -55,10 +59,10 @@ export class WebhookKnowledgeReadProvider implements KnowledgeReadProvider {
         signal: controller.signal,
       });
       if (!response.ok) {
-        const detail = await response.text().catch(() => "");
+        const detail = await readResponseText(response, MAX_KNOWLEDGE_ERROR_BYTES).catch(() => "");
         throw new Error(detail ? `HTTP ${response.status}: ${detail}` : `HTTP ${response.status}`);
       }
-      return await response.json() as TResponse;
+      return await readResponseJson<TResponse>(response, MAX_KNOWLEDGE_RESPONSE_BYTES);
     } finally {
       clearTimeout(timeout);
     }

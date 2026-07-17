@@ -5,6 +5,7 @@ import path from "node:path";
 import { getFile } from "../../sessions/registry.js";
 import type { ApiContext } from "../api/context.js";
 import { logger } from "../../shared/logger.js";
+import { readResponseJson, readResponseText } from "../../shared/fetch-response.js";
 import { badRequest, BodyTooLargeError, json, readBody } from "./responses.js";
 import { assessFileRead, isAllowedReadPath } from "./read-security.js";
 import { FILES_DIR, expandPath } from "./storage.js";
@@ -26,6 +27,9 @@ const MAX_TRANSFER_SIZE = 50 * 1024 * 1024;
 // The transfer body carries only file *specs* (paths/ids + destination), never
 // file content — so a small cap is ample and bounds the buffered JSON (AR-07).
 const MAX_TRANSFER_BODY_BYTES = 1 * 1024 * 1024;
+const MAX_REMOTE_UPLOAD_RESPONSE_BYTES = 1 * 1024 * 1024;
+const MAX_REMOTE_UPLOAD_ERROR_BYTES = 64 * 1024;
+export const REMOTE_TRANSFER_TIMEOUT_MS = 120_000;
 type RemoteConfig = { remotes?: Record<string, { url: string; label?: string; token?: string }> };
 
 // CF2-202: transfer.ts reads an arbitrary local file and ships it to a
@@ -160,13 +164,14 @@ export async function handleTransfer(req: HttpRequest, res: ServerResponse, cont
         method: "POST",
         headers: remoteUploadHeaders(destUrl, config),
         body: JSON.stringify(uploadBody),
+        signal: AbortSignal.timeout(REMOTE_TRANSFER_TIMEOUT_MS),
       });
 
       if (!response.ok) {
-        const errText = await response.text();
+        const errText = await readResponseText(response, MAX_REMOTE_UPLOAD_ERROR_BYTES);
         results.push({ file: spec.file, remotePath: targetPath, status: "error", error: `HTTP ${response.status}: ${errText}` });
       } else {
-        const remoteMeta = await response.json() as { id: string };
+        const remoteMeta = await readResponseJson<{ id: string }>(response, MAX_REMOTE_UPLOAD_RESPONSE_BYTES);
         results.push({ file: spec.file, remotePath: targetPath, status: "ok", remoteId: remoteMeta.id });
       }
     } catch (err) {

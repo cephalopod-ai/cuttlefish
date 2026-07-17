@@ -1,7 +1,9 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { Readable } from "node:stream";
+import type { IncomingMessage, ServerResponse } from "node:http";
 
 const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "cuttlefish-transfer-sec-"));
 process.env.CUTTLEFISH_HOME = tmpHome;
@@ -12,6 +14,10 @@ let transfer: Transfer;
 
 beforeAll(async () => {
   transfer = await import("../files/transfer.js");
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 function fakeContext(overrides: Record<string, unknown> = {}): any {
@@ -69,5 +75,40 @@ describe("resolveFileSpec (CF2-202)", () => {
     const outside = path.join(os.tmpdir(), `cuttlefish-transfer-host-${Date.now()}.txt`);
     fs.writeFileSync(outside, "plain content");
     expect(() => transfer.resolveFileSpec({ file: outside }, fakeContext())).toThrow(/fileReadRoots/);
+  });
+});
+
+describe("remote transfer response bounds", () => {
+  it("sets a transfer timeout and rejects an oversized remote response", async () => {
+    const file = path.join(tmpHome, "bounded-transfer.txt");
+    fs.writeFileSync(file, "payload");
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response("x".repeat(1024 * 1024 + 1), { status: 200 }),
+    ));
+    const output: { status?: number; body?: string } = {};
+    const response = {
+      writeHead(status: number) { output.status = status; return response; },
+      end(body?: string) { output.body = body; return response; },
+    } as unknown as ServerResponse;
+    const request = Readable.from([Buffer.from(JSON.stringify({
+      destination: "fixture",
+      file,
+    }))]) as unknown as IncomingMessage;
+    const context = fakeContext({
+      getConfig: () => ({
+        gateway: {},
+        remotes: { fixture: { url: "https://remote.example" } },
+      }),
+      emit: vi.fn(),
+    });
+
+    await transfer.handleTransfer(request, response, context);
+
+    expect(timeoutSpy).toHaveBeenCalledWith(transfer.REMOTE_TRANSFER_TIMEOUT_MS);
+    expect(output.status).toBe(200);
+    const payload = JSON.parse(output.body!);
+    expect(payload.summary).toEqual({ ok: 0, failed: 1, total: 1 });
+    expect(payload.results[0].error).toMatch(/exceeded 1048576 bytes/);
   });
 });

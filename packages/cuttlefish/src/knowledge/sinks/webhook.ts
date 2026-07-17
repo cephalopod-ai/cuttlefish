@@ -1,5 +1,9 @@
 import type { BatchEmitResult, ExternalKnowledgeEnvelope, HealthResult, KnowledgeSink } from "../../shared/types.js";
 import { validateUrlForServerFetch } from "../../shared/ssrf-guard.js";
+import { readResponseText } from "../../shared/fetch-response.js";
+
+const MAX_KNOWLEDGE_RESPONSE_BYTES = 2 * 1024 * 1024;
+const MAX_KNOWLEDGE_ERROR_BYTES = 64 * 1024;
 
 export class WebhookKnowledgeSink implements KnowledgeSink {
   readonly name = "webhook";
@@ -37,7 +41,7 @@ export class WebhookKnowledgeSink implements KnowledgeSink {
       });
       const retryable = response.status === 429 || response.status >= 500;
       if (!response.ok) {
-        const body = await response.text().catch(() => "");
+        const body = await readResponseText(response, MAX_KNOWLEDGE_ERROR_BYTES).catch(() => "");
         const error = body ? `HTTP ${response.status}: ${body}` : `HTTP ${response.status}`;
         return {
           accepted: 0,
@@ -46,9 +50,13 @@ export class WebhookKnowledgeSink implements KnowledgeSink {
           results: envelopes.map(() => ({ accepted: false, retryable, error })),
         };
       }
-      const payload = await response.json().catch(() => null) as
-        | { results?: Array<{ remoteId?: string | null }> }
-        | null;
+      const responseText = await readResponseText(response, MAX_KNOWLEDGE_RESPONSE_BYTES);
+      let payload: { results?: Array<{ remoteId?: string | null }> } | null = null;
+      try {
+        payload = JSON.parse(responseText) as { results?: Array<{ remoteId?: string | null }> };
+      } catch {
+        // A successful webhook may omit a JSON acknowledgement body.
+      }
       const results = envelopes.map((_, index) => ({
         accepted: true,
         remoteId: payload?.results?.[index]?.remoteId ?? null,

@@ -46,6 +46,7 @@ const DEFAULT_VOICE = "af_heart"
 const DEFAULT_PORT = 8765
 const HEALTH_TIMEOUT_MS = 60_000 // model load is lazy + heavy on first synth
 const SYNTH_TIMEOUT_MS = 120_000
+const MAX_HEALTH_RESPONSE_BYTES = 64 * 1024
 const MAX_SYNTH_RESPONSE_BYTES = 256 * 1024 * 1024
 const MAX_SYNTH_ERROR_BYTES = 64 * 1024
 
@@ -151,7 +152,7 @@ export function createKokoroTts(opts?: {
         signal: AbortSignal.timeout(2_000),
       })
       if (!res.ok) return null
-      return (await res.json()) as HealthResponse
+      return await readResponseJson<HealthResponse>(res, MAX_HEALTH_RESPONSE_BYTES)
     } catch {
       return null
     }

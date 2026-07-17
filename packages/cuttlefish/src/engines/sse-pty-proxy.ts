@@ -12,6 +12,8 @@ const upstreamAgent = new https.Agent({ keepAlive: true, maxSockets: 64 });
 /** Kill an upstream connection that goes silent this long (no bytes). Long enough
  *  for extended-thinking/tool gaps, while still reaping genuinely stuck sockets. */
 const UPSTREAM_IDLE_TIMEOUT_MS = 60 * 60 * 1000;
+export const DEFAULT_MAX_REQUEST_BODY_BYTES = 64 * 1024 * 1024;
+export const DEFAULT_MAX_SSE_FRAME_BYTES = 2 * 1024 * 1024;
 
 /** A parsed Anthropic SSE event's `data:` JSON payload (already JSON.parsed). */
 export interface SseDataEvent {
@@ -46,6 +48,10 @@ export interface SsePtyProxyOpts {
   upstream?: { hostname: string; port: number };
   /** Agent for the FIRST attempt. Default: the shared keep-alive pool. */
   primaryAgent?: https.Agent | http.Agent | false;
+  /** Hard cap for the buffered request body forwarded to Anthropic. */
+  maxRequestBodyBytes?: number;
+  /** Hard cap for one parsed SSE frame; forwarding continues if tee parsing stops. */
+  maxSseFrameBytes?: number;
   /** Fired whenever the in-flight upstream request count changes (start AND every
    *  terminal path: response end, upstream error, client-gone abort). Counts ALL
    *  requests through the proxy — main agent, Task sub-agents, and background
@@ -109,6 +115,8 @@ export class SsePtyProxy {
   private readonly upstreamHost: string;
   private readonly upstreamPort: number;
   private readonly primaryAgent: https.Agent | http.Agent | false;
+  private readonly maxRequestBodyBytes: number;
+  private readonly maxSseFrameBytes: number;
   private readonly onUpstreamActivity?: (info: UpstreamActivityInfo) => void;
 
   /** Upstream requests currently in flight (incremented at request start,
@@ -126,6 +134,8 @@ export class SsePtyProxy {
     this.upstreamHost = opts.upstream?.hostname ?? "api.anthropic.com";
     this.upstreamPort = opts.upstream?.port ?? 443;
     this.primaryAgent = opts.primaryAgent ?? upstreamAgent;
+    this.maxRequestBodyBytes = opts.maxRequestBodyBytes ?? DEFAULT_MAX_REQUEST_BODY_BYTES;
+    this.maxSseFrameBytes = opts.maxSseFrameBytes ?? DEFAULT_MAX_SSE_FRAME_BYTES;
     this.onUpstreamActivity = opts.onUpstreamActivity;
     this.server = http.createServer((req, res) => this.handle(req, res));
     // node http servers throw on unhandled 'clientError'; swallow so a flaky
@@ -183,6 +193,8 @@ export class SsePtyProxy {
 
   private handle(req: http.IncomingMessage, res: http.ServerResponse): void {
     const chunks: Buffer[] = [];
+    let bodyBytes = 0;
+    let bodyRejected = false;
     // Holder (not a plain `let`) so the req-close handler always destroys the
     // CURRENT in-flight upstream even after a retry swapped it out.
     const inflight: { current?: http.ClientRequest } = {};
@@ -190,7 +202,25 @@ export class SsePtyProxy {
     // stream, so the count never double-dips on the fresh-socket attempt). Set
     // when the body is fully read and we actually go upstream.
     const tracked: { finish?: () => void } = {};
-    req.on("data", (c: Buffer) => chunks.push(c));
+    const declaredLength = Number(req.headers["content-length"]);
+    if (Number.isFinite(declaredLength) && declaredLength > this.maxRequestBodyBytes) {
+      res.writeHead(413, { "content-type": "text/plain; charset=utf-8" });
+      res.end("Payload too large");
+      req.resume();
+      return;
+    }
+    req.on("data", (c: Buffer) => {
+      if (bodyRejected) return;
+      bodyBytes += c.length;
+      if (bodyBytes > this.maxRequestBodyBytes) {
+        bodyRejected = true;
+        chunks.length = 0;
+        res.writeHead(413, { "content-type": "text/plain; charset=utf-8" });
+        res.end("Payload too large");
+        return;
+      }
+      chunks.push(c);
+    });
     req.on("error", () => { try { res.destroy(); } catch { /* ignore */ } });
     // Client (the claude CLI) hung up mid-turn — abort the in-flight upstream so
     // we don't keep streaming to a dead socket (resource leak per interrupted
@@ -208,6 +238,7 @@ export class SsePtyProxy {
       }
     });
     req.on("end", () => {
+      if (bodyRejected) return;
       const body = Buffer.concat(chunks);
       // Decide once per request whether to tee its events to the UI. Tool-bearing
       // requests (real agent turns) are teed; no-tools auxiliary calls are still
@@ -255,6 +286,7 @@ export class SsePtyProxy {
         res.writeHead(uRes.statusCode || 502, uRes.headers);
         const isSSE = String(uRes.headers["content-type"] || "").includes("text/event-stream");
         let sseBuf = "";
+        let sseParsingEnabled = isSSE && tee;
         const sseDecoder = isSSE && tee ? new StringDecoder("utf8") : undefined;
         uRes.on("data", (chunk: Buffer) => {
           // Forward UNCHANGED to the client first (never let parsing affect the stream).
@@ -266,10 +298,24 @@ export class SsePtyProxy {
               res.once("drain", () => uRes.resume());
             }
           } catch { /* client gone */ }
-          if (sseDecoder) sseBuf = this.parseSse(sseBuf + sseDecoder.write(chunk));
+          if (sseDecoder && sseParsingEnabled) {
+            const parsed = this.parseSseBounded(sseBuf + sseDecoder.write(chunk));
+            if (parsed === null) {
+              sseParsingEnabled = false;
+              sseBuf = "";
+              logger.warn(`SsePtyProxy[${this.label}] SSE frame exceeded ${this.maxSseFrameBytes} bytes; tee parsing disabled for this response`);
+            } else {
+              sseBuf = parsed;
+            }
+          }
         });
         uRes.on("end", () => {
-          if (sseDecoder) sseBuf = this.parseSse(sseBuf + sseDecoder.end());
+          if (sseDecoder && sseParsingEnabled) {
+            const parsed = this.parseSseBounded(sseBuf + sseDecoder.end());
+            if (parsed === null) {
+              logger.warn(`SsePtyProxy[${this.label}] SSE frame exceeded ${this.maxSseFrameBytes} bytes at response end`);
+            }
+          }
           finish();
           try { res.end(); } catch { /* already ended */ }
         });
@@ -327,11 +373,23 @@ export class SsePtyProxy {
    *  each event's `data:` payload, fire onEvent, and return the trailing incomplete
    *  remainder for the next chunk. Only ever called for the main agent's stream. */
   private parseSse(buf: string): string {
+    return this.consumeSse(buf, Number.POSITIVE_INFINITY) ?? "";
+  }
+
+  /** Parse complete frames while rejecting both an oversized complete frame and
+   *  an indefinitely growing incomplete frame. A null return disables only the
+   *  observational tee; upstream bytes have already been forwarded unchanged. */
+  private parseSseBounded(buf: string): string | null {
+    return this.consumeSse(buf, this.maxSseFrameBytes);
+  }
+
+  private consumeSse(buf: string, maxFrameBytes: number): string | null {
     let idx: number;
     // Frames are delimited by a blank line. Handle both \n\n and \r\n\r\n.
     while ((idx = indexOfFrameEnd(buf)) !== -1) {
       const raw = buf.slice(0, idx);
       buf = buf.slice(idx + frameDelimLen(buf, idx));
+      if (Buffer.byteLength(raw, "utf8") > maxFrameBytes) return null;
       let dataStr = "";
       for (const line of raw.split(/\r?\n/)) {
         if (line.startsWith("data:")) dataStr += line.slice(5).trimStart();
@@ -343,6 +401,7 @@ export class SsePtyProxy {
         logger.warn(`SsePtyProxy[${this.label}] onEvent threw: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
+    if (Buffer.byteLength(buf, "utf8") > maxFrameBytes) return null;
     return buf;
   }
 }
