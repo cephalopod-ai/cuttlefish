@@ -5,6 +5,7 @@ import { getMessages } from "../sessions/registry.js";
 import { getArtifactLineage } from "../artifact-lineage/index.js";
 import { logger } from "../shared/logger.js";
 import { appendOrchestrationAudit } from "./audit.js";
+import { recordOrchestrationArtifact } from "./run-ledger-integration.js";
 import {
   dualLaneTaskDir,
   readDualLaneManifest,
@@ -36,9 +37,9 @@ export function writeDualLanePromptArtifact(
   coordinatorId: string,
   prompt: string,
   store?: OrchestrationStore,
-  opts: { now?: () => Date } = {},
+  opts: { now?: () => Date; runId?: string } = {},
 ): ArtifactRecord {
-  return writeArtifact({ taskId, coordinatorId, kind: "prompt", lane: null, content: prompt, store, now: opts.now });
+  return writeArtifact({ taskId, coordinatorId, kind: "prompt", lane: null, content: prompt, store, now: opts.now, runId: opts.runId });
 }
 
 export function writeDualLaneOutputArtifact(
@@ -47,9 +48,9 @@ export function writeDualLaneOutputArtifact(
   lane: "openai" | "anthropic",
   content: string,
   store?: OrchestrationStore,
-  opts: { now?: () => Date } = {},
+  opts: { now?: () => Date; runId?: string } = {},
 ): ArtifactRecord {
-  return writeArtifact({ taskId, coordinatorId, kind: "output", lane, content, store, now: opts.now });
+  return writeArtifact({ taskId, coordinatorId, kind: "output", lane, content, store, now: opts.now, runId: opts.runId });
 }
 
 export function writeDualLaneDiffArtifact(
@@ -58,9 +59,9 @@ export function writeDualLaneDiffArtifact(
   lane: "openai" | "anthropic",
   content: string,
   store?: OrchestrationStore,
-  opts: { now?: () => Date } = {},
+  opts: { now?: () => Date; runId?: string } = {},
 ): ArtifactRecord {
-  return writeArtifact({ taskId, coordinatorId, kind: "diff", lane, content, store, now: opts.now });
+  return writeArtifact({ taskId, coordinatorId, kind: "diff", lane, content, store, now: opts.now, runId: opts.runId });
 }
 
 export function listArtifactContents(
@@ -174,8 +175,17 @@ export function persistDualLaneArtifacts(opts: {
   lanes: DualLaneManifestLane[];
   store?: OrchestrationStore;
   now?: () => Date;
+  /**
+   * Run-ledger run id for the orchestration run that produced these
+   * artifacts (ARC-CF-102 / DAT-BUS-002). Optional and additive: when
+   * supplied, each persisted artifact is also linked to the run via
+   * `addArtifactReference` so the run-ledger becomes a canonical record of
+   * what a run touched. Callers that don't have a runId (or don't yet pass
+   * one) keep prior behavior unchanged.
+   */
+  runId?: string;
 }): void {
-  writeDualLanePromptArtifact(opts.taskId, opts.coordinatorId, opts.prompt, opts.store, { now: opts.now });
+  writeDualLanePromptArtifact(opts.taskId, opts.coordinatorId, opts.prompt, opts.store, { now: opts.now, runId: opts.runId });
   // CAS-CF-001: persistence of each lane's result must be independent — a
   // downstream I/O failure writing one lane's artifact must not prevent the
   // other (already-completed) lane's artifact from being persisted, and must
@@ -184,12 +194,12 @@ export function persistDualLaneArtifacts(opts: {
   // over an unrelated artifact-write error.
   for (const lane of opts.lanes) {
     try {
-      writeDualLaneOutputArtifact(opts.taskId, opts.coordinatorId, lane.id, rawOutputForSession(lane.session.sessionId), opts.store, { now: opts.now });
+      writeDualLaneOutputArtifact(opts.taskId, opts.coordinatorId, lane.id, rawOutputForSession(lane.session.sessionId), opts.store, { now: opts.now, runId: opts.runId });
     } catch (err) {
       logger.warn(`Dual-lane output artifact persistence failed for ${lane.id} (task ${opts.taskId}): ${err instanceof Error ? err.message : String(err)}`);
     }
     try {
-      writeDualLaneDiffArtifact(opts.taskId, opts.coordinatorId, lane.id, patchWorktree(lane.worktree), opts.store, { now: opts.now });
+      writeDualLaneDiffArtifact(opts.taskId, opts.coordinatorId, lane.id, patchWorktree(lane.worktree), opts.store, { now: opts.now, runId: opts.runId });
     } catch (err) {
       logger.warn(`Dual-lane diff artifact persistence failed for ${lane.id} (task ${opts.taskId}): ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -213,6 +223,7 @@ function writeArtifact(opts: {
   store?: OrchestrationStore;
   note?: string;
   now?: () => Date;
+  runId?: string;
 }): ArtifactRecord {
   const dir = path.join(dualLaneTaskDir(opts.taskId, opts.coordinatorId), "artifacts");
   fs.mkdirSync(dir, { recursive: true });
@@ -240,10 +251,19 @@ function writeArtifact(opts: {
       locator: record.path,
       sizeBytes: record.bytes,
       createdAt: record.createdAt,
+      // ARC-CF-102 / DAT-BUS-002: pass through the producing run so
+      // artifact-lineage's own run_artifact_xref stays populated too, using
+      // the already-existing `producingRunId` field rather than a new API.
+      producingRunId: opts.runId ?? null,
     });
   } catch {
     // lineage recording is non-fatal
   }
+  // ARC-CF-102 / DAT-BUS-002: link this artifact to its producing run in the
+  // run-ledger, so the run-ledger (not just artifact-lineage) can answer
+  // "what artifacts did this run touch". No-op when runId is unset;
+  // non-throwing, mirroring the lineage recording above.
+  recordOrchestrationArtifact(opts.runId, record.artifactId, "produced", record.path, record.createdAt);
   appendOrchestrationAudit("orchestration.artifact.record", record, file);
   return record;
 }

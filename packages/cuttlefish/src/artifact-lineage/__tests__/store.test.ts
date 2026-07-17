@@ -1,18 +1,30 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { invalidatePolicyCache } from "../../policy/loader.js";
 import { ArtifactLineageStore } from "../store.js";
 
 let store: ArtifactLineageStore;
+let policyDir: string;
 
 beforeEach(() => {
   store = ArtifactLineageStore.open(":memory:");
+  policyDir = fs.mkdtempSync(path.join(os.tmpdir(), "cuttlefish-lineage-policy-"));
+  invalidatePolicyCache();
 });
 
 afterEach(() => {
   store.close();
+  fs.rmSync(policyDir, { recursive: true, force: true });
+  invalidatePolicyCache();
+  vi.restoreAllMocks();
 });
+
+function writePolicyFile(dir: string, name: string, rules: unknown[]): void {
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, name), JSON.stringify({ rules }));
+}
 
 describe("ArtifactLineageStore", () => {
   describe("schema and meta", () => {
@@ -118,6 +130,104 @@ describe("ArtifactLineageStore", () => {
       expect(record.sha256).toBeNull();
       expect(record.sizeBytes).toBeNull();
       expect(record.mimeType).toBeNull();
+    });
+
+    describe("policy gate (STT-CF-001 / ARC-CFAD-007 / DAT-BUS-002)", () => {
+      it("allows registration by default when no register policy rule is configured", () => {
+        const record = store.registerArtifact(
+          { artifactId: "art-policy-default", canonicalKind: "file:generated" },
+          policyDir,
+        );
+        expect(record.artifactId).toBe("art-policy-default");
+      });
+
+      it("refuses registration that violates a configured register-deny policy rule", () => {
+        writePolicyFile(policyDir, "00-deny-register.json", [
+          { id: "deny-register-file", action: "register", kindPattern: "file:*", allow: false },
+        ]);
+        invalidatePolicyCache();
+
+        expect(() =>
+          store.registerArtifact({ artifactId: "art-policy-denied", canonicalKind: "file:generated" }, policyDir),
+        ).toThrow(/policy/);
+
+        // The gate must run before any row is written — the denied artifact
+        // must not exist afterward.
+        expect(store.getArtifact("art-policy-denied")).toBeUndefined();
+      });
+
+      it("allows registration for a kind that the deny rule does not match", () => {
+        writePolicyFile(policyDir, "00-deny-register.json", [
+          { id: "deny-register-file", action: "register", kindPattern: "file:*", allow: false },
+        ]);
+        invalidatePolicyCache();
+
+        const record = store.registerArtifact(
+          { artifactId: "art-policy-allowed", canonicalKind: "knowledge:note" },
+          policyDir,
+        );
+        expect(record.artifactId).toBe("art-policy-allowed");
+      });
+    });
+
+    describe("check-then-act is transaction-wrapped (CON-CUT-002)", () => {
+      it("rolls back the entire registration atomically when a later write in the sequence fails", () => {
+        // better-sqlite3 transactions are synchronous, so a real two-connection
+        // race can't be driven from a single JS thread in a test. Instead this
+        // proves the property that closes the race: the check (existing-row
+        // lookup) and every subsequent write are now one atomic unit, so a
+        // failure partway through leaves no partial state behind — the same
+        // guarantee addLineageEdge already gets from its BEGIN IMMEDIATE wrap.
+        const xrefSpy = vi
+          .spyOn(store as unknown as { addRunArtifactXref: (input: unknown) => unknown }, "addRunArtifactXref")
+          .mockImplementation(() => {
+            throw new Error("simulated failure after the artifacts row write");
+          });
+
+        expect(() =>
+          store.registerArtifact({
+            artifactId: "art-atomic",
+            canonicalKind: "file:generated",
+            producingRunId: "run-atomic",
+          }),
+        ).toThrow(/simulated failure/);
+
+        // Prior to the fix, the artifacts row INSERT ran as its own statement
+        // outside any transaction and would have committed before this failure;
+        // now the whole sequence rolls back together.
+        expect(store.getArtifact("art-atomic")).toBeUndefined();
+
+        xrefSpy.mockRestore();
+      });
+
+      it("does not leave a stray artifact_versions row when the update half of a re-registration fails", () => {
+        store.registerArtifact({ artifactId: "art-atomic-2", canonicalKind: "file:generated", locator: "/a", sha256: "sha-a" });
+
+        const xrefSpy = vi
+          .spyOn(store as unknown as { addRunArtifactXref: (input: unknown) => unknown }, "addRunArtifactXref")
+          .mockImplementation(() => {
+            throw new Error("simulated failure during re-registration");
+          });
+
+        expect(() =>
+          store.registerArtifact({
+            artifactId: "art-atomic-2",
+            canonicalKind: "file:generated",
+            locator: "/b",
+            sha256: "sha-b",
+            producingRunId: "run-atomic-2",
+          }),
+        ).toThrow(/simulated failure/);
+
+        // The version snapshot taken before the failed write must also be
+        // rolled back — it's part of the same atomic unit now.
+        expect(store.listArtifactVersions("art-atomic-2")).toHaveLength(0);
+        const current = store.getArtifact("art-atomic-2")!;
+        expect(current.locator).toBe("/a");
+        expect(current.sha256).toBe("sha-a");
+
+        xrefSpy.mockRestore();
+      });
     });
   });
 

@@ -251,6 +251,7 @@ export async function runAllocatedDualLaneTask(opts: {
       prompt: opts.task.prompt,
       lanes: manifestLanes,
       store: runtime.getStore(),
+      runId,
     });
 
     finalizeOrchestrationRunCompleted(runId);
