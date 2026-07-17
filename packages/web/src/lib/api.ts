@@ -339,9 +339,6 @@ export const api = {
   ...approvalApi,
   ...archiveApi,
   ...orgApi,
-  authStatus: () => get<{ required: boolean; authenticated: boolean }>("/api/auth/status"),
-  login: (token: string) => post<{ status: string }>("/api/auth/login", { token }),
-  logout: () => post<{ status: string }>("/api/auth/logout", {}),
   getStatus: () => get<Record<string, unknown>>("/api/status"),
   /** Working-folder picker: list subdirectories of a path (dirs only). */
   fsList: (p?: string) => get<FsListResult>(`/api/fs/list${p ? `?path=${encodeURIComponent(p)}` : ""}`),
@@ -385,8 +382,6 @@ export const api = {
     post<{ status: string; sessionId: string; stopped: boolean; interruptible: boolean }>(`/api/sessions/${id}/stop`, {}),
   createPtyToken: (id: string) =>
     post<{ token: string; expiresInMs: number }>(`/api/sessions/${id}/pty-token`, {}),
-  resetSession: (id: string) =>
-    post<{ status: string; sessionId: string }>(`/api/sessions/${id}/reset`, {}),
   getCronJobs: () => get<Record<string, unknown>[]>("/api/cron"),
   getCronRuns: (id: string, runId?: string) =>
     get<Record<string, unknown>[]>(

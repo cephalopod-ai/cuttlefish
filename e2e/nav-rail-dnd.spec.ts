@@ -3,8 +3,7 @@ import { test, expect } from '@playwright/test'
 // Drives the REAL built app: drag a nav-rail icon and confirm it reorders and
 // the order survives a reload. Native HTML5 drag must be fired via dispatchEvent
 // with a shared DataTransfer — Playwright's dragTo() does NOT fire native drag
-// events. Target the running gateway (NAV_E2E_URL overrides; default :8888).
-const BASE = process.env.NAV_E2E_URL ?? 'http://localhost:8888'
+// events. The Playwright webServer fixture serves the built dashboard.
 
 function railLabels(page: import('@playwright/test').Page) {
   return page.$$eval('nav[aria-label="Primary"] a[aria-label]', (els) =>
@@ -14,7 +13,7 @@ function railLabels(page: import('@playwright/test').Page) {
 
 test('nav rail icon reorders via native drag-and-drop and persists across reload', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 }) // ≥ lg so the rail renders
-  await page.goto(BASE)
+  await page.goto('/')
   await page.waitForSelector('nav[aria-label="Primary"] a[aria-label="Settings"]', { timeout: 15_000 })
 
   const before = await railLabels(page)

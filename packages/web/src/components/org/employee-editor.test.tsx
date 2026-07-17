@@ -143,6 +143,10 @@ async function chooseSelect(label: string, option: string) {
   fireEvent.click(await screen.findByRole("option", { name: option }))
 }
 
+async function waitForOrgOptions() {
+  await screen.findByRole("option", { name: "engineering" })
+}
+
 beforeEach(() => {
   updateEmployee.mockReset()
   deleteEmployee.mockReset()
@@ -157,8 +161,9 @@ beforeEach(() => {
 })
 
 describe("EmployeeEditor", () => {
-  it("disables Save when pristine and when persona is emptied", () => {
+  it("disables Save when pristine and when persona is emptied", async () => {
     render(<EmployeeEditor employee={EMP} onCancel={() => {}} onSaved={() => {}} />)
+    await waitForOrgOptions()
     expect(saveBtn().disabled).toBe(true) // pristine
 
     const persona = screen.getByDisplayValue("You write blog posts.")
@@ -167,8 +172,9 @@ describe("EmployeeEditor", () => {
     expect(screen.getByText("Persona cannot be empty.")).toBeTruthy()
   })
 
-  it("describes non-solo execution as profile configuration", () => {
+  it("describes non-solo execution as profile configuration", async () => {
     render(<EmployeeEditor employee={EMP} onCancel={() => {}} onSaved={() => {}} />)
+    await waitForOrgOptions()
 
     expect(screen.getByText("Execution profile")).toBeTruthy()
     expect(screen.getByText("Review profile")).toBeTruthy()
@@ -195,7 +201,7 @@ describe("EmployeeEditor", () => {
     })
   })
 
-  it("keeps Save disabled when a mid_pair employee's roles are unchanged", () => {
+  it("keeps Save disabled when a mid_pair employee's roles are unchanged", async () => {
     const emp: Employee = {
       ...EMP,
       execution: {
@@ -204,6 +210,7 @@ describe("EmployeeEditor", () => {
       },
     }
     render(<EmployeeEditor employee={emp} onCancel={() => {}} onSaved={() => {}} />)
+    await waitForOrgOptions()
     expect(saveBtn().disabled).toBe(true) // pristine — normalization must not create phantom diffs
   })
 
@@ -373,21 +380,24 @@ describe("EmployeeEditor", () => {
     }))
   })
 
-  it("Cancel calls onCancel", () => {
+  it("Cancel calls onCancel", async () => {
     const onCancel = vi.fn()
     render(<EmployeeEditor employee={EMP} onCancel={onCancel} onSaved={() => {}} />)
+    await waitForOrgOptions()
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
     expect(onCancel).toHaveBeenCalled()
   })
 
-  it("hides the Delete button when onDeleted is not provided", () => {
+  it("hides the Delete button when onDeleted is not provided", async () => {
     render(<EmployeeEditor employee={EMP} onCancel={() => {}} onSaved={() => {}} />)
+    await waitForOrgOptions()
     expect(screen.queryByRole("button", { name: "Delete" })).toBeNull()
   })
 
-  it("requires a two-step confirmation and can be undone before deleting", () => {
+  it("requires a two-step confirmation and can be undone before deleting", async () => {
     const onDeleted = vi.fn()
     render(<EmployeeEditor employee={EMP} onCancel={() => {}} onSaved={() => {}} onDeleted={onDeleted} />)
+    await waitForOrgOptions()
 
     // Step 1: reveal confirmation; no API call yet.
     fireEvent.click(screen.getByRole("button", { name: "Delete" }))

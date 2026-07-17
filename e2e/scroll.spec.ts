@@ -3,19 +3,13 @@ import { test, expect, type Page } from '@playwright/test'
 // Integration coverage for the stick-to-bottom rebuild against the REAL wired
 // /chat thread (the unit + DOM tests in packages/web cover the hook in isolation).
 //
-// Targets a dev preview that compiles the new source by default — start one with:
-//   GATEWAY_PORT=8888 pnpm --filter @cuttlefish/web dev --port 5310
-// then run:  SCROLL_E2E_URL=http://localhost:5310 SCROLL_E2E_SESSION=<id> pnpm test:e2e scroll
-// Falls back to the e2e baseURL (:7779) and skips gracefully if no thread is loaded.
-
-const BASE = process.env.SCROLL_E2E_URL || 'http://localhost:7779'
-const SESSION = process.env.SCROLL_E2E_SESSION || ''
+const SESSION = process.env.SCROLL_E2E_SESSION || 'e2e-scroll-session'
 
 const scroller = '.chat-messages-scroll'
 const jumpBtn = 'button[aria-label="Jump to latest"]'
 
 async function openThread(page: Page) {
-  const url = SESSION ? `${BASE}/chat?session=${SESSION}` : `${BASE}/chat`
+  const url = `/?session=${SESSION}`
   await page.goto(url, { waitUntil: 'networkidle' })
   await page.waitForSelector(scroller, { timeout: 15_000 })
   await page.waitForTimeout(1500) // let messages render + mount-snap settle
