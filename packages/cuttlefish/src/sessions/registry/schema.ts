@@ -31,7 +31,8 @@ CREATE TABLE IF NOT EXISTS messages (
   session_id TEXT NOT NULL,
   role TEXT NOT NULL,
   content TEXT NOT NULL,
-  timestamp INTEGER NOT NULL
+  timestamp INTEGER NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 )`;
 
 export const CREATE_MESSAGES_INDEX = `
@@ -298,7 +299,8 @@ export function installPostMigrationSchema(db: Database.Database): void {
       position INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       started_at TEXT,
-      completed_at TEXT
+      completed_at TEXT,
+      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_queue_session
       ON queue_items (session_key, status, position);

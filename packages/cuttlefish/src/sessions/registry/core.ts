@@ -6,7 +6,7 @@ import { logger } from '../../shared/logger.js';
 import { isSqliteCorruptionError, quarantineCorruptDb } from '../../shared/sqlite-corruption.js';
 import type { JsonObject, ReplyContext, Session } from '../../shared/types.js';
 import { installBaseSchema, installPostMigrationSchema } from './schema.js';
-import { migrateApprovalsSchema, migrateExternalOutboxSchema, migrateFilesSchema, migrateMessagesSchema, migrateSessionsSchema } from './migrations.js';
+import { migrateApprovalsSchema, migrateExternalOutboxSchema, migrateFilesSchema, migrateMessagesSchema, migrateQueueItemsSchema, migrateSessionsSchema } from './migrations.js';
 import { backfillFtsSync, disableFtsForProcess, migrateFtsSchema } from './fts.js';
 
 export { getMeta, setMeta } from './meta.js';
@@ -61,10 +61,11 @@ export function rowToSession(row: Record<string, unknown>): Session {
 function applyConnectionPragmas(database: Database.Database): void {
   database.pragma('journal_mode = WAL');
   database.pragma('synchronous = NORMAL');
-  // Enforce foreign keys (OFF by default in SQLite). The only declared FK is
-  // approvals.session_id -> sessions.id ON DELETE CASCADE, so this backs the
-  // app-level orphan cleanup (deleteSession) with DB-level integrity. The
-  // approvals-table rebuild migration toggles this OFF/ON around itself.
+  // Enforce foreign keys (OFF by default in SQLite). Declared FKs: messages,
+  // queue_items, and approvals each have session_id -> sessions.id ON DELETE
+  // CASCADE (DAT-SESS-001), so this backs the app-level orphan cleanup
+  // (deleteSession) with DB-level integrity. The rebuild migrations for these
+  // tables toggle this OFF/ON around themselves.
   database.pragma('foreign_keys = ON');
 }
 
@@ -103,5 +104,8 @@ export function initDb(): Database.Database {
   installPostMigrationSchema(db);
   migrateFilesSchema(db);
   migrateApprovalsSchema(db);
+  // queue_items is created by installPostMigrationSchema above; the FK-rebuild
+  // migration for it must run after that (DAT-SESS-001).
+  migrateQueueItemsSchema(db);
   return db;
 }
