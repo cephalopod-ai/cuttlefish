@@ -5,7 +5,7 @@
   "license": "MIT",
   "type": "module",
   "engines": {
-    "node": ">=24"
+    "node": ">=24 <25"
   },
   "bin": {
     "cuttlefish": "./dist/bin/cuttlefish.js"

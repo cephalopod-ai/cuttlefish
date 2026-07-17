@@ -10,7 +10,7 @@ class Cuttlefish < Formula
     regex(/"latest":\s*"(\d+(?:\.\d+)+)"/)
   end
 
-  depends_on "node@22"
+  depends_on "node@24"
   depends_on "python" => :build
 
   def install
@@ -36,7 +36,6 @@ class Cuttlefish < Formula
 
     cd libexec/"lib/node_modules/cuttlefish-cli" do
       system "node", "-e", "require('better-sqlite3')"
-      system "node", "-e", "require('classic-level')"
     end
   end
 end
