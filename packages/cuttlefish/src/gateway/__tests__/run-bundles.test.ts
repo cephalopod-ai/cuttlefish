@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import type { ServerResponse } from "node:http";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { withStaticTempCuttlefishHome } from "../../test-utils/cuttlefish-home.js";
@@ -68,6 +69,7 @@ describe("run bundle export", () => {
     });
     reg.updateSession(session.id, {
       title: "Bundle Session",
+      engineSessionId: "engine-bundle-1",
       lastError: "Minor warning kept for export",
     });
     reg.insertMessage(session.id, "user", "Generate report");
@@ -90,7 +92,8 @@ describe("run bundle export", () => {
     fs.writeFileSync(
       path.join(paths.LOGS_DIR, "gateway.log"),
       [
-        `2026-06-26T00:00:00.000Z [INFO] session ${session.id} exported`,
+        `2026-06-26T00:00:00.000Z [INFO] session ${session.id} API_KEY=super-secret exported`,
+        "2026-06-26T00:00:00.500Z [INFO] another session titled Bundle Session",
         "2026-06-26T00:00:01.000Z [INFO] unrelated other session",
       ].join("\n"),
     );
@@ -129,15 +132,23 @@ describe("run bundle export", () => {
       expect.arrayContaining([
         "run.json",
         "summary.md",
-        "manifest.json",
         "errors.json",
         path.join("artifacts", "artifact-report-report.csv"),
         path.join("logs", "gateway.log"),
       ]),
     );
+    expect(manifest.files.map((file: { path: string }) => file.path)).not.toContain("manifest.json");
+    for (const file of manifest.files as Array<{ path: string; sha256: string; size: number }>) {
+      const bytes = fs.readFileSync(path.join(bundlePath, file.path));
+      expect(file.size, file.path).toBe(bytes.length);
+      expect(file.sha256, file.path).toBe(crypto.createHash("sha256").update(bytes).digest("hex"));
+    }
 
     const logText = fs.readFileSync(path.join(bundlePath, "logs", "gateway.log"), "utf-8");
     expect(logText).toContain(session.id);
+    expect(logText).toContain("API_KEY=[REDACTED]");
+    expect(logText).not.toContain("super-secret");
+    expect(logText).not.toContain("another session titled Bundle Session");
     expect(logText).not.toContain("unrelated other session");
   });
 

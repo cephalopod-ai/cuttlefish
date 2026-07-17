@@ -444,10 +444,12 @@
 - `artifacts/` copies only files produced by the run or explicitly attached as
   concrete files; folder attachments remain references in metadata and are not
   recursively copied.
-- `logs/gateway.log` contains only session-relevant log lines filtered from the
-  gateway log, so the bundle does not expose unrelated workspace activity.
-- `manifest.json` inventories the bundle files, hashes, sizes, and high-level
-  counts, forming the base contract for later import/replay work.
+- `logs/gateway.log` contains redacted lines correlated by durable session or
+  engine-session IDs only; user-controlled titles/source refs cannot pull
+  unrelated workspace activity into a bundle.
+- `manifest.json` is the atomically written completion marker. It inventories
+  every payload file (excluding itself) from the bytes actually copied, with
+  SHA-256 hashes, sizes, and high-level counts for later import/replay work.
 
 ### Provider-neutral matrix orchestration observe routes
 - `packages/cuttlefish/src/gateway/api/orchestration-routes.ts`

@@ -15,6 +15,8 @@ import type { ApiContext } from "./api/context.js";
 import { enrichRunAttachmentsForSession } from "./run-attachments.js";
 import { serializeSession } from "./api/serialize-session.js";
 import { gateExternalEmit } from "../policy/export-gate.js";
+import { redactText } from "../shared/redact.js";
+import { safeWriteFile } from "../shared/safe-write.js";
 
 interface BundleManifestFile {
   path: string;
@@ -133,13 +135,15 @@ function copyArtifacts(
     seenSources.add(source);
     const filename = uniqueFileName(artifactsDir, `${artifact.id}-${artifact.filename}`);
     const rel = path.join("artifacts", filename);
-    fs.copyFileSync(source, path.join(root, rel));
+    const destination = path.join(root, rel);
+    fs.copyFileSync(source, destination);
+    const actualSha256 = hashFile(destination);
     manifestFiles.push({
       path: rel,
-      sha256: artifact.sha256 ?? hashFile(source),
-      size: fs.statSync(source).size,
+      sha256: actualSha256,
+      size: fs.statSync(destination).size,
     });
-    copied.push({ id: artifact.id, path: rel, sha256: artifact.sha256 ?? null });
+    copied.push({ id: artifact.id, path: rel, sha256: actualSha256 });
   }
 
   for (const attachment of attachmentFileCandidates(attachments)) {
@@ -147,13 +151,15 @@ function copyArtifacts(
     seenSources.add(attachment.source);
     const filename = uniqueFileName(artifactsDir, attachment.label);
     const rel = path.join("artifacts", filename);
-    fs.copyFileSync(attachment.source, path.join(root, rel));
+    const destination = path.join(root, rel);
+    fs.copyFileSync(attachment.source, destination);
+    const actualSha256 = hashFile(destination);
     manifestFiles.push({
       path: rel,
-      sha256: attachment.sha256 ?? hashFile(attachment.source),
-      size: fs.statSync(attachment.source).size,
+      sha256: actualSha256,
+      size: fs.statSync(destination).size,
     });
-    copied.push({ id: null, path: rel, sha256: attachment.sha256 });
+    copied.push({ id: null, path: rel, sha256: actualSha256 });
   }
 
   return { copied, skipped };
@@ -163,12 +169,16 @@ function filterGatewayLog(session: Session): string[] {
   const logPath = path.join(LOGS_DIR, "gateway.log");
   if (!fs.existsSync(logPath)) return [];
   const text = fs.readFileSync(logPath, "utf-8");
-  const needles = [session.id, session.engineSessionId, session.sourceRef, session.title]
+  // Titles and source refs are user-controlled and often non-unique. Matching
+  // them can pull another session's log lines into this export. Durable session
+  // identifiers are the only safe correlation keys for the bundle boundary.
+  const needles = [session.id, session.engineSessionId]
     .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
   return text
     .split("\n")
     .filter((line) => needles.some((needle) => line.includes(needle)))
-    .slice(-500);
+    .slice(-500)
+    .map(redactText);
 }
 
 function summarizeMessages(messages: SessionMessage[]): { count: number; firstAt: number | null; lastAt: number | null } {
@@ -321,21 +331,10 @@ export function exportRunBundle(sessionId: string, context: ApiContext): Exporte
     checkpointCount: approvals.filter((approval) => approval.type === "checkpoint").length,
   };
   const manifestPath = path.join(bundlePath, "manifest.json");
-  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
-  let manifestEntry = {
-    path: "manifest.json",
-    sha256: hashFile(manifestPath),
-    size: fs.statSync(manifestPath).size,
-  };
-  manifest.files = [...manifest.files, manifestEntry];
-  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
-  manifestEntry = {
-    path: "manifest.json",
-    sha256: hashFile(manifestPath),
-    size: fs.statSync(manifestPath).size,
-  };
-  manifest.files = [...manifest.files.filter((file) => file.path !== "manifest.json"), manifestEntry];
-  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+  // The manifest cannot truthfully contain a digest of its own final bytes:
+  // adding that digest changes those bytes. It inventories payload files only
+  // and is written once, atomically, as the bundle's completion marker.
+  safeWriteFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
   return {
     id: bundleId,
