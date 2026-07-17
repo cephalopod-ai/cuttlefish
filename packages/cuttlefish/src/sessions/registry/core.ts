@@ -7,7 +7,9 @@ import { isSqliteCorruptionError, quarantineCorruptDb } from '../../shared/sqlit
 import type { JsonObject, ReplyContext, Session } from '../../shared/types.js';
 import { installBaseSchema, installPostMigrationSchema } from './schema.js';
 import { migrateApprovalsSchema, migrateExternalOutboxSchema, migrateFilesSchema, migrateMessagesSchema, migrateSessionsSchema } from './migrations.js';
-import { backfillFtsSync, disableFtsForProcess, migrateFtsSchema } from './search.js';
+import { backfillFtsSync, disableFtsForProcess, migrateFtsSchema } from './fts.js';
+
+export { getMeta, setMeta } from './meta.js';
 
 let db: Database.Database;
 
@@ -54,17 +56,6 @@ export function rowToSession(row: Record<string, unknown>): Session {
     lastActivity: row.last_activity as string,
     lastError: (row.last_error as string) ?? null,
   };
-}
-
-export function getMeta(database: Database.Database, key: string): string | null {
-  const row = database.prepare('SELECT value FROM meta WHERE key = ?').get(key) as { value: string } | undefined;
-  return row ? row.value : null;
-}
-
-export function setMeta(database: Database.Database, key: string, value: string): void {
-  database
-    .prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
-    .run(key, value);
 }
 
 function applyConnectionPragmas(database: Database.Database): void {

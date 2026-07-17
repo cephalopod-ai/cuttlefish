@@ -24,7 +24,8 @@ import {
   resolveApprovalRecordInRegistry,
   type ApprovalRegistryDeps,
 } from './registry-approvals.js';
-import { getMeta, initDb, parseJsonObject, setMeta } from './registry/core.js';
+import { initDb, parseJsonObject } from './registry/core.js';
+import { getMeta, setMeta } from './registry/meta.js';
 import { getMessages, type SessionMessage } from './registry/messages.js';
 import { getSession } from './registry/sessions.js';
 
@@ -34,9 +35,8 @@ export {
   backfillFtsSync,
   disableFtsForProcess,
   migrateFtsSchema,
-  searchMessages,
-  type MessageSearchResult,
-} from './registry/search.js';
+} from './registry/fts.js';
+export { searchMessages, type MessageSearchResult } from './registry/search.js';
 export {
   EXTERNAL_OUTBOX_MAX_ATTEMPTS,
   EXTERNAL_OUTBOX_CLAIM_LEASE_MS,
