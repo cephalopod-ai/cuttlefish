@@ -1,4 +1,6 @@
 import type Database from 'better-sqlite3';
+import { logger } from '../../shared/logger.js';
+import { CREATE_MESSAGES_INDEX, CREATE_MESSAGES_TIMESTAMP_INDEX } from './schema.js';
 
 export function migrateMessagesSchema(database: Database.Database): void {
   const cols = database.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>;
@@ -17,6 +19,153 @@ export function migrateMessagesSchema(database: Database.Database): void {
   }
   if (!colNames.has('blocks')) {
     database.exec('ALTER TABLE messages ADD COLUMN blocks TEXT');
+  }
+
+  // Add the FOREIGN KEY (session_id -> sessions.id, ON DELETE CASCADE) on upgraded
+  // homes whose messages table predates it (DAT-SESS-001). Mirrors the
+  // approvals-table rebuild below/in migrateApprovalsSchema: SQLite cannot
+  // ALTER-ADD a constraint, so the table is rebuilt with FKs OFF. Runs BEFORE
+  // migrateFtsSchema (see core.ts initDb ordering) so the DROP TABLE here can't
+  // clobber live FTS triggers/backfill state — any pre-existing messages_fts_*
+  // triggers on the old table are auto-dropped by SQLite's DROP TABLE, and
+  // migrateFtsSchema's `CREATE TRIGGER IF NOT EXISTS` then recreates them fresh
+  // against the rebuilt table. The row copy explicitly preserves `rowid` because
+  // messages_fts is an external-content FTS5 index keyed by messages.rowid.
+  //
+  // Skipped when the sessions table doesn't exist yet — e.g. a standalone legacy
+  // fixture (in tests) that only exercises the column migration above and never
+  // goes through installBaseSchema, so there is no FK target to validate against.
+  const sessionsCols = database.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>;
+  if (sessionsCols.length === 0) return;
+
+  const hasForeignKey = (database.prepare('PRAGMA foreign_key_list(messages)').all() as unknown[]).length > 0;
+  if (hasForeignKey) return;
+
+  // Pre-flight: remove any orphaned messages (no matching session) so the
+  // rebuild and subsequent FK enforcement can't fail on pre-existing dangling rows.
+  const orphaned = database.prepare('DELETE FROM messages WHERE session_id NOT IN (SELECT id FROM sessions)').run();
+  if (orphaned.changes > 0) {
+    logger.warn(`registry: removed ${orphaned.changes} orphaned message row(s) with no matching session during FK migration`);
+  }
+
+  const columnList = (database.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>)
+    .map((c) => c.name)
+    .join(', ');
+
+  const fkWasOn = (database.pragma('foreign_keys', { simple: true }) as number) === 1;
+  database.pragma('foreign_keys = OFF');
+  try {
+    // BEGIN IMMEDIATE/COMMIT wraps the rebuild atomically: better-sqlite3's
+    // exec() does not implicitly transaction-wrap a multi-statement script, so
+    // without an explicit transaction a crash between DROP TABLE and RENAME
+    // TABLE would leave the database with no `messages` table at all, and the
+    // next boot's PRAGMA table_info(messages) probe above would come back
+    // empty and mis-diagnose it as a fresh install. Toggling `foreign_keys`
+    // must stay outside this transaction (better-sqlite3 throws otherwise),
+    // which is why it's done via separate pragma() calls before/after. If a
+    // statement inside the transaction throws (not a crash, an in-process
+    // error), roll back explicitly so the connection isn't left with a
+    // dangling open transaction.
+    try {
+      database.exec(`
+        BEGIN IMMEDIATE;
+        CREATE TABLE messages_new (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          role TEXT NOT NULL,
+          content TEXT NOT NULL,
+          timestamp INTEGER NOT NULL,
+          media TEXT,
+          partial INTEGER,
+          seq INTEGER,
+          tool_call TEXT,
+          blocks TEXT,
+          FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+        );
+        INSERT INTO messages_new (rowid, ${columnList})
+          SELECT rowid, ${columnList} FROM messages;
+        DROP TABLE messages;
+        ALTER TABLE messages_new RENAME TO messages;
+        COMMIT;
+      `);
+    } catch (err) {
+      if (database.inTransaction) database.exec('ROLLBACK');
+      throw err;
+    }
+    // DROP TABLE above also dropped the indexes bound to the old messages table;
+    // recreate them so query performance doesn't regress until the next boot.
+    database.exec(CREATE_MESSAGES_INDEX);
+    database.exec(CREATE_MESSAGES_TIMESTAMP_INDEX);
+  } finally {
+    if (fkWasOn) database.pragma('foreign_keys = ON');
+  }
+}
+
+export function migrateQueueItemsSchema(database: Database.Database): void {
+  const cols = database.prepare('PRAGMA table_info(queue_items)').all() as Array<{ name: string }>;
+  // Fresh DB: queue_items is created (with its FK) by installPostMigrationSchema.
+  // If this runs before that (shouldn't happen in initDb's ordering, but guard
+  // defensively like migrateApprovalsSchema does for approvals), there's nothing
+  // to upgrade yet.
+  if (cols.length === 0) return;
+
+  // Skipped when the sessions table doesn't exist yet — no FK target to validate
+  // against (mirrors the same guard in migrateMessagesSchema).
+  const sessionsCols = database.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>;
+  if (sessionsCols.length === 0) return;
+
+  // Add the FOREIGN KEY (session_id -> sessions.id, ON DELETE CASCADE) on upgraded
+  // homes whose queue_items table predates it (DAT-SESS-001). Mirrors
+  // migrateApprovalsSchema's rebuild pattern exactly.
+  const hasForeignKey = (database.prepare('PRAGMA foreign_key_list(queue_items)').all() as unknown[]).length > 0;
+  if (hasForeignKey) return;
+
+  // Pre-flight: remove any orphaned queue_items (no matching session) so the
+  // rebuild and subsequent FK enforcement can't fail on pre-existing dangling rows.
+  const orphaned = database.prepare('DELETE FROM queue_items WHERE session_id NOT IN (SELECT id FROM sessions)').run();
+  if (orphaned.changes > 0) {
+    logger.warn(`registry: removed ${orphaned.changes} orphaned queue_items row(s) with no matching session during FK migration`);
+  }
+
+  const columnList = (database.prepare('PRAGMA table_info(queue_items)').all() as Array<{ name: string }>)
+    .map((c) => c.name)
+    .join(', ');
+
+  const fkWasOn = (database.pragma('foreign_keys', { simple: true }) as number) === 1;
+  database.pragma('foreign_keys = OFF');
+  try {
+    // See the matching comment in migrateMessagesSchema: exec() doesn't
+    // implicitly transaction-wrap a multi-statement script, so the rebuild is
+    // wrapped explicitly and rolled back if any statement throws.
+    try {
+      database.exec(`
+        BEGIN IMMEDIATE;
+        CREATE TABLE queue_items_new (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          session_key TEXT NOT NULL,
+          prompt TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending',
+          position INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          started_at TEXT,
+          completed_at TEXT,
+          FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+        );
+        INSERT INTO queue_items_new (${columnList})
+          SELECT ${columnList} FROM queue_items;
+        DROP TABLE queue_items;
+        ALTER TABLE queue_items_new RENAME TO queue_items;
+        COMMIT;
+      `);
+    } catch (err) {
+      if (database.inTransaction) database.exec('ROLLBACK');
+      throw err;
+    }
+    // DROP TABLE above also dropped idx_queue_session; recreate it.
+    database.exec('CREATE INDEX IF NOT EXISTS idx_queue_session ON queue_items (session_key, status, position)');
+  } finally {
+    if (fkWasOn) database.pragma('foreign_keys = ON');
   }
 }
 
@@ -139,27 +288,39 @@ export function migrateApprovalsSchema(database: Database.Database): void {
     const fkWasOn = (database.pragma('foreign_keys', { simple: true }) as number) === 1;
     database.pragma('foreign_keys = OFF');
     try {
-      database.exec(`
-        CREATE TABLE approvals_new (
-          id TEXT PRIMARY KEY,
-          session_id TEXT NOT NULL,
-          type TEXT NOT NULL,
-          payload TEXT NOT NULL,
-          state TEXT NOT NULL,
-          created_at TEXT NOT NULL,
-          resolved_at TEXT,
-          actor TEXT,
-          decision_notes TEXT,
-          resulting_action TEXT,
-          FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-        );
-        INSERT INTO approvals_new
-          (id, session_id, type, payload, state, created_at, resolved_at, actor, decision_notes, resulting_action)
-          SELECT id, session_id, type, payload, state, created_at, resolved_at, actor, decision_notes, resulting_action
-          FROM approvals;
-        DROP TABLE approvals;
-        ALTER TABLE approvals_new RENAME TO approvals;
-      `);
+      // See the matching comment in migrateMessagesSchema: exec() doesn't
+      // implicitly transaction-wrap a multi-statement script, so the rebuild
+      // is wrapped explicitly and rolled back if any statement throws — a
+      // crash between DROP TABLE and RENAME TABLE would otherwise leave the
+      // database with no `approvals` table at all.
+      try {
+        database.exec(`
+          BEGIN IMMEDIATE;
+          CREATE TABLE approvals_new (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            type TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            state TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            resolved_at TEXT,
+            actor TEXT,
+            decision_notes TEXT,
+            resulting_action TEXT,
+            FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+          );
+          INSERT INTO approvals_new
+            (id, session_id, type, payload, state, created_at, resolved_at, actor, decision_notes, resulting_action)
+            SELECT id, session_id, type, payload, state, created_at, resolved_at, actor, decision_notes, resulting_action
+            FROM approvals;
+          DROP TABLE approvals;
+          ALTER TABLE approvals_new RENAME TO approvals;
+          COMMIT;
+        `);
+      } catch (err) {
+        if (database.inTransaction) database.exec('ROLLBACK');
+        throw err;
+      }
     } finally {
       if (fkWasOn) database.pragma('foreign_keys = ON');
     }

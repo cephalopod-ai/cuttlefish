@@ -8,6 +8,8 @@ import type { LiveRunContinuationRecord } from "../live-run.js";
 const mockCreateRun = vi.fn();
 const mockTransitionRun = vi.fn();
 const mockListRuns = vi.fn();
+const mockAddArtifactReference = vi.fn();
+const mockAddPolicySnapshotReference = vi.fn();
 
 vi.mock("../../run-ledger/index.js", () => ({
   getRunLedger: () =>
@@ -15,6 +17,8 @@ vi.mock("../../run-ledger/index.js", () => ({
       createRun: mockCreateRun,
       transitionRun: mockTransitionRun,
       listRuns: mockListRuns,
+      addArtifactReference: mockAddArtifactReference,
+      addPolicySnapshotReference: mockAddPolicySnapshotReference,
     }) as unknown as RunLedgerStore,
 }));
 
@@ -26,6 +30,8 @@ import {
   finalizeOrchestrationRunFailed,
   interruptOrchestrationRun,
   recoverOrchestrationRun,
+  recordOrchestrationArtifact,
+  recordOrchestrationPolicySnapshot,
   sweepOrphanedOrchestrationRuns,
 } from "../run-ledger-integration.js";
 
@@ -89,6 +95,105 @@ describe("beginOrchestrationRun", () => {
   it("returns a UUID-shaped string", () => {
     const runId = beginOrchestrationRun(makeAllocation(), "single_worker");
     expect(runId).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  // DAT-BUS-002: engine must stay the literal "orchestration" marker (run-recovery.ts
+  // and sweepOrphanedOrchestrationRuns filter on it), but the real worker/provider
+  // identity must not be lost — it is carried on the running-transition payload.
+  it("keeps engine as the literal orchestration marker even when a providerEngine is supplied", () => {
+    mockTransitionRun.mockReturnValue({ runId: "r8", currentState: "running" });
+    beginOrchestrationRun(makeAllocation(), "dual_lane", "My Task", "2026-06-30T00:07:00.000Z", "openai:codex,anthropic:claude");
+
+    const createArgs = mockCreateRun.mock.calls[0][0];
+    expect(createArgs.engine).toBe("orchestration");
+
+    const transitionArgs = mockTransitionRun.mock.calls[0][0];
+    expect(transitionArgs.payload).toEqual({ providerEngine: "openai:codex,anthropic:claude" });
+  });
+
+  it("omits the payload when no providerEngine is supplied", () => {
+    beginOrchestrationRun(makeAllocation(), "single_worker");
+    const transitionArgs = mockTransitionRun.mock.calls[0][0];
+    expect(transitionArgs.payload).toBeNull();
+  });
+
+  // ARC-CF-102 / DAT-BUS-002: every orchestration run must record which policy
+  // profile snapshot was in effect at run start, so the run-ledger can answer
+  // "under which policy did this run's export/register decisions happen".
+  it("records a policy snapshot reference for the new run", () => {
+    mockTransitionRun.mockReturnValue({ runId: "r9", currentState: "running" });
+    const now = "2026-06-30T00:08:00.000Z";
+    const runId = beginOrchestrationRun(makeAllocation(), "single_worker", "My Task", now);
+
+    expect(mockAddPolicySnapshotReference).toHaveBeenCalledOnce();
+    const snapshotArgs = mockAddPolicySnapshotReference.mock.calls[0][0];
+    expect(snapshotArgs.runId).toBe(runId);
+    expect(snapshotArgs.policyScope).toBe("orchestration_run");
+    expect(typeof snapshotArgs.snapshotId).toBe("string");
+    expect(snapshotArgs.snapshotId.length).toBeGreaterThan(0);
+    expect(snapshotArgs.createdAt).toBe(now);
+  });
+
+  it("does not fail the run if policy snapshot recording throws", () => {
+    mockAddPolicySnapshotReference.mockImplementation(() => {
+      throw new Error("ledger unavailable");
+    });
+    expect(() => beginOrchestrationRun(makeAllocation(), "single_worker")).not.toThrow();
+  });
+});
+
+describe("recordOrchestrationPolicySnapshot", () => {
+  it("is a no-op when runId is undefined", () => {
+    recordOrchestrationPolicySnapshot(undefined, "orchestration_run");
+    expect(mockAddPolicySnapshotReference).not.toHaveBeenCalled();
+  });
+
+  it("records a snapshot reference with the given scope and timestamp", () => {
+    const now = "2026-06-30T00:09:00.000Z";
+    recordOrchestrationPolicySnapshot("run-policy-1", "orchestration_run", now);
+
+    expect(mockAddPolicySnapshotReference).toHaveBeenCalledOnce();
+    const args = mockAddPolicySnapshotReference.mock.calls[0][0];
+    expect(args.runId).toBe("run-policy-1");
+    expect(args.policyScope).toBe("orchestration_run");
+    expect(args.createdAt).toBe(now);
+    expect(typeof args.snapshotId).toBe("string");
+  });
+
+  it("swallows ledger errors without rethrowing", () => {
+    mockAddPolicySnapshotReference.mockImplementation(() => {
+      throw new Error("ledger down");
+    });
+    expect(() => recordOrchestrationPolicySnapshot("run-policy-2", "orchestration_run")).not.toThrow();
+  });
+});
+
+describe("recordOrchestrationArtifact", () => {
+  it("is a no-op when runId is undefined", () => {
+    recordOrchestrationArtifact(undefined, "artifact-1", "produced", "file:///out.txt");
+    expect(mockAddArtifactReference).not.toHaveBeenCalled();
+  });
+
+  it("records an artifact reference with the given fields", () => {
+    const now = "2026-06-30T00:10:00.000Z";
+    recordOrchestrationArtifact("run-artifact-1", "artifact-1", "produced", "file:///out.txt", now);
+
+    expect(mockAddArtifactReference).toHaveBeenCalledOnce();
+    const args = mockAddArtifactReference.mock.calls[0][0];
+    expect(args).toEqual({
+      runId: "run-artifact-1",
+      artifactId: "artifact-1",
+      relation: "produced",
+      locator: "file:///out.txt",
+      createdAt: now,
+    });
+  });
+
+  it("swallows ledger errors without rethrowing", () => {
+    mockAddArtifactReference.mockImplementation(() => {
+      throw new Error("ledger down");
+    });
+    expect(() => recordOrchestrationArtifact("run-artifact-2", "artifact-2", "produced", null)).not.toThrow();
   });
 });
 

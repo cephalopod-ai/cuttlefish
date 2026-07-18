@@ -30,7 +30,7 @@ import { getMessages, type SessionMessage } from './registry/messages.js';
 import { getSession } from './registry/sessions.js';
 
 export { initDb } from './registry/core.js';
-export { migrateApprovalsSchema, migrateExternalOutboxSchema, migrateFilesSchema, migrateMessagesSchema, migrateSessionsSchema } from './registry/migrations.js';
+export { migrateApprovalsSchema, migrateExternalOutboxSchema, migrateFilesSchema, migrateMessagesSchema, migrateQueueItemsSchema, migrateSessionsSchema } from './registry/migrations.js';
 export {
   backfillFtsSync,
   disableFtsForProcess,
@@ -65,6 +65,7 @@ export {
   duplicateSession,
   getEmployeeSpendSince,
   getInterruptedSessions,
+  getOrCreateSessionBySessionKey,
   getSession,
   getSessionBySessionKey,
   getSessionBySourceRef,
@@ -80,6 +81,7 @@ export {
   promptExcerptOf,
   recoverStaleSessions,
   searchSessions,
+  unlinkEmailReferencesForSessions,
   updateSession,
   type CreateSessionOpts,
   type ListSessionsFilter,

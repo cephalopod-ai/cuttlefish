@@ -58,6 +58,70 @@ export function resolveMcpServers(
   return { mcpServers: servers };
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return isPlainObject(value) && Object.values(value).every((entry) => typeof entry === "string");
+}
+
+/**
+ * Shape-validate one entry of `mcp.custom` before it is used to spawn a
+ * process or dial a URL (FSR-CF-016). Config is operator-authored and may
+ * not match the declared TypeScript shape at runtime; on any mismatch this
+ * logs a `logger.warn` naming the server and the offending field and returns
+ * `false` so the caller skips just that entry instead of crashing resolve()
+ * or passing a malformed config through to the engine. Returns a type
+ * predicate so callers keep the declared `McpServerConfig` typing for the
+ * (now runtime-checked) entry rather than widening it to `unknown`.
+ */
+function isValidCustomServerEntry(
+  name: string,
+  value: unknown,
+): value is (McpServerStdioConfig | McpServerUrlConfig) & { enabled?: boolean } {
+  if (!isPlainObject(value)) {
+    logger.warn(`MCP custom server "${name}" is not a valid config object; skipping`);
+    return false;
+  }
+  if (value.enabled !== undefined && typeof value.enabled !== "boolean") {
+    logger.warn(`MCP custom server "${name}" has invalid "enabled" (expected boolean); skipping`);
+    return false;
+  }
+
+  if (value.url !== undefined) {
+    // URL-based (HTTP/SSE) server.
+    if (typeof value.url !== "string" || !value.url) {
+      logger.warn(`MCP custom server "${name}" has invalid "url" (expected non-empty string); skipping`);
+      return false;
+    }
+    if (value.headers !== undefined && !isStringRecord(value.headers)) {
+      logger.warn(`MCP custom server "${name}" has invalid "headers" (expected a string-to-string map); skipping`);
+      return false;
+    }
+    return true;
+  }
+
+  // Stdio-based server.
+  if (typeof value.command !== "string" || !value.command) {
+    logger.warn(`MCP custom server "${name}" is missing a valid "command" (expected non-empty string); skipping`);
+    return false;
+  }
+  if (value.args !== undefined && !isStringArray(value.args)) {
+    logger.warn(`MCP custom server "${name}" has invalid "args" (expected a string array); skipping`);
+    return false;
+  }
+  if (value.env !== undefined && !isStringRecord(value.env)) {
+    logger.warn(`MCP custom server "${name}" has invalid "env" (expected a string-to-string map); skipping`);
+    return false;
+  }
+  return true;
+}
+
 /**
  * Build the map of all available (enabled) MCP servers from global config.
  */
@@ -105,9 +169,14 @@ function buildAvailableServers(config: McpGlobalConfig): Record<string, McpServe
     }
   }
 
-  // Custom user-defined MCP servers
+  // Custom user-defined MCP servers. These come from operator-authored
+  // config (YAML/JSON) and are not guaranteed to match the declared
+  // TypeScript shape at runtime, so each entry is shape-validated before use
+  // (FSR-CF-016) — a malformed entry is skipped with a warning rather than
+  // crashing resolve() or being passed through to the engine unchecked.
   if (config.custom) {
     for (const [name, serverConfig] of Object.entries(config.custom)) {
+      if (!isValidCustomServerEntry(name, serverConfig)) continue;
       if (serverConfig.enabled === false) continue;
       const { enabled, ...rest } = serverConfig;
 
@@ -194,7 +263,10 @@ export function writeMcpConfigFile(config: ResolvedMcpConfig, sessionId: string)
   const tmpDir = path.join(CUTTLEFISH_HOME, "tmp", "mcp");
   fs.mkdirSync(tmpDir, { recursive: true });
   const filePath = path.join(tmpDir, `${sessionId}.json`);
-  safeWriteFile(filePath, JSON.stringify(config, null, 2)); // atomic + fsync (resolved MCP config read by the engine)
+  // 0600: this file can contain resolved MCP server secrets (API keys, bearer
+  // tokens, etc. pulled in via resolveEnvVar) and is read by the engine from
+  // disk, so it must not be group/world-readable (SEC-CFDB-006).
+  safeWriteFile(filePath, JSON.stringify(config, null, 2), { mode: 0o600 }); // atomic + fsync (resolved MCP config read by the engine)
   return filePath;
 }
 
@@ -208,6 +280,44 @@ export function cleanupMcpConfigFile(sessionId: string): void {
   } catch {
     // Ignore cleanup errors
   }
+}
+
+/** Per-session MCP temp config files older than this are swept on startup. */
+export const MCP_CONFIG_STALE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Sweep stale per-session MCP temp config files (TMP-CUT-019 / DAT-BUS-006).
+ *
+ * `writeMcpConfigFile()` writes a resolved MCP config — which can contain
+ * secrets — under `CUTTLEFISH_HOME/tmp/mcp/<sessionId>.json` for the engine
+ * to read via `--mcp-config`. Normal cleanup happens best-effort in a
+ * `finally` block in the session lifecycle, so a hard process kill mid-session
+ * orphans that file with nothing to remove it. Call this on daemon startup
+ * (and optionally on a periodic timer, mirroring `cleanupOldUploads()` in
+ * gateway/files/storage.ts) to remove anything left over from a prior boot.
+ *
+ * Wired into daemon startup (and a 24h interval timer) in
+ * gateway/server.ts's startGateway(), next to cleanupOldUploads().
+ */
+export function sweepStaleMcpConfigFiles(maxAgeMs: number = MCP_CONFIG_STALE_MS): number {
+  const tmpDir = path.join(CUTTLEFISH_HOME, "tmp", "mcp");
+  if (!fs.existsSync(tmpDir)) return 0;
+  const cutoff = Date.now() - maxAgeMs;
+  let removed = 0;
+  for (const entry of fs.readdirSync(tmpDir, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+    const filePath = path.join(tmpDir, entry.name);
+    try {
+      const stat = fs.statSync(filePath);
+      if (stat.mtimeMs >= cutoff) continue;
+      fs.unlinkSync(filePath);
+      removed++;
+    } catch (err) {
+      logger.warn(`Failed to sweep stale MCP config file ${entry.name}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  if (removed > 0) logger.info(`Swept ${removed} stale MCP config file(s) older than ${Math.round(maxAgeMs / (60 * 60 * 1000))}h`);
+  return removed;
 }
 
 /**

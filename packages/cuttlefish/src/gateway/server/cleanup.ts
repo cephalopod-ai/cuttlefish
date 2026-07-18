@@ -26,8 +26,10 @@ interface GatewayCleanupDeps {
   stopScheduler: () => void;
   stopStatusReconciler: () => void;
   stopWatchers: () => Promise<void>;
+  stopPolicyWatcher: () => Promise<void>;
   stopWsHeartbeat: () => void;
   uploadCleanupTimer: NodeJS.Timeout;
+  mcpConfigSweepTimer?: NodeJS.Timeout;
   knowledgeRelayTimer?: NodeJS.Timeout;
   stopEmailService?: () => void;
   /** Release the macOS sleep assertion (no-op if not held). */
@@ -55,8 +57,10 @@ export function createGatewayCleanup({
   stopScheduler,
   stopStatusReconciler,
   stopWatchers,
+  stopPolicyWatcher,
   stopWsHeartbeat,
   uploadCleanupTimer,
+  mcpConfigSweepTimer,
   knowledgeRelayTimer,
   stopEmailService,
   stopSleepGuard,
@@ -67,13 +71,53 @@ export function createGatewayCleanup({
   return async () => {
     logger.info("Gateway cleanup starting...");
 
-    stopStatusReconciler();
-    stopBoardWorker();
-    stopStuckTicketWatchdog();
-    stopLeaderAckReconciler();
-    clearInterval(uploadCleanupTimer);
-    if (knowledgeRelayTimer) clearInterval(knowledgeRelayTimer);
-    stopEmailService?.();
+    try {
+      stopStatusReconciler();
+    } catch (err) {
+      logger.warn(`Failed to stop status reconciler: ${err instanceof Error ? err.message : err}`);
+    }
+
+    try {
+      stopBoardWorker();
+    } catch (err) {
+      logger.warn(`Failed to stop board worker: ${err instanceof Error ? err.message : err}`);
+    }
+
+    try {
+      stopStuckTicketWatchdog();
+    } catch (err) {
+      logger.warn(`Failed to stop stuck ticket watchdog: ${err instanceof Error ? err.message : err}`);
+    }
+
+    try {
+      stopLeaderAckReconciler();
+    } catch (err) {
+      logger.warn(`Failed to stop leader ack reconciler: ${err instanceof Error ? err.message : err}`);
+    }
+
+    try {
+      clearInterval(uploadCleanupTimer);
+    } catch (err) {
+      logger.warn(`Failed to clear upload cleanup timer: ${err instanceof Error ? err.message : err}`);
+    }
+
+    try {
+      if (mcpConfigSweepTimer) clearInterval(mcpConfigSweepTimer);
+    } catch (err) {
+      logger.warn(`Failed to clear MCP config sweep timer: ${err instanceof Error ? err.message : err}`);
+    }
+
+    try {
+      if (knowledgeRelayTimer) clearInterval(knowledgeRelayTimer);
+    } catch (err) {
+      logger.warn(`Failed to clear knowledge relay timer: ${err instanceof Error ? err.message : err}`);
+    }
+
+    try {
+      stopEmailService?.();
+    } catch (err) {
+      logger.warn(`Failed to stop email service: ${err instanceof Error ? err.message : err}`);
+    }
 
     try {
       stopTts?.();
@@ -87,16 +131,37 @@ export function createGatewayCleanup({
       logger.warn(`Failed to release sleep guard: ${err instanceof Error ? err.message : err}`);
     }
 
-    const runningSessions = getRunningSessions();
-    for (const session of runningSessions) {
-      interruptSession(session.id);
-      logger.info(`Marked session ${session.id} as interrupted for resume`);
+    try {
+      const runningSessions = getRunningSessions();
+      for (const session of runningSessions) {
+        try {
+          interruptSession(session.id);
+          logger.info(`Marked session ${session.id} as interrupted for resume`);
+        } catch (err) {
+          logger.warn(`Failed to mark session ${session.id} as interrupted: ${err instanceof Error ? err.message : err}`);
+        }
+      }
+    } catch (err) {
+      logger.warn(`Failed to enumerate running sessions: ${err instanceof Error ? err.message : err}`);
     }
 
-    killEngines();
+    try {
+      killEngines();
+    } catch (err) {
+      logger.error(`Failed to kill engines: ${err instanceof Error ? err.message : err}`);
+    }
 
-    await orchestrationRuntime?.prepareForShutdown("Interrupted: gateway shutting down gracefully");
-    orchestrationRuntime?.close();
+    try {
+      await orchestrationRuntime?.prepareForShutdown("Interrupted: gateway shutting down gracefully");
+    } catch (err) {
+      logger.warn(`Failed to prepare orchestration runtime for shutdown: ${err instanceof Error ? err.message : err}`);
+    }
+
+    try {
+      orchestrationRuntime?.close();
+    } catch (err) {
+      logger.warn(`Failed to close orchestration runtime: ${err instanceof Error ? err.message : err}`);
+    }
 
     try {
       claudeLifecycle.dispose();
@@ -116,7 +181,11 @@ export function createGatewayCleanup({
       logger.warn(`Failed to remove ${gatewayInfoFile}: ${err instanceof Error ? err.message : err}`);
     }
 
-    stopScheduler();
+    try {
+      stopScheduler();
+    } catch (err) {
+      logger.warn(`Failed to stop scheduler: ${err instanceof Error ? err.message : err}`);
+    }
 
     for (const connector of connectors) {
       try {
@@ -126,24 +195,61 @@ export function createGatewayCleanup({
       }
     }
 
-    await stopWatchers();
-    stopWsHeartbeat();
+    try {
+      await stopWatchers();
+    } catch (err) {
+      logger.warn(`Failed to stop watchers: ${err instanceof Error ? err.message : err}`);
+    }
+
+    try {
+      await stopPolicyWatcher();
+    } catch (err) {
+      logger.warn(`Failed to stop policy watcher: ${err instanceof Error ? err.message : err}`);
+    }
+
+    try {
+      stopWsHeartbeat();
+    } catch (err) {
+      logger.warn(`Failed to stop WS heartbeat: ${err instanceof Error ? err.message : err}`);
+    }
 
     for (const client of wsClients) {
-      client.terminate();
+      try {
+        client.terminate();
+      } catch (err) {
+        logger.warn(`Failed to terminate WS client: ${err instanceof Error ? err.message : err}`);
+      }
     }
     wsClients.clear();
     for (const client of ptyWss.clients) {
-      client.terminate();
+      try {
+        client.terminate();
+      } catch (err) {
+        logger.warn(`Failed to terminate PTY WS client: ${err instanceof Error ? err.message : err}`);
+      }
     }
 
-    await new Promise<void>((resolve) => wss.close(() => resolve()));
-    await new Promise<void>((resolve) => ptyWss.close(() => resolve()));
-    await new Promise<void>((resolve, reject) => {
-      server.closeAllConnections?.();
-      server.closeIdleConnections?.();
-      server.close((err) => (err ? reject(err) : resolve()));
-    });
+    try {
+      await new Promise<void>((resolve) => wss.close(() => resolve()));
+    } catch (err) {
+      logger.warn(`Failed to close WS server: ${err instanceof Error ? err.message : err}`);
+    }
+
+    try {
+      await new Promise<void>((resolve) => ptyWss.close(() => resolve()));
+    } catch (err) {
+      logger.warn(`Failed to close PTY WS server: ${err instanceof Error ? err.message : err}`);
+    }
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.closeAllConnections?.();
+        server.closeIdleConnections?.();
+        server.close((err) => (err ? reject(err) : resolve()));
+      });
+    } catch (err) {
+      logger.warn(`Failed to close HTTP server: ${err instanceof Error ? err.message : err}`);
+    }
 
     logger.info("Gateway shutdown complete");
   };

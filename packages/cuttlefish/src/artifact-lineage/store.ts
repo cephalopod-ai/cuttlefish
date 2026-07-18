@@ -2,7 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { v4 as uuidv4 } from "uuid";
-import { ARTIFACT_LINEAGE_DB } from "../shared/paths.js";
+import { ARTIFACT_LINEAGE_DB, POLICY_DIR } from "../shared/paths.js";
+import { gateArtifactRegister } from "../policy/export-gate.js";
 import { isSqliteCorruptionError, quarantineCorruptDb } from "../shared/sqlite-corruption.js";
 import {
   type AddLineageEdgeInput,
@@ -101,6 +102,22 @@ DELETE FROM run_artifact_xref
 CREATE UNIQUE INDEX IF NOT EXISTS idx_lineage_xref_unique ON run_artifact_xref (run_id, artifact_id, relation);
 `;
 
+// SEC-CFDB-001: the artifact-lineage DB (and its WAL/SHM sidecars) must not
+// be world/group readable. Applied on every open (not just first creation)
+// so an existing install with looser default-OS-perm files gets tightened
+// up over time without a migration. Sidecars are created lazily by SQLite
+// once WAL mode is enabled, so a missing file here is expected, not an error.
+function chmodDbFiles(dbPath: string): void {
+  if (process.platform === "win32") return;
+  for (const file of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
+    try {
+      fs.chmodSync(file, 0o600);
+    } catch {
+      // best-effort; sidecar may not exist yet
+    }
+  }
+}
+
 export class ArtifactLineageStore {
   private constructor(private readonly db: Database.Database) {}
 
@@ -131,6 +148,7 @@ export class ArtifactLineageStore {
       db.exec(CREATE_SCHEMA);
       db.prepare("INSERT INTO meta (key, value) VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
         .run(String(SCHEMA_VERSION));
+      if (dbPath !== ":memory:") chmodDbFiles(dbPath);
       return new ArtifactLineageStore(db);
     } catch (err) {
       db.close();
@@ -152,63 +170,89 @@ export class ArtifactLineageStore {
     return row ? parseArtifactRow(row) : undefined;
   }
 
-  registerArtifact(input: RegisterArtifactInput): ArtifactRecord {
+  registerArtifact(input: RegisterArtifactInput, policyDir: string = POLICY_DIR): ArtifactRecord {
     const createdAt = input.createdAt ?? new Date().toISOString();
-    const existing = this.getArtifact(input.artifactId);
-    if (existing) {
-      // DAT-INT-001: re-registering an existing artifact_id previously
-      // overwrote its content identity (locator/sha256) in place with no
-      // history — artifact_versions was defined in the schema but never
-      // written. Snapshot the row being superseded before the UPDATE,
-      // but only when the content identity actually changes (locator or
-      // sha256 differs); a re-registration that only touches metadata like
-      // mimeType isn't a content change worth versioning.
-      const contentChanged =
-        existing.locator !== (input.locator ?? null) ||
-        existing.sha256 !== (input.sha256 ?? null);
-      if (contentChanged) {
+
+    // STT-CF-001 / ARC-CFAD-007 / DAT-BUS-002: enforce the "register" policy
+    // gate before any row is written, so an operator-configured deny rule
+    // actually blocks registration instead of being silently unenforced.
+    const verdict = gateArtifactRegister(
+      {
+        kind: input.canonicalKind,
+        locator: input.locator ?? null,
+        sizeBytes: input.sizeBytes ?? null,
+        mimeType: input.mimeType ?? null,
+        producingRunId: input.producingRunId ?? null,
+      },
+      policyDir,
+    );
+    if (!verdict.allowed) {
+      throw new Error(`lineage: registration of artifact ${input.artifactId} denied by policy: ${verdict.reason}`);
+    }
+
+    // CON-CUT-002: wrap the check-then-act (existing-row lookup followed by
+    // INSERT/UPDATE) in the same BEGIN IMMEDIATE transaction pattern used by
+    // addLineageEdge, so concurrent registrations of the same artifact_id
+    // cannot race past each other.
+    const register = this.db.transaction(() => {
+      const existing = this.getArtifact(input.artifactId);
+      if (existing) {
+        // DAT-INT-001: re-registering an existing artifact_id previously
+        // overwrote its content identity (locator/sha256) in place with no
+        // history — artifact_versions was defined in the schema but never
+        // written. Snapshot the row being superseded before the UPDATE,
+        // but only when the content identity actually changes (locator or
+        // sha256 differs); a re-registration that only touches metadata like
+        // mimeType isn't a content change worth versioning.
+        const contentChanged =
+          existing.locator !== (input.locator ?? null) ||
+          existing.sha256 !== (input.sha256 ?? null);
+        if (contentChanged) {
+          this.db.prepare(`
+            INSERT INTO artifact_versions (version_id, artifact_id, locator, sha256, created_at, note)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `).run(
+            uuidv4(),
+            existing.artifactId,
+            existing.locator,
+            existing.sha256,
+            createdAt,
+            "superseded by re-registration",
+          );
+        }
         this.db.prepare(`
-          INSERT INTO artifact_versions (version_id, artifact_id, locator, sha256, created_at, note)
-          VALUES (?, ?, ?, ?, ?, ?)
+          UPDATE artifacts SET canonical_kind = ?, locator = ?, sha256 = ?, size_bytes = ?,
+            mime_type = ?, updated_at = ? WHERE artifact_id = ?
         `).run(
-          uuidv4(),
-          existing.artifactId,
-          existing.locator,
-          existing.sha256,
+          input.canonicalKind,
+          input.locator ?? null,
+          input.sha256 ?? null,
+          input.sizeBytes ?? null,
+          input.mimeType ?? null,
           createdAt,
-          "superseded by re-registration",
+          input.artifactId,
+        );
+      } else {
+        this.db.prepare(`
+          INSERT INTO artifacts (artifact_id, canonical_kind, locator, sha256, size_bytes, mime_type, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          input.artifactId,
+          input.canonicalKind,
+          input.locator ?? null,
+          input.sha256 ?? null,
+          input.sizeBytes ?? null,
+          input.mimeType ?? null,
+          createdAt,
+          createdAt,
         );
       }
-      this.db.prepare(`
-        UPDATE artifacts SET canonical_kind = ?, locator = ?, sha256 = ?, size_bytes = ?,
-          mime_type = ?, updated_at = ? WHERE artifact_id = ?
-      `).run(
-        input.canonicalKind,
-        input.locator ?? null,
-        input.sha256 ?? null,
-        input.sizeBytes ?? null,
-        input.mimeType ?? null,
-        createdAt,
-        input.artifactId,
-      );
-    } else {
-      this.db.prepare(`
-        INSERT INTO artifacts (artifact_id, canonical_kind, locator, sha256, size_bytes, mime_type, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        input.artifactId,
-        input.canonicalKind,
-        input.locator ?? null,
-        input.sha256 ?? null,
-        input.sizeBytes ?? null,
-        input.mimeType ?? null,
-        createdAt,
-        createdAt,
-      );
-    }
-    if (input.producingRunId) {
-      this.addRunArtifactXref({ runId: input.producingRunId, artifactId: input.artifactId, relation: "produced_by", createdAt });
-    }
+      if (input.producingRunId) {
+        this.addRunArtifactXref({ runId: input.producingRunId, artifactId: input.artifactId, relation: "produced_by", createdAt });
+      }
+    });
+    register.immediate();
+
     return this.getArtifact(input.artifactId)!;
   }
 

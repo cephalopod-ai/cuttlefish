@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { gateArtifactRegister, gateExternalEmit } from "../export-gate.js";
-import { invalidatePolicyCache } from "../loader.js";
+import { invalidatePolicyCache, stopPolicyWatcher } from "../loader.js";
 import type { PolicyArtifactDescriptor } from "../types.js";
 
 let tmpDir: string;
@@ -13,7 +13,8 @@ beforeEach(() => {
   invalidatePolicyCache();
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await stopPolicyWatcher();
   fs.rmSync(tmpDir, { recursive: true, force: true });
   invalidatePolicyCache();
   vi.restoreAllMocks();

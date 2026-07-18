@@ -143,6 +143,14 @@ export interface HookEndpointCtx {
 }
 
 const HOOK_REPLAY_WINDOW_MS = 5 * 60 * 1000;
+// Intentionally in-memory only (not persisted): a gateway restart clears this
+// map, so a hook nonce replayed within its dedup window right after a restart
+// would no longer be recognized as a duplicate. Accepted because hook
+// delivery is loopback-only (see isLoopback below) and scoped to a single
+// live session — there's no externally reachable replay surface, just a
+// soft best-effort guard. If replay dedup ever needs to be a hard boundary
+// across restarts, persist this alongside session state; until then, this
+// reset-on-restart behavior is the accepted, documented tradeoff.
 const seenHookNonces = new Map<string, number>();
 
 function pruneSeenNonces(now: number): void {
@@ -156,6 +164,16 @@ function pruneSeenNonces(now: number): void {
 // tool calls across the engine session's whole lifetime between a
 // SessionStart and its Stop/StopFailure — an approximation of "per run", not
 // a precise "per user turn" count.
+//
+// Also intentionally in-memory only (not persisted): a gateway restart
+// mid-session resets these counts to zero, silently granting a session extra
+// tool calls beyond its configured maxToolCalls cap. Accepted for the same
+// reason as seenHookNonces above — hook delivery is loopback-only and scoped
+// to a single live session, so this is a soft safety-limit gap, not an
+// externally reachable data-integrity issue. If the tool-call budget is meant
+// to become a hard security boundary rather than a best-effort guard,
+// persisting counts alongside session state is the deliberate future option;
+// until that call is made, the reset-on-restart behavior here is accepted.
 const toolCallCounts = new Map<string, number>();
 
 /**

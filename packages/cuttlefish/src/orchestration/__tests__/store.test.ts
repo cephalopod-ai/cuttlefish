@@ -4,6 +4,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OrchestrationStore } from "../store.js";
+import { SCHEMA_VERSION } from "../store-schema.js";
 import type { Lease, SchedulerSnapshot } from "../types.js";
 
 const fixedNow = new Date("2026-06-23T12:00:00.000Z");
@@ -185,6 +186,72 @@ describe("OrchestrationStore", () => {
     reopened.close();
   });
 
+  it("refuses to open a DB stamped with a schema_version newer than this binary's (TMP-CUT-015)", () => {
+    const store = OrchestrationStore.open(dbPath);
+    store.close();
+
+    const db = new Database(dbPath);
+    db.prepare("UPDATE meta SET value = ? WHERE key = 'schema_version'").run(String(SCHEMA_VERSION + 1));
+    db.close();
+
+    expect(() => OrchestrationStore.open(dbPath)).toThrow(/schema_version/i);
+  });
+
+  it("opens a DB stamped with an older schema_version without complaint (normal upgrade path)", () => {
+    const store = OrchestrationStore.open(dbPath);
+    store.close();
+
+    const db = new Database(dbPath);
+    db.prepare("UPDATE meta SET value = ? WHERE key = 'schema_version'").run(String(SCHEMA_VERSION - 1));
+    db.close();
+
+    const reopened = OrchestrationStore.open(dbPath);
+    expect(reopened.loadSnapshot()).toEqual({ allocations: [], leases: [], queue: [], telemetry: [], nextSeq: 1 });
+    reopened.close();
+
+    const finalDb = new Database(dbPath);
+    expect(finalDb.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get()).toMatchObject({
+      value: String(SCHEMA_VERSION),
+    });
+    finalDb.close();
+  });
+
+  it("increments a durable boot generation counter on every open (TMP-CUT-013)", () => {
+    const store = OrchestrationStore.open(dbPath);
+    expect(store.getBootGeneration()).toBe(1);
+    store.close();
+
+    const reopened = OrchestrationStore.open(dbPath);
+    expect(reopened.getBootGeneration()).toBe(2);
+    reopened.close();
+
+    const reopenedAgain = OrchestrationStore.open(dbPath);
+    expect(reopenedAgain.getBootGeneration()).toBe(3);
+    reopenedAgain.close();
+  });
+
+  it("stamps live continuations with the boot generation active when they were created", () => {
+    const store = OrchestrationStore.open(dbPath);
+    store.upsertLiveContinuation({
+      taskId: "task-gen",
+      coordinatorId: "coord-gen",
+      mode: "single_worker",
+      state: "queued",
+      task: {
+        taskId: "task-gen",
+        coordinatorId: "coord-gen",
+        priority: "normal",
+        leaseDurationMs: 60_000,
+        prompt: "Resume me later",
+      },
+      enqueuedAt: fixedNow.toISOString(),
+      updatedAt: fixedNow.toISOString(),
+      retryCount: 0,
+    });
+    expect(store.listLiveContinuationsWithGeneration()).toMatchObject([{ taskId: "task-gen", bootGeneration: 1 }]);
+    store.close();
+  });
+
   it("blocks active continuation overwrite and fails queued work at the retry cap", () => {
     const store = OrchestrationStore.open(dbPath);
     const record = {
@@ -309,6 +376,32 @@ describe("OrchestrationStore", () => {
     expect(reopened.listArtifactRecords("task-paused", "diff")).toMatchObject([{ artifactId: "artifact-1", lane: "openai" }]);
     expect(reopened.listPatchApplyAttempts("task-paused")).toMatchObject([{ attemptId: "apply-1", state: "failed" }]);
     reopened.close();
+  });
+});
+
+describe("OrchestrationStore.open — file permissions (SEC-CFDB-001)", () => {
+  it("creates the orchestration DB file with owner-only (0600) permissions", () => {
+    const store = OrchestrationStore.open(dbPath);
+    try {
+      const mode = fs.statSync(dbPath).mode & 0o777;
+      expect(mode).toBe(0o600);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("tightens a pre-existing world-readable DB file back to 0600 on open", () => {
+    const first = OrchestrationStore.open(dbPath);
+    first.close();
+    fs.chmodSync(dbPath, 0o644); // simulate a pre-hardening world-readable install
+
+    const reopened = OrchestrationStore.open(dbPath);
+    try {
+      const mode = fs.statSync(dbPath).mode & 0o777;
+      expect(mode).toBe(0o600);
+    } finally {
+      reopened.close();
+    }
   });
 });
 
