@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { watch, type FSWatcher } from "chokidar";
-import { CONFIG_PATH, CRON_JOBS, ORG_DIR, SKILLS_DIR, CLAUDE_SKILLS_DIR, AGENTS_SKILLS_DIR } from "../shared/paths.js";
+import { CONFIG_PATH, CRON_JOBS, ORG_DIR, ORG_CHANGES_DIR, SKILLS_DIR, CLAUDE_SKILLS_DIR, AGENTS_SKILLS_DIR } from "../shared/paths.js";
 import { logger } from "../shared/logger.js";
 
 export interface WatcherCallbacks {
@@ -102,9 +102,15 @@ export function startWatchers(callbacks: WatcherCallbacks): void {
     }, DEBOUNCE_MS),
   );
 
+  // CON-CUT-003: ORG_CHANGES_DIR is nested inside ORG_DIR but holds the
+  // HR-pipeline's own change-request JSON files, not org data the watcher is
+  // meant to react to. Without this exclusion, every HR-pipeline write
+  // triggers a redundant full reloadOrg().
   const orgWatcher = watch(ORG_DIR, {
     ignoreInitial: true,
     awaitWriteFinish: { stabilityThreshold: 300 },
+    ignored: (filePath: string) =>
+      filePath === ORG_CHANGES_DIR || filePath.startsWith(ORG_CHANGES_DIR + path.sep),
   });
   orgWatcher.on(
     "all",

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { KeyedMutex, Semaphore } from "../async-lock.js";
+import { KeyedMutex, Semaphore, SemaphoreAcquireTimeoutError } from "../async-lock.js";
 
 describe("KeyedMutex", () => {
   it("serializes calls for the same key in FIFO order", async () => {
@@ -120,6 +120,49 @@ describe("Semaphore", () => {
     const release = sem.tryAcquire()!;
     release();
     release();
+    expect(sem.inFlightCount).toBe(0);
+  });
+
+  it("acquire() with no options waits unbounded (existing behavior preserved)", async () => {
+    const sem = new Semaphore(1);
+    const release0 = sem.tryAcquire()!;
+    let acquired = false;
+    const pending = sem.acquire().then((release) => {
+      acquired = true;
+      release();
+    });
+    // Give the event loop plenty of turns; with no timeout, acquire() must
+    // never settle on its own while the permit stays held.
+    for (let i = 0; i < 5; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(acquired).toBe(false);
+    release0();
+    await pending;
+    expect(acquired).toBe(true);
+  });
+
+  it("acquire() rejects with SemaphoreAcquireTimeoutError if the timeout elapses while exhausted", async () => {
+    const sem = new Semaphore(1);
+    const release0 = sem.tryAcquire()!;
+    await expect(sem.acquire(1, { timeoutMs: 20 })).rejects.toThrow(SemaphoreAcquireTimeoutError);
+    // The timed-out waiter must not have consumed a permit — the held permit
+    // is still outstanding and a fresh acquire still blocks until released.
+    expect(sem.inFlightCount).toBe(1);
+    release0();
+    const release1 = await sem.acquire(1, { timeoutMs: 1000 });
+    expect(sem.inFlightCount).toBe(1);
+    release1();
+  });
+
+  it("acquire() with a timeout resolves normally when a permit frees up in time", async () => {
+    const sem = new Semaphore(1);
+    const release0 = sem.tryAcquire()!;
+    const pending = sem.acquire(1, { timeoutMs: 1000 });
+    setTimeout(() => release0(), 5);
+    const release1 = await pending;
+    expect(sem.inFlightCount).toBe(1);
+    release1();
     expect(sem.inFlightCount).toBe(0);
   });
 });

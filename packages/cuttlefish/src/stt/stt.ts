@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { execFile, spawn } from "node:child_process";
@@ -111,94 +112,109 @@ export async function downloadModel(
   onProgress: (progress: number) => void,
 ): Promise<void> {
   if (downloading) throw new Error("Download already in progress");
-
-  const asset = MODEL_ASSETS[model];
-  if (!asset) throw new Error(`Unknown model: ${model}`);
-  const url = `${WHISPER_MODEL_BASE}/${asset.filename}`;
-
-  const existingPath = getModelPath(model);
-  if (existingPath) {
-    try {
-      await verifyModelFile(model, existingPath);
-      onProgress(100);
-      return;
-    } catch (err) {
-      logger.warn(`Existing Whisper model '${model}' failed integrity verification and will be replaced: ${err instanceof Error ? err.message : err}`);
-      try { fs.unlinkSync(existingPath); } catch { /* download will surface any remaining conflict */ }
-    }
-  }
-
+  // Claim the guard synchronously, in the same tick as the check above — no
+  // `await` may separate the check from this assignment. JS runs the
+  // synchronous prefix of an async function immediately on invocation, so a
+  // second, near-simultaneous call cannot observe `downloading === false`
+  // before this call has claimed it (a prior version set this flag after an
+  // `await`, letting two concurrent callers both pass the check).
   downloading = true;
   downloadProgress = 0;
 
-  const destPath = path.join(STT_MODELS_DIR, asset.filename);
-  const tmpPath = destPath + ".downloading";
-
-  // getModelPath() rejects wrong-size files. Remove that stale destination
-  // explicitly so the final rename is portable to platforms that will not
-  // replace an existing file atomically.
-  if (fs.existsSync(destPath)) {
-    try { fs.unlinkSync(destPath); } catch { /* download will surface the conflict */ }
-  }
-
   try {
-    fs.mkdirSync(STT_MODELS_DIR, { recursive: true });
+    const asset = MODEL_ASSETS[model];
+    if (!asset) throw new Error(`Unknown model: ${model}`);
+    const url = `${WHISPER_MODEL_BASE}/${asset.filename}`;
 
-    await new Promise<void>((resolve, reject) => {
-      // Use curl for download — handles redirects, progress, and is reliable.
-      // --speed-limit/--speed-time abort a stalled transfer (<1KB/s for 60s)
-      // instead of holding the download (and its 1s progress poll) open forever.
-      const curl = spawn("curl", [
-        "-L", // follow redirects
-        "--fail",
-        "--proto", "=https",
-        "--tlsv1.2",
-        "--connect-timeout", "30",
-        "--speed-limit", "1024", "--speed-time", "60",
-        "-o", tmpPath,
-        url,
-      ]);
+    const existingPath = getModelPath(model);
+    if (existingPath) {
+      try {
+        await verifyModelFile(model, existingPath);
+        downloadProgress = 100;
+        onProgress(100);
+        return;
+      } catch (err) {
+        logger.warn(`Existing Whisper model '${model}' failed integrity verification and will be replaced: ${err instanceof Error ? err.message : err}`);
+        try { fs.unlinkSync(existingPath); } catch { /* download will surface any remaining conflict */ }
+      }
+    }
 
-      // Poll file size for progress
-      const progressInterval = setInterval(() => {
-        try {
-          const stat = fs.statSync(tmpPath, { throwIfNoEntry: false } as fs.StatSyncOptions & { throwIfNoEntry: false });
-          if (stat && stat.size > 0) {
-            downloadProgress = Math.min(95, Math.round(((stat.size as number) / asset.size) * 100));
-            onProgress(downloadProgress);
-          }
-        } catch { /* file not created yet */ }
-      }, 1000);
+    const destPath = path.join(STT_MODELS_DIR, asset.filename);
+    // Per-invocation unique temp path (pid + random token) rather than a
+    // shared fixed name: even if a second download somehow still got past
+    // the guard above, or the process restarted mid-download and left a
+    // stray file behind, concurrent/leftover downloads can never corrupt
+    // each other's partial data, since each writes to its own tmp path and
+    // only the final rename below ever touches the shared destination.
+    const tmpPath = `${destPath}.downloading-${process.pid}-${crypto.randomUUID()}`;
 
-      curl.on("close", (code) => {
-        clearInterval(progressInterval);
-        if (code === 0) resolve();
-        else reject(new Error(`curl exited with code ${code}`));
+    // getModelPath() rejects wrong-size files. Remove that stale destination
+    // explicitly so the final rename is portable to platforms that will not
+    // replace an existing file atomically.
+    if (fs.existsSync(destPath)) {
+      try { fs.unlinkSync(destPath); } catch { /* download will surface the conflict */ }
+    }
+
+    try {
+      fs.mkdirSync(STT_MODELS_DIR, { recursive: true });
+
+      await new Promise<void>((resolve, reject) => {
+        // Use curl for download — handles redirects, progress, and is reliable.
+        // --speed-limit/--speed-time abort a stalled transfer (<1KB/s for 60s)
+        // instead of holding the download (and its 1s progress poll) open forever.
+        const curl = spawn("curl", [
+          "-L", // follow redirects
+          "--fail",
+          "--proto", "=https",
+          "--tlsv1.2",
+          "--connect-timeout", "30",
+          "--speed-limit", "1024", "--speed-time", "60",
+          "-o", tmpPath,
+          url,
+        ]);
+
+        // Poll file size for progress
+        const progressInterval = setInterval(() => {
+          try {
+            const stat = fs.statSync(tmpPath, { throwIfNoEntry: false } as fs.StatSyncOptions & { throwIfNoEntry: false });
+            if (stat && stat.size > 0) {
+              downloadProgress = Math.min(95, Math.round(((stat.size as number) / asset.size) * 100));
+              onProgress(downloadProgress);
+            }
+          } catch { /* file not created yet */ }
+        }, 1000);
+
+        curl.on("close", (code) => {
+          clearInterval(progressInterval);
+          if (code === 0) resolve();
+          else reject(new Error(`curl exited with code ${code}`));
+        });
+
+        curl.on("error", (err) => {
+          clearInterval(progressInterval);
+          reject(err);
+        });
       });
 
-      curl.on("error", (err) => {
-        clearInterval(progressInterval);
-        reject(err);
+      await assertFileIntegrity(tmpPath, {
+        size: asset.size,
+        sha256: asset.sha256,
+        label: `Whisper model '${model}'`,
       });
-    });
 
-    await assertFileIntegrity(tmpPath, {
-      size: asset.size,
-      sha256: asset.sha256,
-      label: `Whisper model '${model}'`,
-    });
+      // Rename temp file to final path (atomic on the same filesystem — the
+      // shared destination only ever gets this one, verified, complete file).
+      fs.renameSync(tmpPath, destPath);
+      verifiedModelFiles.add(destPath);
 
-    // Rename temp file to final path
-    fs.renameSync(tmpPath, destPath);
-    verifiedModelFiles.add(destPath);
-
-    downloadProgress = 100;
-    onProgress(100);
-    logger.info(`STT model '${model}' downloaded to ${destPath}`);
-  } catch (err) {
-    // Clean up partial download
-    try { fs.unlinkSync(tmpPath); } catch { /* ignore */ }
-    throw err;
+      downloadProgress = 100;
+      onProgress(100);
+      logger.info(`STT model '${model}' downloaded to ${destPath}`);
+    } catch (err) {
+      // Clean up partial download
+      try { fs.unlinkSync(tmpPath); } catch { /* ignore */ }
+      throw err;
+    }
   } finally {
     downloading = false;
   }

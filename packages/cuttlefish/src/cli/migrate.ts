@@ -235,7 +235,30 @@ export async function runMigrate(opts: { check?: boolean; auto?: boolean }): Pro
       cwd: CUTTLEFISH_HOME,
     });
 
-    console.log(`\n${GREEN}Migration complete.${RESET}\n`);
+    // Verify the migration actually took effect. execFileSync only tells us the
+    // engine process exited 0 — for the `claude` engine that just means the operator
+    // closed the interactive TUI (see buildMigrateArgs comment above); it does NOT
+    // confirm the AI followed the migrate skill and applied anything. The skill
+    // instructs the AI to stamp cuttlefish.version in config.yaml to packageVersion
+    // once all pending migrations are applied, so re-read that stamp from disk (the
+    // same check used earlier to decide whether migrations were needed at all) and
+    // only report success if it actually advanced.
+    const verifiedVersion = getInstanceVersion();
+    if (compareSemver(verifiedVersion, packageVersion) < 0) {
+      console.error(`\n${RED}Migration verification failed.${RESET}`);
+      console.error(`  Expected instance version: ${GREEN}${packageVersion}${RESET} (or newer)`);
+      console.error(`  Found in config.yaml:      ${RED}${verifiedVersion}${RESET}`);
+      console.error(`\nThe engine process exited without error, but cuttlefish.version in`);
+      console.error(`config.yaml was not updated to ${packageVersion}. This usually means the AI`);
+      console.error(`session did not finish applying the pending migrations (e.g. the TUI was`);
+      console.error(`closed early, or a migration step failed silently).`);
+      console.error(`\nThe staged files are still in ${MIGRATIONS_DIR}`);
+      console.error(`Retry with: cuttlefish migrate\n`);
+      process.exit(1);
+      return;
+    }
+
+    console.log(`\n${GREEN}Migration complete.${RESET} Verified instance version: ${verifiedVersion}\n`);
   } catch (err: any) {
     console.error(`\n${RED}Migration failed.${RESET} You can retry with: cuttlefish migrate`);
     console.error(`The staged files are still in ${MIGRATIONS_DIR}\n`);
