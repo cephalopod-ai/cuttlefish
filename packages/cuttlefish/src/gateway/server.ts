@@ -66,6 +66,7 @@ import { syncExternalTurn } from "./external-turns.js";
 import { HookRegistry } from "./hook-registry.js";
 import { gatewayBaseUrl, readGatewayInfo, staleGatewayPids, updateGatewayPtyPids, writeGatewayInfo } from "./gateway-info.js";
 import { startWatchers, stopWatchers, syncSkillSymlinks } from "./watcher.js";
+import { stopPolicyWatcher } from "../policy/loader.js";
 import { cleanupOldUploads, ensureFilesDir } from "./files.js";
 import { sweepStaleMcpConfigFiles } from "../mcp/resolver.js";
 import { handleApiRequest, resumePendingWebQueueItems, type ApiContext } from "./api.js";
@@ -800,6 +801,7 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
     stopStatusReconciler,
     stopEmailService: () => emailService.stop(),
     stopWatchers,
+    stopPolicyWatcher,
     stopWsHeartbeat: transports.stopWsHeartbeat,
     uploadCleanupTimer,
     mcpConfigSweepTimer,

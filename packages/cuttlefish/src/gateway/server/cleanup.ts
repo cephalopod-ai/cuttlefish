@@ -26,6 +26,7 @@ interface GatewayCleanupDeps {
   stopScheduler: () => void;
   stopStatusReconciler: () => void;
   stopWatchers: () => Promise<void>;
+  stopPolicyWatcher: () => Promise<void>;
   stopWsHeartbeat: () => void;
   uploadCleanupTimer: NodeJS.Timeout;
   mcpConfigSweepTimer?: NodeJS.Timeout;
@@ -56,6 +57,7 @@ export function createGatewayCleanup({
   stopScheduler,
   stopStatusReconciler,
   stopWatchers,
+  stopPolicyWatcher,
   stopWsHeartbeat,
   uploadCleanupTimer,
   mcpConfigSweepTimer,
@@ -197,6 +199,12 @@ export function createGatewayCleanup({
       await stopWatchers();
     } catch (err) {
       logger.warn(`Failed to stop watchers: ${err instanceof Error ? err.message : err}`);
+    }
+
+    try {
+      await stopPolicyWatcher();
+    } catch (err) {
+      logger.warn(`Failed to stop policy watcher: ${err instanceof Error ? err.message : err}`);
     }
 
     try {

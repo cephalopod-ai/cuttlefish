@@ -296,8 +296,8 @@ export const MCP_CONFIG_STALE_MS = 24 * 60 * 60 * 1000;
  * (and optionally on a periodic timer, mirroring `cleanupOldUploads()` in
  * gateway/files/storage.ts) to remove anything left over from a prior boot.
  *
- * Not wired into daemon startup by this change — see resolver.ts module
- * docs / defect report for the call site.
+ * Wired into daemon startup (and a 24h interval timer) in
+ * gateway/server.ts's startGateway(), next to cleanupOldUploads().
  */
 export function sweepStaleMcpConfigFiles(maxAgeMs: number = MCP_CONFIG_STALE_MS): number {
   const tmpDir = path.join(CUTTLEFISH_HOME, "tmp", "mcp");

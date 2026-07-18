@@ -56,6 +56,7 @@ function build(opts: BuildOpts = {}) {
     stopScheduler: vi.fn(),
     stopStatusReconciler: vi.fn(),
     stopWatchers: vi.fn(async () => {}),
+    stopPolicyWatcher: vi.fn(async () => {}),
     stopWsHeartbeat: vi.fn(),
     uploadCleanupTimer: setInterval(() => {}, 1_000_000),
     stopEmailService: vi.fn(),
@@ -95,6 +96,7 @@ describe("createGatewayCleanup fault isolation", () => {
     expect(deps.killEngines).toHaveBeenCalledTimes(1);
     expect(deps.stopScheduler).toHaveBeenCalledTimes(1);
     expect(deps.stopWatchers).toHaveBeenCalledTimes(1);
+    expect(deps.stopPolicyWatcher).toHaveBeenCalledTimes(1);
     expect(deps.stopWsHeartbeat).toHaveBeenCalledTimes(1);
   });
 
@@ -119,6 +121,7 @@ describe("createGatewayCleanup fault isolation", () => {
       stopScheduler: vi.fn(),
       stopStatusReconciler: vi.fn(),
       stopWatchers: vi.fn(async () => {}),
+      stopPolicyWatcher: vi.fn(async () => {}),
       stopWsHeartbeat: vi.fn(),
       uploadCleanupTimer: setInterval(() => {}, 1_000_000),
       stopEmailService: vi.fn(),

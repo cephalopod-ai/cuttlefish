@@ -185,6 +185,42 @@ describe("messages/queue_items session_id FOREIGN KEY (DAT-SESS-001)", () => {
     expect((db.prepare("SELECT COUNT(*) c FROM queue_items WHERE session_id = ?").get(session.id) as { c: number }).c).toBe(0);
   });
 
+  it("rolls back cleanly (no dangling transaction, original table intact) if the rebuild fails partway", () => {
+    // Regression for the adversarial cross-wave review: the rebuild's
+    // CREATE/INSERT/DROP/RENAME previously ran as a bare multi-statement
+    // exec() with no explicit transaction, so a failure partway (or a crash)
+    // could leave the database with no `messages` table at all. Force a
+    // failure by pre-creating a colliding `messages_new` table so the
+    // rebuild's own CREATE TABLE statement throws.
+    const { db, dbPath } = buildLegacyDb();
+    db.prepare(
+      "INSERT INTO sessions (id, engine, source, source_ref, status, created_at, last_activity) VALUES ('leg-s3','claude','web','web:leg-s3','idle','t','t')",
+    ).run();
+    db.prepare(
+      "INSERT INTO messages (id, session_id, role, content, timestamp) VALUES ('leg-m3','leg-s3','user','must survive',1)",
+    ).run();
+    // Sabotage: pre-create the table the migration is about to CREATE.
+    db.exec("CREATE TABLE messages_new (bogus INTEGER)");
+
+    expect(() => reg.migrateMessagesSchema(db)).toThrow();
+
+    // The connection must not be left mid-transaction.
+    expect(db.inTransaction).toBe(false);
+    // The original messages table (and its data) must still be intact and
+    // queryable — not dropped, not half-renamed.
+    expect(foreignKeyList(db, "messages")).toHaveLength(0);
+    const msg = db.prepare("SELECT session_id, content FROM messages WHERE id = 'leg-m3'").get() as
+      | { session_id: string; content: string }
+      | undefined;
+    expect(msg).toEqual({ session_id: "leg-s3", content: "must survive" });
+    // The connection must still be usable for an unrelated statement.
+    expect(() => db.prepare("SELECT 1").get()).not.toThrow();
+
+    db.exec("DROP TABLE messages_new");
+    db.close();
+    fs.rmSync(path.dirname(dbPath), { recursive: true, force: true });
+  });
+
   it("rejects inserting a message/queue_item for a non-existent session", () => {
     const db = reg.initDb();
     expect(() =>

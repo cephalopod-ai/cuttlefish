@@ -55,25 +55,43 @@ export function migrateMessagesSchema(database: Database.Database): void {
   const fkWasOn = (database.pragma('foreign_keys', { simple: true }) as number) === 1;
   database.pragma('foreign_keys = OFF');
   try {
-    database.exec(`
-      CREATE TABLE messages_new (
-        id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        role TEXT NOT NULL,
-        content TEXT NOT NULL,
-        timestamp INTEGER NOT NULL,
-        media TEXT,
-        partial INTEGER,
-        seq INTEGER,
-        tool_call TEXT,
-        blocks TEXT,
-        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-      );
-      INSERT INTO messages_new (rowid, ${columnList})
-        SELECT rowid, ${columnList} FROM messages;
-      DROP TABLE messages;
-      ALTER TABLE messages_new RENAME TO messages;
-    `);
+    // BEGIN IMMEDIATE/COMMIT wraps the rebuild atomically: better-sqlite3's
+    // exec() does not implicitly transaction-wrap a multi-statement script, so
+    // without an explicit transaction a crash between DROP TABLE and RENAME
+    // TABLE would leave the database with no `messages` table at all, and the
+    // next boot's PRAGMA table_info(messages) probe above would come back
+    // empty and mis-diagnose it as a fresh install. Toggling `foreign_keys`
+    // must stay outside this transaction (better-sqlite3 throws otherwise),
+    // which is why it's done via separate pragma() calls before/after. If a
+    // statement inside the transaction throws (not a crash, an in-process
+    // error), roll back explicitly so the connection isn't left with a
+    // dangling open transaction.
+    try {
+      database.exec(`
+        BEGIN IMMEDIATE;
+        CREATE TABLE messages_new (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          role TEXT NOT NULL,
+          content TEXT NOT NULL,
+          timestamp INTEGER NOT NULL,
+          media TEXT,
+          partial INTEGER,
+          seq INTEGER,
+          tool_call TEXT,
+          blocks TEXT,
+          FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+        );
+        INSERT INTO messages_new (rowid, ${columnList})
+          SELECT rowid, ${columnList} FROM messages;
+        DROP TABLE messages;
+        ALTER TABLE messages_new RENAME TO messages;
+        COMMIT;
+      `);
+    } catch (err) {
+      if (database.inTransaction) database.exec('ROLLBACK');
+      throw err;
+    }
     // DROP TABLE above also dropped the indexes bound to the old messages table;
     // recreate them so query performance doesn't regress until the next boot.
     database.exec(CREATE_MESSAGES_INDEX);
@@ -116,24 +134,34 @@ export function migrateQueueItemsSchema(database: Database.Database): void {
   const fkWasOn = (database.pragma('foreign_keys', { simple: true }) as number) === 1;
   database.pragma('foreign_keys = OFF');
   try {
-    database.exec(`
-      CREATE TABLE queue_items_new (
-        id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        session_key TEXT NOT NULL,
-        prompt TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending',
-        position INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT NOT NULL,
-        started_at TEXT,
-        completed_at TEXT,
-        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-      );
-      INSERT INTO queue_items_new (${columnList})
-        SELECT ${columnList} FROM queue_items;
-      DROP TABLE queue_items;
-      ALTER TABLE queue_items_new RENAME TO queue_items;
-    `);
+    // See the matching comment in migrateMessagesSchema: exec() doesn't
+    // implicitly transaction-wrap a multi-statement script, so the rebuild is
+    // wrapped explicitly and rolled back if any statement throws.
+    try {
+      database.exec(`
+        BEGIN IMMEDIATE;
+        CREATE TABLE queue_items_new (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          session_key TEXT NOT NULL,
+          prompt TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending',
+          position INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          started_at TEXT,
+          completed_at TEXT,
+          FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+        );
+        INSERT INTO queue_items_new (${columnList})
+          SELECT ${columnList} FROM queue_items;
+        DROP TABLE queue_items;
+        ALTER TABLE queue_items_new RENAME TO queue_items;
+        COMMIT;
+      `);
+    } catch (err) {
+      if (database.inTransaction) database.exec('ROLLBACK');
+      throw err;
+    }
     // DROP TABLE above also dropped idx_queue_session; recreate it.
     database.exec('CREATE INDEX IF NOT EXISTS idx_queue_session ON queue_items (session_key, status, position)');
   } finally {
@@ -260,27 +288,39 @@ export function migrateApprovalsSchema(database: Database.Database): void {
     const fkWasOn = (database.pragma('foreign_keys', { simple: true }) as number) === 1;
     database.pragma('foreign_keys = OFF');
     try {
-      database.exec(`
-        CREATE TABLE approvals_new (
-          id TEXT PRIMARY KEY,
-          session_id TEXT NOT NULL,
-          type TEXT NOT NULL,
-          payload TEXT NOT NULL,
-          state TEXT NOT NULL,
-          created_at TEXT NOT NULL,
-          resolved_at TEXT,
-          actor TEXT,
-          decision_notes TEXT,
-          resulting_action TEXT,
-          FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-        );
-        INSERT INTO approvals_new
-          (id, session_id, type, payload, state, created_at, resolved_at, actor, decision_notes, resulting_action)
-          SELECT id, session_id, type, payload, state, created_at, resolved_at, actor, decision_notes, resulting_action
-          FROM approvals;
-        DROP TABLE approvals;
-        ALTER TABLE approvals_new RENAME TO approvals;
-      `);
+      // See the matching comment in migrateMessagesSchema: exec() doesn't
+      // implicitly transaction-wrap a multi-statement script, so the rebuild
+      // is wrapped explicitly and rolled back if any statement throws — a
+      // crash between DROP TABLE and RENAME TABLE would otherwise leave the
+      // database with no `approvals` table at all.
+      try {
+        database.exec(`
+          BEGIN IMMEDIATE;
+          CREATE TABLE approvals_new (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            type TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            state TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            resolved_at TEXT,
+            actor TEXT,
+            decision_notes TEXT,
+            resulting_action TEXT,
+            FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+          );
+          INSERT INTO approvals_new
+            (id, session_id, type, payload, state, created_at, resolved_at, actor, decision_notes, resulting_action)
+            SELECT id, session_id, type, payload, state, created_at, resolved_at, actor, decision_notes, resulting_action
+            FROM approvals;
+          DROP TABLE approvals;
+          ALTER TABLE approvals_new RENAME TO approvals;
+          COMMIT;
+        `);
+      } catch (err) {
+        if (database.inTransaction) database.exec('ROLLBACK');
+        throw err;
+      }
     } finally {
       if (fkWasOn) database.pragma('foreign_keys = ON');
     }
