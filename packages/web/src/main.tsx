@@ -55,7 +55,7 @@ class AppErrorBoundary extends Component<{ children: ReactNode }, { error: Error
   }
 }
 
-function App() {
+export function App() {
   return (
     <AppErrorBoundary>
       <BrowserRouter>
@@ -78,6 +78,7 @@ function App() {
               <Route path="/skills" element={<SkillsPage />} />
               <Route path="/file" element={<FilePage />} />
               <Route path="/talk" element={<TalkPage />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Suspense>
         </ClientProviders>
