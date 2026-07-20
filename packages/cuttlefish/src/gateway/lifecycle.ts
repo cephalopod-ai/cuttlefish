@@ -14,6 +14,7 @@ import { installProcessErrorHandlers } from "./process-guards.js";
 
 const MIN_NODE_MAJOR = 24;
 const DAEMON_LOCK_FILE = path.join(CUTTLEFISH_HOME, "daemon.lock");
+export const RESTART_LOCK_FILE = path.join(CUTTLEFISH_HOME, "restart.lock");
 
 /**
  * Return a Node.js executable that satisfies the minimum required major version.
@@ -230,7 +231,37 @@ export function startDaemon(config: CuttlefishConfig): void {
  * helper does stop → waitForPortFree → startDaemon out of band. The returning
  * gateway then resumes the interrupted session.
  */
-export function restartDetached(): void {
+/** Reserve the detached restart handoff so duplicate requests are coalesced. */
+export function acquireRestartLock(lockPath = RESTART_LOCK_FILE): boolean {
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+  try {
+    const fd = fs.openSync(lockPath, "wx");
+    fs.writeFileSync(fd, `${process.pid}\n`, "utf8");
+    fs.closeSync(fd);
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+    const ownerPid = Number.parseInt(fs.readFileSync(lockPath, "utf8").trim(), 10);
+    if (Number.isFinite(ownerPid) && pidIsAlive(ownerPid)) return false;
+    fs.rmSync(lockPath, { force: true });
+    return acquireRestartLock(lockPath);
+  }
+}
+
+export function releaseRestartLock(ownerPid = process.pid, lockPath = RESTART_LOCK_FILE): void {
+  try {
+    const recordedPid = Number.parseInt(fs.readFileSync(lockPath, "utf8").trim(), 10);
+    if (!Number.isFinite(recordedPid) || recordedPid === ownerPid) fs.rmSync(lockPath, { force: true });
+  } catch {
+    // The lock may already have been removed after a failed handoff.
+  }
+}
+
+export function restartDetached(): boolean {
+  if (!acquireRestartLock()) {
+    logger.info("Gateway restart already in progress; coalescing duplicate request");
+    return false;
+  }
   const __filename = fileURLToPath(import.meta.url);
   const candidateEntryScripts = [
     path.resolve(path.dirname(__filename), "restart-entry.js"),
@@ -238,17 +269,30 @@ export function restartDetached(): void {
   ];
   const entryScript = candidateEntryScripts.find((p) => fs.existsSync(p)) ?? candidateEntryScripts[0];
 
-  const child = spawn(resolveNodeExecutable(), [entryScript], {
-    detached: true,
-    stdio: "ignore",
-    env: { ...process.env, CUTTLEFISH_HOME },
-  });
+  let child;
+  try {
+    child = spawn(resolveNodeExecutable(), [entryScript], {
+      detached: true,
+      stdio: "ignore",
+      env: { ...process.env, CUTTLEFISH_HOME },
+    });
+  } catch (err) {
+    releaseRestartLock();
+    throw err;
+  }
 
   if (child.pid) {
+    // Replace the caller PID while it is still alive, so a concurrent command
+    // recognizes the reparented helper rather than reclaiming its lock.
+    fs.writeFileSync(RESTART_LOCK_FILE, `${child.pid}\n`, "utf8");
     logger.info(`Gateway restart helper started with PID ${child.pid}`);
+  } else {
+    releaseRestartLock();
+    throw new Error("Failed to start the gateway restart helper.");
   }
 
   child.unref();
+  return true;
 }
 
 /**

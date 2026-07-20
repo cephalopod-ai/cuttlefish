@@ -1,14 +1,14 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 const testHome = fs.mkdtempSync(path.join(os.tmpdir(), "cuttlefish-instances-home-"));
 process.env.CUTTLEFISH_HOME = testHome;
 process.env.CUTTLEFISH_INSTANCES_REGISTRY = path.join(testHome, "instances.json");
 
 const { INSTANCES_REGISTRY } = await import("../../shared/paths.js");
-const { loadInstances, saveInstances } = await import("../instances.js");
+const { ensureDefaultInstance, loadInstances, saveInstances } = await import("../instances.js");
 
 describe("instances registry isolation", () => {
   it("uses the explicit registry override for isolated runs", () => {
@@ -20,5 +20,19 @@ describe("instances registry isolation", () => {
     expect(loadInstances()).toEqual([
       { name: "test", port: 8000, home: testHome, createdAt: "2026-06-24T00:00:00.000Z" },
     ]);
+  });
+
+  it("refreshes an existing canonical entry when CUTTLEFISH_HOME changes", () => {
+    const customHome = path.join(os.tmpdir(), "cuttlefish-custom-list-home");
+    saveInstances([{ name: "cuttlefish", port: 8888, home: testHome, createdAt: "2026-06-24T00:00:00.000Z" }]);
+    vi.stubEnv("CUTTLEFISH_HOME", customHome);
+    try {
+      ensureDefaultInstance();
+      expect(loadInstances()).toEqual([
+        { name: "cuttlefish", port: 8888, home: customHome, createdAt: "2026-06-24T00:00:00.000Z" },
+      ]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

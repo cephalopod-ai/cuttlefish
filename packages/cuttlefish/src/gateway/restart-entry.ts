@@ -8,7 +8,7 @@
  * The returning gateway resumes any sessions it marked "interrupted" on shutdown.
  */
 import { loadConfig } from "../shared/config.js";
-import { stopAndWait, startDaemon, waitForPortFree, waitForPortListening } from "./lifecycle.js";
+import { stopAndWait, startDaemon, waitForPortFree, waitForPortListening, releaseRestartLock } from "./lifecycle.js";
 import { logger } from "../shared/logger.js";
 
 // stdio is ignored in detached mode — surface crashes to the log file instead of
@@ -49,8 +49,11 @@ async function main(): Promise<void> {
 }
 
 main()
-  .then(() => process.exit(0))
+  .then(() => {
+    process.exitCode = 0;
+  })
   .catch((err) => {
     logger.error(`restart-entry failed: ${err instanceof Error ? err.stack : err}`);
-    process.exit(1);
-  });
+    process.exitCode = 1;
+  })
+  .finally(() => releaseRestartLock());

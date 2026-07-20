@@ -44,11 +44,23 @@ export function assertSafeManagedInstanceHome(instance: Instance): string {
 /** Ensure the default "cuttlefish" instance is registered. */
 export function ensureDefaultInstance(): void {
   const instances = loadInstances();
-  if (instances.some((i) => i.name === "cuttlefish")) return;
+  const canonicalHome = homeForInstance("cuttlefish");
+  const existing = instances.find((i) => i.name === "cuttlefish");
+  if (existing) {
+    // The registry lives at the OS-default home for backwards compatibility,
+    // while CUTTLEFISH_HOME is resolved per invocation. Refresh an old entry
+    // so `list` does not keep reporting a previous/default instance after the
+    // operator selects a custom home.
+    if (existing.home !== canonicalHome) {
+      existing.home = canonicalHome;
+      saveInstances(instances);
+    }
+    return;
+  }
   instances.unshift({
     name: "cuttlefish",
     port: 8888,
-    home: homeForInstance("cuttlefish"),
+    home: canonicalHome,
     createdAt: new Date().toISOString(),
   });
   saveInstances(instances);

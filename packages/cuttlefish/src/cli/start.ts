@@ -56,7 +56,14 @@ export async function runStart(opts: { daemon?: boolean; port?: number }): Promi
     process.exit(1);
   }
 
-  const config = loadConfig();
+  let config;
+  try {
+    config = loadConfig();
+  } catch (err) {
+    console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    process.exitCode = 1;
+    return;
+  }
 
   // Check for pending migrations
   const instanceVersion = getInstanceVersion();
@@ -83,8 +90,8 @@ export async function runStart(opts: { daemon?: boolean; port?: number }): Promi
     process.exit(1);
   }
   if (status.running) {
-    restartDetached();
-    console.log("Gateway already running — restarting in background.");
+    if (restartDetached()) console.log("Gateway already running — restarting in background.");
+    else console.log("Gateway restart is already in progress.");
     return;
   }
 

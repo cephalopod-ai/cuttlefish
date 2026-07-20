@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   assertSafeDestructiveHome,
   assertSafeManagedInstanceHome,
@@ -51,5 +51,16 @@ describe("instance destructive path safety", () => {
     const upstreamName = ["ji", "nn"].join("");
 
     expect(() => homeForInstance(upstreamName)).toThrow(/one local instance/);
+  });
+
+  it("uses CUTTLEFISH_HOME for the canonical instance when configured", async () => {
+    const { homeForInstance } = await import("../../shared/instance-home.js");
+    const customHome = path.join(os.tmpdir(), "cuttlefish-custom-instance-home");
+    vi.stubEnv("CUTTLEFISH_HOME", customHome);
+    try {
+      expect(homeForInstance("cuttlefish")).toBe(customHome);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

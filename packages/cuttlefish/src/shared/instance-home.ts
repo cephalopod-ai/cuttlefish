@@ -11,5 +11,9 @@ export function assertCanonicalInstanceName(name: string): void {
 
 export function homeForInstance(name: string): string {
   assertCanonicalInstanceName(name);
+  // `list` and the legacy instance registry must describe the same home as the
+  // daemon lifecycle. A custom CUTTLEFISH_HOME is the supported disposable-home
+  // and multi-checkout workflow, so never quietly fall back to ~/.cuttlefish.
+  if (process.env.CUTTLEFISH_HOME) return process.env.CUTTLEFISH_HOME;
   return path.join(os.homedir(), ".cuttlefish");
 }

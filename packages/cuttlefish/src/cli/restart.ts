@@ -16,6 +16,9 @@ export async function runRestart(): Promise<void> {
     process.exit(1);
   }
 
-  restartDetached();
-  console.log("Gateway restarting in the background (detached). It will be back in a few seconds.");
+  if (restartDetached()) {
+    console.log("Gateway restarting in the background (detached). It will be back in a few seconds.");
+  } else {
+    console.log("Gateway restart is already in progress.");
+  }
 }
