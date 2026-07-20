@@ -52,6 +52,22 @@ export function resolveFallbackContinuationSession(
   return updated ?? lookup(sessionId);
 }
 
+export function isEngineDiedNoOutput(options: {
+  wasInterrupted: boolean;
+  wasSuperseded: boolean;
+  hasPartialOutput: boolean;
+  error?: string;
+  result: string;
+}): boolean {
+  const rawResultIsInterrupt = /^Interrupted\b/i.test(options.result.trim());
+  const exitReason = options.error ?? options.result;
+  return options.wasInterrupted &&
+    !options.wasSuperseded &&
+    !options.hasPartialOutput &&
+    /process exited/i.test(exitReason) &&
+    (!options.result.trim() || rawResultIsInterrupt);
+}
+
 /**
  * Web/queue session execution orchestrator.
  *
@@ -619,7 +635,11 @@ export async function runWebSession(
       return;
     }
 
-    const wasInterrupted = result.error?.startsWith("Interrupted");
+    // Some interactive-engine exits surface the raw interrupt as `result`
+    // instead of `error`. Treat both representations as the same terminal
+    // condition so cron records do not turn a crashed run into success.
+    const interruptionReason = result.error?.trim() || result.result.trim();
+    const wasInterrupted = /^Interrupted\b/i.test(interruptionReason);
     const wasSuperseded = !wasInterrupted && isTurnSuperseded(currentSession.id, turnStartedAt);
 
     // An "Interrupted" result is normally a QUIET preemption — the user switched
@@ -631,12 +651,13 @@ export async function runWebSession(
     // newer turn is an engine crash, so surface it instead of swallowing it. (This
     // is the silent-first-turn-failure seam: without it a bad engine bin, an
     // unauthenticated CLI, or a crash-on-spawn leaves the chat blank with no clue.)
-    const engineDiedNoOutput =
-      !!wasInterrupted &&
-      !isTurnSuperseded(currentSession.id, turnStartedAt) &&
-      getMessages(currentSession.id).every((m) => !m.partial) &&
-      !result.result?.trim() &&
-      /process exited/i.test(result.error ?? "");
+    const engineDiedNoOutput = isEngineDiedNoOutput({
+      wasInterrupted,
+      wasSuperseded,
+      hasPartialOutput: getMessages(currentSession.id).some((m) => m.partial),
+      error: result.error,
+      result: result.result,
+    });
 
     const quietPreempted = (wasInterrupted || wasSuperseded) && !engineDiedNoOutput;
 
@@ -645,6 +666,7 @@ export async function runWebSession(
       // the normal error path below mark the session errored + emit the error.
       const engineLabel = currentSession.engine;
       result.error = `The ${engineLabel} engine exited before responding — the CLI failed to start or crashed on spawn (no reply was produced).`;
+      result.result = "";
       insertMessage(
         currentSession.id,
         "notification",

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   resolveFallbackContinuationSession,
+  isEngineDiedNoOutput,
   resolveStallLeaderName,
   resolveTurnStallWatchdogConfig,
   shouldNotifyLeaderReviewOnStall,
@@ -55,6 +56,35 @@ describe("resolveTurnStallWatchdogConfig", () => {
       hardCeilingMs: 900_000,
       maxRetries: 2,
     });
+  });
+});
+
+describe("isEngineDiedNoOutput", () => {
+  it("recognizes a raw interrupted engine-exit result as a failure", () => {
+    expect(isEngineDiedNoOutput({
+      wasInterrupted: true,
+      wasSuperseded: false,
+      hasPartialOutput: false,
+      error: "Interrupted: claude process exited",
+      result: "Interrupted: claude process exited",
+    })).toBe(true);
+  });
+
+  it("does not turn a superseded or partially streamed turn into an engine crash", () => {
+    expect(isEngineDiedNoOutput({
+      wasInterrupted: true,
+      wasSuperseded: true,
+      hasPartialOutput: false,
+      error: "Interrupted: claude process exited",
+      result: "",
+    })).toBe(false);
+    expect(isEngineDiedNoOutput({
+      wasInterrupted: true,
+      wasSuperseded: false,
+      hasPartialOutput: true,
+      error: "Interrupted: claude process exited",
+      result: "",
+    })).toBe(false);
   });
 });
 
