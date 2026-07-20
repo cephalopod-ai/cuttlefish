@@ -279,6 +279,14 @@ function pruneAutoDispatchTimestamps(now: number): void {
   }
 }
 
+/** Expired cooldown entries carry no signal — drop them so the map stays
+ *  bounded by "tickets auto-dispatched in the last 2 minutes." */
+function pruneTicketCooldowns(now: number): void {
+  for (const [key, at] of lastAutoDispatchAtByTicket) {
+    if (now - at >= SAME_TICKET_COOLDOWN_MS) lastAutoDispatchAtByTicket.delete(key);
+  }
+}
+
 /**
  * Called from server.ts's `session:completed` handler, alongside the existing
  * syncBoardForEvent call. If the completed session belonged to a board ticket
@@ -319,19 +327,29 @@ export async function maybeAutoDispatchNext(
       return;
     }
 
-    // Safety valve 2/3: same-ticket cooldown, guards against an
-    // instant-complete/instant-redispatch loop on one broken ticket.
-    const ticketKey = `${department}/${ticketId}`;
-    const lastForTicket = lastAutoDispatchAtByTicket.get(ticketKey) ?? 0;
-    if (now - lastForTicket < SAME_TICKET_COOLDOWN_MS) {
-      logger.info(`[autonomous][continuous] throttled: same-ticket cooldown active for ${ticketKey}`);
-      return;
-    }
+    // Safety valve 2/3: same-ticket cooldown — a ticket auto-dispatched
+    // within the window is not ELIGIBLE for another immediate dispatch. This
+    // stops the instant-complete/instant-redispatch loop on one broken ticket
+    // (its own cooldown excludes it from re-selection) without stalling the
+    // rest of the pipeline: a genuinely fast completion still lets the NEXT
+    // ticket dispatch immediately. Applied at candidate selection, not against
+    // the completed ticket, which is what the plan's "same-ticket" bound means.
+    pruneTicketCooldowns(now);
+    const inCooldown = (candidate: TicketCandidate): boolean =>
+      now - (lastAutoDispatchAtByTicket.get(`${candidate.department}/${candidate.ticket.id}`) ?? 0) <
+      SAME_TICKET_COOLDOWN_MS;
 
     // Safety valve 3/3: buildCandidates() already applies the existing
     // per-department usage-quota gate (usageModeForStatus) — reused for free.
-    const candidates = (await buildCandidates(now, deps)).filter((c) => c.department === department);
-    const next = selectBoardWorkerCandidate(candidates);
+    const departmentCandidates = (await buildCandidates(now, deps)).filter((c) => c.department === department);
+    const eligible = departmentCandidates.filter((c) => !inCooldown(c));
+    if (departmentCandidates.length > 0 && eligible.length === 0) {
+      logger.info(
+        `[autonomous][continuous] throttled: same-ticket cooldown active for all ${departmentCandidates.length} candidate(s) in ${department}`,
+      );
+      return;
+    }
+    const next = selectBoardWorkerCandidate(eligible);
     if (!next) return;
 
     const result = await dispatchTicket(

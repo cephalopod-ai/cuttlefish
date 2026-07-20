@@ -139,6 +139,27 @@ describe("buildInteractiveArgs — system prompt + sentinel via CLI flag", () =>
   });
 });
 
+describe("buildInteractiveArgs — restrictToJudgeOnly (autonomous verdict sessions)", () => {
+  // Safety guard from the autonomous-mode design's Phase 0: a dual-model
+  // verdict rung must be engine-restricted to judge-only — reading and
+  // reasoning, never acting — mirroring codex.ts's codexSandboxFlags.
+  const JUDGE_ONLY_DENIALS = ["Bash", "Write", "Edit", "NotebookEdit", "WebFetch"];
+
+  it("appends the judge-only denials to --disallowedTools", () => {
+    const args = buildInteractiveArgs({ prompt: "hi", settingsPath: "/tmp/s.json", restrictToJudgeOnly: true });
+    const from = args.indexOf("--disallowedTools");
+    const to = args.indexOf("--settings");
+    expect(from).toBeGreaterThanOrEqual(0);
+    const denied = args.slice(from + 1, to);
+    for (const tool of JUDGE_ONLY_DENIALS) expect(denied).toContain(tool);
+  });
+
+  it("does not deny action tools for ordinary sessions", () => {
+    const args = buildInteractiveArgs({ prompt: "hi", settingsPath: "/tmp/s.json" });
+    for (const tool of JUDGE_ONLY_DENIALS) expect(args).not.toContain(tool);
+  });
+});
+
 describe("pasteAndSubmit", () => {
   it("waits for multiline bracketed paste to settle before submitting", () => {
     vi.useFakeTimers();

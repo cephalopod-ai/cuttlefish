@@ -45,52 +45,33 @@ export async function handleApprovalRoutes(
     }
 
     if (approval.type === "org-change") {
-      const changeRequestId =
-        typeof approval.payload.changeRequestId === "string" && approval.payload.changeRequestId.trim()
-          ? approval.payload.changeRequestId.trim()
-          : null;
-      if (!changeRequestId) {
-        badRequest(res, "approval payload missing changeRequestId");
-        return true;
+      // Domain choreography lives in hr-steward.ts's resolveOrgChangeApproval
+      // — the ONE approve funnel shared with the autonomous dual-model path —
+      // so this route only validates, delegates, and translates the outcome.
+      const { resolveOrgChangeApproval } = await import("../../hr-steward.js");
+      const outcome = await resolveOrgChangeApproval(approval, { kind: "human", actor }, context);
+      switch (outcome.status) {
+        case "missing_change_request_id":
+          badRequest(res, "approval payload missing changeRequestId");
+          return true;
+        case "change_not_found":
+          notFound(res);
+          return true;
+        case "conflict":
+          json(res, { error: outcome.message }, 409);
+          return true;
+        case "already_applied":
+          json(res, { approval: outcome.approval, changeRequest: outcome.request, status: "ok" });
+          return true;
+        case "apply_failed":
+          json(res, { status: "error", error: outcome.error, approval: outcome.approval, changeRequest: outcome.request }, 400);
+          return true;
+        case "applied":
+          json(res, { approval: outcome.approval, changeRequest: outcome.request, status: "ok" });
+          return true;
       }
-      const { getChangeRequest, updateChangeRequestStatus } = await import("../../org-changes.js");
-      const { applyOrgChange, recordHrDecisionMessage } = await import("../../hr-steward.js");
-      const request = getChangeRequest(changeRequestId);
-      if (!request) {
-        notFound(res);
-        return true;
-      }
-      if (request.status === "applied") {
-        const resolved = approval.state === "approved"
-          ? approval
-          : resolveApproval(approval.id, "approved", actor);
-        context.emit("approval:resolved", { approvalId: resolved.id, sessionId: resolved.sessionId, state: "approved" });
-        json(res, { approval: resolved, changeRequest: request, status: "ok" });
-        return true;
-      }
-      if (!["pending_approval", "approved"].includes(request.status)) {
-        json(res, { error: `change is ${request.status}, not awaiting approval` }, 409);
-        return true;
-      }
-      if (approval.state !== "pending" && approval.state !== "approved") {
-        json(res, { error: `approval already ${approval.state}` }, 409);
-        return true;
-      }
-
-      const resolved = approval.state === "approved"
-        ? approval
-        : resolveApproval(approval.id, "approved", actor);
-      context.emit("approval:resolved", { approvalId: resolved.id, sessionId: resolved.sessionId, state: "approved" });
-      recordHrDecisionMessage(resolved.sessionId, request, { action: "approved", actor }, context);
-      updateChangeRequestStatus(changeRequestId, "approved");
-      const applied = await applyOrgChange(request, context);
-      if (!applied.ok) {
-        recordHrDecisionMessage(resolved.sessionId, request, { action: "failed", actor, error: applied.error ?? null }, context);
-        json(res, { status: "error", error: applied.error, approval: resolved, changeRequest: getChangeRequest(changeRequestId) }, 400);
-        return true;
-      }
-      recordHrDecisionMessage(resolved.sessionId, request, { action: "applied", actor }, context);
-      json(res, { approval: resolved, changeRequest: getChangeRequest(changeRequestId), status: "ok" });
+      // Unreachable — every outcome status returns above; guard so a future
+      // outcome variant can never fall through into the non-org-change branches.
       return true;
     }
 

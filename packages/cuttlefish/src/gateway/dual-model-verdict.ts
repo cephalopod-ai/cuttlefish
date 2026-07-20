@@ -117,11 +117,12 @@ Reply again with ONLY the JSON verdict object — no prose, no markdown, no code
 }`;
 }
 
-type VerdictValidation =
+export type VerdictValidation =
   | { ok: true; value: { approved: boolean; reason: string } }
   | { ok: false; error: string };
 
-function validateAutonomousVerdict(raw: string): VerdictValidation {
+/** Exported for unit tests — pure parsing/validation of a rung's raw reply. */
+export function validateAutonomousVerdict(raw: string): VerdictValidation {
   if (!raw || !raw.trim()) return { ok: false, error: "verdict response was empty" };
   const cleaned = raw.replace(/^```(?:json)?\n?/m, "").replace(/\n?```$/m, "").trim();
   let obj: unknown;
@@ -167,10 +168,25 @@ async function runTurnWithTimeout(
     await dispatchWebSessionRun(verdictSession, prompt, engine, config, context);
     return "settled";
   })();
-  const outcome = await Promise.race([run, timeout]);
-  if (timer) clearTimeout(timer);
-  if (outcome === "timeout") killSessionEngines(context, verdictSession, "autonomous verdict timed out");
-  return outcome;
+  // If the timeout wins the race, `run` keeps going in the background until
+  // killSessionEngines interrupts it — a late rejection then has no awaiter
+  // and would surface as an UNHANDLED promise rejection (fatal by default in
+  // Node). Pre-attach a handler; when the race is still pending the rejection
+  // also propagates through Promise.race to the per-rung catch as usual.
+  run.catch((err) => {
+    logger.warn(
+      `[autonomous] verdict turn for session ${verdictSession.id} failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  });
+  try {
+    const outcome = await Promise.race([run, timeout]);
+    if (outcome === "timeout") killSessionEngines(context, verdictSession, "autonomous verdict timed out");
+    return outcome;
+  } finally {
+    // finally — not a post-race statement — so a rejecting `run` can't leak
+    // the pending timer and hold the process open for up to 90s.
+    if (timer) clearTimeout(timer);
+  }
 }
 
 async function attemptRung(
@@ -268,7 +284,19 @@ export async function requestDualModelVerdict(
     };
   }
 
-  const [claude, codex] = await Promise.all(RUNGS.map((rung) => attemptRung(rung, input, parentSession, context)));
+  // Contain a rung's unexpected rejection to that rung: without the per-rung
+  // catch, one throwing rung rejects the whole Promise.all — losing the other
+  // rung's structured verdict, the summary log line, and the audit notes the
+  // caller records. Fail-closed either way; this just keeps the audit trail.
+  const [claude, codex] = await Promise.all(
+    RUNGS.map((rung) =>
+      attemptRung(rung, input, parentSession, context).catch((err): SingleModelVerdict => {
+        const reason = err instanceof Error ? err.message : String(err);
+        logger.warn(`[autonomous] verdict rung ${rung.rung} failed: ${reason}`);
+        return { rung: rung.rung, outcome: "error", reason };
+      }),
+    ),
+  );
   const authorized = claude.outcome === "approved" && codex.outcome === "approved";
   logger.info(
     `[autonomous] verdict ${input.decisionKind} session=${input.parentSessionId} claude=${claude.outcome} codex=${codex.outcome} authorized=${authorized}`,

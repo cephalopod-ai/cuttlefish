@@ -80,7 +80,7 @@ vi.mock("node:child_process", () => ({
   }),
 }));
 
-import { CodexEngine, type CodexEngineOpts } from "../codex.js";
+import { CodexEngine, codexSandboxFlags, type CodexEngineOpts } from "../codex.js";
 import type { StreamDelta, EngineResult } from "../../shared/types.js";
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -152,6 +152,23 @@ beforeEach(() => {
 function envFrom(call: SpawnCall): Record<string, string> {
   return (call.opts as { env: Record<string, string> }).env;
 }
+
+describe("codexSandboxFlags — judge-only sandboxing (autonomous verdict sessions)", () => {
+  // Safety guard from the autonomous-mode design's Phase 0: a dual-model
+  // verdict rung must be ENGINE-enforced read-only, not merely
+  // prompt-instructed. If this regresses to the bypass flag, a fooled judge
+  // session could itself act destructively.
+  it("hard-restricts judge-only invocations to a read-only sandbox with no approval prompts", () => {
+    expect(codexSandboxFlags({ restrictToJudgeOnly: true })).toEqual([
+      "--sandbox", "read-only", "--ask-for-approval", "never",
+    ]);
+  });
+
+  it("keeps the ordinary bypass flag for normal turns", () => {
+    expect(codexSandboxFlags({})).toEqual(["--dangerously-bypass-approvals-and-sandbox"]);
+    expect(codexSandboxFlags({ restrictToJudgeOnly: false })).toEqual(["--dangerously-bypass-approvals-and-sandbox"]);
+  });
+});
 
 describe("CodexEngine — child process environment", () => {
   it("strips host secrets and engine loop variables from spawned env", async () => {

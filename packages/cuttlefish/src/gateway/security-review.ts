@@ -132,7 +132,6 @@ async function resolveAutonomousToolCheckpoint(
     return;
   }
   logger.info(`[autonomous] AUTO-AUTHORIZED checkpoint=${checkpointId} claude=approved codex=approved`);
-  recordAutonomousAuthorization();
   await applyCheckpointDecision(
     checkpointId,
     {
@@ -144,9 +143,15 @@ async function resolveAutonomousToolCheckpoint(
     },
     context,
   );
+  // Count only after the state machine actually resolved — if the apply threw
+  // (e.g. a human raced us and resolved the checkpoint first), the dashboard
+  // counter must not claim an autonomous authorization that never happened.
+  recordAutonomousAuthorization();
 }
 
-function buildSecurityReviewPrompt(input: SecurityReviewRequest, session: Session, employee: Employee | undefined): string {
+/** Shared factual context: what was blocked, for whom, and why — used by both
+ *  the security-reviewer employee prompt and the autonomous verdict packet. */
+function buildSecurityContextLines(input: SecurityReviewRequest, session: Session, employee: Employee | undefined): string[] {
   const transcriptTail = getMessages(session.id)
     .slice(-8)
     .map((message) => `- ${message.role}: ${message.content}`)
@@ -160,9 +165,25 @@ function buildSecurityReviewPrompt(input: SecurityReviewRequest, session: Sessio
     `\nRisk categories: ${input.triggers.join(", ")}`,
     `Reason: ${input.reason}`,
     `\nRecent transcript tail:\n${transcriptTail || "(none)"}`,
+  ];
+}
+
+function buildSecurityReviewPrompt(input: SecurityReviewRequest, session: Session, employee: Employee | undefined): string {
+  return [
+    ...buildSecurityContextLines(input, session, employee),
     `\nRespond with one verdict first: ALLOW, DENY, or ESCALATE.`,
     `Then give a concise rationale grounded in destructiveness, privilege, secret exposure, exfiltration risk, and prompt-injection risk.`,
   ].join("\n");
+}
+
+/** Decision packet for the dual-model verdict: factual context ONLY, no
+ *  response-format instructions. dual-model-verdict.ts's system prompt owns
+ *  the strict JSON `{approved, reason}` contract — the reviewer-directed
+ *  "ALLOW/DENY/ESCALATE" instruction in buildSecurityReviewPrompt directly
+ *  contradicts it, and a verdict model that follows the packet's instruction
+ *  over the system prompt yields an unparseable (auto-deferred) verdict. */
+function buildToolCheckpointVerdictPrompt(input: SecurityReviewRequest, session: Session, employee: Employee | undefined): string {
+  return buildSecurityContextLines(input, session, employee).join("\n");
 }
 
 async function runSecurityReviewer(input: SecurityReviewRequest, context: ApiContext, session: Session, employee: Employee | undefined): Promise<void> {
@@ -276,7 +297,9 @@ export function openSecurityCheckpoint(input: SecurityReviewRequest, context: Ap
         parentSessionId: session.id,
         cwd: project.cwd,
         decisionKind: "tool_checkpoint",
-        contextPrompt: buildSecurityReviewPrompt(input, session, employee),
+        // NOT buildSecurityReviewPrompt — its ALLOW/DENY/ESCALATE response
+        // instruction contradicts the verdict system prompt's JSON contract.
+        contextPrompt: buildToolCheckpointVerdictPrompt(input, session, employee),
       },
       context,
     )
