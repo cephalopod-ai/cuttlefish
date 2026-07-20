@@ -122,6 +122,7 @@ CREATE TABLE IF NOT EXISTS approvals (
   actor TEXT,
   decision_notes TEXT,
   resulting_action TEXT,
+  resolved_by_kind TEXT,
   FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 )
 `;

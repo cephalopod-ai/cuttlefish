@@ -46,6 +46,11 @@ export interface EngineRunOpts {
   sessionId?: string;
   source?: string;
   onLateRecovery?: (info: { result: string; sessionId: string }) => void;
+  /** Hard-restrict this invocation to judge-only: no writes, no shell, no
+   *  network fetch — for verdict/reviewer sessions that must only be able to
+   *  read and reason, never act. Engine-enforced (not just prompt-instructed)
+   *  where the underlying CLI supports it. */
+  restrictToJudgeOnly?: boolean;
 }
 
 export interface EngineResult {

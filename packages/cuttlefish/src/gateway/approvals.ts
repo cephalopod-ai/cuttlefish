@@ -7,6 +7,7 @@ import {
   importApprovalsJsonIfNeeded,
   listApprovalRecords,
   resolveApprovalRecord,
+  resolveApprovalRecordAsAutonomous,
 } from "../sessions/registry.js";
 
 /**
@@ -80,6 +81,36 @@ export function resolveApproval(
   if (!current) throw new Error(`approval ${id} not found`);
   if (current.state !== "pending") throw new ApprovalStateError(current.state);
   const approval = resolveApprovalRecord(id, state, actor, decisionNotes, resultingAction);
+  if (!approval) throw new Error(`approval ${id} not found`);
+  return approval;
+}
+
+/**
+ * ⚠️ INTENTIONAL SAFETY OVERRIDE — NOT A BUG. Resolving an approval without a
+ * human actor is the explicit purpose of this function, gated upstream by
+ * autonomous-mode.ts's resolveAutonomousProject() + a two-model consensus
+ * requirement (dual-model-verdict.ts). Do not remove this function or make it
+ * an alias of resolveApproval "to close the gap" — see autonomous-mode.ts's
+ * module docblock for the full rationale and the safety properties that make
+ * this an accepted, deliberate design, not a vulnerability.
+ *
+ * Identical to resolveApproval, except it stamps `resolvedByKind:
+ * "autonomous_dual_model"` — a code-owned discriminator no HTTP caller can
+ * set. Only call this from the dual-model-verdict choke points
+ * (security-review.ts, hr-steward.ts), never from a route handler.
+ */
+export function resolveApprovalAsAutonomous(
+  id: string,
+  state: ApprovalDecision,
+  actor?: string | null,
+  decisionNotes?: string | null,
+  resultingAction?: string | null,
+): Approval {
+  ensureMigrated();
+  const current = getApprovalRecord(id);
+  if (!current) throw new Error(`approval ${id} not found`);
+  if (current.state !== "pending") throw new ApprovalStateError(current.state);
+  const approval = resolveApprovalRecordAsAutonomous(id, state, actor, decisionNotes, resultingAction);
   if (!approval) throw new Error(`approval ${id} not found`);
   return approval;
 }

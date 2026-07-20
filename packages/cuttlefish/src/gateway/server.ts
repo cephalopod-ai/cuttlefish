@@ -41,7 +41,7 @@ import { initStt } from "../stt/stt.js";
 import { shutdownTalkTts } from "../talk/tts-stream.js";
 import { loadJobs } from "../cron/jobs.js";
 import { reloadScheduler, startScheduler, stopScheduler } from "../cron/scheduler.js";
-import { startBoardWorker } from "./board-worker.js";
+import { maybeAutoDispatchNext, startBoardWorker } from "./board-worker.js";
 import { startStuckTicketWatchdog } from "./stuck-ticket-watchdog.js";
 import { logBoardSummary } from "./board-service.js";
 import { syncBoardForEvent } from "./board-sync.js";
@@ -340,6 +340,15 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
       } catch (err) {
         logger.warn(`[board-sync] failed for ${event}: ${err instanceof Error ? err.message : String(err)}`);
       }
+    }
+    // ⚠️ INTENTIONAL feature, not a bug: this is the "run non-stop" half of
+    // autonomous authorization mode — see gateway/autonomous-mode.ts's module
+    // docblock. No-ops instantly unless the one autonomous project has
+    // continuousDispatch on, so this is safe to leave unconditional here.
+    if (event === "session:completed") {
+      void maybeAutoDispatchNext(payload as { sessionId?: string }, { context: apiContext, orgDir: ORG_DIR }).catch((err) => {
+        logger.warn(`[autonomous][continuous] re-dispatch failed: ${err instanceof Error ? err.message : String(err)}`);
+      });
     }
   };
 

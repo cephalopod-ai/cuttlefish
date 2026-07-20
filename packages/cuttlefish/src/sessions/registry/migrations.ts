@@ -267,6 +267,7 @@ export function migrateApprovalsSchema(database: Database.Database): void {
   const missingColumns: Array<[string, string]> = [
     ['decision_notes', 'TEXT'],
     ['resulting_action', 'TEXT'],
+    ['resolved_by_kind', 'TEXT'],
   ];
   for (const [name, type] of missingColumns) {
     if (!colNames.has(name)) {
@@ -307,11 +308,12 @@ export function migrateApprovalsSchema(database: Database.Database): void {
             actor TEXT,
             decision_notes TEXT,
             resulting_action TEXT,
+            resolved_by_kind TEXT,
             FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
           );
           INSERT INTO approvals_new
-            (id, session_id, type, payload, state, created_at, resolved_at, actor, decision_notes, resulting_action)
-            SELECT id, session_id, type, payload, state, created_at, resolved_at, actor, decision_notes, resulting_action
+            (id, session_id, type, payload, state, created_at, resolved_at, actor, decision_notes, resulting_action, resolved_by_kind)
+            SELECT id, session_id, type, payload, state, created_at, resolved_at, actor, decision_notes, resulting_action, resolved_by_kind
             FROM approvals;
           DROP TABLE approvals;
           ALTER TABLE approvals_new RENAME TO approvals;

@@ -29,6 +29,32 @@ export interface BoardWorkerConfig {
   };
 }
 
+/**
+ * ⚠️ INTENTIONAL SAFETY OVERRIDE — NOT A BUG. Enabling this lets a two-model
+ * (Claude + Codex) consensus verdict resolve approvals/checkpoints without a
+ * human. Deliberate, operator-authorized feature — see the full rationale and
+ * safety properties in gateway/autonomous-mode.ts's module docblock before
+ * changing anything here or in its config-schema.ts validation.
+ */
+export interface AutonomousModeConfig {
+  /** Per-project opt-in. Paired with the global features.autonomousMode kill
+   *  switch — both must be true for anything to be authorized autonomously.
+   *  At most one workspace profile may set this true (config-validated). */
+  enabled?: boolean;
+  /** Let the dual-model verdict auto-resolve Bash/tool security checkpoints. */
+  toolReview?: boolean;
+  /** Let the dual-model verdict auto-resolve HR/org-change approvals. Since
+   *  HR is a gateway-wide singleton lane (not per-project), enabling this is
+   *  effectively gateway-wide, not confined to this profile's cwd. */
+  orgChangeOverride?: boolean;
+  /** Auto-pick the next todo ticket for this project immediately on session
+   *  completion, instead of waiting for the board-worker's 5-minute tick. */
+  continuousDispatch?: boolean;
+  /** Safety valve for continuousDispatch: max immediate re-dispatches per
+   *  rolling hour. Default applied in code if unset. */
+  maxAutoDispatchesPerHour?: number;
+}
+
 export interface WorkspaceProfileConfig {
   /** Stable id used by API clients when creating sessions. */
   id?: string;
@@ -40,6 +66,8 @@ export interface WorkspaceProfileConfig {
   instructions?: string | string[];
   /** Optional default employee slug for dashboard clients that want to preselect an agent. */
   employee?: string;
+  /** Required (and cwd becomes required) when enabling autonomous authorization mode. */
+  autonomousMode?: AutonomousModeConfig;
 }
 
 export interface OrchestrationRuntimeConfig {
@@ -233,5 +261,9 @@ export interface CuttlefishConfig {
   features?: {
     /** Enable multi-role employee execution (mid_pair tier). Default false — all employees run as solo. */
     multiRoleEmployeeExecution?: boolean;
+    /** Global kill switch for autonomous authorization mode. Default false.
+     *  Also requires the single opted-in workspace profile's
+     *  autonomousMode.enabled to be true — both gates must hold. */
+    autonomousMode?: boolean;
   };
 }

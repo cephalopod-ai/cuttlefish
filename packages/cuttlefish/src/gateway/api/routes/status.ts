@@ -10,6 +10,7 @@ import { listSessions } from "../../../sessions/registry.js";
 import { deriveWorkState, emptyWorkCounts } from "../../../shared/work-state.js";
 import { getProcessHealth } from "../../../shared/process-health.js";
 import { listApprovals } from "../../approvals.js";
+import { getAutonomousAuthorizationsToday, resolveAutonomousProject } from "../../autonomous-mode.js";
 import { summarizeWorkspaceProfiles } from "../../workspace-profiles.js";
 import type { ApiContext } from "../context.js";
 import { json } from "../responses.js";
@@ -375,11 +376,21 @@ export async function handleStatusRoutes(
   }
   if (method === "GET" && pathname === "/api/status") {
     const snapshot = buildHealthSnapshot(context);
+    // ⚠️ INTENTIONAL, not a bug: autonomousMode.active can be true here even
+    // though no human resolved anything today — that's the whole point of
+    // the feature (see gateway/autonomous-mode.ts). This block exists so the
+    // dashboard can show it, never to hide it.
+    const autonomousProject = resolveAutonomousProject(snapshot.config);
     json(res, {
       status: snapshot.overall,
       checks: snapshot.checks,
       uptime: Math.floor((Date.now() - context.startTime) / 1000),
       port: snapshot.config.gateway.port || 8888,
+      autonomousMode: {
+        active: Boolean(autonomousProject),
+        projectLabel: autonomousProject?.label ?? null,
+        authorizationsToday: getAutonomousAuthorizationsToday(),
+      },
       engines: {
         default: snapshot.config.engines.default,
         ...Object.fromEntries(

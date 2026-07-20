@@ -36,10 +36,15 @@ export interface Approval {
   state: ApprovalState;
   createdAt: string;
   resolvedAt?: string | null;
-  /** Who resolved it (SSO identity / "web-user"). */
+  /** Who resolved it (SSO identity / "web-user"). Free text, unauthenticated —
+   *  never the authoritative human-vs-autonomous signal, see resolvedByKind. */
   actor?: string | null;
   decisionNotes?: string | null;
   resultingAction?: string | null;
+  /** Code-owned discriminator, set ONLY by resolveApprovalAsAutonomous — never
+   *  settable via any HTTP request body. `null`/undefined means a human (or
+   *  unattributed) resolution; this is the trustworthy audit signal, not `actor`. */
+  resolvedByKind?: "human" | "autonomous_dual_model" | null;
 }
 
 export type ListableApprovalType = Exclude<Approval["type"], "checkpoint">;

@@ -14,6 +14,7 @@ import {
   Clock,
   RotateCcw,
   MousePointerClick,
+  Bot,
 } from 'lucide-react'
 import { PageLayout } from '@/components/page-layout'
 import { useBreadcrumbs } from '@/context/breadcrumb-context'
@@ -71,6 +72,22 @@ function DecisionBadge({ state }: { state: string }) {
     <span className={cn('inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium', meta.className)}>
       {meta.icon}
       {meta.label}
+    </span>
+  )
+}
+
+/** Autonomous authorization mode is an intentional feature (see the gateway's
+ *  autonomous-mode.ts docblock) — this badge is what makes an unattended
+ *  resolution visibly distinct from a human one, never silently identical. */
+function AutonomousBadge({ resolvedByKind }: { resolvedByKind?: 'human' | 'autonomous_dual_model' | null }) {
+  if (resolvedByKind !== 'autonomous_dual_model') return null
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium text-violet-600 bg-violet-500/10"
+      title="Resolved autonomously — both claude-fable-5 and gpt-5.6-sol agreed, no human clicked approve."
+    >
+      <Bot className="size-3" />
+      Auto
     </span>
   )
 }
@@ -154,7 +171,10 @@ function ResolvedListItem({
         <span className="text-muted-foreground">
           {item.sessionId.slice(0, 8)}
         </span>
-        <DecisionBadge state={item.state} />
+        <div className="flex items-center gap-1">
+          <AutonomousBadge resolvedByKind={item.resolvedByKind} />
+          <DecisionBadge state={item.state} />
+        </div>
       </div>
     </button>
   )
@@ -203,6 +223,7 @@ function ApprovalDetail({ approval, readOnly }: { approval: Approval; readOnly?:
         {reason && (
           <span className="text-xs rounded bg-muted px-1.5 py-0.5 text-muted-foreground">{reason}</span>
         )}
+        <AutonomousBadge resolvedByKind={approval.resolvedByKind} />
         {readOnly && <DecisionBadge state={approval.state} />}
       </div>
 
@@ -284,6 +305,7 @@ function CheckpointDetail({ checkpoint, readOnly }: { checkpoint: Checkpoint; re
       <div className="flex items-center gap-2">
         <PauseCircle className="size-5 text-amber-500" />
         <h2 className="text-base font-semibold">Human checkpoint</h2>
+        <AutonomousBadge resolvedByKind={checkpoint.resolvedByKind} />
         {readOnly && <DecisionBadge state={checkpoint.state} />}
       </div>
 

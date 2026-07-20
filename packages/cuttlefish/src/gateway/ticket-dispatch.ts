@@ -1,5 +1,6 @@
 import { createSession, getSession, getSessionBySessionKey, updateSession } from "../sessions/registry.js";
-import type { Employee, JsonObject, Session } from "../shared/types.js";
+import type { CuttlefishConfig, Employee, JsonObject, Session } from "../shared/types.js";
+import { isCwdInAutonomousProject, resolveAutonomousProject } from "./autonomous-mode.js";
 import { logger } from "../shared/logger.js";
 import { toLeaseTransportMeta } from "../orchestration/lease-meta.js";
 import { resolveLiveLeaseDurationMs, type OrchestrationRuntime } from "../orchestration/runtime.js";
@@ -130,6 +131,21 @@ async function resolveTicketResources(ticket: BoardTicket, context: ApiContext) 
     if (outcome.blocked) blocked = true;
   }
   return { ...buildResolvedRunAttachments(screened), blocked };
+}
+
+/**
+ * ⚠️ INTENTIONAL, not a bug: board-ticket sessions otherwise get no `cwd` at
+ * all (resourcePath is only ever used to resolve an attachment, never to set
+ * the session's working directory) — so without this, a ticket "scoped" to
+ * the autonomous project by board-worker.ts's continuousDispatch filter would
+ * still run outside that project's directory. Only ever returns the
+ * autonomous project's own cwd, and only when the ticket's resourcePath
+ * genuinely matches it — never a general resourcePath-to-cwd feature.
+ */
+function resolveTicketCwd(ticket: BoardTicket, config: CuttlefishConfig): string | undefined {
+  const project = resolveAutonomousProject(config);
+  if (!project) return undefined;
+  return isCwdInAutonomousProject(ticket.resourcePath, project) ? project.cwd : undefined;
 }
 
 function priorityForTicket(ticket: BoardTicket): TaskPriority {
@@ -398,6 +414,7 @@ export async function dispatchTicket(
       model: employee.model,
       title: dispatchTicket.title,
       effortLevel: employee.effortLevel ?? undefined,
+      cwd: resolveTicketCwd(dispatchTicket, deps.context.getConfig()),
       prompt,
       promptExcerpt: dispatchTicket.title,
     });

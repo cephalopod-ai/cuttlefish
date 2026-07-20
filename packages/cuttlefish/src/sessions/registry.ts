@@ -21,6 +21,7 @@ import {
   getApprovalRecordFromRegistry,
   importApprovalsJsonIfNeededFromRegistry,
   listApprovalRecordsFromRegistry,
+  resolveApprovalRecordAsAutonomousInRegistry,
   resolveApprovalRecordInRegistry,
   type ApprovalRegistryDeps,
 } from './registry-approvals.js';
@@ -215,6 +216,18 @@ export function resolveApprovalRecord(
   resultingAction?: string | null,
 ): Approval | undefined {
   return resolveApprovalRecordInRegistry(id, state, actor, decisionNotes, resultingAction, approvalRegistryDeps);
+}
+
+/** See resolveApprovalRecordAsAutonomousInRegistry — stamps resolved_by_kind
+ *  as a hardcoded, non-caller-settable discriminator. */
+export function resolveApprovalRecordAsAutonomous(
+  id: string,
+  state: Approval["state"] extends "pending" ? never : Exclude<Approval["state"], "pending">,
+  actor?: string | null,
+  decisionNotes?: string | null,
+  resultingAction?: string | null,
+): Approval | undefined {
+  return resolveApprovalRecordAsAutonomousInRegistry(id, state, actor, decisionNotes, resultingAction, approvalRegistryDeps);
 }
 
 export function clearApprovalRecordsForTest(): void {

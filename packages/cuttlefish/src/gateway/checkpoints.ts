@@ -7,7 +7,7 @@ import type {
   JsonObject,
   Session,
 } from "../shared/types.js";
-import { createApproval, getApproval, listApprovals, resolveApproval } from "./approvals.js";
+import { createApproval, getApproval, listApprovals, resolveApproval, resolveApprovalAsAutonomous } from "./approvals.js";
 import { getSession, insertMessage, patchSessionTransportMeta, updateSession } from "../sessions/registry.js";
 import type { ApiContext } from "./api/context.js";
 import { dispatchWebSessionRun } from "./api/session-dispatch.js";
@@ -150,6 +150,12 @@ export async function applyCheckpointDecision(
     notes?: string | null;
     resultingAction?: string | null;
     resumePrompt?: string | null;
+    /** ⚠️ INTENTIONAL SAFETY OVERRIDE — NOT A BUG (see gateway/autonomous-mode.ts
+     *  docblock). True only for the dual-model-verdict autonomous path —
+     *  never settable from an HTTP request body. Determines which resolver
+     *  (and therefore which resolvedByKind) is written; the state machine
+     *  below is identical either way. */
+    autonomous?: boolean;
   },
   context: ApiContext,
 ): Promise<{ checkpoint: Approval; session?: Session }> {
@@ -168,7 +174,8 @@ export async function applyCheckpointDecision(
     if (!prompt) throw new Error("resumePrompt is required to resume a revised/approved checkpoint");
   }
 
-  const resolved = resolveApproval(
+  const resolve = input.autonomous ? resolveApprovalAsAutonomous : resolveApproval;
+  const resolved = resolve(
     checkpoint.id,
     input.decision,
     input.actor ?? null,

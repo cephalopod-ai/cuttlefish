@@ -7,6 +7,7 @@ import { resolveModelFallback } from "../shared/model-fallback.js";
 import { recordEngineRateLimit } from "../shared/usage-status.js";
 import { effortLevelsForModel, engineAvailable, isKnownEngine, engineUnavailableMessage } from "../shared/models.js";
 import { createApproval } from "./approvals.js";
+import { isAutonomousVerdictSession } from "./autonomous-mode.js";
 import { buildContext } from "../sessions/context.js";
 import { buildContextPacket, contextManagerMode, logContextPacketMetadata } from "../sessions/context-manager/index.js";
 import { createSession, listChildSessions, getSession, updateSession, patchSessionTransportMeta, insertMessage, insertPartialMessage, updatePartialMessage, deletePartialMessages, finalizePartialMessages, getMessages } from "../sessions/registry.js";
@@ -494,6 +495,7 @@ export async function runWebSession(
       model: currentSession.model ?? engineConfig.model,
       effortLevel: invocation.effortLevel,
       cliFlags: invocation.cliFlags,
+      restrictToJudgeOnly: isAutonomousVerdictSession(currentSession.transportMeta),
       attachments: attachments?.length ? attachments : undefined,
       ...(contextPacket?.historyMessages ? { historyMessages: contextPacket.historyMessages } : {}),
       sessionId: currentSession.id,

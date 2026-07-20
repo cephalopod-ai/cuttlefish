@@ -433,6 +433,7 @@ export class InteractiveClaudeEngine implements InterruptibleEngine, PtyViewEngi
       appendSystemPrompt: opts.systemPrompt
         ? `${opts.systemPrompt}\n\n${MAIN_AGENT_SENTINEL}`
         : MAIN_AGENT_SENTINEL,
+      restrictToJudgeOnly: opts.restrictToJudgeOnly,
     });
     const { proxy, port } = await this.startProxy(cuttlefishSessionId);
     try {

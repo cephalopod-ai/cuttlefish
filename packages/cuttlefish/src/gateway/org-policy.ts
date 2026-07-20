@@ -101,7 +101,17 @@ function isCosmeticOnly(proposed: Record<string, unknown>): boolean {
   return keys.length > 0 && keys.every((k) => COSMETIC_FIELDS.has(k));
 }
 
-/** Classify a proposed change into a risk tier + approval requirement. */
+/**
+ * Classify a proposed change into a risk tier + approval requirement.
+ *
+ * Note on autonomous authorization mode (gateway/autonomous-mode.ts): a
+ * `requiresHumanApproval: true` verdict from this function CAN be resolved
+ * without a human when the operator has explicitly opted into
+ * `autonomousMode.orgChangeOverride` — see hr-steward.ts's finishCritique().
+ * That is an intentional, separately-authorized override of "who resolves
+ * the approval," not of this classification itself; classifyChange's risk
+ * tiering stays exactly as-is either way.
+ */
 export function classifyChange(input: PolicyInput): PolicyTier {
   // Any change to HR itself, and any broad tool grant (mcp: true), always needs
   // a human in the loop — regardless of changeType.
@@ -121,6 +131,13 @@ export function classifyChange(input: PolicyInput): PolicyTier {
  * Hard guard: the steward (an agent) may never create, modify, disable, or retire
  * itself. A human operator may still change HR (their changes are forced through
  * the approval gate by classifyChange), so the guard only fires for agent actors.
+ *
+ * NOT part of autonomous authorization mode's override surface, deliberately.
+ * This is a structural data-integrity invariant, not a risk judgment call a
+ * second opinion could legitimately overrule — it stays a hard, unconditional
+ * error regardless of autonomousMode.orgChangeOverride. Do not add an
+ * autonomous-mode bypass here; that was explicitly decided against (see
+ * gateway/autonomous-mode.ts's module docblock).
  */
 export function assertNotSelfModification(input: PolicyInput): void {
   if (input.employeeName !== HR_EMPLOYEE_NAME) return;
@@ -137,6 +154,9 @@ export function assertNotSelfModification(input: PolicyInput): void {
  * Hard guard: reject any reportsTo-affecting change that would make the org graph
  * cyclic or self-referential. Builds a hypothetical registry with the change
  * applied and runs the real hierarchy resolver.
+ *
+ * NOT part of autonomous authorization mode's override surface — see the note
+ * on assertNotSelfModification above; the same reasoning applies here.
  */
 export function assertAcyclic(input: PolicyInput, registry: Map<string, Employee>): void {
   const proposedReportsTo = (input.proposed as { reportsTo?: string | string[] }).reportsTo;

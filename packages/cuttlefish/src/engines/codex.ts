@@ -32,6 +32,21 @@ export function codexCliFlags(flags: string[] | undefined): string[] {
 }
 
 /**
+ * Every ordinary turn bypasses Codex's own sandbox/approval machinery
+ * entirely (Cuttlefish owns the security-review/checkpoint gate instead).
+ * `restrictToJudgeOnly` is the one exception: verdict/reviewer sessions that
+ * must only be able to read and reason, never act. `--sandbox read-only`
+ * plus `--ask-for-approval never` is engine-enforced (unlike a prompt-level
+ * instruction) and still fully headless — a denied write/network action is
+ * reported back to the model as a failure, never a blocking prompt.
+ */
+export function codexSandboxFlags(opts: Pick<EngineRunOpts, "restrictToJudgeOnly">): string[] {
+  return opts.restrictToJudgeOnly
+    ? ["--sandbox", "read-only", "--ask-for-approval", "never"]
+    : ["--dangerously-bypass-approvals-and-sandbox"];
+}
+
+/**
  * Most-recent-turn input-context size from a codex per-turn usage object.
  * codex's `cached_input_tokens` is a SUBSET of `input_tokens` (OpenAI semantics),
  * so the window fill is `input_tokens` alone — summing would double-count.
@@ -425,7 +440,7 @@ export class CodexEngine implements InterruptibleEngine {
     const args = ["exec"];
     if (opts.model) args.push("--model", opts.model);
     if (opts.effortLevel && opts.effortLevel !== "default") args.push("-c", `model_reasoning_effort="${opts.effortLevel}"`);
-    args.push("--json", "--color", "never", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check");
+    args.push("--json", "--color", "never", ...codexSandboxFlags(opts), "--skip-git-repo-check");
     if (opts.cwd) args.push("-C", opts.cwd);
     args.push(...codexMcpConfigFlagsFromFile(opts.mcpConfigPath));
     args.push(...codexCliFlags(opts.cliFlags));
@@ -437,7 +452,7 @@ export class CodexEngine implements InterruptibleEngine {
     const args = ["exec", "resume"];
     if (opts.model) args.push("--model", opts.model);
     if (opts.effortLevel && opts.effortLevel !== "default") args.push("-c", `model_reasoning_effort="${opts.effortLevel}"`);
-    args.push("--json", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check");
+    args.push("--json", ...codexSandboxFlags(opts), "--skip-git-repo-check");
     args.push(...codexMcpConfigFlagsFromFile(opts.mcpConfigPath));
     args.push(...codexCliFlags(opts.cliFlags));
     args.push(opts.resumeSessionId!);

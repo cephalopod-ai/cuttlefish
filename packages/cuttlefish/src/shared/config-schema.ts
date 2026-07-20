@@ -56,17 +56,45 @@ function validateStringOrStringArray(problems: string[], path: string, value: un
   if (!valid) problems.push(`${path} must be a string or array of strings`);
 }
 
+function validateAutonomousModeBlock(problems: string[], path: string, value: unknown, cwd: unknown): void {
+  if (!isPlainObject(value)) {
+    problems.push(`${path} must be a mapping`);
+    return;
+  }
+  pushUnknownKeys(
+    problems,
+    value,
+    ["enabled", "toolReview", "orgChangeOverride", "continuousDispatch", "maxAutoDispatchesPerHour"],
+    path,
+  );
+  if (value.enabled !== undefined) validateBoolean(problems, `${path}.enabled`, value.enabled);
+  if (value.toolReview !== undefined) validateBoolean(problems, `${path}.toolReview`, value.toolReview);
+  if (value.orgChangeOverride !== undefined) validateBoolean(problems, `${path}.orgChangeOverride`, value.orgChangeOverride);
+  if (value.continuousDispatch !== undefined) validateBoolean(problems, `${path}.continuousDispatch`, value.continuousDispatch);
+  if (value.maxAutoDispatchesPerHour !== undefined) {
+    validateNumber(problems, `${path}.maxAutoDispatchesPerHour`, value.maxAutoDispatchesPerHour);
+  }
+  // An autonomous project with no fixed cwd has no bounded blast radius —
+  // that defeats the entire premise of "scoped to one project."
+  if (value.enabled === true && (typeof cwd !== "string" || cwd.trim() === "")) {
+    problems.push(`${path.replace(/\.autonomousMode$/, "")}.cwd is required when autonomousMode.enabled is true`);
+  }
+}
+
 function validateWorkspaceProfile(problems: string[], path: string, value: unknown): void {
   if (!isPlainObject(value)) {
     problems.push(`${path} must be a mapping`);
     return;
   }
-  pushUnknownKeys(problems, value, ["id", "label", "cwd", "instructions", "employee"], path);
+  pushUnknownKeys(problems, value, ["id", "label", "cwd", "instructions", "employee", "autonomousMode"], path);
   if (value.id !== undefined) validateString(problems, `${path}.id`, value.id);
   if (value.label !== undefined) validateString(problems, `${path}.label`, value.label);
   if (value.cwd !== undefined) validateString(problems, `${path}.cwd`, value.cwd);
   if (value.instructions !== undefined) validateStringOrStringArray(problems, `${path}.instructions`, value.instructions);
   if (value.employee !== undefined) validateString(problems, `${path}.employee`, value.employee);
+  if (value.autonomousMode !== undefined) {
+    validateAutonomousModeBlock(problems, `${path}.autonomousMode`, value.autonomousMode, value.cwd);
+  }
 }
 
 function validateWorkspaceProfiles(problems: string[], value: unknown): void {
@@ -79,6 +107,27 @@ function validateWorkspaceProfiles(problems: string[], value: unknown): void {
     return;
   }
   Object.entries(value).forEach(([id, entry]) => validateWorkspaceProfile(problems, `workspaces.profiles.${id}`, entry));
+}
+
+/** Structural enforcement of "scoped to exactly one project" — a config-load
+ *  error, not an operator convention, so a copy-pasted profile block can't
+ *  silently widen autonomous mode's blast radius to a second project. */
+function validateAutonomousModeSingleton(problems: string[], workspaces: unknown): void {
+  if (!isPlainObject(workspaces) || workspaces.profiles === undefined) return;
+  const profiles = workspaces.profiles;
+  const entries: unknown[] = Array.isArray(profiles)
+    ? profiles
+    : isPlainObject(profiles)
+      ? Object.values(profiles)
+      : [];
+  const enabledCount = entries.filter(
+    (entry) => isPlainObject(entry) && isPlainObject(entry.autonomousMode) && entry.autonomousMode.enabled === true,
+  ).length;
+  if (enabledCount > 1) {
+    problems.push(
+      `workspaces.profiles: at most one profile may have autonomousMode.enabled true (found ${enabledCount})`,
+    );
+  }
 }
 
 
@@ -612,9 +661,12 @@ function validateFeatures(problems: string[], value: unknown): void {
     problems.push("features must be a mapping");
     return;
   }
-  pushUnknownKeys(problems, value, ["multiRoleEmployeeExecution"], "features");
+  pushUnknownKeys(problems, value, ["multiRoleEmployeeExecution", "autonomousMode"], "features");
   if (value.multiRoleEmployeeExecution !== undefined) {
     validateBoolean(problems, "features.multiRoleEmployeeExecution", value.multiRoleEmployeeExecution);
+  }
+  if (value.autonomousMode !== undefined) {
+    validateBoolean(problems, "features.autonomousMode", value.autonomousMode);
   }
 }
 
@@ -909,7 +961,10 @@ export function validateConfigShape(config: unknown): string[] {
       if (c.cuttlefish.version !== undefined) validateString(problems, "cuttlefish.version", c.cuttlefish.version);
     }
   }
-  if (c.workspaces !== undefined) validateWorkspaces(problems, c.workspaces);
+  if (c.workspaces !== undefined) {
+    validateWorkspaces(problems, c.workspaces);
+    validateAutonomousModeSingleton(problems, c.workspaces);
+  }
   if (c.gateway !== undefined) validateGateway(problems, c.gateway);
   validateEngines(problems, c.engines);
   if (c.models !== undefined) validateModels(problems, c.models);

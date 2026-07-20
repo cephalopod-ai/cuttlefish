@@ -3,6 +3,7 @@ import { lazy, Suspense } from "react"
 import { NavRibbon, PillNav } from "./pill-nav"
 import { MobileTabBar } from "./chat/mobile-tab-bar"
 import { GatewayOfflineBanner } from "./gateway-offline-banner"
+import { AutonomousModeBanner } from "./autonomous-mode-banner"
 import { GlobalShortcuts } from "./global-shortcuts"
 import { cn } from "@/lib/utils"
 import { useBreadcrumbs } from "@/context/breadcrumb-context"
@@ -64,6 +65,10 @@ export function PageLayout({
           unreachable gateway is the single most important thing to surface
           everywhere, not just on standard pages. */}
       <GatewayOfflineBanner />
+      {/* Same "surface everywhere, unconditionally" treatment — see
+          autonomous-mode-banner.tsx. Renders nothing unless the operator has
+          opted a project into autonomous authorization mode. */}
+      <AutonomousModeBanner />
       <Suspense fallback={null}>
         <GlobalSearch />
       </Suspense>

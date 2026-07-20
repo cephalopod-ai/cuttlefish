@@ -1,4 +1,4 @@
-import { listSessions } from "../sessions/registry.js";
+import { getSession, listSessions } from "../sessions/registry.js";
 import { normalizeBoardWorkerConfig } from "../shared/config.js";
 import { logger } from "../shared/logger.js";
 import { getEngineUsageStatus, type UsageStatus } from "../shared/usage-status.js";
@@ -6,6 +6,7 @@ import { readBoardArray, boardTicketComplexity, type BoardTicket, type BoardTick
 import type { ApiContext } from "./api/context.js";
 import { dispatchTicket, findDepartmentManager } from "./ticket-dispatch.js";
 import { scanOrg } from "./org.js";
+import { isCwdInAutonomousProject, resolveAutonomousProject, type AutonomousProject } from "./autonomous-mode.js";
 
 /** Throttle the board-worker usage-skip signal so an exhausted-quota department
  *  logs its reason at most once per interval instead of every tick (audit H6). */
@@ -134,12 +135,25 @@ export function selectBoardWorkerCandidate(candidates: TicketCandidate[]): Ticke
   return rankBoardWorkerCandidates(candidates)[0];
 }
 
+/** True when a board ticket's linked resource directory is the one
+ *  autonomous-mode project (exact-match — see isCwdInAutonomousProject). */
+function ticketMatchesAutonomousProject(ticket: BoardTicket, project: AutonomousProject): boolean {
+  return isCwdInAutonomousProject(ticket.resourcePath, project);
+}
+
 async function buildCandidates(
   now: number,
   deps: BoardWorkerDeps,
 ): Promise<TicketCandidate[]> {
   const registry = scanOrg();
-  const boardWorkerConfig = normalizeBoardWorkerConfig(deps.context.getConfig().boardWorker);
+  const config = deps.context.getConfig();
+  const boardWorkerConfig = normalizeBoardWorkerConfig(config.boardWorker);
+  // ⚠️ INTENTIONAL, not a bug: while the one autonomous project has
+  // continuousDispatch on, board-worker's own auto-pickup narrows to that
+  // project's tickets only — see gateway/autonomous-mode.ts's module
+  // docblock. Byte-for-byte unchanged (no filtering at all) when off.
+  const autonomousProject = resolveAutonomousProject(config);
+  const scopeToAutonomousProject = autonomousProject?.continuousDispatch === true;
   const departments = new Set([...registry.values()].map((employee) => employee.department));
   const candidates: TicketCandidate[] = [];
 
@@ -170,9 +184,12 @@ async function buildCandidates(
     }
 
     const todoTickets = tickets.filter((ticket) => ticket.status === "todo" && ticket.manualOnly !== true);
-    const filtered = usageMode === "low-only"
+    let filtered = usageMode === "low-only"
       ? todoTickets.filter((ticket) => boardTicketComplexity(ticket) === "low")
       : todoTickets;
+    if (scopeToAutonomousProject && autonomousProject) {
+      filtered = filtered.filter((ticket) => ticketMatchesAutonomousProject(ticket, autonomousProject));
+    }
     for (const ticket of filtered) {
       candidates.push({
         department,
@@ -235,4 +252,104 @@ export function startBoardWorker(deps: BoardWorkerDeps): () => void {
   }, deps.intervalMs ?? DEFAULT_INTERVAL_MS);
   timer.unref?.();
   return () => clearInterval(timer);
+}
+
+// ---------------------------------------------------------------------------
+// Continuous dispatch (autonomous mode)
+//
+// ⚠️ INTENTIONAL feature, not a bug/leak: this is what makes Cuttlefish keep
+// working on the one autonomous project "non-stop" instead of going idle
+// between board-worker's 5-minute ticks. See gateway/autonomous-mode.ts's
+// module docblock for the full rationale. Bounded by THREE independent
+// safety valves below (rolling-hour cap, the existing usage-quota gate
+// reused via buildCandidates, and a same-ticket cooldown) — do not remove
+// any of them "to simplify," each guards against a distinct runaway pattern.
+// ---------------------------------------------------------------------------
+
+const AUTO_DISPATCH_WINDOW_MS = 60 * 60 * 1000;
+const SAME_TICKET_COOLDOWN_MS = 2 * 60 * 1000;
+/** Rolling-hour dispatch timestamps. Reset on process restart — same
+ *  accepted soft-limit tradeoff as lastUsageSkipLogAt above. */
+const autoDispatchTimestamps: number[] = [];
+const lastAutoDispatchAtByTicket = new Map<string, number>();
+
+function pruneAutoDispatchTimestamps(now: number): void {
+  while (autoDispatchTimestamps.length > 0 && now - autoDispatchTimestamps[0]! > AUTO_DISPATCH_WINDOW_MS) {
+    autoDispatchTimestamps.shift();
+  }
+}
+
+/**
+ * Called from server.ts's `session:completed` handler, alongside the existing
+ * syncBoardForEvent call. If the completed session belonged to a board ticket
+ * in the one continuousDispatch-enabled project, immediately dispatches the
+ * next eligible todo ticket for that department instead of waiting for the
+ * next board-worker tick. No-ops instantly (cheap) whenever autonomous mode
+ * or continuousDispatch is off — safe to call unconditionally on every
+ * session completion.
+ */
+export async function maybeAutoDispatchNext(
+  payload: { sessionId?: string },
+  deps: BoardWorkerDeps,
+): Promise<void> {
+  try {
+    const config = deps.context.getConfig();
+    const project = resolveAutonomousProject(config);
+    if (!project?.continuousDispatch) return;
+
+    const sessionId = payload.sessionId;
+    if (!sessionId) return;
+    const session = getSession(sessionId);
+    if (!session) return;
+    if (!isCwdInAutonomousProject(session.cwd, project)) return;
+
+    const meta = (session.transportMeta ?? {}) as Record<string, unknown>;
+    const department = typeof meta.boardDepartment === "string" ? meta.boardDepartment : undefined;
+    const ticketId = typeof meta.boardTicketId === "string" ? meta.boardTicketId : undefined;
+    if (!department || !ticketId) return; // not a board-ticket-dispatched session
+
+    const now = deps.now?.() ?? Date.now();
+
+    // Safety valve 1/3: rolling-hour cap.
+    pruneAutoDispatchTimestamps(now);
+    if (autoDispatchTimestamps.length >= project.maxAutoDispatchesPerHour) {
+      logger.info(
+        `[autonomous][continuous] throttled: hourly cap (${project.maxAutoDispatchesPerHour}) reached — falling back to the ordinary board-worker tick`,
+      );
+      return;
+    }
+
+    // Safety valve 2/3: same-ticket cooldown, guards against an
+    // instant-complete/instant-redispatch loop on one broken ticket.
+    const ticketKey = `${department}/${ticketId}`;
+    const lastForTicket = lastAutoDispatchAtByTicket.get(ticketKey) ?? 0;
+    if (now - lastForTicket < SAME_TICKET_COOLDOWN_MS) {
+      logger.info(`[autonomous][continuous] throttled: same-ticket cooldown active for ${ticketKey}`);
+      return;
+    }
+
+    // Safety valve 3/3: buildCandidates() already applies the existing
+    // per-department usage-quota gate (usageModeForStatus) — reused for free.
+    const candidates = (await buildCandidates(now, deps)).filter((c) => c.department === department);
+    const next = selectBoardWorkerCandidate(candidates);
+    if (!next) return;
+
+    const result = await dispatchTicket(
+      next.department,
+      next.ticket.id,
+      { source: "autonomous-continuous", routeToManager: true },
+      { context: deps.context, orgDir: deps.orgDir, now: () => now },
+    );
+    if (result.ok) {
+      autoDispatchTimestamps.push(now);
+      lastAutoDispatchAtByTicket.set(`${next.department}/${next.ticket.id}`, now);
+      logger.info(
+        `[autonomous][continuous] auto-dispatched ${next.department}/${next.ticket.id} immediately on prior completion`,
+      );
+    } else {
+      logger.info(`[autonomous][continuous] skipped ${next.department}/${next.ticket.id}: ${result.reason}`);
+    }
+  } catch (err) {
+    logger.warn(`[autonomous][continuous] failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }

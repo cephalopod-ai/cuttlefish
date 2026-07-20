@@ -23,6 +23,12 @@ vi.mock("@/hooks/use-gateway", () => ({
   }),
 }))
 
+vi.mock("@/hooks/use-autonomous-status", () => ({
+  useAutonomousStatus: () => ({
+    autonomousMode: { active: false, projectLabel: null, authorizationsToday: 0 },
+  }),
+}))
+
 function PageWithBreadcrumb() {
   useBreadcrumbs([{ label: "Approvals" }])
   return <PageLayout><div>content</div></PageLayout>

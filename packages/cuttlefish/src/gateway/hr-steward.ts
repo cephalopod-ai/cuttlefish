@@ -37,16 +37,24 @@ import {
   assertAcyclic,
   OrgChangeBlockedError,
 } from "./org-policy.js";
-import { createApproval } from "./approvals.js";
+import { createApproval, getApproval, resolveApprovalAsAutonomous } from "./approvals.js";
 import { logger } from "../shared/logger.js";
 import {
+  getSession,
   insertMessage,
   updateSession,
 } from "../sessions/registry.js";
 import type { ApiContext } from "./api/context.js";
-import type { OrgChangeRequest, OrgChangeType } from "../shared/types.js";
+import type { Approval, OrgChangeRequest, OrgChangeType } from "../shared/types.js";
 import { type CritiqueResult, defaultRunCritique } from "./hr-critique-dispatch.js";
 import { KeyedMutex } from "../shared/async-lock.js";
+import {
+  AUTONOMOUS_ACTOR_SENTINEL,
+  isAutonomousVerdictSession,
+  recordAutonomousAuthorization,
+  resolveAutonomousProject,
+} from "./autonomous-mode.js";
+import { requestDualModelVerdict, type DualModelVerdictResult } from "./dual-model-verdict.js";
 
 export type { CritiqueResult } from "./hr-critique-dispatch.js";
 
@@ -139,6 +147,72 @@ export async function submitOrgChange(
   return { request, blocked: false };
 }
 
+function buildOrgChangeVerdictPrompt(request: OrgChangeRequest): string {
+  return [
+    `Change type: ${request.changeType}`,
+    `Target employee: ${request.employeeName}`,
+    `Risk level: ${request.riskLevel}`,
+    `Proposed by: ${request.proposedBy}`,
+    `\nRationale:\n${request.rationale || "(none given)"}`,
+    request.hrCritique ? `\nHR critique:\n${request.hrCritique}` : null,
+    request.beforeYaml ? `\nCurrent state (YAML):\n${request.beforeYaml}` : "\n(no current state — this creates a new employee)",
+    request.afterYaml ? `\nProposed state (YAML):\n${request.afterYaml}` : null,
+  ].filter((line): line is string => line !== null).join("\n");
+}
+
+/**
+ * ⚠️ INTENTIONAL SAFETY OVERRIDE — NOT A BUG. See gateway/autonomous-mode.ts's
+ * module docblock. Mirrors the org-change approve branch in
+ * api/routes/approvals.ts, but resolves via resolveApprovalAsAutonomous (a
+ * distinct, non-spoofable resolvedByKind) instead of the human HTTP path, and
+ * is only ever called after BOTH models in a dual-model verdict agree. Reuses
+ * applyOrgChange — the same mutex-protected apply funnel the human path uses
+ * (see the CON-001 comment on orgChangeApplyLock below) — so the actual
+ * org-mutation logic is identical regardless of who/what authorized it.
+ */
+async function resolveAutonomousOrgChange(
+  approval: Approval,
+  verdict: DualModelVerdictResult,
+  context: ApiContext,
+): Promise<void> {
+  if (!verdict.authorized) {
+    logger.info(
+      `[autonomous] deferred to human approval=${approval.id} claude=${verdict.claude.outcome} codex=${verdict.codex.outcome}`,
+    );
+    return;
+  }
+  const changeRequestId =
+    typeof approval.payload.changeRequestId === "string" ? approval.payload.changeRequestId.trim() : "";
+  if (!changeRequestId) {
+    logger.warn(`[autonomous] org-change approval ${approval.id} missing changeRequestId — cannot auto-resolve`);
+    return;
+  }
+  const request = getChangeRequest(changeRequestId);
+  if (!request || !["pending_approval", "approved"].includes(request.status)) {
+    logger.info(`[autonomous] org-change ${changeRequestId} no longer awaiting approval — skipping auto-resolve`);
+    return;
+  }
+  const current = getApproval(approval.id)?.state;
+  if (current !== "pending") {
+    logger.info(`[autonomous] approval ${approval.id} already ${current} — skipping auto-resolve`);
+    return;
+  }
+
+  const notes = JSON.stringify({ claude: verdict.claude, codex: verdict.codex });
+  const resolved = resolveApprovalAsAutonomous(approval.id, "approved", AUTONOMOUS_ACTOR_SENTINEL, notes);
+  logger.info(`[autonomous] AUTO-AUTHORIZED org-change approval=${approval.id} claude=approved codex=approved`);
+  recordAutonomousAuthorization();
+  context.emit("approval:resolved", { approvalId: resolved.id, sessionId: resolved.sessionId, state: "approved" });
+  recordHrDecisionMessage(resolved.sessionId, request, { action: "approved", actor: AUTONOMOUS_ACTOR_SENTINEL }, context);
+  updateChangeRequestStatus(changeRequestId, "approved");
+  const applied = await applyOrgChange(request, context);
+  if (!applied.ok) {
+    recordHrDecisionMessage(resolved.sessionId, request, { action: "failed", actor: AUTONOMOUS_ACTOR_SENTINEL, error: applied.error ?? null }, context);
+    return;
+  }
+  recordHrDecisionMessage(resolved.sessionId, request, { action: "applied", actor: AUTONOMOUS_ACTOR_SENTINEL }, context);
+}
+
 /** Move a critiqued change to pending_approval (gate) or auto-apply it. */
 async function finishCritique(
   id: string,
@@ -168,6 +242,34 @@ async function finishCritique(
       type: "org-change",
       changeRequestId: id,
     });
+
+    // ⚠️ INTENTIONAL SAFETY OVERRIDE — NOT A BUG. When autonomous mode's
+    // orgChangeOverride is on, a passing dual-model verdict resolves this
+    // org-change approval WITHOUT a human. HR has no per-project concept, so
+    // (per explicit operator sign-off) this is gateway-wide once enabled, not
+    // confined to the autonomous project's cwd — see autonomous-mode.ts's
+    // module docblock. Do not remove this branch or gate it on a cwd match
+    // "to make it consistent" with the tool-checkpoint path; that would be
+    // incorrect for the reason stated above, not a bug fix.
+    const project = resolveAutonomousProject(context.getConfig());
+    if (project?.orgChangeOverride) {
+      const critiqueSession = result.sessionId ? getSession(result.sessionId) : undefined;
+      if (!critiqueSession || !isAutonomousVerdictSession(critiqueSession.transportMeta)) {
+        void requestDualModelVerdict(
+          {
+            parentSessionId: approval.sessionId,
+            cwd: project.cwd,
+            decisionKind: "org_change",
+            contextPrompt: buildOrgChangeVerdictPrompt(updated),
+          },
+          context,
+        )
+          .then((verdict) => resolveAutonomousOrgChange(approval, verdict, context))
+          .catch((err) => {
+            logger.warn(`[autonomous] org-change verdict request failed for approval ${approval.id}: ${err instanceof Error ? err.message : String(err)}`);
+          });
+      }
+    }
     return;
   }
 

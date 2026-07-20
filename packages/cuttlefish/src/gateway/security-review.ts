@@ -7,12 +7,20 @@ import {
   type Session,
 } from "../shared/types.js";
 import { getMessages, getSession, insertMessage, updateSession } from "../sessions/registry.js";
-import { createCheckpoint, listCheckpoints } from "./checkpoints.js";
+import { applyCheckpointDecision, createCheckpoint, listCheckpoints } from "./checkpoints.js";
 import type { ApiContext } from "./api/context.js";
 import { scanOrg } from "./org.js";
 import { createSession, getSessionBySessionKey } from "../sessions/registry.js";
 import { dispatchWebSessionRun } from "./api/session-dispatch.js";
 import { logger } from "../shared/logger.js";
+import {
+  AUTONOMOUS_ACTOR_SENTINEL,
+  isAutonomousVerdictSession,
+  isCwdInAutonomousProject,
+  recordAutonomousAuthorization,
+  resolveAutonomousProject,
+} from "./autonomous-mode.js";
+import { requestDualModelVerdict, type DualModelVerdictResult } from "./dual-model-verdict.js";
 
 export const SECURITY_REVIEWER_EMPLOYEE_NAME = "senior-security-officer";
 export const SECURITY_REVIEW_SESSION_KEY = `employee:${SECURITY_REVIEWER_EMPLOYEE_NAME}`;
@@ -79,6 +87,63 @@ function buildResumePrompt(command: string, triggers: SecurityReviewTrigger[]): 
     `Risk categories: ${triggers.join(", ")}.`,
     "Re-check whether the action is still necessary, explain the justification briefly, and only then retry the command if it remains appropriate.",
   ].join("\n");
+}
+
+/** Distinct wording for an autonomous resolution — the transcript and audit
+ *  trail must never claim human sign-off that didn't happen. */
+function buildAutonomousResumePrompt(command: string, triggers: SecurityReviewTrigger[], verdict: DualModelVerdictResult): string {
+  return [
+    `Two independent AI reviewers (claude-fable-5, gpt-5.6-sol) both approved reconsidering this blocked Bash command:`,
+    command,
+    `Risk categories: ${triggers.join(", ")}.`,
+    `claude-fable-5: ${verdict.claude.reason || "(no reason given)"}`,
+    `gpt-5.6-sol: ${verdict.codex.reason || "(no reason given)"}`,
+    "Re-check whether the action is still necessary, explain the justification briefly, and only then retry the command if it remains appropriate.",
+  ].join("\n");
+}
+
+/**
+ * Resolves the outcome of a dual-model verdict request against an already-
+ * created checkpoint. On agreement, auto-resolves it via the same
+ * applyCheckpointDecision the human-approval HTTP route uses — the state
+ * machine is untouched, only who/what triggered the resolution differs. On
+ * disagreement (or any error/timeout/unparseable outcome), does nothing: the
+ * checkpoint stays pending for a human, exactly as it would with autonomous
+ * mode off.
+ */
+async function resolveAutonomousToolCheckpoint(
+  checkpointId: string,
+  sessionId: string,
+  command: string,
+  triggers: SecurityReviewTrigger[],
+  verdict: DualModelVerdictResult,
+  context: ApiContext,
+): Promise<void> {
+  if (!verdict.authorized) {
+    logger.info(
+      `[autonomous] deferred to human checkpoint=${checkpointId} claude=${verdict.claude.outcome} codex=${verdict.codex.outcome}`,
+    );
+    insertMessage(
+      sessionId,
+      "notification",
+      `🤖 Autonomous authorization did not reach consensus (claude=${verdict.claude.outcome}, codex=${verdict.codex.outcome}) — waiting for a human to resolve this checkpoint.`,
+    );
+    context.emit("session:updated", { sessionId });
+    return;
+  }
+  logger.info(`[autonomous] AUTO-AUTHORIZED checkpoint=${checkpointId} claude=approved codex=approved`);
+  recordAutonomousAuthorization();
+  await applyCheckpointDecision(
+    checkpointId,
+    {
+      decision: "approved",
+      actor: AUTONOMOUS_ACTOR_SENTINEL,
+      notes: JSON.stringify({ claude: verdict.claude, codex: verdict.codex }),
+      resumePrompt: buildAutonomousResumePrompt(command, triggers, verdict),
+      autonomous: true,
+    },
+    context,
+  );
 }
 
 function buildSecurityReviewPrompt(input: SecurityReviewRequest, session: Session, employee: Employee | undefined): string {
@@ -171,7 +236,7 @@ export function openSecurityCheckpoint(input: SecurityReviewRequest, context: Ap
   }
 
   const reviewerName = employee?.securityReviewer?.trim() || SECURITY_REVIEWER_EMPLOYEE_NAME;
-  createCheckpoint(
+  const { checkpoint } = createCheckpoint(
     {
       sessionId: session.id,
       payload: {
@@ -193,6 +258,34 @@ export function openSecurityCheckpoint(input: SecurityReviewRequest, context: Ap
       logger.warn(`security review failed for session ${session.id}: ${err instanceof Error ? err.message : String(err)}`);
     });
   }
+
+  // ⚠️ INTENTIONAL SAFETY OVERRIDE — NOT A BUG. When the session's project has
+  // opted into autonomous mode, a passing dual-model verdict resolves this
+  // checkpoint WITHOUT a human. This is the deliberate feature described in
+  // gateway/autonomous-mode.ts's module docblock — do not remove this branch
+  // or route it back through a human checkpoint "to fix" the missing manual
+  // approval; that would defeat the feature's entire purpose.
+  const project = resolveAutonomousProject(context.getConfig());
+  if (
+    project?.toolReview &&
+    isCwdInAutonomousProject(session.cwd, project) &&
+    !isAutonomousVerdictSession(session.transportMeta)
+  ) {
+    void requestDualModelVerdict(
+      {
+        parentSessionId: session.id,
+        cwd: project.cwd,
+        decisionKind: "tool_checkpoint",
+        contextPrompt: buildSecurityReviewPrompt(input, session, employee),
+      },
+      context,
+    )
+      .then((verdict) => resolveAutonomousToolCheckpoint(checkpoint.id, session.id, input.command, input.triggers, verdict, context))
+      .catch((err) => {
+        logger.warn(`[autonomous] verdict request failed for checkpoint ${checkpoint.id}: ${err instanceof Error ? err.message : String(err)}`);
+      });
+  }
+
   return { action: "checkpoint", reason: input.reason };
 }
 

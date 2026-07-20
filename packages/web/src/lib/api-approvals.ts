@@ -15,6 +15,8 @@ export interface CheckpointPayload extends Record<string, unknown> {
   revisePrompt?: string | null
 }
 
+export type ApprovalResolvedByKind = "human" | "autonomous_dual_model"
+
 export interface Approval {
   id: string
   sessionId: string
@@ -26,6 +28,9 @@ export interface Approval {
   actor?: string | null
   decisionNotes?: string | null
   resultingAction?: string | null
+  /** Code-owned discriminator — see resolveApprovalAsAutonomous on the
+   *  gateway. Absent/null means a human (or unattributed) resolution. */
+  resolvedByKind?: ApprovalResolvedByKind | null
 }
 
 export interface Checkpoint extends Omit<Approval, "type" | "payload"> {

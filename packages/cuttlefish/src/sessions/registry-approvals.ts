@@ -14,6 +14,7 @@ type ApprovalRow = {
   actor: string | null;
   decision_notes: string | null;
   resulting_action: string | null;
+  resolved_by_kind: NonNullable<Approval["resolvedByKind"]> | null;
 };
 
 export interface ApprovalRegistryDeps {
@@ -36,6 +37,7 @@ function rowToApproval(row: ApprovalRow, deps: ApprovalRegistryDeps): Approval {
     actor: row.actor,
     decisionNotes: row.decision_notes,
     resultingAction: row.resulting_action,
+    resolvedByKind: row.resolved_by_kind,
   };
 }
 
@@ -196,6 +198,39 @@ export function resolveApprovalRecordInRegistry(
     const resolvedAt = new Date().toISOString();
     db.prepare("UPDATE approvals SET state = ?, resolved_at = ?, actor = ?, decision_notes = ?, resulting_action = ? WHERE id = ? AND state = 'pending'")
       .run(state, resolvedAt, actor ?? null, decisionNotes ?? null, resultingAction ?? null, id);
+    return getApprovalRecordFromRegistry(id, deps);
+  });
+  return txn() as Approval | undefined;
+}
+
+/**
+ * ⚠️ INTENTIONAL SAFETY OVERRIDE — NOT A BUG. See the docblock at the top of
+ * gateway/autonomous-mode.ts for the full rationale before changing this.
+ *
+ * Resolve an approval as autonomously authorized. Identical to
+ * resolveApprovalRecordInRegistry except it also stamps `resolved_by_kind =
+ * 'autonomous_dual_model'` — hardcoded here, not accepted as a parameter, so
+ * no caller (including any HTTP route) can ever set this discriminator to an
+ * arbitrary value. `actor`/`decisionNotes` remain free-text audit context;
+ * `resolved_by_kind` is the trustworthy, code-owned signal.
+ */
+export function resolveApprovalRecordAsAutonomousInRegistry(
+  id: string,
+  state: ApprovalDecision,
+  actor: string | null | undefined,
+  decisionNotes: string | null | undefined,
+  resultingAction: string | null | undefined,
+  deps: ApprovalRegistryDeps,
+): Approval | undefined {
+  const db = deps.getDb();
+  const txn = db.transaction(() => {
+    const existing = db.prepare("SELECT * FROM approvals WHERE id = ?").get(id) as ApprovalRow | undefined;
+    if (!existing) return undefined;
+    if (existing.state !== "pending") return rowToApproval(existing, deps);
+    const resolvedAt = new Date().toISOString();
+    db.prepare(
+      "UPDATE approvals SET state = ?, resolved_at = ?, actor = ?, decision_notes = ?, resulting_action = ?, resolved_by_kind = 'autonomous_dual_model' WHERE id = ? AND state = 'pending'",
+    ).run(state, resolvedAt, actor ?? null, decisionNotes ?? null, resultingAction ?? null, id);
     return getApprovalRecordFromRegistry(id, deps);
   });
   return txn() as Approval | undefined;

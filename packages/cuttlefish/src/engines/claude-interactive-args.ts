@@ -16,7 +16,11 @@ export interface InteractiveArgsOpts {
    *  KEY is ignored by claude CLI ≥2.1.x, so this flag is the only path that
    *  actually lands it in the request `system` (and thus lets the SSE proxy tee). */
   appendSystemPrompt?: string;
+  /** Hard-restrict this invocation to judge-only (no writes/shell/fetch). */
+  restrictToJudgeOnly?: boolean;
 }
+
+const JUDGE_ONLY_DISALLOWED_TOOLS = ["Bash", "Write", "Edit", "NotebookEdit", "WebFetch"];
 
 export function buildInteractiveArgs(o: InteractiveArgsOpts): string[] {
   const args: string[] = [];
@@ -32,7 +36,12 @@ export function buildInteractiveArgs(o: InteractiveArgsOpts): string[] {
   if (o.effortLevel && o.effortLevel !== "default") args.push("--effort", o.effortLevel);
   if (o.model) args.push("--model", o.model);
   args.push("--dangerously-skip-permissions");
-  args.push("--disallowedTools", "AskUserQuestion", "ExitPlanMode");
+  args.push(
+    "--disallowedTools",
+    "AskUserQuestion",
+    "ExitPlanMode",
+    ...(o.restrictToJudgeOnly ? JUDGE_ONLY_DISALLOWED_TOOLS : []),
+  );
   args.push("--settings", o.settingsPath);
   if (o.appendSystemPrompt) args.push("--append-system-prompt", o.appendSystemPrompt);
   // Audit A-F2/F-10: defense-in-depth on the actual spawn path — a pre-existing
