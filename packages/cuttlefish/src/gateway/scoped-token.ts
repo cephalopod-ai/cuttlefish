@@ -75,6 +75,10 @@ export function scopedTokenForbidden(method: string | undefined, rawPathname: st
   if (pathname === "/api/archives" || pathname.startsWith("/api/archives/")) return true;
   if (pathname === "/api/skills" || pathname.startsWith("/api/skills/")) return m !== "GET";
   if (pathname === "/api/talk/engine" && m !== "GET") return true;
+  // A scoped chat may submit an org proposal; the transport gate requires that
+  // authenticated identity and the route binds the resulting approval to it.
+  // All other org mutations remain operator-only.
+  if (pathname === "/api/org/change-requests" && m === "POST") return false;
   // Org roster is readable; mutations (create/rename/rank/cliFlags/delete) are not.
   if ((pathname === "/api/org" || pathname.startsWith("/api/org/")) && m !== "GET") return true;
   // Human-oversight, scheduling, and orchestration reads are global collections;

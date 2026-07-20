@@ -95,6 +95,7 @@ describe("org-changes store", () => {
       },
       rationale: "Need flaky-test triage.",
       proposedBy: "user",
+      originSessionId: "operator-chat-1",
       status: "draft",
     });
 
@@ -106,6 +107,7 @@ describe("org-changes store", () => {
     const fetched = getChangeRequest(created.id);
     expect(fetched).toBeDefined();
     expect(fetched!.employeeName).toBe("ui-test-reviewer");
+    expect(fetched!.originSessionId).toBe("operator-chat-1");
 
     const all = listChangeRequests();
     expect(all).toHaveLength(1);

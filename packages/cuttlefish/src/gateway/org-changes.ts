@@ -63,6 +63,7 @@ export interface CreateChangeRequestInput {
   rationale?: string;
   evidenceRefs?: string[];
   proposedBy?: string;
+  originSessionId?: string | null;
   riskLevel?: OrgChangeRiskLevel;
   requiresHumanApproval?: boolean;
   status?: OrgChangeStatus;
@@ -84,6 +85,7 @@ export function createChangeRequest(input: CreateChangeRequestInput): OrgChangeR
     status: input.status ?? "draft",
     employeeName: input.employeeName,
     proposedBy: input.proposedBy ?? "user",
+    originSessionId: input.originSessionId ?? null,
     proposed: input.proposed,
     rationale: input.rationale ?? "",
     evidenceRefs: input.evidenceRefs ?? [],

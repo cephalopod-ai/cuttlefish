@@ -39,6 +39,8 @@ describe("scopedTokenForbidden — operator control plane", () => {
 
   it("still allows the endpoints an agent legitimately needs", () => {
     expect(scopedTokenForbidden("GET", "/api/org")).toBe(false);
+    expect(scopedTokenForbidden("POST", "/api/org/change-requests")).toBe(false);
+    expect(scopedTokenForbidden("POST", "/api/org/change-requests/change-1/approve")).toBe(true);
     expect(scopedTokenForbidden("GET", "/api/status")).toBe(false);
     expect(scopedTokenForbidden("POST", "/api/sessions")).toBe(false);
     expect(scopedTokenForbidden("POST", "/api/sessions/s-1/message")).toBe(false);

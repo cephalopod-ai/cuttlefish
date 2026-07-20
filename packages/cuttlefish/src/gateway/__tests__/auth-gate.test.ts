@@ -37,6 +37,53 @@ describe("resolvePrincipalGate (CF2-120)", () => {
     expect(gate.status).toBe(401);
   });
 
+  it("requires an authenticated identity to submit an org change even on loopback", () => {
+    const gate = resolvePrincipalGate({
+      req: req({}),
+      method: "POST",
+      pathname: "/api/org/change-requests",
+      authRequiredNow: () => false,
+      gatewayAuthToken: TOKEN,
+      cuttlefishHome: "/tmp/does-not-matter",
+    });
+    expect(gate.status).toBe(401);
+  });
+
+  it("allows a scoped chat token to submit an org change but not resolve it", () => {
+    const scoped = createScopedSessionToken("session-abc", TOKEN);
+    const proposal = resolvePrincipalGate({
+      req: req({ authorization: `Bearer ${scoped}` }),
+      method: "POST",
+      pathname: "/api/org/change-requests",
+      authRequiredNow: () => false,
+      gatewayAuthToken: TOKEN,
+      cuttlefishHome: "/tmp/does-not-matter",
+    });
+    expect(proposal).toMatchObject({ status: 200, principal: { kind: "session", sessionId: "session-abc" } });
+
+    const decision = resolvePrincipalGate({
+      req: req({ authorization: `Bearer ${scoped}` }),
+      method: "POST",
+      pathname: "/api/org/change-requests/change-1/approve",
+      authRequiredNow: () => false,
+      gatewayAuthToken: TOKEN,
+      cuttlefishHome: "/tmp/does-not-matter",
+    });
+    expect(decision.status).toBe(403);
+  });
+
+  it("requires an operator credential to resolve approval actions even on loopback", () => {
+    const gate = resolvePrincipalGate({
+      req: req({}),
+      method: "POST",
+      pathname: "/api/approvals/approval-1/approve",
+      authRequiredNow: () => false,
+      gatewayAuthToken: TOKEN,
+      cuttlefishHome: "/tmp/does-not-matter",
+    });
+    expect(gate.status).toBe(401);
+  });
+
   it("403s a scoped session token hitting a forbidden control-plane path even when auth is NOT required (loopback default) — this is the CF2-120 regression", () => {
     const scoped = createScopedSessionToken("session-abc", TOKEN);
     const gate = resolvePrincipalGate({
@@ -105,6 +152,16 @@ describe("resolvePrincipalGate (CF2-120)", () => {
     });
     expect(gate.status).toBe(200);
     expect(gate.principal).toEqual({ kind: "admin" });
+
+    const approval = resolvePrincipalGate({
+      req: req({ cookie: `cuttlefish_auth=${session.secret}; cuttlefish_device=${session.device.id}` }, "127.0.0.1"),
+      method: "POST",
+      pathname: "/api/org/change-requests/change-1/approve",
+      authRequiredNow: () => false,
+      gatewayAuthToken: TOKEN,
+      cuttlefishHome: home,
+    });
+    expect(approval).toMatchObject({ status: 200, principal: { kind: "admin" } });
   });
 
   it("still 401s a /ws upgrade with no credential when auth is required", () => {

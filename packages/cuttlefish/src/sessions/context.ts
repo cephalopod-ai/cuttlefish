@@ -825,6 +825,9 @@ function buildApiReference(gatewayUrl: string, portalName: string, employee?: Em
     : `Privileged endpoints require local gateway auth; the web UI and built-in delegation tools handle this automatically.`;
   const attachmentsLine =
     `- Push a file/image into this chat (web view): \`curl -X POST ${gatewayUrl}/api/sessions/<your-session-id>/attachments -H 'Content-Type: application/json' -d '{"path":"/abs/path","text":"caption"}'\``;
+  const orgApprovalLine = sessionToken
+    ? `- Propose an org change with \`POST ${gatewayUrl}/api/org/change-requests\` using the injected session credential. Its approval is then shown in this chat and in Approvals. Never call an approve, reject, or apply endpoint: chat text is not operator approval.`
+    : `- Org changes require an authenticated proposal and a separate operator approval in the dashboard.`;
   if (!employee) {
     return [
       header,
@@ -834,6 +837,7 @@ function buildApiReference(gatewayUrl: string, portalName: string, employee?: Em
       `- Follow up on a child session: \`POST ${gatewayUrl}/api/sessions/:id/message\` with \`{message}\``,
       `- Read a child's latest replies: \`GET ${gatewayUrl}/api/sessions/:id?last=N\``,
       `- Do not delegate or route work to \`hr-manager\`; HR accepts direct top-level human-operator requests only.`,
+      orgApprovalLine,
       `- Valid \`employee\` values are the slugs in \`GET ${gatewayUrl}/api/org\` or \`ls ${ORG_DIR}/\``,
       attachmentsLine,
       `Full endpoint table: CLAUDE.md / AGENTS.md.`,
@@ -851,6 +855,7 @@ function buildApiReference(gatewayUrl: string, portalName: string, employee?: Em
       `- Follow up on a child session: \`POST ${gatewayUrl}/api/sessions/:id/message\` with \`{message}\``,
       `- Read a child's latest replies: \`GET ${gatewayUrl}/api/sessions/:id?last=N\``,
       `- Do not delegate or route work to \`hr-manager\`; HR accepts direct top-level human-operator requests only.`,
+      orgApprovalLine,
       `- Valid \`employee\` values are the slugs in your chain of command, \`GET ${gatewayUrl}/api/org\`, or \`ls ${ORG_DIR}/\``,
       attachmentsLine,
       `Full endpoint table: CLAUDE.md / AGENTS.md.`,
@@ -861,6 +866,7 @@ function buildApiReference(gatewayUrl: string, portalName: string, employee?: Em
     authLine,
     `Child-session delegation is unavailable because you do not currently supervise any reports in the org graph.`,
     `If that seems wrong, check the employee's \`reportsTo\` / manager wiring.`,
+    orgApprovalLine,
     attachmentsLine,
     `Full endpoint table: CLAUDE.md / AGENTS.md.`,
   ].join("\n");

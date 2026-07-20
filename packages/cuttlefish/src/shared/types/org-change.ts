@@ -58,6 +58,12 @@ export interface OrgChangeRequest {
   /** Who proposed the change ("user", "coo", "hr-manager", "system", …). */
   proposedBy: string;
   /**
+   * Session that submitted this request, if it came from a scoped chat token.
+   * The approval card is attached to this session so the operator can decide
+   * in the same chat as well as from the global Approvals page.
+   */
+  originSessionId?: string | null;
+  /**
    * The proposed fields to apply. For `create_agent` this is an EmployeeCreate
    * body (name, displayName, department, rank, engine, model, persona, …); for
    * every other change type it is an EmployeeUpdate body (the writable subset).

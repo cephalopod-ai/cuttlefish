@@ -1,4 +1,5 @@
 import type { IncomingMessage } from "node:http";
+import path from "node:path";
 import {
   authenticateGatewayRequest,
   authRequiredForRequest,
@@ -45,6 +46,26 @@ export interface PrincipalGateResult {
   principal?: GatewayPrincipal;
 }
 
+/**
+ * A session may propose an org change, but that proposal must carry the
+ * session identity so its eventual human approval can be shown in the
+ * originating chat.  Requiring a credential here also prevents an agent from
+ * dropping its injected scoped token to make an anonymous, unowned proposal.
+ */
+function isOrgChangeProposal(method: string | undefined, rawPathname: string): boolean {
+  return (method || "GET").toUpperCase() === "POST"
+    && path.posix.normalize(rawPathname || "/").toLowerCase() === "/api/org/change-requests";
+}
+
+/** Human approval decisions are always operator actions, even on loopback. */
+function isOperatorApprovalAction(method: string | undefined, rawPathname: string): boolean {
+  if ((method || "GET").toUpperCase() !== "POST") return false;
+  const pathname = path.posix.normalize(rawPathname || "/").toLowerCase();
+  return /^\/api\/approvals\/[^/]+\/(approve|reject)$/.test(pathname)
+    || /^\/api\/checkpoints\/[^/]+\/decision$/.test(pathname)
+    || /^\/api\/org\/change-requests\/[^/]+\/(approve|reject|apply)$/.test(pathname);
+}
+
 export function resolvePrincipalGate(opts: {
   req: Pick<IncomingMessage, "headers" | "socket">;
   method: string | undefined;
@@ -54,6 +75,22 @@ export function resolvePrincipalGate(opts: {
   cuttlefishHome: string;
 }): PrincipalGateResult {
   const auth = authenticateGatewayRequest(opts.req, opts.gatewayAuthToken, opts.cuttlefishHome);
+
+  // This route accepts both an operator and a scoped chat token.  It is not
+  // governed by authRequiredNow(): without an identity the server cannot bind
+  // the resulting approval to its source chat.
+  if (isOrgChangeProposal(opts.method, opts.pathname) && !auth.ok) {
+    return { status: 401, reason: auth.reason || "Authentication required to propose an org change" };
+  }
+
+  // An approval is an operator control, never a conversational acknowledgement.
+  // Enforce this regardless of the loopback-friendly global auth setting.
+  if (isOperatorApprovalAction(opts.method, opts.pathname)) {
+    if (!auth.ok) return { status: 401, reason: auth.reason || "Operator authentication required to resolve approval" };
+    if (auth.principal?.kind !== "admin") {
+      return { status: 403, reason: "Only an operator can resolve approvals" };
+    }
+  }
 
   if (opts.authRequiredNow() && authRequiredForRequest(opts.method, opts.pathname) && !auth.ok) {
     return { status: 401, reason: auth.reason || "Unauthorized" };

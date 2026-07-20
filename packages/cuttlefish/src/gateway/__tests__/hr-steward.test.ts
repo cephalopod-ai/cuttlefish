@@ -229,6 +229,25 @@ describe("submitOrgChange — critique pipeline", () => {
     expect(createApprovalMock).toHaveBeenCalledTimes(1);
   });
 
+  it("attaches a chat-originated change's approval to the originating session", async () => {
+    const ctx = fakeContext();
+    const result = await submitOrgChange(
+      {
+        changeType: "create_agent",
+        employeeName: "ui-test-reviewer",
+        proposed: VALID_HIRE,
+        proposedBy: "user",
+        originSessionId: "operator-chat-1",
+      },
+      ctx,
+      { runCritique: async () => ({ critique: "Verdict: recommend.", sessionId: "hr-critique-1" }) },
+    );
+
+    await waitForStatus(result.request.id, "pending_approval");
+    expect(getChangeRequest(result.request.id)?.originSessionId).toBe("operator-chat-1");
+    expect(createApprovalMock).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "operator-chat-1" }));
+  });
+
   it("reuses a legacy hr-manager web session even when the singleton key is missing", async () => {
     writeEmployee("general", "hr-manager", "name: hr-manager\ndisplayName: HR Manager\ndepartment: general\nrank: manager\nengine: claude\nmodel: sonnet\npersona: Review org changes.\n");
     hoisted.sessionsById.set("legacy-hr", {

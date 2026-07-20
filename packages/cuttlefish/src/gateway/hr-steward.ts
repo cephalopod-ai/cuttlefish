@@ -65,6 +65,8 @@ export interface SubmitOrgChangeInput {
   rationale?: string;
   evidenceRefs?: string[];
   proposedBy?: string;
+  /** Securely inferred from a scoped chat token by the HTTP route. */
+  originSessionId?: string | null;
 }
 
 export interface SubmitOrgChangeResult {
@@ -226,7 +228,10 @@ async function finishCritique(
 
   if (requiresHumanApproval) {
     const approval = createApproval({
-      sessionId: result.sessionId ?? `org-change:${id}`,
+      // HR's critique session is an implementation detail. Keep the approval
+      // with the chat that proposed the change so its human-review card is
+      // visible where the operator made the request.
+      sessionId: updated.originSessionId ?? result.sessionId ?? `org-change:${id}`,
       type: "org-change",
       payload: {
         changeRequestId: id,

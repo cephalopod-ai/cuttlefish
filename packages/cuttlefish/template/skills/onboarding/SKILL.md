@@ -25,7 +25,7 @@ Learn, conversationally (not all at once): what they do, and what they'd love th
 - `knowledge/projects.md` (anything they're working on)
 
 ### 3. Hatch their first employee (centerpiece)
-Propose ONE tailored hire based on what they told you — name, role, emoji, department — and ask if they like it or want changes. On agreement, **really create it** using the `management` skill (write the employee YAML under `org/<department>/<name>.yaml`). Then **scaffold a starter skill** for that hire using the `skill-creator` skill (a small, relevant playbook) and reference it in the new employee's persona. Confirm: "Done — {{newEmployee}} is now part of your team."
+Propose ONE tailored hire based on what they told you — name, role, emoji, department — and ask if they like it or want changes. On agreement, **submit the hire as a change request** using the `management` skill; do not write an employee YAML directly. Wait for the operator to use the approval card in this chat (or the Approvals page) before treating the hire as created. Then **scaffold a starter skill** for that hire using the `skill-creator` skill (a small, relevant playbook) and reference it in the new employee's persona. Confirm only after approval: "Done — {{newEmployee}} is now part of your team."
 
 ### 4. Show delegation live
 Tell them you'll show how delegation works, then **spawn a child session** to the new hire with a tiny real first task (`POST /api/sessions` with `employee: <name>` and `parentSessionId: <this session>`). Narrate it: "Watch the left sidebar — {{newEmployee}}'s session just appeared. I delegated a task; they'll report back to me and I'll summarize." When they report back, summarize for the operator.

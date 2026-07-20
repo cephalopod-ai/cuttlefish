@@ -532,6 +532,7 @@ export async function handleOrgRoutes(
     // Run the full HR pipeline: hard guards → classify → persist pending_critique
     // → background HR critique → approval gate (or auto-apply for low-risk).
     const { submitOrgChange } = await import("../../hr-steward.js");
+    const principal = (req as HttpRequest & { cuttlefishPrincipal?: GatewayPrincipal }).cuttlefishPrincipal;
     const result = await submitOrgChange(
       {
         changeType: input.value.changeType,
@@ -542,6 +543,9 @@ export async function handleOrgRoutes(
           ? body.evidenceRefs.filter((x): x is string => typeof x === "string")
           : [],
         proposedBy: typeof body.proposedBy === "string" && body.proposedBy.trim() ? body.proposedBy.trim() : "user",
+        // Never accept an origin session from the request body: only the
+        // transport-authenticated scoped principal may establish this binding.
+        originSessionId: principal?.kind === "session" ? principal.sessionId : null,
       },
       context,
     );

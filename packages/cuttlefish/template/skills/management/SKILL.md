@@ -67,6 +67,12 @@ cosmetic edits apply automatically. Validate a draft first with
 `POST /api/org/validate` (same body, no side effects). The steward may not modify
 itself — those requests are rejected.
 
+When acting inside a Cuttlefish chat, send the proposal with the injected
+session credential. The gateway attaches the resulting approval to that chat and
+to the global Approvals page. A conversational “yes” is **not** approval: never
+call an `/approve`, `/reject`, or `/apply` endpoint. Only an authenticated
+operator uses those controls.
+
 The step-by-step recipes below describe the YAML each change produces; build the
 `proposed` body from them and submit it via the change-request API rather than
 writing files.
