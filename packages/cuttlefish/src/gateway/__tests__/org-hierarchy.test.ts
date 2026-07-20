@@ -170,14 +170,21 @@ describe("resolveOrgHierarchy", () => {
     const registryWithCoo = withPortalExecutive(registry(emp("eng-lead", { rank: "manager", department: "eng" })), "Cuttlefish");
     const coo = registryWithCoo.get("cuttlefish");
 
-    expect(portalExecutiveEmployee("Cuttlefish").model).toBe("opus");
+    expect(portalExecutiveEmployee("Cuttlefish")).toMatchObject({
+      model: "claude-fable-5",
+      effortLevel: "medium",
+      modelPolicy: {
+        fallback_chain: [{ engine: "claude", model: "opus", effortLevel: "max" }],
+      },
+    });
     expect(coo).toMatchObject({
       name: "cuttlefish",
       displayName: "Cuttlefish",
       department: "",
       rank: "executive",
       engine: "claude",
-      model: "opus",
+      model: "claude-fable-5",
+      effortLevel: "medium",
       reportsTo: [],
     });
   });

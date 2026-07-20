@@ -29,6 +29,14 @@ describe("fresh-install: talk seeding + config guidance", () => {
     );
   });
 
+  it("seeds the COO on Fable 5 Medium with Opus 4.8 Max as its fallback", () => {
+    const setup = readFileSync(SETUP, "utf-8");
+    expect(setup).toMatch(/claude:\s+bin: claude\s+model: claude-fable-5\s+effortLevel: medium/s);
+    expect(setup).toMatch(/claude:\s+default: claude-fable-5/s);
+    expect(setup).toMatch(/id: opus, label: "Opus 4\.8".*effortLevels: \[low, medium, high, max\]/);
+    expect(setup).toMatch(/globalChain:\s+- \{ engine: claude, model: opus, effortLevel: max/s);
+  });
+
   it("guides engine authentication after the version probe", () => {
     expect(readFileSync(SETUP, "utf-8")).toMatch(/does NOT mean the engine is logged in/);
   });

@@ -32,7 +32,11 @@ export function portalExecutiveEmployee(portalName: string | null | undefined): 
     department: "",
     rank: "executive",
     engine: "claude",
-    model: "opus",
+    model: "claude-fable-5",
+    effortLevel: "medium",
+    modelPolicy: {
+      fallback_chain: [{ engine: "claude", model: "opus", effortLevel: "max" }],
+    },
     persona: "COO and AI gateway daemon",
     reportsTo: [],
   };

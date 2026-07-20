@@ -68,6 +68,10 @@ artifacts unless explicitly published.
   `docs/logs/session/072026/2026-07-20-hr-singleton-model-switch.md`:
   repair record for honoring selectable same-engine model and effort changes
   in the reusable HR chat.
+- `docs/audits/072026/2026-07-20-coo-fable-default.md` and
+  `docs/logs/session/072026/2026-07-20-coo-fable-default.md`:
+  alignment of the virtual COO, default configuration, and Fable-to-Opus
+  fallback policy.
 
 - `docs/audits/072026/2026-07-16-full-audit-repair-campaign.md`:
   current-source full repository audit; records twelve confirmed P1–P3

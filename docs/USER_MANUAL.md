@@ -123,6 +123,10 @@ queued turn, including when continuing the reusable HR / Org Steward chat.
 That HR singleton retains its engine and working directory; start a non-HR chat
 when either of those needs to change.
 
+The default COO lane uses Claude Fable 5 at Medium effort. On a configured
+automatic fallback, it continues with Claude Opus 4.8 at Max effort; an
+employee-specific fallback policy takes precedence for that employee.
+
 ### Email inboxes
 
 - Operators can configure up to 3 IMAP inboxes in `/settings`.

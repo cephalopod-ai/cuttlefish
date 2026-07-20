@@ -230,7 +230,7 @@ engines:
   default: claude        # claude | codex | grok | antigravity | pi | hermes | kiro | ollama | kilo
   claude:
     bin: claude          # binary on your PATH (override to point elsewhere)
-    model: opus
+    model: claude-fable-5
     effortLevel: medium
   codex:
     bin: codex

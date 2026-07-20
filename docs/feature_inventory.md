@@ -26,6 +26,13 @@
 
 ## Web UI
 
+### Default COO execution profile
+
+- The virtual portal COO uses Claude Fable 5 at Medium effort.
+- The default model-fallback chain continues on Claude Opus 4.8 at Max effort
+  when Fable 5 cannot continue. An employee's own fallback policy remains the
+  first choice for that employee.
+
 ### Dashboard route shell
 - `packages/web/src/main.tsx`
 - The public dashboard is a Vite React app served by the gateway daemon.

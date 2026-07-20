@@ -74,6 +74,28 @@ describe("resolveModelFallback", () => {
     expect(decision.target).toMatchObject({ engine: "codex", model: "gpt-5.4", source: "global" });
   });
 
+  it("honors the configured same-engine Opus fallback and its effort", () => {
+    const decision = resolveModelFallback({
+      config: {
+        ...baseConfig,
+        modelFallback: {
+          enabled: true,
+          defaultMode: "auto",
+          globalChain: [{ engine: "claude", model: "opus", effortLevel: "max" }],
+        },
+      } as any,
+      failureReason: "timeout",
+      fromEngine: "claude",
+      fromModel: "claude-fable-5",
+      triedRungs: new Set([rungKey("claude", "claude-fable-5")]),
+      isAvailable: available,
+    });
+    expect(decision).toMatchObject({
+      action: "fallback",
+      target: { engine: "claude", model: "opus", effortLevel: "max", source: "global" },
+    });
+  });
+
   it("falls back to the capability ladder when policy chains are unavailable", () => {
     const decision = resolveModelFallback({
       config: { ...baseConfig, modelFallback: { globalChain: [{ engine: "missing", model: "x" }] } } as any,
