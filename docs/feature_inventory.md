@@ -292,13 +292,10 @@
 - `packages/cuttlefish/src/cli/orchestration.ts`
 - `packages/cuttlefish/bin/cuttlefish.ts`
 
-> **Current CLI exposure gap (verified 2026-07-20):** the command handlers
-> described below exist in `src/cli/orchestration.ts`, but the canonical
-> `bin/cuttlefish.ts` does not register their command groups, so they do not
-> appear in `cuttlefish --help` and are not callable through the shipped binary.
-> The live authenticated API and `/orchestration` dashboard controls remain
-> implemented. Treat the command list below as intended handler coverage until
-> binary registration is restored.
+> **CLI exposure (verified 2026-07-20):** the canonical `bin/cuttlefish.ts`
+> registers the command groups below. Read-only inspection and dry-run commands
+> require an explicit config path; live controls remain opt-in through their
+> named commands and continue to require the running gateway's authentication.
 - `cuttlefish workers list --config-dir <dir> [--json]` loads explicit matrix worker config and prints available workers.
 - `cuttlefish scheduler allocate <task-file> --config-dir <dir> --dry-run [--json]` validates a task request and performs fake-worker allocation only.
 - `cuttlefish scheduler simulate <scenario-file> --config-dir <dir> [--json]` runs deterministic allocation/release/heartbeat/expiry scenario steps against in-memory scheduler state.
