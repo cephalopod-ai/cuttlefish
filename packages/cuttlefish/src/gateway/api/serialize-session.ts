@@ -76,7 +76,12 @@ export function buildSessionJobStateMap(sessions: readonly Session[], context: A
   return result;
 }
 
-export function serializeSession(session: Session, context: ApiContext, jobState = localJobState(session, context)): Session & PublicSession & { executionRunState?: ExecutionRunState | null } {
+export function serializeSession(
+  session: Session,
+  context: ApiContext,
+  jobState = localJobState(session, context),
+  lastAgentMessageTimestamp?: number,
+): Session & PublicSession & { executionRunState?: ExecutionRunState | null } {
   const queue = context.sessionManager.getQueue();
   const queueDepth = queue.getPendingCount(session.sessionKey || session.sourceRef);
   const transportState = queue.getTransportState(session.sessionKey || session.sourceRef, session.status);
@@ -118,6 +123,9 @@ export function serializeSession(session: Session, context: ApiContext, jobState
     queueDepth,
     transportState,
     jobState,
+    lastAgentMessageAt: typeof lastAgentMessageTimestamp === "number"
+      ? new Date(lastAgentMessageTimestamp).toISOString()
+      : null,
     backgroundActivity: bg && !bgIsStale
       ? { activeStreams: bg.activeStreams, lastActivityAt: new Date(bg.lastActivityAt).toISOString() }
       : null,

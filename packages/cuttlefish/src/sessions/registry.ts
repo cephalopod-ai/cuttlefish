@@ -101,6 +101,7 @@ export {
   getMessages,
   insertMessage,
   insertPartialMessage,
+  listLatestAgentMessageTimestamps,
   updateMessageContent,
   updatePartialMessage,
   type MessageMedia,

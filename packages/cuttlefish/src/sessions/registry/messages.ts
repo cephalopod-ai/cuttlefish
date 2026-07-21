@@ -88,6 +88,20 @@ export function getMessages(sessionId: string): SessionMessage[] {
   });
 }
 
+/** Latest durable agent-to-human communication per session. One grouped query
+ * keeps session-list serialization from doing an N+1 message lookup. */
+export function listLatestAgentMessageTimestamps(): Map<string, number> {
+  const db = initDb();
+  const rows = db.prepare(`
+    SELECT session_id, MAX(timestamp) AS latest_timestamp
+    FROM messages
+    WHERE role IN ('assistant', 'notification')
+      AND (partial IS NULL OR partial != ?)
+    GROUP BY session_id
+  `).all(PARTIAL_QUARANTINED) as Array<{ session_id: string; latest_timestamp: number }>;
+  return new Map(rows.map((row) => [row.session_id, row.latest_timestamp]));
+}
+
 export function applyBlockEnvelope(
   sessionId: string,
   input: ChatBlockEnvelope,

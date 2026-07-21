@@ -6,6 +6,7 @@ import {
   getSession,
   getSessionGroupCounts,
   listChildSessions,
+  listLatestAgentMessageTimestamps,
   listRecentPerGroup,
   listSessions,
   listSessionsForGroup,
@@ -44,7 +45,11 @@ export function loadSessionMessagesForApi(
 
   messages = sliceLastMessages(messages, lastParam);
   const jobStates = buildSessionJobStateMap(listSessions(), context);
-  return { session: serializeSession(session, context, jobStates.get(session.id)), messages };
+  const latestAgentMessages = listLatestAgentMessageTimestamps();
+  return {
+    session: serializeSession(session, context, jobStates.get(session.id), latestAgentMessages.get(session.id)),
+    messages,
+  };
 }
 
 export async function handleSessionQueryRoutes(
@@ -58,7 +63,13 @@ export async function handleSessionQueryRoutes(
   const serializeWithJobStates = (sessions: ReturnType<typeof listSessions>) => {
     const all = listSessions();
     const jobStates = buildSessionJobStateMap(all, context);
-    return sessions.map((session) => serializeSession(session, context, jobStates.get(session.id)));
+    const latestAgentMessages = listLatestAgentMessageTimestamps();
+    return sessions.map((session) => serializeSession(
+      session,
+      context,
+      jobStates.get(session.id),
+      latestAgentMessages.get(session.id),
+    ));
   };
   if (method === "GET" && pathname === "/api/sessions") {
     const query = url.searchParams.get("q");
@@ -82,7 +93,13 @@ export async function handleSessionQueryRoutes(
     if (rawLimit === "0") {
       const all = listSessions();
       const jobStates = buildSessionJobStateMap(all, context);
-      json(res, all.map((session) => serializeSession(session, context, jobStates.get(session.id))));
+      const latestAgentMessages = listLatestAgentMessageTimestamps();
+      json(res, all.map((session) => serializeSession(
+        session,
+        context,
+        jobStates.get(session.id),
+        latestAgentMessages.get(session.id),
+      )));
       return true;
     }
 

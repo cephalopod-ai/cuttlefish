@@ -75,6 +75,8 @@ export interface PublicSession {
   transportState?: SessionTransportState;
   /** Operator-facing aggregate state for this session and its delegated descendants. */
   jobState?: SessionJobState;
+  /** Latest durable assistant reply or notification, used for timestamp-aware unread indicators. */
+  lastAgentMessageAt?: string | null;
   backgroundActivity?: BackgroundActivity | null;
   attachments?: RunAttachment[];
   createdAt?: string;
