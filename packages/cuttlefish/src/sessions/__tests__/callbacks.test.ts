@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock dependencies before importing the module under test
 vi.mock("../registry.js", () => ({
+  getMessages: vi.fn(() => []),
   getSession: vi.fn(),
   listSessionsBySource: vi.fn(() => []),
   patchSessionTransportMeta: vi.fn(),
@@ -30,8 +31,9 @@ vi.mock("../../gateway/gateway-info.js", async (importOriginal) => ({
   })),
 }));
 
-import { notifyConnectorNotification, notifyParentSession, notifyRateLimitResumed } from "../callbacks.js";
-import { getSession, listSessionsBySource } from "../registry.js";
+import { clearDeferredParentNotificationsForTest, flushDeferredParentNotification, notifyConnectorNotification, notifyParentSession, notifyRateLimitResumed } from "../callbacks.js";
+import { getMessages, getSession, listSessionsBySource } from "../registry.js";
+import { clearSessionBackgroundActivityForTest, setSessionBackgroundActivity } from "../background-activity-state.js";
 import { loadConfig } from "../../shared/config.js";
 import { attach, __resetAttachmentsForTest } from "../../talk/attachments.js";
 import { logger } from "../../shared/logger.js";
@@ -65,6 +67,12 @@ function makeSession(overrides: Partial<Session> = {}): Session {
 }
 
 const originalFetch = globalThis.fetch;
+
+beforeEach(() => {
+  clearSessionBackgroundActivityForTest();
+  clearDeferredParentNotificationsForTest();
+  vi.mocked(getMessages).mockReturnValue([]);
+});
 
 describe("notifyParentSession — no parent", () => {
   it("does nothing if child has no parentSessionId", async () => {
@@ -122,6 +130,52 @@ describe("notifyParentSession", () => {
     expect(body.displayMessage).toContain("test-employee replied");
     expect(body.displayMessage).toContain("Some result");
     expect(body.displayMessage).not.toContain("GET /api/sessions");
+  });
+
+  it("defers the handoff until background work drains, then sends the latest assistant result", async () => {
+    const child = makeSession();
+    const parent = makeSession({ id: "parent-001", parentSessionId: null, status: "idle" });
+    vi.mocked(getSession).mockImplementation((id) => id === child.id ? child : parent);
+    vi.mocked(getMessages).mockReturnValue([
+      { role: "assistant", content: "Final verified result after background agents finished", partial: 0 } as any,
+    ]);
+    setSessionBackgroundActivity(child.id, { activeStreams: 2, lastActivityAt: Date.now() });
+
+    notifyParentSession(child, { result: "Interim progress; still waiting" });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    setSessionBackgroundActivity(child.id, null);
+    expect(flushDeferredParentNotification(child.id)).toBe(true);
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(body.message).toContain("Final verified result after background agents finished");
+    expect(body.message).not.toContain("Interim progress; still waiting");
+  });
+
+  it("refreshes child acknowledgement state before a stale completion can re-arm it", async () => {
+    const staleChild = makeSession({ transportMeta: null });
+    const acknowledgedChild = makeSession({
+      transportMeta: {
+        leaderAck: {
+          state: "acknowledged",
+          parentSessionId: "parent-001",
+          leaderSessionId: "parent-001",
+          leaderName: "engineering-lead",
+          reportKind: "result",
+          reportedAt: new Date(0).toISOString(),
+        },
+      } as Session["transportMeta"],
+    });
+    const parent = makeSession({ id: "parent-001", parentSessionId: null });
+    vi.mocked(getSession).mockImplementation((id) => id === staleChild.id ? acknowledgedChild : parent);
+
+    notifyParentSession(staleChild, { result: "Acknowledged. Standing down on the completed assignment." });
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it("caps the LLM preview at 500 chars and keeps the display preview shorter", async () => {

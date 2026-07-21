@@ -87,4 +87,68 @@ describe("dispatchSessionNotification manager synthesis barrier", () => {
     expect(hoisted.dispatchEmployeeSessionRun).toHaveBeenCalledTimes(1);
     expect((reg.getSession(parent.id)?.transportMeta as any)?.managerDelegationEnforcement?.synthesisDispatched).toBe(true);
   });
+
+  it("does not let a completed old delegation batch silence a later unrelated child", async () => {
+    const reg = await import("../../sessions/registry.js");
+    const { dispatchSessionNotification } = await import("../api/session-dispatch.js");
+    const parent = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:parent-old-batch", prompt: "parent" });
+    const oldChild = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:old-child", parentSessionId: parent.id, prompt: "old" });
+    const laterChild = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:later-child", parentSessionId: parent.id, prompt: "later" });
+    reg.updateSession(parent.id, {
+      transportMeta: {
+        managerDelegationEnforcement: {
+          promptHash: "old-batch",
+          childSessionIds: [oldChild.id],
+          completedChildSessionIds: [oldChild.id],
+          synthesisDispatched: true,
+          synthesisDispatchedAt: new Date(Date.now() - 60_000).toISOString(),
+        },
+      } as any,
+    });
+    const context = {
+      getConfig: () => ({ gateway: {}, engines: { default: "claude", claude: { bin: "node" } } }),
+      emit: vi.fn(),
+      sessionManager: {
+        getEngine: () => ({ name: "claude" }),
+        getQueue: () => ({ clearCancelled: vi.fn() }),
+      },
+    } as any;
+
+    await dispatchSessionNotification(parent.id, "later child completed", undefined, context, {
+      sourceChildSessionId: laterChild.id,
+    });
+
+    expect(hoisted.dispatchEmployeeSessionRun).toHaveBeenCalledOnce();
+  });
+
+  it("lets a forced supervisor reminder bypass a stale synthesis barrier", async () => {
+    const reg = await import("../../sessions/registry.js");
+    const { dispatchSessionNotification } = await import("../api/session-dispatch.js");
+    const parent = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:parent-reminder", prompt: "parent" });
+    reg.updateSession(parent.id, {
+      transportMeta: {
+        managerDelegationEnforcement: {
+          promptHash: "settled-batch",
+          childSessionIds: ["old-child"],
+          completedChildSessionIds: ["old-child"],
+          synthesisDispatched: true,
+          synthesisDispatchedAt: new Date().toISOString(),
+        },
+      } as any,
+    });
+    const context = {
+      getConfig: () => ({ gateway: {}, engines: { default: "claude", claude: { bin: "node" } } }),
+      emit: vi.fn(),
+      sessionManager: {
+        getEngine: () => ({ name: "claude" }),
+        getQueue: () => ({ clearCancelled: vi.fn() }),
+      },
+    } as any;
+
+    await dispatchSessionNotification(parent.id, "second supervisor notice", undefined, context, {
+      bypassManagerDelegationBarrier: true,
+    });
+
+    expect(hoisted.dispatchEmployeeSessionRun).toHaveBeenCalledOnce();
+  });
 });

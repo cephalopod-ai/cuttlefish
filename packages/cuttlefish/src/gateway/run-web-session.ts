@@ -977,6 +977,12 @@ async function enforceManagerDelegationIfNeeded(input: {
 }): Promise<boolean> {
   const { session, prompt, employee, supervisedNodes, config, context } = input;
   if (!employee || employee.mcp === false || supervisedNodes.length === 0) return false;
+  // A parented manager already received a bounded work package from its
+  // delegator. Keyword-only gateway fan-out loses that package's acceptance
+  // criteria and caused nested workers to start without an actionable task.
+  // Let the manager read the full brief and use its delegation discipline to
+  // create semantically complete child assignments itself.
+  if (session.parentSessionId) return false;
   if (isExecutionDepthBlocked(session.transportMeta as Record<string, unknown> | undefined)) return false;
   if (!isInitialManagerDelegationTurn(getMessages(session.id))) return false;
 

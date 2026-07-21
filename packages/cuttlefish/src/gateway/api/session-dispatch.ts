@@ -324,6 +324,7 @@ export async function dispatchSessionNotification(
   message: string,
   displayMessage: string | undefined,
   context: ApiContext,
+  opts?: { sourceChildSessionId?: string; bypassManagerDelegationBarrier?: boolean },
 ): Promise<void> {
   const existingSession = getSession(sessionId);
   if (!existingSession) return;
@@ -334,11 +335,15 @@ export async function dispatchSessionNotification(
   const banner = displayMessage && displayMessage.trim() ? displayMessage : message;
   insertMessage(session.id, "notification", banner);
   context.emit("session:notification", { sessionId: session.id, message: banner });
-  const synthesis = claimManagerDelegationSynthesis(
-    session.id,
-    session.transportMeta,
-    listChildSessions(session.id),
-  );
+  const sourceChild = opts?.sourceChildSessionId ? getSession(opts.sourceChildSessionId) : undefined;
+  const synthesis = opts?.bypassManagerDelegationBarrier
+    ? { tracked: false as const, shouldDispatch: true as const, pendingChildSessionIds: [] as [] }
+    : claimManagerDelegationSynthesis(
+        session.id,
+        session.transportMeta,
+        listChildSessions(session.id),
+        sourceChild,
+      );
   if (!synthesis.shouldDispatch) return;
   if (synthesis.tracked) {
     session = updateSession(session.id, {

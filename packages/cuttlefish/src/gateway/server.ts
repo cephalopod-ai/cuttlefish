@@ -36,6 +36,8 @@ import { markEmailMessageRunFailed } from "../email/store.js";
 import type { OrchestrationRuntime } from "../orchestration/runtime.js";
 import { initDb, clearAllPartialMessages, createSession, getInterruptedSessions, getSession, getSessionBySessionKey, listSessions, patchSessionTransportMeta, recoverStaleQueueItems, recoverStaleSessions, updateSession } from "../sessions/registry.js";
 import { SessionManager } from "../sessions/manager.js";
+import { flushDeferredParentNotification } from "../sessions/callbacks.js";
+import { sessionBackgroundActivity, setSessionBackgroundActivity } from "../sessions/background-activity-state.js";
 import { wrapScreenedUntrustedMessage } from "../sessions/untrusted-input.js";
 import { initStt } from "../stt/stt.js";
 import { shutdownTalkTts } from "../talk/tts-stream.js";
@@ -61,7 +63,7 @@ import { reconcileOrphanedTickets } from "./orphaned-ticket-reconciler.js";
 import { openUntrustedContentCheckpoint } from "./security-review.js";
 import { buildResolvedRunAttachments, resolveIncomingRunAttachments, screenRunAttachmentsForSession } from "./run-attachments.js";
 import { startStatusReconciler } from "./status-reconciler.js";
-import { buildLeaderAckEscalationPrompt, startLeaderAckReconciler, type LeaderAckEscalationDispatch } from "./leader-ack-reconciler.js";
+import { buildLeaderAckEscalationPrompt, resolveLeaderAckTriageModel, startLeaderAckReconciler, type LeaderAckEscalationDispatch } from "./leader-ack-reconciler.js";
 import { syncExternalTurn } from "./external-turns.js";
 import { HookRegistry } from "./hook-registry.js";
 import { gatewayBaseUrl, readGatewayInfo, staleGatewayPids, updateGatewayPtyPids, writeGatewayInfo } from "./gateway-info.js";
@@ -70,7 +72,7 @@ import { stopPolicyWatcher } from "../policy/loader.js";
 import { cleanupOldUploads, ensureFilesDir } from "./files.js";
 import { sweepStaleMcpConfigFiles } from "../mcp/resolver.js";
 import { handleApiRequest, resumePendingWebQueueItems, type ApiContext } from "./api.js";
-import { dispatchWebSessionRun } from "./api/session-dispatch.js";
+import { dispatchSessionNotification, dispatchWebSessionRun } from "./api/session-dispatch.js";
 import { startConfiguredConnectors } from "./server/connectors.js";
 import { createGatewayCleanup, type GatewayCleanup } from "./server/cleanup.js";
 import { createSleepGuard } from "./sleep-guard.js";
@@ -382,16 +384,19 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
     emit("org:changed", {});
   };
 
-  const backgroundActivity = new Map<string, { activeStreams: number; lastActivityAt: number }>();
+  const backgroundActivity = sessionBackgroundActivity;
+  backgroundActivity.clear();
   interactiveClaudeEngine.onBackgroundActivity((sessionId, info) => {
-    if (info) backgroundActivity.set(sessionId, info);
-    else backgroundActivity.delete(sessionId);
+    setSessionBackgroundActivity(sessionId, info);
     emit("session:background", {
       sessionId,
       backgroundActivity: info
         ? { activeStreams: info.activeStreams, lastActivityAt: new Date(info.lastActivityAt).toISOString() }
         : null,
     });
+    if (!info && !interactiveClaudeEngine.hasBackgroundActivity(sessionId)) {
+      flushDeferredParentNotification(sessionId);
+    }
   });
 
   hookRegistry.setUnclaimedHookHandler((cuttlefishSessionId, payload) => {
@@ -731,14 +736,24 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
   stopLeaderAckReconciler = startLeaderAckReconciler({
     emit,
     getConfig: () => currentConfig,
+    dispatchParentReminder: (parentSessionId, message, displayMessage) =>
+      dispatchSessionNotification(parentSessionId, message, displayMessage, apiContext, {
+        bypassManagerDelegationBarrier: true,
+      }),
     dispatchEscalation: async ({ childSession, recipient, ackLeaderName, timeoutMs }: LeaderAckEscalationDispatch) => {
       const gateway = readGatewayInfo(GATEWAY_INFO_FILE);
       if (!gateway) throw new Error("gateway info unavailable");
+      const triageModel = resolveLeaderAckTriageModel(currentConfig);
+      logger.info(
+        `[leader-ack] dispatching ${recipient.name} triage` +
+        (triageModel ? ` on ${triageModel.engine}/${triageModel.model}${triageModel.effortLevel ? ` (${triageModel.effortLevel})` : ""}` : " with executive defaults (no cheap-tier model available)"),
+      );
       const response = await fetch(`${gatewayBaseUrl(gateway)}/api/sessions`, {
         method: "POST",
         headers: jsonApiHeaders(gateway.token),
         body: JSON.stringify({
           employee: recipient.name,
+          ...(triageModel ?? {}),
           prompt: buildLeaderAckEscalationPrompt({ childSession, recipient, ackLeaderName, timeoutMs }),
           promptExcerpt: `Leader acknowledgement timeout for ${childSession.employee || childSession.id}`,
         }),

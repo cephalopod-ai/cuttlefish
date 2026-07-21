@@ -112,6 +112,12 @@ export class InteractiveClaudeEngine implements InterruptibleEngine, PtyViewEngi
   }
   private handleUpstreamActivity(cuttlefishSessionId: string, info: UpstreamActivityInfo): void { this.background.handleUpstreamActivity(cuttlefishSessionId, info); }
   private maybeEmitBackground(cuttlefishSessionId: string): void { this.background.maybeEmit(cuttlefishSessionId); }
+
+  /** Distinguish a real background drain from suppress()'s UI-only null event
+   *  when a new foreground turn starts. */
+  hasBackgroundActivity(cuttlefishSessionId: string): boolean {
+    return this.background.hasActive(cuttlefishSessionId);
+  }
   private suppressBackground(cuttlefishSessionId: string): void { this.background.suppress(cuttlefishSessionId); }
   private clearBackground(cuttlefishSessionId: string): void { this.background.clear(cuttlefishSessionId); }
 

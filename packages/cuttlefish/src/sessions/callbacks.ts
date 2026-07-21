@@ -1,4 +1,4 @@
-import { getSession, listSessionsBySource, patchSessionTransportMeta } from "./registry.js";
+import { getMessages, getSession, listSessionsBySource, patchSessionTransportMeta } from "./registry.js";
 import { loadConfig } from "../shared/config.js";
 import { assertFetchOk, jsonApiHeaders } from "../gateway/internal-auth.js";
 import { logger } from "../shared/logger.js";
@@ -9,6 +9,15 @@ import { hydrateAllAttachments, talkSessionsAttachedTo } from "../talk/attachmen
 import type { SessionNotificationOptions, SessionNotificationSink } from "./notification-sink.js";
 import { markLeaderAckPending, shouldSuppressLeaderAckCallback } from "./leader-ack.js";
 import { recordManagerDelegationChildCompletion } from "./manager-delegation.js";
+import { hasSessionBackgroundActivity } from "./background-activity-state.js";
+
+type ParentNotificationResult = { result?: string | null; error?: string | null; cost?: number; durationMs?: number };
+type DeferredParentNotification = {
+  result: ParentNotificationResult;
+  options?: { alwaysNotify?: boolean } & SessionNotificationOptions;
+};
+
+const deferredParentNotifications = new Map<string, DeferredParentNotification>();
 
 /**
  * Notify the parent session that a child session has replied.
@@ -17,9 +26,19 @@ import { recordManagerDelegationChildCompletion } from "./manager-delegation.js"
  */
 export function notifyParentSession(
   childSession: Session,
-  result: { result?: string | null; error?: string | null; cost?: number; durationMs?: number },
+  result: ParentNotificationResult,
   options?: { alwaysNotify?: boolean } & SessionNotificationOptions,
 ): void {
+  // A Claude Stop can settle the foreground turn while background agents still
+  // have upstream requests in flight. That is progress, not a finished handoff:
+  // hold one latest callback until the engine's existing quiet-window signal
+  // confirms background work has drained.
+  if (hasSessionBackgroundActivity(childSession.id)) {
+    deferredParentNotifications.set(childSession.id, { result, options });
+    logger.info(`[callbacks] deferring parent notification for ${childSession.id} while background work is active`);
+    return;
+  }
+
   // Attachment wakes are a SEPARATE relationship from parent ownership: a talk
   // session can soft-link any session and must be woken when it finishes, even if
   // that session has no parent (or its parent is elsewhere). So this runs before
@@ -28,7 +47,9 @@ export function notifyParentSession(
 
   if (!childSession.parentSessionId) return;
   if (options?.alwaysNotify === false) return;
-  if (shouldSuppressLeaderAckCallback(childSession, result)) {
+  const freshChild = getSession(childSession.id);
+  const currentChild = freshChild?.id === childSession.id ? freshChild : childSession;
+  if (shouldSuppressLeaderAckCallback(currentChild, result)) {
     logger.info(`[leader-ack] suppressing no-op callback for already-settled child report ${childSession.id}`);
     return;
   }
@@ -40,16 +61,38 @@ export function notifyParentSession(
     // simultaneously can't clobber each other's completedChildSessionIds entry.
     patchSessionTransportMeta(parent.id, (current) => recordManagerDelegationChildCompletion(current, childSession.id));
   }
-  markLeaderAckPending(childSession, {
-    leaderSessionId: childSession.parentSessionId,
+  markLeaderAckPending(currentChild, {
+    leaderSessionId: currentChild.parentSessionId,
     leaderName: parent?.employee ?? parent?.title ?? null,
     reportKind: result.error ? "error" : "result",
   });
 
   // Run asynchronously — do not await in the caller
-  _sendNotification(childSession, result, options?.sink).catch((err) => {
+  _sendNotification(currentChild, result, options?.sink).catch((err) => {
     logger.warn(`[callbacks] Failed to notify parent session ${childSession.parentSessionId}: ${err instanceof Error ? err.message : String(err)}`);
   });
+}
+
+/** Flush the one callback held while a worker's background activity drained. */
+export function flushDeferredParentNotification(sessionId: string): boolean {
+  const deferred = deferredParentNotifications.get(sessionId);
+  if (!deferred || hasSessionBackgroundActivity(sessionId)) return false;
+  deferredParentNotifications.delete(sessionId);
+  const child = getSession(sessionId);
+  if (!child) return false;
+  const latestAssistant = deferred.result.error
+    ? null
+    : [...getMessages(sessionId)].reverse().find((message) => message.role === "assistant" && !message.partial)?.content;
+  notifyParentSession(
+    child,
+    latestAssistant ? { ...deferred.result, result: latestAssistant } : deferred.result,
+    deferred.options,
+  );
+  return true;
+}
+
+export function clearDeferredParentNotificationsForTest(): void {
+  deferredParentNotifications.clear();
 }
 
 /** Label for a talk wake: title → employee → "a thread". */
@@ -215,7 +258,11 @@ async function _sendNotification(
     displayMessage = `📩 ${employeeName} replied\n${_clean(raw, 220)}`;
   }
 
-  await _sendRaw(childSession.parentSessionId!, message, displayMessage, sink);
+  if (sink) {
+    await sink.sendSessionNotification(childSession.parentSessionId!, message, displayMessage, childSession.id);
+    return;
+  }
+  await _sendRaw(childSession.parentSessionId!, message, displayMessage);
 }
 
 /** Trim to a word boundary for a tidy human-facing preview. */

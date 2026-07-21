@@ -196,6 +196,7 @@ export function buildManagerDelegationTelemetry(input: {
 export function resolveManagerDelegationSynthesis(
   session: Pick<Session, "transportMeta">,
   childSessions?: ReadonlyArray<Pick<Session, "id" | "status" | "transportMeta">>,
+  sourceChildSession?: Pick<Session, "id" | "lastActivity">,
 ): ManagerDelegationSynthesisDecision {
   const meta = asRecord(session.transportMeta);
   const enforcement = asRecord(meta?.managerDelegationEnforcement) as ManagerDelegationEnforcementMeta | null;
@@ -205,7 +206,20 @@ export function resolveManagerDelegationSynthesis(
   if (childSessionIds.length === 0) {
     return { tracked: false, shouldDispatch: true, pendingChildSessionIds: [] };
   }
+  // A completed enforcement record governs only the exact delegation batch it
+  // names. Later manually-created children must not be silenced forever by its
+  // stale synthesisDispatched flag.
+  if (sourceChildSession && !childSessionIds.includes(sourceChildSession.id)) {
+    return { tracked: false, shouldDispatch: true, pendingChildSessionIds: [] };
+  }
   if (enforcement?.synthesisDispatched === true) {
+    const dispatchedAt = typeof enforcement.synthesisDispatchedAt === "string"
+      ? Date.parse(enforcement.synthesisDispatchedAt)
+      : Number.NaN;
+    const childActivityAt = sourceChildSession ? Date.parse(sourceChildSession.lastActivity) : Number.NaN;
+    if (Number.isFinite(dispatchedAt) && Number.isFinite(childActivityAt) && childActivityAt > dispatchedAt) {
+      return { tracked: false, shouldDispatch: true, pendingChildSessionIds: [] };
+    }
     return { tracked: true, shouldDispatch: false, pendingChildSessionIds: [], reason: "already_dispatched" };
   }
   const completedChildSessionIds = new Set(
@@ -231,8 +245,9 @@ export function claimManagerDelegationSynthesis(
   sessionId: string,
   transportMeta: Session["transportMeta"],
   childSessions?: ReadonlyArray<Pick<Session, "id" | "status" | "transportMeta">>,
+  sourceChildSession?: Pick<Session, "id" | "lastActivity">,
 ): ManagerDelegationSynthesisDecision {
-  const decision = resolveManagerDelegationSynthesis({ transportMeta }, childSessions);
+  const decision = resolveManagerDelegationSynthesis({ transportMeta }, childSessions, sourceChildSession);
   if (!decision.tracked || !decision.shouldDispatch) return decision;
   const enforcement = asRecord(asRecord(transportMeta)?.managerDelegationEnforcement) as ManagerDelegationEnforcementMeta | null;
   const promptHash = typeof enforcement?.promptHash === "string" ? enforcement.promptHash : "current";

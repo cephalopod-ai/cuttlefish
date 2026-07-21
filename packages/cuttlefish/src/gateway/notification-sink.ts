@@ -6,8 +6,12 @@ import { recordDroppedNotification } from "../shared/process-health.js";
 
 export function createGatewayNotificationSink(context: ApiContext): SessionNotificationSink {
   return {
-    async sendSessionNotification(sessionId, message, displayMessage) {
-      await dispatchSessionNotification(sessionId, message, displayMessage, context);
+    async sendSessionNotification(sessionId, message, displayMessage, sourceChildSessionId) {
+      if (sourceChildSessionId) {
+        await dispatchSessionNotification(sessionId, message, displayMessage, context, { sourceChildSessionId });
+      } else {
+        await dispatchSessionNotification(sessionId, message, displayMessage, context);
+      }
     },
 
     async sendConnectorNotification(message) {

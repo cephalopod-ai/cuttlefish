@@ -26,8 +26,63 @@ beforeEach(() => {
   fs.writeFileSync(path.join(orgDir, "coo.yaml"), "name: coo\ndisplayName: COO\ndepartment: general\nrank: executive\nengine: claude\nmodel: opus\npersona: Run the org.\n");
 });
 
+describe("leader acknowledgement triage model", () => {
+  const config = {
+    gateway: { port: 8888, host: "127.0.0.1" },
+    engines: { default: "claude", claude: { bin: "claude", model: "claude-fable-5" } },
+    connectors: {},
+    logging: { file: true, stdout: true, level: "info" },
+  } as any;
+
+  it("routes routine COO triage to the first configured cheap-tier model at low effort", () => {
+    const registry = {
+      claude: {
+        name: "claude",
+        available: true,
+        defaultModel: "claude-fable-5",
+        effortMechanism: "claude-flag",
+        models: [
+          { id: "claude-fable-5", label: "Fable", supportsEffort: true, effortLevels: ["low", "medium"] },
+          { id: "claude-haiku-4-5", label: "Haiku", supportsEffort: true, effortLevels: ["low", "medium", "high"] },
+        ],
+      },
+    } as any;
+
+    expect(rec.resolveLeaderAckTriageModel(config, registry)).toEqual({
+      engine: "claude",
+      model: "claude-haiku-4-5",
+      effortLevel: "low",
+    });
+  });
+
+  it("skips unavailable cheap rungs and preserves the executive fallback when none are configured", () => {
+    const unavailableHaiku = {
+      claude: {
+        name: "claude",
+        available: false,
+        defaultModel: "claude-fable-5",
+        effortMechanism: "claude-flag",
+        models: [{ id: "claude-haiku-4-5", label: "Haiku", supportsEffort: true, effortLevels: ["low"] }],
+      },
+      codex: {
+        name: "codex",
+        available: true,
+        defaultModel: "gpt-5.4-mini",
+        effortMechanism: "codex-config",
+        models: [{ id: "gpt-5.4-mini", label: "Mini", supportsEffort: true, effortLevels: ["low", "medium"] }],
+      },
+    } as any;
+    expect(rec.resolveLeaderAckTriageModel(config, unavailableHaiku)).toEqual({
+      engine: "codex",
+      model: "gpt-5.4-mini",
+      effortLevel: "low",
+    });
+    expect(rec.resolveLeaderAckTriageModel(config, {})).toBeNull();
+  });
+});
+
 describe("leader acknowledgement reconciler", () => {
-  it("marks overdue executive handoffs for manual human review instead of paging HR", async () => {
+  it("contacts the direct supervisor twice before marking an executive handoff for manual human review", async () => {
     const parent = reg.createSession({
       engine: "claude",
       source: "web",
@@ -52,7 +107,8 @@ describe("leader acknowledgement reconciler", () => {
     });
 
     const dispatchEscalation = vi.fn(async () => {});
-    const fixed = rec.sweepLeaderAcknowledgements({
+    const dispatchParentReminder = vi.fn(async () => {});
+    const deps = {
       emit: vi.fn(),
       getConfig: () => ({
         gateway: { port: 8888, host: "127.0.0.1", leaderAckTimeoutMs: 60_000 },
@@ -62,7 +118,26 @@ describe("leader acknowledgement reconciler", () => {
       } as any),
       now: () => 120_000,
       dispatchEscalation,
+      dispatchParentReminder,
+    };
+    let fixed = rec.sweepLeaderAcknowledgements(deps);
+
+    expect(fixed).toBe(0);
+    expect(ack.readLeaderAckMeta(reg.getSession(child.id))).toMatchObject({
+      state: "pending",
+      contactAttemptCount: 2,
+      lastContactAttemptAt: new Date(120_000).toISOString(),
     });
+    expect(dispatchParentReminder).toHaveBeenCalledOnce();
+    expect(dispatchParentReminder).toHaveBeenCalledWith(
+      parent.id,
+      expect.stringContaining(`/api/sessions/${child.id}?last=20`),
+      expect.stringContaining("Second notice"),
+    );
+    expect(dispatchEscalation).not.toHaveBeenCalled();
+
+    deps.now = () => 240_000;
+    fixed = rec.sweepLeaderAcknowledgements(deps);
 
     expect(fixed).toBe(1);
     const updated = reg.getSession(child.id);
@@ -72,6 +147,57 @@ describe("leader acknowledgement reconciler", () => {
     });
     expect(dispatchEscalation).not.toHaveBeenCalled();
     expect(reg.getMessages(child.id).some((message) => message.content.includes("Escalated to manual human review"))).toBe(true);
+  });
+
+  it("does not escalate when the supervisor replies after the second contact", () => {
+    const parent = reg.createSession({
+      engine: "claude",
+      source: "web",
+      sourceRef: "web:parent-reminder-ack",
+      prompt: "parent",
+      employee: "software-delivery-lead",
+    });
+    const child = reg.createSession({
+      engine: "claude",
+      source: "web",
+      sourceRef: "web:child-reminder-ack",
+      prompt: "child",
+      employee: "engineer",
+      parentSessionId: parent.id,
+    });
+    ack.markLeaderAckPending(child, {
+      leaderSessionId: parent.id,
+      leaderName: "software-delivery-lead",
+      reportKind: "result",
+      now: new Date(0).toISOString(),
+    });
+    const dispatchParentReminder = vi.fn(async () => {});
+    const getConfig = () => ({
+      gateway: { port: 8888, host: "127.0.0.1", leaderAckTimeoutMs: 60_000 },
+      engines: { default: "claude", claude: { bin: "claude", model: "opus" } },
+      connectors: {},
+      logging: { file: true, stdout: true, level: "info" },
+    } as any);
+
+    expect(rec.sweepLeaderAcknowledgements({
+      emit: vi.fn(),
+      getConfig,
+      now: () => 120_000,
+      dispatchParentReminder,
+    })).toBe(0);
+    reg.insertMessage(parent.id, "assistant", "I reviewed the report and am handling the follow-up now.");
+
+    expect(rec.sweepLeaderAcknowledgements({
+      emit: vi.fn(),
+      getConfig,
+      now: () => 240_000,
+      dispatchParentReminder,
+    })).toBe(0);
+    expect(ack.readLeaderAckMeta(reg.getSession(child.id))).toMatchObject({
+      state: "acknowledged",
+      contactAttemptCount: 2,
+      acknowledgedBy: "software-delivery-lead",
+    });
   });
 
   it("acknowledges instead of escalating when the parent already marked the child report no-op", async () => {
@@ -219,7 +345,8 @@ describe("leader acknowledgement reconciler", () => {
       logging: { file: true, stdout: true, level: "info" },
     } as any);
 
-    // Round 1: worker reports, leader never explicitly acks, timeout fires -> escalates to HR.
+    // Round 1: worker reports, the reminder timeout fires, then the second
+    // unanswered timeout escalates.
     ack.markLeaderAckPending(child, {
       leaderSessionId: parent.id,
       leaderName: "coo",
@@ -227,12 +354,16 @@ describe("leader acknowledgement reconciler", () => {
       now: new Date(0).toISOString(),
     });
     const dispatchEscalation = vi.fn(async () => {});
-    let escalated = rec.sweepLeaderAcknowledgements({
+    const reminderDeps = {
       emit: vi.fn(),
       getConfig,
       now: () => 120_000,
       dispatchEscalation,
-    });
+    };
+    let escalated = rec.sweepLeaderAcknowledgements(reminderDeps);
+    expect(escalated).toBe(0);
+    reminderDeps.now = () => 240_000;
+    escalated = rec.sweepLeaderAcknowledgements(reminderDeps);
     expect(escalated).toBe(1);
     expect(ack.readLeaderAckMeta(reg.getSession(child.id))).toMatchObject({
       state: "escalated",
@@ -247,7 +378,7 @@ describe("leader acknowledgement reconciler", () => {
       leaderSessionId: parent.id,
       leaderName: "coo",
       reportKind: "result",
-      now: new Date(130_000).toISOString(),
+      now: new Date(250_000).toISOString(),
     });
     expect(ack.readLeaderAckMeta(reg.getSession(child.id))).toMatchObject({
       state: "pending",
@@ -257,7 +388,20 @@ describe("leader acknowledgement reconciler", () => {
     escalated = rec.sweepLeaderAcknowledgements({
       emit: vi.fn(),
       getConfig,
-      now: () => 250_000,
+      now: () => 370_000,
+      dispatchEscalation,
+    });
+
+    expect(escalated).toBe(0);
+    expect(ack.readLeaderAckMeta(reg.getSession(child.id))).toMatchObject({
+      state: "pending",
+      contactAttemptCount: 2,
+    });
+
+    escalated = rec.sweepLeaderAcknowledgements({
+      emit: vi.fn(),
+      getConfig,
+      now: () => 490_000,
       dispatchEscalation,
     });
 

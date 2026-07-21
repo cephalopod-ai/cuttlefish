@@ -10,6 +10,10 @@ export interface LeaderAckMeta {
   leaderName: string | null;
   reportKind: "result" | "error";
   reportedAt: string;
+  /** Number of direct-supervisor contact attempts for this report. The initial callback is attempt one. */
+  contactAttemptCount?: number;
+  /** Timestamp of the most recent direct-supervisor contact attempt. */
+  lastContactAttemptAt?: string;
   acknowledgedAt?: string | null;
   acknowledgedBy?: string | null;
   escalatedAt?: string | null;
@@ -21,7 +25,7 @@ export interface LeaderAckMeta {
 }
 
 const SIMPLE_NO_OP_ACK_RE = /^(?:acknowledged|noted|understood|ok|okay|thanks|thank you)(?:[.!])?$/i;
-const STALE_NO_OP_RE = /\b(?:stale|no[- ]?op|no remaining work|no further action|no action required|no response required|no response needed|ignore further|ignoring|already recorded|already accepted|closure acknowledged|audit closed|task is closed|task remains done|review is closed)\b/i;
+const STALE_NO_OP_RE = /\b(?:stale|no[- ]?op|no remaining work|no further action|no action required|no response required|no response needed|ignore further|ignoring|already recorded|already accepted|accepted as complete|closure acknowledged|audit closed|task is closed|task remains done|review is closed|stand(?:ing)? down)\b/i;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -60,6 +64,8 @@ export function readLeaderAckMeta(session: Pick<Session, "transportMeta"> | null
     leaderName: typeof raw.leaderName === "string" && raw.leaderName.trim() ? raw.leaderName : null,
     reportKind: raw.reportKind,
     reportedAt: raw.reportedAt,
+    contactAttemptCount: typeof raw.contactAttemptCount === "number" && raw.contactAttemptCount >= 1 ? raw.contactAttemptCount : 1,
+    lastContactAttemptAt: typeof raw.lastContactAttemptAt === "string" && raw.lastContactAttemptAt.trim() ? raw.lastContactAttemptAt : raw.reportedAt,
     acknowledgedAt: typeof raw.acknowledgedAt === "string" ? raw.acknowledgedAt : null,
     acknowledgedBy: typeof raw.acknowledgedBy === "string" ? raw.acknowledgedBy : null,
     escalatedAt: typeof raw.escalatedAt === "string" ? raw.escalatedAt : null,
@@ -85,6 +91,7 @@ export function markLeaderAckPending(
   // session lineage does not reset the cap — see hasEscalationsRemaining in
   // the reconciler, which relies on this to stop the repeat-escalation loop).
   const existing = readLeaderAckMeta(session);
+  const reportedAt = input.now ?? new Date().toISOString();
   patchSessionTransportMeta(session.id, {
     [META_KEY]: {
       state: "pending",
@@ -92,7 +99,9 @@ export function markLeaderAckPending(
       leaderSessionId: input.leaderSessionId?.trim() || session.parentSessionId,
       leaderName: input.leaderName?.trim() || null,
       reportKind: input.reportKind,
-      reportedAt: input.now ?? new Date().toISOString(),
+      reportedAt,
+      contactAttemptCount: 1,
+      lastContactAttemptAt: reportedAt,
       acknowledgedAt: null,
       acknowledgedBy: null,
       escalatedAt: null,
@@ -102,6 +111,23 @@ export function markLeaderAckPending(
       boardDepartment: typeof transport.boardDepartment === "string" ? transport.boardDepartment : null,
     },
   });
+}
+
+export function markLeaderAckReminderSent(
+  sessionId: string,
+  existing: Pick<Session, "transportMeta"> | null | undefined,
+  input?: { now?: string },
+): boolean {
+  const current = readLeaderAckMeta(existing);
+  if (!current || current.state !== "pending") return false;
+  patchSessionTransportMeta(sessionId, {
+    [META_KEY]: {
+      ...current,
+      contactAttemptCount: (current.contactAttemptCount ?? 1) + 1,
+      lastContactAttemptAt: input?.now ?? new Date().toISOString(),
+    },
+  });
+  return true;
 }
 
 export function acknowledgeLeaderAck(sessionId: string, existing: Pick<Session, "transportMeta"> | null | undefined, input?: {

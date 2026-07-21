@@ -176,6 +176,71 @@ describe("manager delegation enforcement", () => {
     expect(reg.listChildSessions(parent.id)).toHaveLength(0);
   });
 
+  it("lets a delegated manager read its full work package before creating specialist assignments", async () => {
+    const reg = await import("../../sessions/registry.js");
+    const { runWebSession } = await import("../run-web-session.js");
+
+    const managerRun = vi.fn<Engine["run"]>(async () => ({ result: "manager prepared bounded briefs", sessionId: "manager-engine-session" }));
+    const specialistRun = vi.fn<Engine["run"]>(async () => ({ result: "should not auto-run", sessionId: "specialist-engine-session" }));
+    const engines = new Map<string, Engine>([
+      ["claude", fakeEngine("claude", managerRun)],
+      ["codex", fakeEngine("codex", specialistRun)],
+    ]);
+    const config = {
+      gateway: { host: "127.0.0.1", port: 8888 },
+      engines: { default: "claude", claude: { bin: "node", model: "opus" }, codex: { bin: "node", model: "gpt-5.5" } },
+      portal: { portalName: "Cuttlefish" },
+    } as unknown as CuttlefishConfig;
+    const context = {
+      getConfig: () => config,
+      connectors: new Map(),
+      emit: vi.fn(),
+      notificationSink: {
+        sendSessionNotification: vi.fn().mockResolvedValue(undefined),
+        sendConnectorNotification: vi.fn().mockResolvedValue(undefined),
+      },
+      sessionManager: {
+        getEngine: (name: string) => engines.get(name),
+        getEngines: () => engines,
+        getQueue: () => new SessionQueue(),
+      },
+      startTime: Date.now(),
+    } as any;
+    const delegator = reg.createSession({
+      engine: "claude",
+      source: "web",
+      sourceRef: "web:delegator",
+      employee: "program-manager",
+      prompt: "coordinate",
+    });
+    const workPackage = "Implement F-007 in scripts/release-gate.sh, preserve exit code 42, and add the named regression test for bearer token security.";
+    const delegatedManager = reg.createSession({
+      engine: "claude",
+      source: "web",
+      sourceRef: "web:delegated-manager",
+      sessionKey: "web:delegated-manager",
+      employee: "parliamentarian",
+      parentSessionId: delegator.id,
+      model: "opus",
+      prompt: workPackage,
+      portalName: "Cuttlefish",
+    });
+    reg.insertMessage(delegatedManager.id, "user", workPackage);
+
+    await runWebSession(delegatedManager, workPackage, engines.get("claude")!, config, context);
+
+    expect(managerRun).toHaveBeenCalledTimes(1);
+    expect(managerRun.mock.calls[0][0].prompt).toContain(workPackage);
+    expect(specialistRun).not.toHaveBeenCalled();
+    expect(reg.listChildSessions(delegatedManager.id)).toHaveLength(0);
+    expect(context.notificationSink.sendSessionNotification).toHaveBeenCalledWith(
+      delegator.id,
+      expect.stringContaining("manager prepared bounded briefs"),
+      expect.any(String),
+      delegatedManager.id,
+    );
+  });
+
   it("does not restore an engine resume id from a quietly interrupted turn", async () => {
     const reg = await import("../../sessions/registry.js");
     const { runWebSession } = await import("../run-web-session.js");

@@ -218,4 +218,21 @@ describe("manager delegation helpers", () => {
     const afterSecond = recordManagerDelegationChildCompletion(afterFirst, "child-b");
     expect(resolveManagerDelegationSynthesis({ transportMeta: afterSecond } as any)).toMatchObject({ shouldDispatch: true });
   });
+
+  it("does not let an old synthesis marker suppress a later turn from the same child", () => {
+    const transportMeta = {
+      managerDelegationEnforcement: {
+        childSessionIds: ["child-a"],
+        completedChildSessionIds: ["child-a"],
+        synthesisDispatched: true,
+        synthesisDispatchedAt: "2026-07-20T12:00:00.000Z",
+      },
+    } as any;
+
+    expect(resolveManagerDelegationSynthesis(
+      { transportMeta } as any,
+      [],
+      { id: "child-a", lastActivity: "2026-07-20T12:01:00.000Z" },
+    )).toEqual({ tracked: false, shouldDispatch: true, pendingChildSessionIds: [] });
+  });
 });

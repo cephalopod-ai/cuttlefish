@@ -2,12 +2,15 @@ import { getMessages, getSession, insertMessage, listSessions } from "../session
 import { resolveOrgHierarchy, withPortalExecutive } from "./org-hierarchy.js";
 import { scanOrg } from "./org.js";
 import { logger } from "../shared/logger.js";
-import type { CuttlefishConfig, Employee, Session } from "../shared/types.js";
-import { acknowledgeLeaderAck, isLeaderAckNoOpResult, markLeaderAckEscalated, readLeaderAckMeta, type LeaderAckMeta } from "../sessions/leader-ack.js";
+import { DEFAULT_MODEL_LADDER } from "../shared/model-escalation.js";
+import { getModelRegistry, isKnownEngine } from "../shared/models.js";
+import type { CuttlefishConfig, Employee, ModelRegistry, Session } from "../shared/types.js";
+import { acknowledgeLeaderAck, isLeaderAckNoOpResult, markLeaderAckEscalated, markLeaderAckReminderSent, readLeaderAckMeta, type LeaderAckMeta } from "../sessions/leader-ack.js";
 
 const DEFAULT_INTERVAL_MS = 60_000;
 const DEFAULT_TIMEOUT_MS = 10 * 60_000;
 const DEFAULT_MAX_ESCALATIONS = 1;
+const MIN_SUPERVISOR_CONTACT_ATTEMPTS = 2;
 
 export interface LeaderAckEscalationDispatch {
   childSession: Session;
@@ -16,12 +19,30 @@ export interface LeaderAckEscalationDispatch {
   timeoutMs: number;
 }
 
+export interface LeaderAckTriageModel {
+  engine: string;
+  model: string;
+  effortLevel?: string;
+}
+
 export interface LeaderAckReconcilerDeps {
   emit: (event: string, payload: unknown) => void;
   getConfig: () => CuttlefishConfig;
   intervalMs?: number;
   now?: () => number;
   dispatchEscalation?: (input: LeaderAckEscalationDispatch) => Promise<void>;
+  dispatchParentReminder?: (parentSessionId: string, message: string, displayMessage: string) => Promise<void>;
+}
+
+function buildParentReminderMessage(child: Session): { message: string; displayMessage: string } {
+  const worker = child.employee || "A delegated worker";
+  return {
+    message: [
+      `Second notice: ${worker}'s delegated-work report is still awaiting your acknowledgement.`,
+      `Review GET /api/sessions/${child.id}?last=20, then reply with the next action before the handoff escalates.`,
+    ].join("\n"),
+    displayMessage: `⏱️ Second notice: ${worker}'s report needs acknowledgement.`,
+  };
 }
 
 export function resolveLeaderAckTimeoutMs(config: CuttlefishConfig): number {
@@ -32,6 +53,29 @@ export function resolveLeaderAckTimeoutMs(config: CuttlefishConfig): number {
 export function resolveLeaderAckMaxEscalations(config: CuttlefishConfig): number {
   const raw = config.gateway?.leaderAckMaxEscalations;
   return typeof raw === "number" && raw >= 0 ? raw : DEFAULT_MAX_ESCALATIONS;
+}
+
+/**
+ * Routine acknowledgement triage should not start on the virtual COO's
+ * high-capability default. Reuse the existing model ladder's cheap tier and
+ * select the first model that is both configured and available. Returning
+ * null preserves the working executive fallback on installations that do not
+ * expose any cheap-tier model.
+ */
+export function resolveLeaderAckTriageModel(
+  config: CuttlefishConfig,
+  registry: ModelRegistry = getModelRegistry(config),
+): LeaderAckTriageModel | null {
+  for (const rung of DEFAULT_MODEL_LADDER[0] ?? []) {
+    if (!isKnownEngine(rung.engine)) continue;
+    const entry = registry[rung.engine];
+    if (!entry?.available) continue;
+    const model = entry.models.find((candidate) => candidate.id.toLowerCase() === rung.model.toLowerCase());
+    if (!model) continue;
+    const effortLevel = model.supportsEffort && model.effortLevels.includes("low") ? "low" : undefined;
+    return { engine: rung.engine, model: model.id, ...(effortLevel ? { effortLevel } : {}) };
+  }
+  return null;
 }
 
 function formatDurationMinutes(ms: number): number {
@@ -118,8 +162,32 @@ export function sweepLeaderAcknowledgements(deps: LeaderAckReconcilerDeps): numb
       logger.info(`[leader-ack] session ${session.id} acknowledged by parent no-op/closure response`);
       continue;
     }
-    const reportedAt = Date.parse(ack.reportedAt);
-    if (!Number.isFinite(reportedAt) || now - reportedAt < timeoutMs) continue;
+    const lastContactAt = Date.parse(ack.lastContactAttemptAt ?? ack.reportedAt);
+    if (!Number.isFinite(lastContactAt) || now - lastContactAt < timeoutMs) continue;
+
+    // The completion/error callback is the first direct-supervisor contact.
+    // Give that same supervisor one explicit reminder and a fresh timeout
+    // window before routing the handoff to an executive or manual review.
+    if ((ack.contactAttemptCount ?? 1) < MIN_SUPERVISOR_CONTACT_ATTEMPTS) {
+      const attemptedAt = new Date(now).toISOString();
+      if (!markLeaderAckReminderSent(session.id, session, { now: attemptedAt })) continue;
+      const reminder = buildParentReminderMessage(session);
+      const parent = getSession(ack.parentSessionId);
+      if (parent) {
+        if (deps.dispatchParentReminder) {
+          void deps.dispatchParentReminder(parent.id, reminder.message, reminder.displayMessage).catch((err) => {
+            logger.warn(`[leader-ack] failed second supervisor contact for ${session.id}: ${err instanceof Error ? err.message : String(err)}`);
+          });
+        } else {
+          insertMessage(parent.id, "notification", reminder.displayMessage);
+          deps.emit("session:updated", { sessionId: parent.id });
+        }
+      }
+      insertMessage(session.id, "notification", `⏱️ Supervisor acknowledgement is overdue; a second notice was sent to ${ack.leaderName || "the assigned leader"}.`);
+      deps.emit("session:updated", { sessionId: session.id });
+      logger.warn(`[leader-ack] session ${session.id} sent second supervisor contact before escalation`);
+      continue;
+    }
 
     // Every completed child turn re-arms a fresh pending cycle (markLeaderAckPending),
     // including turns that are just administrative follow-up (e.g. HR sending a closing
