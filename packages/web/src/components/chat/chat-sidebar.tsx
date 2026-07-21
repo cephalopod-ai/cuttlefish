@@ -31,7 +31,7 @@ import {
 import { cn } from "@/lib/utils"
 import { SidebarListSurface } from "./sidebar-list-surface"
 import { ArchiveDialog, type ArchiveDialogTarget } from "./archive-dialog"
-import type { SidebarDeleteTarget, SidebarSharedRowProps } from "./sidebar-row-components"
+import { StatusDot, type SidebarDeleteTarget, type SidebarSharedRowProps } from "./sidebar-row-components"
 import { useSidebarViewPreferences } from "./use-sidebar-view-preferences"
 import {
   getPinnedSessions,
@@ -57,7 +57,7 @@ import {
   formatOlderLineLabel,
   VIRTUALIZE_THRESHOLD,
 } from "./sidebar-view-model"
-import { resolveReadSessions } from "./sidebar-session-helpers"
+import { isNeedsAttention, resolveReadSessions } from "./sidebar-session-helpers"
 
 export type { SidebarOrder } from "./sidebar-types"
 export {
@@ -65,6 +65,7 @@ export {
   getStatusDot,
   hasBackgroundActivity,
   isDirectSession,
+  isNeedsAttention,
   isRecentError,
   resolveRowIdentity,
 } from "./sidebar-session-helpers"
@@ -113,6 +114,14 @@ export function ChatSidebar({
   const sessions = useMemo(
     () => buildVisibleSessions(rawSessions as Session[] | undefined),
     [rawSessions],
+  )
+
+  // Surfaced regardless of view mode/scroll position: which mode you're in and
+  // how deep a chat is nested shouldn't determine whether you notice a session
+  // is blocked on you.
+  const needsAttentionSessions = useMemo(
+    () => sessions.filter(isNeedsAttention),
+    [sessions],
   )
 
   const [search, setSearch] = useState("")
@@ -641,6 +650,17 @@ export function ChatSidebar({
                 </button>
               ))}
             </div>
+
+            {needsAttentionSessions.length > 0 ? (
+              <button
+                onClick={() => onSelect(needsAttentionSessions[0].id)}
+                title={`${needsAttentionSessions.length} ${needsAttentionSessions.length === 1 ? "chat needs" : "chats need"} you`}
+                className="flex shrink-0 items-center gap-1.5 rounded-full bg-[var(--fill-tertiary)] px-2.5 py-1 text-[11px] font-medium text-[var(--system-orange)] transition-colors hover:bg-[var(--fill-secondary)]"
+              >
+                <StatusDot color="var(--system-orange)" pulse className="size-1.5" />
+                {needsAttentionSessions.length} need you
+              </button>
+            ) : null}
 
             <div className="flex-1" />
 

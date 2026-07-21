@@ -638,6 +638,26 @@
   row per agent. Expanding the row reveals the distinct chats; it does not merge
   transcripts, parent relationships, or session-scoped authorization. Search,
   Focused, and Rooms retain their purpose-specific session presentation.
+- Lifecycle text is color-coded consistently everywhere it renders: an expanded
+  agent row's nested chats use the same "Needs your attention"
+  (orange) / "Job failed" (red) / "Job finished" (green) / "New agent message"
+  (blue) treatment as top-level flat rows, via one shared color-class lookup
+  instead of per-component copies that could drift out of sync.
+- A collapsed agent row's status dot reflects the single most urgent state
+  across *all* of that agent's sessions (needs-attention outranks failed,
+  which outranks working, which outranks finished), not just its most-recently-
+  active or first-unread session — an older chat still blocked on the operator
+  is never hidden behind a newer chat that has since finished.
+- A persistent "N need you" badge sits in the sidebar header next to the
+  Rooms/Focused/All toggle whenever at least one durable session currently
+  needs operator attention (`jobState: "needs_attention"` or the legacy
+  `status: "waiting"`), regardless of view mode, scroll position, or which
+  agent group is expanded. Clicking it opens the first such session.
+- Department Rooms track `needsAttentionCount` separately from `runningCount`:
+  a session blocked on the operator no longer counts toward a generic
+  "N running" badge (which now means "actively executing" only); the room
+  header shows a distinct orange "N need you" badge alongside it, and a room
+  is considered active from needs-attention alone even with nothing running.
 - Department Rooms currently provide a derived, read-only merged timeline over
   existing sessions. Writable shared-room conversations, multi-recipient
   `@mentions`, and indexed `#topics` are a proposed contract only: the current

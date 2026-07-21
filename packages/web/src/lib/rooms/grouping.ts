@@ -30,8 +30,18 @@ export const UNASSIGNED_ROOM_NAME = 'Unassigned'
 /** Prefix marking a sidebar selection as a room (vs. a bare session id). */
 export const ROOM_SELECTION_PREFIX = 'room:'
 
-/** Statuses that mean "this session is doing work right now". */
-const ACTIVE_STATUSES = new Set(['running', 'waiting'])
+/** Statuses that mean "this session is doing work right now" (excludes
+ *  'waiting', which means blocked on the operator, not busy). */
+const RUNNING_STATUSES = new Set(['running'])
+
+/** True when a session is blocking on the operator. Mirrors
+ *  `chat/sidebar-session-helpers`'s `isNeedsAttention` but is redefined locally
+ *  (on the room-scoped `RoomSession` shape) to keep this module dependency-free
+ *  of the chat component tree, matching the existing `isCronRoomSession` /
+ *  `isCronSession` split. */
+function isRoomSessionNeedsAttention(s: RoomSession): boolean {
+  return s.jobState === 'needs_attention' || s.status === 'waiting'
+}
 
 /** Label used for a participant/speaker on a session with no employee. */
 const DIRECT_PARTICIPANT_NAME = ''
@@ -151,6 +161,7 @@ export function groupSessionsByDepartment(
           participantCount: 0,
           lastActivity: undefined,
           runningCount: 0,
+          needsAttentionCount: 0,
           status: 'idle',
         },
         participants: new Map(),
@@ -170,7 +181,8 @@ export function groupSessionsByDepartment(
     target.room.sessions.push(s)
     target.room.sessionCount += 1
     target.room.lastActivity = maxIso(target.room.lastActivity, s.lastActivity)
-    if (ACTIVE_STATUSES.has(s.status ?? '')) target.room.runningCount += 1
+    if (RUNNING_STATUSES.has(s.status ?? '')) target.room.runningCount += 1
+    if (isRoomSessionNeedsAttention(s)) target.room.needsAttentionCount += 1
 
     // Participant tally (distinct employee, or a single Direct bucket).
     const empName = (s.employee ?? '').trim()
@@ -196,7 +208,7 @@ export function groupSessionsByDepartment(
       (a, b) => b.sessionCount - a.sessionCount || a.displayName.localeCompare(b.displayName),
     )
     room.participantCount = room.participants.length
-    room.status = room.runningCount > 0 ? 'active' : 'idle'
+    room.status = room.runningCount > 0 || room.needsAttentionCount > 0 ? 'active' : 'idle'
     rooms.push(room)
   }
 

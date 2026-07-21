@@ -212,6 +212,11 @@ export function SidebarListSurface({
                   <span className="shrink-0 rounded bg-[var(--fill-tertiary)] px-1.5 py-0.5 text-[10px]">
                     {room.participantCount} {room.participantCount === 1 ? "person" : "people"}
                   </span>
+                  {room.needsAttentionCount > 0 ? (
+                    <span className="shrink-0 rounded bg-[var(--fill-secondary)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--system-orange)]">
+                      {room.needsAttentionCount} need you
+                    </span>
+                  ) : null}
                   {room.runningCount > 0 ? (
                     <span className="shrink-0 rounded bg-[var(--fill-secondary)] px-1.5 py-0.5 text-[10px] text-[var(--accent)]">
                       {room.runningCount} running

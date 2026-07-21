@@ -18,6 +18,7 @@
 | `docs/LOG_ARCHIVE.md` | log archive index | current | repo local-log convention | reconciled 2026-07-20 | Index local raw paths and Cuttlefish audit artifacts. |
 | `docs/feature_inventory.md` | feature/API inventory | current | documentation rules | reconciled 2026-07-20 | Keep current with public surfaces. |
 | `docs/test_scenarios/README.md` | playtest scenario library index | current | playtest / QA stewardship | extended 2026-07-20 | Keep file table and coverage checklist aligned with scenario cards. |
+| `docs/test_scenarios/PLAYTEST_EXECUTION.md` | playtest execution contract | current | playtest / QA stewardship | added 2026-07-20 | Use before every scenario pass; keep evidence statuses, isolation, cleanup, and reporting rules aligned with the cards and repo contract. |
 | `docs/test_scenarios/01-*.md` … `10-*.md` | core surface scenario cards | current | playtest / QA stewardship | baseline library | Do not silently rewrite executed cards mid-pass; add new files for new themes. |
 | `docs/test_scenarios/11-model-selection-and-switching.md` | model selection scenarios | current | playtest / QA stewardship | added 2026-07-20 | Exercise composer/session model honesty, aliases, HR singleton rules. |
 | `docs/test_scenarios/12-failover-and-fallback.md` | failover scenarios | current | playtest / QA stewardship | added 2026-07-20 | Exercise same-engine fallback, role chains, loss policies, orchestration headroom. |

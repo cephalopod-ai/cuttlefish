@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { getJobStateLabel, getStatusDot, hasBackgroundActivity, isDirectSession, isRecentError, resolveRowIdentity } from '../chat-sidebar'
-import { resolveReadSessions } from '../sidebar-session-helpers'
+import { getJobStateLabel, getStatusDot, hasBackgroundActivity, isDirectSession, isNeedsAttention, isRecentError, resolveRowIdentity } from '../chat-sidebar'
+import { getMostUrgentDot, resolveReadSessions } from '../sidebar-session-helpers'
 
 afterEach(() => {
   vi.useRealTimers()
@@ -112,6 +112,44 @@ describe('chat sidebar job lifecycle', () => {
     const item = session('idle', 'waiting')
     expect(getStatusDot(item, new Set([item.id]))?.label).toBe('needs your attention')
     expect(getJobStateLabel(item)).toBe('Needs your attention')
+  })
+
+  it('isNeedsAttention agrees with the dot/label precedence it backs', () => {
+    expect(isNeedsAttention(session('needs_attention'))).toBe(true)
+    expect(isNeedsAttention(session('idle', 'waiting'))).toBe(true)
+    expect(isNeedsAttention(session('finished'))).toBe(false)
+    expect(isNeedsAttention(session('working'))).toBe(false)
+  })
+})
+
+describe('getMostUrgentDot (group status aggregation)', () => {
+  const session = (jobState: 'idle' | 'working' | 'needs_attention' | 'finished' | 'failed', id: string, status = 'idle') => ({
+    id,
+    status,
+    jobState,
+    source: 'web',
+    sourceRef: `web:${id}`,
+    engine: 'claude',
+    createdAt: '2026-07-20T12:00:00Z',
+    lastActivity: '2026-07-20T12:00:00Z',
+  }) as Parameters<typeof getMostUrgentDot>[0][number]
+
+  it('surfaces a needs-attention session even when it is not the newest/first one', () => {
+    const sessions = [
+      session('finished', 'newest'),
+      session('needs_attention', 'older'),
+    ]
+    expect(getMostUrgentDot(sessions, new Set(sessions.map((s) => s.id)))?.label).toBe('needs your attention')
+  })
+
+  it('ranks job failure above a merely-finished sibling', () => {
+    const sessions = [session('finished', 'a'), session('failed', 'b')]
+    expect(getMostUrgentDot(sessions, new Set(sessions.map((s) => s.id)))?.label).toBe('job failed')
+  })
+
+  it('returns null when every session in the group is quiet', () => {
+    const sessions = [session('idle', 'a'), session('idle', 'b')]
+    expect(getMostUrgentDot(sessions, new Set(sessions.map((s) => s.id)))).toBeNull()
   })
 })
 

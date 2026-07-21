@@ -25,8 +25,8 @@ import {
 } from "./sidebar-session-rows"
 import {
   formatTime,
+  getMostUrgentDot,
   getSessionActivity,
-  getStatusDot,
   titleCase,
 } from "./sidebar-session-helpers"
 import type { FlatItem, Session } from "./sidebar-types"
@@ -106,7 +106,10 @@ export const EmployeeRow = React.memo(function EmployeeRow({
   const unreadAgentSession = empSessions.find(
     (session) => Boolean(session.lastAgentMessageAt) && !readSessions.has(session.id),
   )
-  const empDot = getStatusDot(unreadAgentSession ?? latestSession, readSessions, hasUnread)
+  // Scan every session in the group for its dot, not just the latest/unread
+  // one — an older chat that still needs attention must not be hidden behind
+  // a newer chat that merely finished.
+  const empDot = getMostUrgentDot(empSessions, readSessions)
 
   const sessionRowProps: SidebarSharedRowProps = {
     selectedId,

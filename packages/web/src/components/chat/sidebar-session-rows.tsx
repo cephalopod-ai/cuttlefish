@@ -22,6 +22,7 @@ import {
   getJobStateLabel,
   getSessionActivity,
   getStatusDot,
+  JOB_STATE_LABEL_COLOR_CLASS,
 } from "./sidebar-session-helpers"
 import type { Session } from "./sidebar-types"
 
@@ -284,7 +285,13 @@ export const SessionRow = React.memo(function SessionRow({
                 sessionIsActive ? "font-semibold text-foreground" : "text-[var(--text-secondary)]",
               )}
             >
-              {jobStateLabel ? `${jobStateLabel} · ` : ""}{cleanPreview(sessionTitle) || "Untitled"}
+              {jobStateLabel ? (
+                <span className={cn("font-medium", JOB_STATE_LABEL_COLOR_CLASS[jobStateLabel])}>
+                  {jobStateLabel}
+                </span>
+              ) : null}
+              {jobStateLabel ? " · " : ""}
+              {cleanPreview(sessionTitle) || "Untitled"}
             </span>
           )}
           {isPinned ? (
@@ -438,15 +445,7 @@ export const FlatSessionRow = React.memo(function FlatSessionRow({
               <div className="flex min-w-0 items-center gap-1 truncate text-[11px] text-[var(--text-tertiary)]">
                 {jobStateLabel ? (
                   <>
-                    <span
-                      className={cn(
-                        "shrink-0 font-medium",
-                        jobStateLabel === "Needs your attention" && "text-[var(--system-orange)]",
-                        jobStateLabel === "Job finished" && "text-[var(--system-green)]",
-                        jobStateLabel === "Job failed" && "text-[var(--system-red)]",
-                        jobStateLabel === "New agent message" && "text-[var(--system-blue)]",
-                      )}
-                    >
+                    <span className={cn("shrink-0 font-medium", JOB_STATE_LABEL_COLOR_CLASS[jobStateLabel])}>
                       {jobStateLabel}
                     </span>
                     <span aria-hidden="true">·</span>

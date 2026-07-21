@@ -108,6 +108,7 @@ describe("SidebarListSurface", () => {
       participantCount: 1,
       lastActivity: "2026-06-22T10:00:00.000Z",
       runningCount: 1,
+      needsAttentionCount: 0,
       status: "active",
     }
 
@@ -133,6 +134,33 @@ describe("SidebarListSurface", () => {
 
     fireEvent.click(openButton)
     expect(onSelectRoom).toHaveBeenCalledWith("platform")
+  })
+
+  it("renders a distinct 'need you' badge alongside the running badge", () => {
+    const room: DepartmentRoom = {
+      id: "platform",
+      name: "Platform",
+      departmentId: "platform",
+      isUnassigned: false,
+      sessions: [],
+      participants: [],
+      sessionCount: 3,
+      participantCount: 2,
+      lastActivity: "2026-06-22T10:00:00.000Z",
+      runningCount: 1,
+      needsAttentionCount: 2,
+      status: "active",
+    }
+
+    renderSurface({
+      virtualItems: [{ kind: "room-header", room }],
+      expandedRooms: new Set(),
+      toggleRoomExpanded: vi.fn(),
+      onSelectRoom: vi.fn(),
+    })
+
+    expect(screen.getByText("2 need you")).toBeTruthy()
+    expect(screen.getByText("1 running")).toBeTruthy()
   })
 
   it("renders the scheduled section and load-more button wiring", () => {

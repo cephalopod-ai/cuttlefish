@@ -1,7 +1,7 @@
 import React from "react"
 import { fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
-import { ContactRow, SectionLabel, SessionRow, StatusDot } from "../sidebar-row-components"
+import { ContactRow, EmployeeRow, SectionLabel, SessionRow, StatusDot } from "../sidebar-row-components"
 import type { Session } from "../sidebar-types"
 
 vi.mock("@/components/ui/context-menu", () => ({
@@ -144,6 +144,110 @@ describe("sidebar row components", () => {
     )
 
     expect(screen.getByLabelText("new agent message")).toBeTruthy()
-    expect(screen.getByText(/New agent message · Delegated work/)).toBeTruthy()
+    // The label and title live in separate elements (so the label can be
+    // colored independently) — match on the combined textContent rather than
+    // getByText's default direct-text-node-only comparison.
+    expect(
+      screen.getByText(
+        (_, element) => element?.textContent === "New agent message · Delegated work",
+      ),
+    ).toBeTruthy()
+  })
+
+  it("color-codes the job-state label on a nested session row, not just top-level flat rows", () => {
+    const session: Session = {
+      id: "s-attention",
+      title: "Blocked task",
+      source: "web",
+      sourceRef: "web:s-attention",
+      status: "waiting",
+      createdAt: "2026-07-20T19:00:00.000Z",
+      lastActivity: "2026-07-20T19:00:00.000Z",
+    }
+
+    render(
+      <SessionRow
+        session={session}
+        selectedId={null}
+        readSessions={new Set([session.id])}
+        pinnedSessions={new Set()}
+        renamingSessionId={null}
+        renameCancelledRef={{ current: false }}
+        fixTitle={(title) => title ?? "Untitled"}
+        onSelect={vi.fn()}
+        onEmployeeSessionsAvailable={vi.fn()}
+        togglePin={vi.fn()}
+        handleDuplicate={vi.fn()}
+        setArchiveTarget={vi.fn()}
+        setDeleteTarget={vi.fn()}
+        setRenamingSessionId={vi.fn()}
+        updateSessionTitle={vi.fn()}
+      />,
+    )
+
+    const label = screen.getByText("Needs your attention")
+    expect(label.className).toContain("text-[var(--system-orange)]")
+  })
+
+  it("employee row's status dot surfaces the most urgent child session, not just the latest one", () => {
+    const newestFinished: Session = {
+      id: "newest",
+      employee: "alice",
+      title: "Newest chat",
+      source: "web",
+      sourceRef: "web:newest",
+      status: "idle",
+      jobState: "finished",
+      createdAt: "2026-07-20T20:00:00.000Z",
+      lastActivity: "2026-07-20T20:00:00.000Z",
+    }
+    const olderNeedsAttention: Session = {
+      id: "older",
+      employee: "alice",
+      title: "Older chat",
+      source: "web",
+      sourceRef: "web:older",
+      status: "waiting",
+      createdAt: "2026-07-20T18:00:00.000Z",
+      lastActivity: "2026-07-20T18:00:00.000Z",
+    }
+
+    render(
+      <EmployeeRow
+        item={{
+          type: "employee",
+          employeeName: "alice",
+          sessions: [newestFinished, olderNeedsAttention],
+          sortKey: newestFinished.lastActivity!,
+          pinKey: "emp:alice",
+          groupKey: "alice",
+          total: 2,
+        }}
+        selectedId={null}
+        readSessions={new Set([newestFinished.id, olderNeedsAttention.id])}
+        pinnedSessions={new Set()}
+        expanded={{}}
+        renamingSessionId={null}
+        renameCancelledRef={{ current: false }}
+        fixTitle={(title) => title ?? "Untitled"}
+        onSelect={vi.fn()}
+        onEmployeeSessionsAvailable={vi.fn()}
+        togglePin={vi.fn()}
+        handleMarkAllRead={vi.fn()}
+        handleEmployeeClick={vi.fn()}
+        setArchiveTarget={vi.fn()}
+        setDeleteTarget={vi.fn()}
+        onLoadMore={vi.fn()}
+        loadingMore={new Set()}
+        setRenamingSessionId={vi.fn()}
+        updateSessionTitle={vi.fn()}
+        handleDuplicate={vi.fn()}
+      />,
+    )
+
+    // Both sessions are already "read"; the old aggregation only inspected the
+    // newest/first-unread session and would have shown a quiet green "finished"
+    // dot here, hiding the older session that's actually blocked on the user.
+    expect(screen.getByLabelText("needs your attention")).toBeTruthy()
   })
 })

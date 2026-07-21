@@ -27,6 +27,9 @@ artifacts unless explicitly published.
   `17` operations/data lifecycle; `18` orchestration control-plane semantics;
   `19` manager handoff, operator-attention, and delegated-job completion;
   `20` session authority collision, arbitration, and human-notification semantics).
+- `docs/test_scenarios/PLAYTEST_EXECUTION.md`: required disposable-state,
+  capability-gate, evidence, cleanup, and reporting contract for executing the
+  scenario library without overstating partial coverage.
 - `docs/TODO_LEDGER.md`: current active documentation/governance TODO ledger.
 - `docs/TODO_HISTORY.md`: closed defects and completed TODOs with preserved
   closure evidence.
@@ -72,6 +75,11 @@ artifacts unless explicitly published.
   `docs/logs/session/072026/2026-07-20-live-playtest-defect-repair.md`:
   repair record for the six confirmed lifecycle, skills, cron, routing, and
   CLI error-handling findings from the supplied live playtest report.
+- `docs/audits/072026/2026-07-20-full-scenario-library-playtest.md` and
+  `docs/logs/session/072026/2026-07-20-full-scenario-library-playtest.md`:
+  225-card library review and disposable-home execution record; confirms
+  web-turn accounting, checkpoint replay, orchestration CLI registration, and
+  Skills add/idempotency defects while separating blocked browser/fixture work.
 - `docs/audits/072026/2026-07-20-documentation-stewardship.md` and
   `docs/logs/session/072026/2026-07-20-documentation-stewardship.md`:
   source-grounded documentation reconciliation, including the active-only TODO

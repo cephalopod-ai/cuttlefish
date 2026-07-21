@@ -118,6 +118,29 @@ describe('groupSessionsByDepartment', () => {
     expect(rooms.find((r) => r.id === 'research')!.status).toBe('idle')
   })
 
+  it('counts needs-attention sessions separately from running ones', () => {
+    const withAttention = groupSessionsByDepartment(
+      [
+        s({ id: 'a', employee: 'gepetto', status: 'running' }),
+        s({ id: 'b', employee: 'safety', status: 'waiting' }),
+        s({ id: 'c', employee: 'gepetto', jobState: 'needs_attention', status: 'idle' }),
+      ],
+      employees,
+    )
+    const wood = withAttention.find((r) => r.id === 'woodworking')!
+    expect(wood.runningCount).toBe(1)
+    expect(wood.needsAttentionCount).toBe(2)
+    expect(wood.status).toBe('active')
+  })
+
+  it('marks a room active from needs-attention alone, even with nothing running', () => {
+    const rooms2 = groupSessionsByDepartment(
+      [s({ id: 'a', employee: 'gepetto', status: 'waiting' })],
+      employees,
+    )
+    expect(rooms2.find((r) => r.id === 'woodworking')!.status).toBe('active')
+  })
+
   it('computes participants (distinct employees) and counts', () => {
     const wood = rooms.find((r) => r.id === 'woodworking')!
     expect(wood.participantCount).toBe(2)
@@ -217,7 +240,7 @@ describe('buildRoomTimeline', () => {
 })
 
 describe('totalRunning', () => {
-  it('sums runningCount across rooms', () => {
+  it('sums runningCount across rooms, excluding sessions only waiting on the operator', () => {
     const rooms = groupSessionsByDepartment(
       [
         s({ id: 'a', employee: 'gepetto', status: 'running' }),
@@ -226,6 +249,6 @@ describe('totalRunning', () => {
       ],
       employees,
     )
-    expect(totalRunning(rooms)).toBe(2)
+    expect(totalRunning(rooms)).toBe(1)
   })
 })

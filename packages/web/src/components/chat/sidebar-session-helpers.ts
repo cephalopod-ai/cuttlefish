@@ -139,6 +139,13 @@ export function isRecentError(
   return nowMs - ts < RECENT_ERROR_WINDOW_MS
 }
 
+/** True when a session is actively blocking on the operator — the one state
+ *  that always outranks "running" or "finished". Shared by the dot, the text
+ *  label, and any aggregate ("N need you") count so the three can't drift. */
+export function isNeedsAttention(session: Pick<Session, "status" | "jobState">): boolean {
+  return session.jobState === "needs_attention" || session.status === "waiting"
+}
+
 // Resolve the attention-state dot for a session. Returns null for the resting
 // "read" state so no dot is painted (quiet at rest). Optionally treat the row
 // as unread even when this session is read (e.g. a grouped employee row whose
@@ -148,7 +155,7 @@ export function getStatusDot(
   readSet: Set<string>,
   forceUnread = false,
 ): StatusDotState | null {
-  if (session.jobState === "needs_attention" || session.status === "waiting") {
+  if (isNeedsAttention(session)) {
     return { color: "var(--system-orange)", label: "needs your attention", pulse: true }
   }
   const unread = forceUnread || !readSet.has(session.id)
@@ -180,10 +187,53 @@ export function getJobStateLabel(
   session: Pick<Session, "status" | "jobState">,
   hasNewAgentMessage = false,
 ): string | null {
-  if (session.jobState === "needs_attention" || session.status === "waiting") return "Needs your attention"
+  if (isNeedsAttention(session)) return "Needs your attention"
   if (hasNewAgentMessage) return "New agent message"
   if (session.jobState === "working") return "Work in progress"
   if (session.jobState === "finished") return "Job finished"
   if (session.jobState === "failed") return "Job failed"
   return null
+}
+
+/** Text color for each `getJobStateLabel` value — the single source of color
+ *  truth so every row (flat or nested-under-an-agent) reads consistently
+ *  instead of only some rows getting the colored treatment. */
+export const JOB_STATE_LABEL_COLOR_CLASS: Record<string, string> = {
+  "Needs your attention": "text-[var(--system-orange)]",
+  "Job finished": "text-[var(--system-green)]",
+  "Job failed": "text-[var(--system-red)]",
+  "New agent message": "text-[var(--system-blue)]",
+}
+
+// Relative severity of each `getStatusDot` label, lowest = most urgent. Used
+// to pick the single worst-case dot across a group of sessions (e.g. all of
+// one agent's chats) instead of only checking whichever session happens to be
+// newest — a session needing attention from an hour ago must not be hidden
+// behind a different chat that merely finished five minutes ago.
+const STATUS_DOT_SEVERITY: Record<string, number> = {
+  "needs your attention": 0,
+  "job failed": 1,
+  "error": 1,
+  "new agent message": 2,
+  "work in progress": 3,
+  "background work running": 4,
+  "job finished": 5,
+  "unread": 6,
+}
+
+/** The most urgent status dot across a group of sessions (e.g. one agent's
+ *  chats), or null if none of them warrant a dot. */
+export function getMostUrgentDot(sessions: Session[], readSet: Set<string>): StatusDotState | null {
+  let best: StatusDotState | null = null
+  let bestRank = Number.POSITIVE_INFINITY
+  for (const session of sessions) {
+    const dot = getStatusDot(session, readSet)
+    if (!dot) continue
+    const rank = STATUS_DOT_SEVERITY[dot.label] ?? 6
+    if (rank < bestRank) {
+      bestRank = rank
+      best = dot
+    }
+  }
+  return best
 }

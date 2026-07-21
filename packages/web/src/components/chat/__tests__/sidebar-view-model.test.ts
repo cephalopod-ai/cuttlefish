@@ -184,6 +184,7 @@ describe("sidebar view model", () => {
         participantCount: 1,
         lastActivity: "2026-06-22T10:00:00.000Z",
         runningCount: 0,
+        needsAttentionCount: 0,
         status: "idle",
       },
       {
@@ -197,6 +198,7 @@ describe("sidebar view model", () => {
         participantCount: 1,
         lastActivity: "2026-06-22T09:00:00.000Z",
         runningCount: 0,
+        needsAttentionCount: 0,
         status: "idle",
       },
     ]

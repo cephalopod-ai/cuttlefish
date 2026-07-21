@@ -23,6 +23,8 @@ export interface RoomSession {
   title?: string | null
   promptExcerpt?: string | null
   status?: string
+  /** Delegated-job lifecycle state, when present — see `chat/sidebar-session-helpers`'s `isNeedsAttention`. */
+  jobState?: string
   createdAt?: string
   lastActivity?: string
 }
@@ -62,9 +64,13 @@ export interface DepartmentRoom {
   participantCount: number
   /** Max `lastActivity` across the room's sessions (ISO), if any. */
   lastActivity?: string
-  /** Number of sessions currently running/waiting. */
+  /** Number of sessions actively running (excludes sessions blocked on the operator). */
   runningCount: number
-  /** 'active' when any session is running/waiting, else 'idle'. */
+  /** Number of sessions blocked on the operator (needs_attention/waiting) — kept
+   *  distinct from `runningCount` so a room header can tell "busy" apart from
+   *  "needs you", instead of collapsing both into one generic count. */
+  needsAttentionCount: number
+  /** 'active' when any session is running, waiting, or needs attention, else 'idle'. */
   status: RoomStatus
 }
 
