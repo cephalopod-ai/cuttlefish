@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   principalBodySessionForbidden,
   scopedTokenChildDetailReadTarget,
+  scopedTokenSessionMessageTarget,
   scopedTokenCollectionForbidden,
   scopedTokenForbidden,
   scopedTokenSessionMismatch,
@@ -192,5 +193,16 @@ describe("scopedTokenChildDetailReadTarget — delegation poll surface", () => {
     expect(scopedTokenChildDetailReadTarget("GET", "/api/sessions/child-1/transcript")).toBeNull();
     expect(scopedTokenChildDetailReadTarget("GET", "/api/sessions/child-1/children")).toBeNull();
     expect(scopedTokenChildDetailReadTarget("GET", "/api/sessions/interrupted")).toBeNull();
+  });
+});
+
+describe("scopedTokenSessionMessageTarget — COO communication surface", () => {
+  it("recognizes only POST to the exact session message route", () => {
+    expect(scopedTokenSessionMessageTarget("POST", "/api/sessions/SESSION-1/message")).toBe("session-1");
+    expect(scopedTokenSessionMessageTarget("GET", "/api/sessions/session-1/message")).toBeNull();
+    expect(scopedTokenSessionMessageTarget("POST", "/api/sessions/session-1")).toBeNull();
+    expect(scopedTokenSessionMessageTarget("POST", "/api/sessions/session-1/stop")).toBeNull();
+    expect(scopedTokenSessionMessageTarget("POST", "/api/sessions/session-1/reset")).toBeNull();
+    expect(scopedTokenSessionMessageTarget("DELETE", "/api/sessions/session-1")).toBeNull();
   });
 });

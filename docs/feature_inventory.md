@@ -659,7 +659,12 @@
   child from that delegation run with `GET /api/sessions/:childId?last=N`. The
   persisted `parentSessionId` edge is the run-local capability boundary: siblings,
   unrelated sessions, grandchildren, raw engine transcripts, child subresources,
-  and cross-session writes remain denied.
+  and cross-session writes remain denied for ordinary employee sessions.
+- A non-Talk COO session can send a follow-up to any existing session with
+  `POST /api/sessions/:id/message`. The capability is derived from server-owned
+  session identity and does not grant cross-session reads, raw transcripts,
+  attachments, resets, stops, deletion, or other lifecycle actions. Employee
+  sessions and the Talk voice orchestrator remain under ordinary confinement.
 - With no `gateway.fileReadRoots` configured, local-file reads are restricted to Cuttlefish-managed storage. Operators can add explicit project roots or use the documented `allowArbitraryFileRead` escape hatch for a local install.
 - Content that passed inbound screening remains wrapped as untrusted data. Automatic connector replies redact secret-shaped text before delivery.
 - Per-session API credentials are supplied only to the engine subprocess as `CUTTLEFISH_SESSION_TOKEN`; their raw value is not embedded in model-visible context.

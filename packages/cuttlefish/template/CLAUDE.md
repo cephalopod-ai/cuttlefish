@@ -357,6 +357,13 @@ The gateway base URL (host:port) is provided in your session context under "Curr
 | `/api/connectors/:name/send` | POST | Send message via connector (`{channel, text, thread?}`) |
 | `/api/logs` | GET | Recent log lines |
 
+The COO may use its scoped session token to send a follow-up through
+`POST /api/sessions/:id/message` to any existing session. This executive
+capability is message-only: it does not grant cross-session transcript reads,
+attachments, resets, stops, deletion, or other lifecycle actions. Employee
+sessions remain confined to their own session except for documented direct-child
+polling.
+
 **Attachments** — when you produce a file (chart, screenshot, PDF) and want it in the web chat, POST its local path to your own session. The file is copied into `~/.cuttlefish/uploads/` and rendered inline (images/audio inline, other types as a download card). Attachments render in the web chat view only — never in the raw CLI/xterm stream.
 
 ```bash

@@ -148,6 +148,57 @@ describe("resolvePrincipalGate (CF2-120)", () => {
     }
   });
 
+  it("allows a COO session to send a follow-up message to any session", () => {
+    const scoped = createScopedSessionToken("coo-run", TOKEN);
+    const gate = resolvePrincipalGate({
+      req: req({ authorization: `Bearer ${scoped}` }),
+      method: "POST",
+      pathname: "/api/sessions/worker-run/message",
+      authRequiredNow: () => false,
+      gatewayAuthToken: TOKEN,
+      cuttlefishHome: "/tmp/does-not-matter",
+      isCooSession: (sessionId) => sessionId === "coo-run",
+    });
+    expect(gate).toMatchObject({ status: 200, principal: { kind: "session", sessionId: "coo-run" } });
+  });
+
+  it("does not let an ordinary manager message an unrelated session", () => {
+    const scoped = createScopedSessionToken("manager-run", TOKEN);
+    const gate = resolvePrincipalGate({
+      req: req({ authorization: `Bearer ${scoped}` }),
+      method: "POST",
+      pathname: "/api/sessions/unrelated-run/message",
+      authRequiredNow: () => false,
+      gatewayAuthToken: TOKEN,
+      cuttlefishHome: "/tmp/does-not-matter",
+      isCooSession: () => false,
+    });
+    expect(gate.status).toBe(403);
+  });
+
+  it("keeps COO cross-session authority limited to the message endpoint", () => {
+    const scoped = createScopedSessionToken("coo-run", TOKEN);
+    for (const [method, pathname] of [
+      ["GET", "/api/sessions/worker-run"],
+      ["GET", "/api/sessions/worker-run/transcript"],
+      ["POST", "/api/sessions/worker-run/stop"],
+      ["POST", "/api/sessions/worker-run/reset"],
+      ["DELETE", "/api/sessions/worker-run"],
+    ] as const) {
+      const gate = resolvePrincipalGate({
+        req: req({ authorization: `Bearer ${scoped}` }),
+        method,
+        pathname,
+        authRequiredNow: () => false,
+        gatewayAuthToken: TOKEN,
+        cuttlefishHome: "/tmp/does-not-matter",
+        isDirectChildSession: () => false,
+        isCooSession: () => true,
+      });
+      expect(gate.status, `${method} ${pathname}`).toBe(403);
+    }
+  });
+
   it("403s a scoped session token on global integration and message-search reads", () => {
     const scoped = createScopedSessionToken("session-abc", TOKEN);
     for (const pathname of ["/api/talk/search", "/api/email/inboxes", "/api/artifacts", "/api/knowledge/outbox", "/api/fs/list"]) {

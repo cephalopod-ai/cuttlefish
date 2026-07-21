@@ -66,6 +66,19 @@ export function isDirectChildSession(
   return child?.parentSessionId?.toLowerCase() === parentSessionId.toLowerCase();
 }
 
+/**
+ * The virtual COO is represented by a gateway session with no employee bound
+ * to it. Talk's voice orchestrator also has no employee, but it is a distinct
+ * server-owned control session and must not inherit COO API authority.
+ */
+export function isCooSession(
+  sessionId: string,
+  deps: { getSession: typeof getSession } = { getSession },
+): boolean {
+  const session = deps.getSession(sessionId);
+  return Boolean(session && session.employee === null && session.source !== "talk");
+}
+
 /** Fields a manager-scoped employee update (PATCH with a `managerName` claim)
  *  may touch. Anything else is an authorization failure — a manager-scoped
  *  caller may retune its report's engine/model/effort, not reassign it,

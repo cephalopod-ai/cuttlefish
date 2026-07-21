@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Employee } from "../../shared/types.js";
-import { authorizeManagerScope, isDirectChildSession, isHrHumanOnlyBlocked, isManagerNameAuthorizedForPrincipal } from "../manager-auth.js";
+import { authorizeManagerScope, isCooSession, isDirectChildSession, isHrHumanOnlyBlocked, isManagerNameAuthorizedForPrincipal } from "../manager-auth.js";
 import { HR_EMPLOYEE_NAME } from "../org-policy.js";
 
 function employee(overrides: Partial<Employee>): Employee {
@@ -98,6 +98,24 @@ describe("isDirectChildSession", () => {
     expect(isDirectChildSession("manager-run", "child-run", { getSession })).toBe(true);
     expect(isDirectChildSession("other-manager-run", "child-run", { getSession })).toBe(false);
     expect(isDirectChildSession("manager-run", "missing", { getSession })).toBe(false);
+  });
+});
+
+describe("isCooSession", () => {
+  it("recognizes a gateway COO session from server-owned session state", () => {
+    const getSession = vi.fn(() => ({ employee: null, source: "web" }) as any);
+    expect(isCooSession("coo-run", { getSession })).toBe(true);
+    expect(getSession).toHaveBeenCalledWith("coo-run");
+  });
+
+  it("does not grant COO authority to employee, Talk orchestrator, or missing sessions", () => {
+    const getSession = vi.fn((id: string) => ({
+      employee: id === "employee-run" ? "engineering-lead" : null,
+      source: id === "talk-run" ? "talk" : "web",
+    })) as any;
+    expect(isCooSession("employee-run", { getSession })).toBe(false);
+    expect(isCooSession("talk-run", { getSession })).toBe(false);
+    expect(isCooSession("missing", { getSession: vi.fn(() => undefined) as any })).toBe(false);
   });
 });
 

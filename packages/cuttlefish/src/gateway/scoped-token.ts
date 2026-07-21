@@ -223,3 +223,20 @@ export function scopedTokenChildDetailReadTarget(
   }
   return targetId;
 }
+
+/**
+ * Return the target id for the single cross-session write available to the
+ * virtual COO: sending a follow-up message to an existing session. The
+ * principal gate separately proves that the caller is a gateway-owned COO
+ * session; keeping the route recognition exact prevents that authority from
+ * extending to reset, stop, delete, attachment, or other lifecycle routes.
+ */
+export function scopedTokenSessionMessageTarget(
+  method: string | undefined,
+  rawPathname: string,
+): string | null {
+  if ((method || "GET").toUpperCase() !== "POST") return null;
+  const pathname = path.posix.normalize(rawPathname || "/").toLowerCase();
+  const match = /^\/api\/sessions\/([^/]+)\/message$/.exec(pathname);
+  return match?.[1] ?? null;
+}

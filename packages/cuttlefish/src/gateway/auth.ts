@@ -14,6 +14,7 @@ export {
   verifyScopedSessionToken,
   scopedTokenForbidden,
   scopedTokenChildDetailReadTarget,
+  scopedTokenSessionMessageTarget,
   scopedTokenCollectionForbidden,
   scopedTokenSessionMismatch,
   principalBodySessionForbidden,

@@ -5,11 +5,12 @@ import {
   authRequiredForRequest,
   scopedTokenForbidden,
   scopedTokenChildDetailReadTarget,
+  scopedTokenSessionMessageTarget,
   scopedTokenCollectionForbidden,
   scopedTokenSessionMismatch,
   type GatewayPrincipal,
 } from "../auth.js";
-import { isDirectChildSession } from "../manager-auth.js";
+import { isCooSession, isDirectChildSession } from "../manager-auth.js";
 
 /**
  * Pure principal-resolution/authorization decision for the HTTP and WebSocket
@@ -76,6 +77,7 @@ export function resolvePrincipalGate(opts: {
   gatewayAuthToken: string;
   cuttlefishHome: string;
   isDirectChildSession?: (parentSessionId: string, childSessionId: string) => boolean;
+  isCooSession?: (sessionId: string) => boolean;
 }): PrincipalGateResult {
   const auth = authenticateGatewayRequest(opts.req, opts.gatewayAuthToken, opts.cuttlefishHome);
 
@@ -110,7 +112,10 @@ export function resolvePrincipalGate(opts: {
       const childTarget = scopedTokenChildDetailReadTarget(opts.method, opts.pathname);
       const ownsDirectChild = childTarget !== null
         && (opts.isDirectChildSession ?? isDirectChildSession)(auth.principal.sessionId, childTarget);
-      if (!ownsDirectChild) {
+      const messageTarget = scopedTokenSessionMessageTarget(opts.method, opts.pathname);
+      const isCooMessage = messageTarget !== null
+        && (opts.isCooSession ?? isCooSession)(auth.principal.sessionId);
+      if (!ownsDirectChild && !isCooMessage) {
         return { status: 403, reason: "Forbidden: session-scoped token bound to a different session" };
       }
     }
