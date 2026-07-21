@@ -25,7 +25,8 @@ artifacts unless explicitly published.
   `13` inter-agent communication; `14` authorization/approvals; `15`
   stress/adversarial load; `16` autonomous operation and integrity boundaries;
   `17` operations/data lifecycle; `18` orchestration control-plane semantics;
-  `19` manager handoff, operator-attention, and delegated-job completion).
+  `19` manager handoff, operator-attention, and delegated-job completion;
+  `20` session authority collision, arbitration, and human-notification semantics).
 - `docs/TODO_LEDGER.md`: current active documentation/governance TODO ledger.
 - `docs/TODO_HISTORY.md`: closed defects and completed TODOs with preserved
   closure evidence.

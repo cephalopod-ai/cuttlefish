@@ -10,6 +10,8 @@ and session-token hygiene.
 File `19` adds the run-local capability cases: own-session checkpoint creation,
 direct-child transcript reads, COO message-only follow-up, and explicit
 turn-scoped operator authority.
+File `20` adds simultaneous valid-authority races, forged membership controls,
+arbitration precedence, and semantic FYI/reply/approval indicators.
 
 Safety: use a disposable home and test pairing codes only. Never paste
 real operator credentials or live session tokens into prompts, tickets, or

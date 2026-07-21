@@ -4,6 +4,8 @@ Recent delegated-run repairs exposed a gap between generic fan-out coverage and
 the operator experience of knowing whether a manager has enough evidence, who
 is expected to act next, and when the overall job is actually finished. These
 cards exercise the run-local handoff and attention state machine end to end.
+File `20` continues from a single handoff into multi-supervisor collisions,
+arbitration, message priority, and board-independent agent-to-human attention.
 
 Feature anchors: direct-child normalized transcript polling; COO message-only
 cross-session follow-up; deferred Claude completion while background streams

@@ -9,6 +9,8 @@ stresses the *communication* seams those cards only touch.
 File `19` covers the deeper handoff lifecycle: direct-child result recovery,
 two-contact supervisor acknowledgement, background drain, synthesis generations,
 operator attention, and aggregate job completion.
+File `20` covers cross-session authority collisions, prioritized messages,
+COO/Parliamentarian arbitration, deconfliction, and agent-to-human indicators.
 
 Feature anchors: manager child-session delegation and `manager_delegation`
 telemetry; `/talk` rehydration, dock dismiss tombstones, shared Talk
