@@ -20,14 +20,23 @@ Cuttlefish is an open-source AI gateway that wraps battle-tested AI coding CLIs 
 
 Because Cuttlefish drives the **official Claude Code CLI** under the hood, it works with the flat-rate Anthropic Max subscription — no per-token API billing, no surprise invoices. Third-party agent frameworks were banned from using Max OAuth tokens in January 2026; since Cuttlefish delegates to Anthropic's first-party CLI, it stays fully supported.
 
-## 🚀 Quick start
+## 🚀 Install
 
 Install at least one engine CLI first:
 
 - **Claude Code** — `npm install -g @anthropic-ai/claude-code`
 - **Codex** (optional) — `npm install -g @openai/codex`
 
-Install from source (the npm package and Homebrew formula are not published yet):
+When installing from npm, use:
+
+```bash
+npm install -g cuttlefish-cli
+cuttlefish setup
+cuttlefish start
+```
+
+If you are using the repository before its first npm publication, install from
+source instead:
 
 ```bash
 git clone https://github.com/cephalopod-ai/cuttlefish.git

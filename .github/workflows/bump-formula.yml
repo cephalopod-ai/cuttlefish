@@ -1,40 +1,67 @@
 name: Bump Homebrew Formula
 
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["Publish npm Package"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Published cuttlefish-cli version to place in the formula
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 jobs:
   bump-formula:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: main
 
-      - name: Extract version from tag
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_ENV"
+      - name: Resolve published version
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_run" ]; then
+            TAG="${{ github.event.workflow_run.head_branch }}"
+            case "${TAG}" in
+              v[0-9]*.[0-9]*.[0-9]*) VERSION="${TAG#v}" ;;
+              *) echo "Expected a v<semver> release tag, got: ${TAG}" >&2; exit 1 ;;
+            esac
+          else
+            VERSION="${{ inputs.version }}"
+          fi
+          case "${VERSION}" in
+            [0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "Expected a semver version, got: ${VERSION}" >&2; exit 1 ;;
+          esac
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
 
       - name: Wait for npm tarball
         run: |
+          TARBALL_URL="https://registry.npmjs.org/cuttlefish-cli/-/cuttlefish-cli-${VERSION}.tgz"
           for i in {1..30}; do
-            if curl -sI "https://registry.npmjs.org/cuttlefish-cli/-/cuttlefish-cli-${VERSION}.tgz" | grep -q "200"; then
+            if curl --fail --silent --show-error --location --output /dev/null "${TARBALL_URL}"; then
               echo "Tarball available"
               exit 0
             fi
             echo "Waiting for npm publish... (attempt $i/30)"
             sleep 10
           done
-          echo "Tarball not found after 5 minutes"
+          echo "Tarball not found after 5 minutes" >&2
           exit 1
 
       - name: Update formula
         run: |
-          SHA=$(curl -sL "https://registry.npmjs.org/cuttlefish-cli/-/cuttlefish-cli-${VERSION}.tgz" | shasum -a 256 | cut -d' ' -f1)
-          sed -i "s|cuttlefish-cli-.*\.tgz|cuttlefish-cli-${VERSION}.tgz|" Formula/cuttlefish.rb
+          TARBALL_URL="https://registry.npmjs.org/cuttlefish-cli/-/cuttlefish-cli-${VERSION}.tgz"
+          SHA="$(curl --fail --silent --show-error --location "${TARBALL_URL}" | shasum -a 256 | cut -d' ' -f1)"
+          test -n "${SHA}"
+          sed -i "s|cuttlefish-cli-.*\\.tgz|cuttlefish-cli-${VERSION}.tgz|" Formula/cuttlefish.rb
           sed -i "s|sha256 \".*\"|sha256 \"${SHA}\"|" Formula/cuttlefish.rb
 
       - name: Commit and push

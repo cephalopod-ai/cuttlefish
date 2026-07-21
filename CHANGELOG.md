@@ -4,12 +4,11 @@
 
 ## [0.1.0] - 2026-07-20
 
-> The first real public release. `cuttlefish-cli` has never actually been
-> published (the npm registry has no `cuttlefish-cli` package to date), so
-> everything below through `0.23.4` was unpublished internal iteration under
-> an internal version counter. This cut consolidates that backlog — including
-> the chat sidebar attention-legibility repair below — under the version
-> number that will actually ship first.
+> Historical pre-release attempt. `cuttlefish-cli` was not published: the
+> package source still declared `0.23.3`, so the required `v0.1.0` tag/version
+> check stopped the npm and platform-archive workflows. The npm registry has no
+> `cuttlefish-cli` package at this point. This entry preserves the internal
+> iteration backlog, but it is not an installable public package release.
 
 > Repaired three compounding bugs that made it hard to tell whether an agent
 > needs the operator versus is merely running or finished, reported directly

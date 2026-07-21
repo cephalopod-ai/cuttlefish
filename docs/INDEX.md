@@ -7,8 +7,11 @@ artifacts unless explicitly published.
 ## Current Operator Docs
 
 - `README.md`: public overview and install/use workflow.
-- `CHANGELOG.md`: release/version history; `[0.1.0] - 2026-07-20` is the first
-  real public release cut.
+- `CHANGELOG.md`: release/version history, including the failed `v0.1.0`
+  pre-release and its non-installable status.
+- `docs/RELEASING.md`: release contract for the npm package, GitHub platform
+  archives, and Homebrew formula; documents the historical failed `v0.1.0`
+  pre-release accurately.
 - `docs/USER_MANUAL.md`
 - `docs/QDRANT_SETUP.md`: maintained user manual for setup, workflows,
   persistence, recovery, and troubleshooting.

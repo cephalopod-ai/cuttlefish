@@ -1,7 +1,7 @@
 {
   "name": "cuttlefish-cli",
   "version": "0.23.3",
-  "description": "Cuttlefish AI gateway daemon orchestrating Claude Code, Codex, Grok, and Antigravity CLI",
+  "description": "Cuttlefish AI gateway daemon orchestrating professional AI coding CLIs",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -17,6 +17,9 @@
     "template/",
     "assets/"
   ],
+  "bundledDependencies": [
+    "@cuttlefish/contracts"
+  ],
   "scripts": {
     "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && node scripts/build-postprocess.mjs",
     "dev": "tsc && (tsc --watch &) && node --watch-path=dist dist/bin/cuttlefish.js start",
@@ -25,6 +28,7 @@
     "test": "vitest run",
     "coverage": "vitest run --coverage",
     "test:watch": "vitest",
+    "verify:package": "node scripts/verify-package.mjs",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
@@ -79,13 +83,13 @@
     "cron",
     "slack"
   ],
-  "homepage": "https://github.com/e3742526/cuttlefish#readme",
+  "homepage": "https://github.com/cephalopod-ai/cuttlefish#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/e3742526/cuttlefish.git",
+    "url": "git+https://github.com/cephalopod-ai/cuttlefish.git",
     "directory": "packages/cuttlefish"
   },
   "bugs": {
-    "url": "https://github.com/e3742526/cuttlefish/issues"
+    "url": "https://github.com/cephalopod-ai/cuttlefish/issues"
   }
 }

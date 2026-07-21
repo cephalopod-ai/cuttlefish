@@ -28,11 +28,14 @@ Antigravity, Pi, Hermes, and Kiro through a shared org/delegation model.
 
 1. Install Node.js 24.x. This repo pins Node 24.13.0 via `.nvmrc` and root tooling enforces `>=24 <25`.
 2. Install and sign in to at least one engine CLI.
-3. Install Cuttlefish:
+3. Install Cuttlefish from npm after a published release:
 
 ```bash
 npm install -g cuttlefish-cli
 ```
+
+   If `cuttlefish-cli` is not yet available on npm, use the source-install
+   path from the repository README instead.
 
 4. Initialize the local Cuttlefish home:
 

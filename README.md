@@ -47,7 +47,7 @@ You've already installed the best agent CLIs. Cuttlefish turns that pile of term
 > **Prerequisites:** Node.js **24** (the repo pins **24.13.0** via `.nvmrc` and root tooling enforces `>=24 <25`), **pnpm 10+**, and at least one agent CLI installed **and signed in** - Cuttlefish orchestrates them and can't run a session without one.
 
 ```bash
-# 1. Install from source (the npm package and Homebrew formula are pending first publication)
+# 1. Install from source (the supported path until the first npm publication)
 git clone https://github.com/cephalopod-ai/cuttlefish.git
 cd cuttlefish
 pnpm install
@@ -63,7 +63,7 @@ pnpm cuttlefish start
 
 Then open **[http://localhost:8888](http://localhost:8888)**, send your first message, and watch your COO delegate.
 
-> **Packaged installs.** `npm install -g cuttlefish-cli` and the Homebrew tap will be the one-line install paths once the package is published; until then, install from source as above. Each [GitHub Release](https://github.com/cephalopod-ai/cuttlefish/releases) also ships prebuilt `cuttlefish-cli-<version>-linux-x64.tar.gz` and `cuttlefish-cli-<version>-darwin-arm64.tar.gz` tarballs for a download-and-run install without `git clone`.
+> **Package availability.** `cuttlefish-cli` is not yet available from npm, so source installation above is the supported path today. A release with a matching `v<version>` tag publishes the npm package first; only after that succeeds are platform archives and the Homebrew formula updated. See [`docs/RELEASING.md`](docs/RELEASING.md) for the maintainer release contract.
 
 > **`--version` ≠ signed in.** Cuttlefish drives the official engine CLIs, so authenticate each one *before* `cuttlefish start` (run `claude` → `/login`, run `codex` to sign in, etc.). Without this, sessions can't reach the models - the most common fresh-install gotcha.
 

@@ -13,7 +13,7 @@ Please do not report exploitable details in a public issue.
 Preferred private disclosure path:
 
 1. Use GitHub private vulnerability reporting or a draft security advisory for
-   `e3742526/cuttlefish` when available.
+   `cephalopod-ai/cuttlefish` when available.
 2. If that path is unavailable, open a public issue with only a brief,
    non-sensitive request for a private security contact. Do not include proof of
    concept details, tokens, hostnames, private files, or user data in that issue.

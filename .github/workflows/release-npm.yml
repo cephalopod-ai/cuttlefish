@@ -29,6 +29,8 @@ jobs:
         run: |
           VERSION="$(node -p "require('./packages/cuttlefish/package.json').version")"
           test "v${VERSION}" = "${GITHUB_REF_NAME}"
+      - name: Verify npm package contents
+        run: pnpm --filter=cuttlefish-cli verify:package
       - name: Publish with npm provenance
         working-directory: packages/cuttlefish
         run: npm publish --provenance --access public
