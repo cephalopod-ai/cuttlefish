@@ -442,7 +442,9 @@
   queue and history.
 - `POST /api/checkpoints/:id/decision` records a human decision and either
   keeps the run paused, stops it, records the outcome only, or resumes the
-  session with a stored or supplied prompt.
+  session with a stored or supplied prompt. Repeating the same terminal
+  decision is explicitly idempotent; a conflicting terminal decision returns
+  a machine-readable conflict and leaves the original decision unchanged.
 - Claude interactive Bash `PreToolUse` hooks now reuse this checkpoint flow for
   risky commands. Commands that are review-gated are denied at hook time,
   recorded as durable checkpoints with the blocked command and trigger
