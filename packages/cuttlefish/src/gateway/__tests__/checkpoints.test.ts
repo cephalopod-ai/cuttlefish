@@ -159,7 +159,7 @@ describe("checkpoint routes", () => {
       sourceRef: "web:delegated-pm",
       employee: "program-manager",
       prompt,
-      transportMeta: { operatorDelegation: buildOperatorDelegationGrant({ prompt, scopes: ["decide"] }) },
+      transportMeta: { operatorDelegation: buildOperatorDelegationGrant({ prompt, scopes: ["decide"] }) as any },
     });
     const checkpoint = store.createApproval({
       sessionId: session.id,

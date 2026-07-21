@@ -138,7 +138,7 @@ describe("approvals endpoints", () => {
       sourceRef: "web:delegated-coo",
       employee: null,
       prompt,
-      transportMeta: { operatorDelegation: buildOperatorDelegationGrant({ prompt, scopes: ["decide"] }) },
+      transportMeta: { operatorDelegation: buildOperatorDelegationGrant({ prompt, scopes: ["decide"] }) as any },
     });
     const approval = store.createApproval({ sessionId: session.id, type: "fallback", payload: {} });
     const req = makeReq("POST", `/api/approvals/${approval.id}/reject`) as any;

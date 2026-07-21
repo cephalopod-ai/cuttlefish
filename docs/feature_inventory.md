@@ -437,10 +437,10 @@
   pauses the session in `waiting` with a visible notification trail.
 - A session-scoped agent can create a checkpoint only for its own authenticated
   session; the gateway binds the checkpoint to that identity even when the body
-  omits `sessionId`. Agents still cannot read or resolve checkpoints. Runtime
-  guidance tells managers to use this only when an operator decision genuinely
-  blocks progress, and to decide and continue when the operator delegated that
-  authority.
+  omits `sessionId`. Ordinary agent credentials cannot read or resolve
+  checkpoints. A direct human can explicitly delegate `approve`, `decide`,
+  `plan`, and/or `act` authority to a COO or Program Manager turn; only the
+  decision scopes unlock checkpoint/approval reads and decisions.
 - `GET /api/checkpoints` and `GET /api/checkpoints/:id` expose the checkpoint
   queue and history.
 - `POST /api/checkpoints/:id/decision` records a human decision and either
@@ -458,8 +458,21 @@
   binds its approval to that originating session, so the same pending decision
   appears in the chat review card and the global Approvals queue. Approval,
   rejection, and apply endpoints require an authenticated operator even on the
-  default loopback deployment; chat prose and scoped agent tokens cannot
-  resolve their own changes.
+  default loopback deployment. Ordinary chat prose and scoped agent tokens
+  cannot resolve their own changes. An explicitly authorized COO/Program
+  Manager may resolve the linked approval record, but direct org approve,
+  reject, and apply routes remain operator-only.
+- Human-delegated authority is fail-closed and turn-scoped. The directive must
+  begin a direct human message (`/delegate-authority <scopes>` or the supported
+  explicit “authorize/delegate/grant/give you … on my behalf” form), is bound to
+  that prompt hash in both live session state and the signed session token, and
+  is expired in the dispatch `finally` path. Agent messages, quoted directives,
+  other roles, stale/replayed tokens, and model changes fail authorization.
+- Delegated human authority is restricted to `codex/gpt-5.5`,
+  `codex/gpt-5.6-sol`, Claude Opus 4.8 (`claude-opus-4-8` or `opus`), and
+  Claude Fable (`claude-fable-5`). Decisions record an actor such as
+  `operator-delegate:cuttlefish-coo:<sessionId>` or
+  `operator-delegate:program-manager:<sessionId>`.
 - The `/approvals` web UI (`packages/web/src/routes/approvals/page.tsx`) has been
   significantly enhanced:
   - Pending approvals and checkpoints are shown in a unified list with compact list items.
@@ -602,7 +615,8 @@
 - V1 metadata includes estimated before/after tokens, model context limit, reserved response/safety budget, slot usage, dropped/summarized records, and an empty retrieved-memory placeholder. No persistent memory, vector retrieval, or MCP memory dependency is added.
 
 ### Smart manager delegation discipline
-- Employee sessions with one or more direct reports receive a default-on manager delegation discipline block in their runtime context. The block requires a delegate-vs-inline decision before substantive work, lists concise direct-report specialties, and distinguishes smart delegation from delegation just for appearances.
+- Manager and executive sessions receive a default-on manager delegation discipline block in their runtime context. The block requires a delegate-vs-inline decision before substantive work, lists concise direct-report specialties when present, and distinguishes smart delegation from delegation just for appearances.
+- Any manager may ask Program Manager, Cuttlefish (COO), or both for a second opinion through a child session even when they are not a direct report. Consultation does not transfer any human-delegated approval authority.
 - Runtime execution can enforce a bounded initial-task split for a top-level manager before its model runs. It requires either an exact direct-report reference or at least two distinct specialist signals; one roster, department, or marker-like token cannot trigger a fan-out. A manager session that was itself delegated work always reads the complete bounded brief and delegates explicitly, preventing the gateway from reducing acceptance criteria to keyword fragments. Automatically created children receive only their bounded assignment and matched signals—never the manager's full prompt, prompt excerpt, attachments, or resource context. Later manager turns, including child callbacks, stay inline unless the manager explicitly delegates. Enforced runs record the prompt hash and expected child ids in `transportMeta`; final synthesis waits for every started child’s durable lifecycle, then takes a one-per-prompt claim and persists the dispatch marker so stale or overlapping callbacks cannot queue an additional synthesis turn.
 - A completed or failed child report contacts its direct supervisor first. If the report remains unacknowledged for `gateway.leaderAckTimeoutMs`, the gateway sends that same supervisor a second notice and starts a fresh timeout window. Executive or manual-review escalation occurs only after the second contact also goes unanswered; a supervisor reply after either contact acknowledges the handoff and prevents escalation.
 - Claude child turns do not report completion while their background-agent streams remain active. The gateway retains the latest callback until the engine's quiet-window signal confirms the background work has drained, then wakes the direct supervisor with the latest durable assistant result. A completed synthesis marker applies only to the child batch and generation it names, so it cannot suppress callbacks from a later child or a later turn of the same child.
