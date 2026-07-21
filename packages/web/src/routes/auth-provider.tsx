@@ -54,7 +54,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setError(null)
     try {
       let state = await getAuthState()
-      if (shouldBootstrapLocal && state.authRequired && !state.authenticated && state.canBootstrapLocal) {
+      // Even an auth-optional loopback gateway protects approval decisions as
+      // operator-only actions. Establish the local operator session up front
+      // so the first approve/reject click does not fail with a 401.
+      if (shouldBootstrapLocal && !state.authenticated && state.canBootstrapLocal) {
         await bootstrapLocalAuth()
         state = await getAuthState()
       }

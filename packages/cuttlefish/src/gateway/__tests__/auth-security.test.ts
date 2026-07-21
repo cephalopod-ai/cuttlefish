@@ -75,6 +75,17 @@ describe("gateway auth", () => {
   });
 
   it("reports safe auth state for local, remote, and already-paired browsers", () => {
+    expect(createAuthState(
+      { gateway: { host: "127.0.0.1" } } as any,
+      req({ host: "127.0.0.1:8888" }, "127.0.0.1"),
+      "tok",
+    )).toMatchObject({
+      authRequired: false,
+      authenticated: false,
+      canBootstrapLocal: true,
+      networkExposed: false,
+    });
+
     const config = { gateway: { host: "0.0.0.0" } } as any;
     expect(createAuthState(config, req({}, "127.0.0.1"), "tok")).toMatchObject({
       authRequired: true,
@@ -101,6 +112,20 @@ describe("gateway auth", () => {
       authenticated: true,
       canBootstrapLocal: false,
       networkExposed: true,
+    });
+    expect(createAuthState(
+      { gateway: { host: "127.0.0.1" } } as any,
+      req({
+        host: "127.0.0.1:8888",
+        cookie: `cuttlefish_auth=${session.secret}; cuttlefish_device=${session.device.id}`,
+      }, "127.0.0.1"),
+      "tok",
+      home,
+    )).toMatchObject({
+      authRequired: false,
+      authenticated: true,
+      canBootstrapLocal: true,
+      networkExposed: false,
     });
   });
 

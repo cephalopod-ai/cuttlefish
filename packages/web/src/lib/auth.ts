@@ -115,7 +115,12 @@ export async function authFetch(input: string, init: RequestInit = {}): Promise<
   } catch {
     return first
   }
-  if (!state.authRequired || state.authenticated || !state.canBootstrapLocal) return first
+  // A loopback gateway can allow ordinary reads without globally requiring
+  // auth while still protecting approval decisions as operator-only actions.
+  // Bootstrap on that 401 whenever this is a local browser with no real
+  // credential; `authRequired` describes the global gate, not whether this
+  // particular endpoint needs an operator principal.
+  if (state.authenticated || !state.canBootstrapLocal) return first
 
   try {
     await bootstrapLocalAuth()

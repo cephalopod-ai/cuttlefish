@@ -43,6 +43,30 @@ describe("web auth helpers", () => {
     expect(localStorage.length).toBe(0)
   })
 
+  it("bootstraps operator auth for a protected action on an otherwise auth-optional loopback gateway", async () => {
+    const fetchMock = vi.mocked(fetch)
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(401, { error: "Missing or invalid gateway auth token" }))
+      .mockResolvedValueOnce(jsonResponse(200, {
+        authRequired: false,
+        authenticated: false,
+        canBootstrapLocal: true,
+        networkExposed: false,
+      }))
+      .mockResolvedValueOnce(jsonResponse(200, { status: "ok" }))
+      .mockResolvedValueOnce(jsonResponse(200, { approval: { state: "rejected" } }))
+
+    const res = await authFetch("/api/approvals/approval-1/reject", { method: "POST" })
+
+    expect(res.status).toBe(200)
+    expect(fetchMock.mock.calls.map((c) => String(c[0]))).toEqual([
+      "http://localhost:3000/api/approvals/approval-1/reject",
+      "http://localhost:3000/api/auth/state",
+      "http://localhost:3000/api/auth/bootstrap",
+      "http://localhost:3000/api/approvals/approval-1/reject",
+    ])
+  })
+
   it("does not retry remote auth failures without local bootstrap", async () => {
     const fetchMock = vi.mocked(fetch)
     fetchMock

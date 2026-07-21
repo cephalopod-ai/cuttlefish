@@ -472,6 +472,10 @@
   chat prose and scoped agent tokens cannot resolve their own changes. An
   explicitly authorized COO/Program Manager may resolve the linked approval
   record, but direct org approve, reject, and apply routes remain operator-only.
+  On an auth-optional loopback gateway, the dashboard establishes a revocable
+  local operator session before rendering these controls and retries a protected
+  request once after local bootstrap, so the stricter decision gate remains
+  usable without weakening it to anonymous access.
 - Human-delegated authority is fail-closed and turn-scoped. The directive must
   begin a direct human message (`/delegate-authority <scopes>` or the supported
   explicit “authorize/delegate/grant/give you … on my behalf” form), is bound to

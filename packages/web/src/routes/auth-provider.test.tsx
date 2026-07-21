@@ -48,6 +48,34 @@ describe("AuthProvider/AuthGate", () => {
     expect(await screen.findByText("Private App")).toBeTruthy()
   })
 
+  it("silently bootstraps operator auth on an auth-optional local gateway", async () => {
+    getAuthState
+      .mockResolvedValueOnce({
+        authRequired: false,
+        authenticated: false,
+        canBootstrapLocal: true,
+        networkExposed: false,
+      })
+      .mockResolvedValueOnce({
+        authRequired: false,
+        authenticated: true,
+        canBootstrapLocal: true,
+        networkExposed: false,
+      })
+    bootstrapLocalAuth.mockResolvedValue(undefined)
+
+    render(
+      <AuthProvider>
+        <AuthGate>
+          <div>Private App</div>
+        </AuthGate>
+      </AuthProvider>,
+    )
+
+    await waitFor(() => expect(bootstrapLocalAuth).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText("Private App")).toBeTruthy()
+  })
+
   it("silently bootstraps a local browser before rendering the app", async () => {
     getAuthState
       .mockResolvedValueOnce({
