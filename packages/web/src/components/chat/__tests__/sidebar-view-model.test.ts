@@ -10,6 +10,7 @@ import {
   DIRECT_GROUP,
   formatOlderLineLabel,
 } from "../sidebar-view-model"
+import { groupSessionsByProject } from "../project-session-tree"
 
 const employeeData = new Map<string, Employee>([
   ["alice", { name: "alice", displayName: "Alice Dev", department: "platform", rank: "employee", engine: "claude", model: "opus", persona: "" }],
@@ -327,5 +328,97 @@ describe("sidebar view model", () => {
       expanded: { alice: true },
     })
     expect(expanded.sessionIds).toEqual(["alice-child-1", "alice-child-2", "bob-child"])
+  })
+
+  it("renders one project row per root session and reveals the recursive tree on expansion", () => {
+    const sessions = [
+      makeSession("root", { employee: "bob", title: "Campaign", lastActivity: "2026-07-21T12:00:00.000Z" }),
+      makeSession("child", { employee: "alice", parentSessionId: "root", lastActivity: "2026-07-21T11:00:00.000Z" }),
+      makeSession("grandchild", { employee: "alice", parentSessionId: "child", lastActivity: "2026-07-21T10:00:00.000Z" }),
+    ]
+    const projects = groupSessionsByProject(sessions)
+    const collections = buildCollections({ sessions, viewMode: "projects" })
+
+    const collapsed = buildVirtualItems({
+      searching: false,
+      searchRows: [],
+      viewMode: "projects",
+      rooms: [],
+      expandedRooms: new Set(),
+      cronSessions: [],
+      cronCollapsed: false,
+      sortedCron: [],
+      cronTotal: 0,
+      todayRows: collections.todayRows,
+      yesterdayRows: collections.yesterdayRows,
+      olderSummary: collections.olderSummary,
+      olderExpanded: false,
+      olderFocusedRows: [],
+      olderPinned: [],
+      olderUnpinned: [],
+      pinnedFlat: collections.pinnedFlat,
+      unpinnedFlat: collections.unpinnedFlat,
+      portalSlug: "cuttlefish",
+      portalName: "Cuttlefish",
+      employeeData,
+      projects,
+      expandedProjects: new Set(),
+    })
+    expect(collapsed.map((item) => item.kind)).toEqual(["project-header"])
+
+    const expanded = buildVirtualItems({
+      ...{
+        searching: false,
+        searchRows: [],
+        viewMode: "projects" as const,
+        rooms: [],
+        expandedRooms: new Set<string>(),
+        cronSessions: [],
+        cronCollapsed: false,
+        sortedCron: [],
+        cronTotal: 0,
+        todayRows: collections.todayRows,
+        yesterdayRows: collections.yesterdayRows,
+        olderSummary: collections.olderSummary,
+        olderExpanded: false,
+        olderFocusedRows: [],
+        olderPinned: [],
+        olderUnpinned: [],
+        pinnedFlat: collections.pinnedFlat,
+        unpinnedFlat: collections.unpinnedFlat,
+        portalSlug: "cuttlefish",
+        portalName: "Cuttlefish",
+        employeeData,
+        projects,
+      },
+      expandedProjects: new Set(["root"]),
+    })
+    expect(expanded.map((item) => item.kind)).toEqual([
+      "project-header",
+      "project-session",
+      "project-session",
+      "project-session",
+    ])
+    expect(expanded.filter((item) => item.kind === "project-session").map((item) => item.node.depth)).toEqual([0, 1, 2])
+
+    const order = buildSidebarOrder({
+      searching: false,
+      searchRows: [],
+      viewMode: "projects",
+      rooms: [],
+      sortedCron: [],
+      pinnedFlat: [],
+      unpinnedFlat: [],
+      todayRows: [],
+      yesterdayRows: [],
+      olderExpanded: false,
+      olderFocusedRows: [],
+      olderPinned: [],
+      olderUnpinned: [],
+      expanded: {},
+      projects,
+      expandedProjects: new Set(["root"]),
+    })
+    expect(order.sessionIds).toEqual(["root", "child", "grandchild"])
   })
 })

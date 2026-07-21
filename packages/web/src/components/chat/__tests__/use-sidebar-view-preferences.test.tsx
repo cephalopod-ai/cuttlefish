@@ -7,32 +7,32 @@ describe("useSidebarViewPreferences", () => {
     localStorage.clear()
   })
 
-  it("defaults the sidebar to room mode", () => {
+  it("defaults the sidebar to project/session Team mode", () => {
     const { result } = renderHook(() => useSidebarViewPreferences())
 
-    expect(result.current.viewMode).toBe("rooms")
+    expect(result.current.viewMode).toBe("projects")
     expect(result.current.olderExpanded).toBe(false)
-    expect(Array.from(result.current.expandedRooms)).toEqual([])
+    expect(Array.from(result.current.expandedProjects)).toEqual([])
   })
 
   it("honors stored sidebar view modes", async () => {
-    localStorage.setItem("cuttlefish-sidebar-focus-mode", "focused")
+    localStorage.setItem("cuttlefish-sidebar-collaboration-lane", "management")
 
     const { result } = renderHook(() => useSidebarViewPreferences())
 
     await waitFor(() => {
-      expect(result.current.viewMode).toBe("focused")
+      expect(result.current.viewMode).toBe("management")
     })
   })
 
-  it("persists view mode and expanded room state", () => {
+  it("persists collaboration lane and expanded project state", () => {
     const { result } = renderHook(() => useSidebarViewPreferences())
 
     act(() => {
-      result.current.selectViewMode("all")
+      result.current.selectViewMode("management")
     })
-    expect(result.current.viewMode).toBe("all")
-    expect(localStorage.getItem("cuttlefish-sidebar-focus-mode")).toBe("all")
+    expect(result.current.viewMode).toBe("management")
+    expect(localStorage.getItem("cuttlefish-sidebar-collaboration-lane")).toBe("management")
 
     act(() => {
       result.current.toggleOlderExpanded()
@@ -41,9 +41,9 @@ describe("useSidebarViewPreferences", () => {
     expect(localStorage.getItem("cuttlefish-sidebar-older-expanded")).toBe("true")
 
     act(() => {
-      result.current.toggleRoomExpanded("platform")
+      result.current.toggleProjectExpanded("project-root")
     })
-    expect(result.current.expandedRooms.has("platform")).toBe(true)
-    expect(JSON.parse(localStorage.getItem("cuttlefish-sidebar-rooms-expanded") ?? "[]")).toEqual(["platform"])
+    expect(result.current.expandedProjects.has("project-root")).toBe(true)
+    expect(JSON.parse(localStorage.getItem("cuttlefish-sidebar-projects-expanded") ?? "[]")).toEqual(["project-root"])
   })
 })

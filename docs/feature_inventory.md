@@ -648,35 +648,40 @@
   finished lifecycle text; opening the chat acknowledges the latest message.
   Live `session:notification` events refresh the session list so this does not
   depend on a later completion event or page reload.
-- The chat sidebar's **All** view groups durable sessions under one expandable
-  row per agent. Expanding the row reveals the distinct chats; it does not merge
-  transcripts, parent relationships, or session-scoped authorization. Search,
-  Focused, and Rooms retain their purpose-specific session presentation.
+- The chat sidebar now defaults to a **Team** lane organized by project/session
+  trees. A project is derived from one durable root session plus every loaded
+  recursive descendant. Expanding a project reveals the concrete sessions with
+  their tree depth; opening a project selects its root session. This is a
+  presentation-only grouping and does not merge transcripts, parent links, or
+  session-scoped authorization.
+- Missing-parent and cyclic graphs remain visible in Team with integrity-warning
+  affordances. Project rows aggregate descendant activity, participants,
+  running work, and needs-attention state, and sort by the newest activity in
+  the whole tree.
+- The sidebar's **Management** lane presents existing manager, executive, and
+  direct Cuttlefish conversations using their underlying sessions. A unified
+  management feed, structured multi-recipient routing, authority-scope controls,
+  project feed APIs, and atomic project-tree deletion remain unimplemented
+  SB-CUT-001 follow-up work.
 - Lifecycle text is color-coded consistently everywhere it renders: an expanded
   agent row's nested chats use the same "Needs your attention"
   (orange) / "Job failed" (red) / "Job finished" (green) / "New agent message"
   (blue) treatment as top-level flat rows, via one shared color-class lookup
   instead of per-component copies that could drift out of sync.
-- A collapsed agent row's status dot reflects the single most urgent state
-  across *all* of that agent's sessions (needs-attention outranks failed,
+- A collapsed project or legacy agent row's status dot reflects the single most urgent state
+  across *all* of its sessions (needs-attention outranks failed,
   which outranks working, which outranks finished), not just its most-recently-
   active or first-unread session — an older chat still blocked on the operator
   is never hidden behind a newer chat that has since finished.
 - A persistent "N need you" badge sits in the sidebar header next to the
-  Rooms/Focused/All toggle whenever at least one durable session currently
+  Team/Management lane switch whenever at least one durable session currently
   needs operator attention (`jobState: "needs_attention"` or the legacy
   `status: "waiting"`), regardless of view mode, scroll position, or which
   agent group is expanded. Clicking it opens the first such session.
-- Department Rooms track `needsAttentionCount` separately from `runningCount`:
-  a session blocked on the operator no longer counts toward a generic
-  "N running" badge (which now means "actively executing" only); the room
-  header shows a distinct orange "N need you" badge alongside it, and a room
-  is considered active from needs-attention alone even with nothing running.
-- Department Rooms currently provide a derived, read-only merged timeline over
-  existing sessions. Writable shared-room conversations, multi-recipient
-  `@mentions`, and indexed `#topics` are a proposed contract only: the current
-  session schema has no durable room membership/message-recipient model, so
-  ordinary chat text must not be treated as an authorization-bearing mention.
+- The prior department Rooms projection remains in source for compatibility but
+  is no longer offered by the sidebar lane control. Ordinary visible `@text`
+  remains non-authoritative; structured project and management recipient routing
+  is not claimed by this navigation slice.
 - Informational agent-to-human communication does not require a Kanban ticket.
   Approvals/checkpoints remain the durable surface when the agent is blocked on
   a human action or decision; Kanban remains optional work tracking rather than

@@ -52,3 +52,69 @@ Non-generated source files already over the 800-line cap and therefore must be s
 
 ## Provenance
 Direct operator-provided SB-CUT-001 build plan and local command evidence from this 2026-07-21 Gate 0 session. No Giles/Dory canonical scan was run; this is an agent-maintained sidecar record, not a compliance declaration.
+
+## 2026-07-21 surfaced-navigation repair
+
+### Action summary
+Implemented the missing SB-CUT-001 presentation slice after live inspection
+confirmed that the merged PR stopped at Gate 0. The sidebar now exposes Team
+and Management lanes. Team derives one project per root session and recursively
+reachable loaded descendant; Management limits existing grouped conversations
+to managers, executives, and the direct Cuttlefish identity. This does not add
+or change agent transport, callbacks, transcript ownership, or authority.
+
+### Touched files
+- `packages/web/src/components/chat/project-session-tree.ts`
+- `packages/web/src/components/chat/sidebar-header.tsx`
+- `packages/web/src/components/chat/sidebar-project-row.tsx`
+- `packages/web/src/components/chat/chat-sidebar.tsx`
+- `packages/web/src/components/chat/sidebar-list-surface.tsx`
+- `packages/web/src/components/chat/sidebar-session-rows.tsx`
+- `packages/web/src/components/chat/sidebar-storage.ts`
+- `packages/web/src/components/chat/sidebar-types.ts`
+- `packages/web/src/components/chat/sidebar-view-model.ts`
+- `packages/web/src/components/chat/use-sidebar-view-preferences.ts`
+- `packages/web/src/components/chat/__tests__/project-session-tree.test.ts`
+- `packages/web/src/components/chat/__tests__/sidebar-header.test.tsx`
+- `packages/web/src/components/chat/__tests__/sidebar-list-surface.test.tsx`
+- `packages/web/src/components/chat/__tests__/sidebar-view-model.test.ts`
+- `packages/web/src/components/chat/__tests__/use-sidebar-view-preferences.test.tsx`
+- `docs/feature_inventory.md`
+- `docs/TODO_LEDGER.md`
+- this ledger
+
+### Validation run
+- `pnpm --filter @cuttlefish/web typecheck`: passed.
+- Focused project/sidebar suite: 5 files, 25 tests passed.
+- `pnpm typecheck`: passed across all four workspace tasks.
+- `pnpm lint`: passed across all three lint tasks with zero warnings.
+- `pnpm test`: passed across all four workspace tasks. The web suite passed
+  125 files / 986 tests; the backend suite passed 2,469 tests with 1 skipped
+  across 300 files; contracts passed 6 tests.
+- `pnpm build`: passed and copied the rebuilt web bundle into
+  `packages/cuttlefish/dist/web`.
+- `git diff --check`: passed.
+- `pnpm --silent cuttlefish restart`: replaced gateway PID 12140 with PID
+  62884; `GET /api/healthz` returned `status: ok`.
+- Live browser smoke against the rebuilt gateway passed: Team and Management
+  controls were visible; real project `#30` reported 21 sessions / 11 agents;
+  expanding it exposed one root, six children, and fourteen grandchildren;
+  Management selected successfully and exposed eight grouped manager
+  conversations; the browser reported no console errors.
+- Python Playwright was unavailable in the environment, so the live smoke used
+  the repository's installed Node `@playwright/test` driver instead.
+
+### Remaining open items
+- Unified Team and Management feed APIs/projections, structured recipients,
+  authority scopes, project inspector/URL state, atomic project-tree deletion,
+  Talk frontend retirement, hostile audits, and the full release gate remain
+  open. The feature is intentionally retained as `in-progress` in the TODO
+  ledger.
+- The client projection can only group sessions included in the paginated
+  session payload. Missing parents remain visible as orphan projects with a
+  warning instead of being silently attached to a guessed root.
+
+### Provenance
+Direct operator report that project/session consolidation did not surface;
+source, Git history, PR #50, local Codex session evidence, and live session
+registry inspection confirmed that only Gate 0 documentation had landed.

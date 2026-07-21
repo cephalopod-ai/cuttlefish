@@ -17,6 +17,8 @@ import {
 import { formatTime } from "./sidebar-session-helpers"
 import type { ViewMode } from "./sidebar-types"
 import type { VirtualItem } from "./sidebar-view-model"
+import type { SessionProject } from "./project-session-tree"
+import { ProjectHeaderRow, ProjectSessionRow } from "./sidebar-project-row"
 
 interface SidebarListSurfaceProps {
   loading: boolean
@@ -30,6 +32,9 @@ interface SidebarListSurfaceProps {
   expandedRooms: Set<string>
   toggleRoomExpanded: (roomId: string) => void
   onSelectRoom?: (roomId: string) => void
+  expandedProjects: Set<string>
+  toggleProjectExpanded: (rootSessionId: string) => void
+  handleProjectClick: (project: SessionProject) => void
   expanded: Record<string, boolean>
   handleEmployeeClick: SidebarEmployeeRowProps["handleEmployeeClick"]
   handleMarkAllRead: SidebarEmployeeRowProps["handleMarkAllRead"]
@@ -65,6 +70,9 @@ export function SidebarListSurface({
   expandedRooms,
   toggleRoomExpanded,
   onSelectRoom,
+  expandedProjects,
+  toggleProjectExpanded,
+  handleProjectClick,
   expanded,
   handleEmployeeClick,
   handleMarkAllRead,
@@ -152,6 +160,26 @@ export function SidebarListSurface({
             onLoadMore={handleLoadMore}
             loadingMore={loadingMore}
             {...sharedRowProps}
+          />
+        )
+      case "project-header":
+        return (
+          <ProjectHeaderRow
+            project={item.project}
+            expanded={expandedProjects.has(item.project.rootSessionId)}
+            selectedId={selectedId}
+            readSessions={sharedRowProps.readSessions}
+            onOpen={handleProjectClick}
+            onToggle={toggleProjectExpanded}
+          />
+        )
+      case "project-session":
+        return (
+          <ProjectSessionRow
+            project={item.project}
+            session={item.node.session}
+            depth={item.node.depth}
+            sharedRowProps={sharedRowProps}
           />
         )
       case "cron-header":
@@ -248,6 +276,8 @@ export function SidebarListSurface({
     <div className="px-4 py-8 text-center text-xs text-[var(--text-quaternary)]">
       {search.trim() ? (
         "No matching chats"
+      ) : viewMode === "management" ? (
+        "No manager conversations yet"
       ) : viewMode === "focused" && hiddenAutomated > 0 ? (
         <>
           No personal chats here.{" "}
@@ -308,6 +338,8 @@ export function SidebarListSurface({
                 key={
                   item.kind === "flat" ? item.row.session.id
                   : item.kind === "employee" ? item.item.pinKey
+                  : item.kind === "project-header" ? `project:${item.project.rootSessionId}`
+                  : item.kind === "project-session" ? `project-session:${item.node.session.id}`
                   : item.kind === "cron-session" ? item.session.id
                   : item.kind === "room-header" ? `room:${item.room.id}`
                   : item.kind === "section" ? `section:${item.id}`
@@ -320,7 +352,7 @@ export function SidebarListSurface({
           </>
         )}
 
-        {!loading && onContactEmployee && managerEmployees.length > 0 ? (
+        {!loading && viewMode === "management" && onContactEmployee && managerEmployees.length > 0 ? (
           <div className="mt-3 pt-1">
             <SectionLabel label="Managers" count={managerEmployees.length} />
             {managerEmployees.map((employee) => (
@@ -329,7 +361,7 @@ export function SidebarListSurface({
           </div>
         ) : null}
 
-        {!loading && onContactEmployee && teamEmployees.length > 0 ? (
+        {!loading && viewMode === "projects" && onContactEmployee && teamEmployees.length > 0 ? (
           <div className="pt-1">
             <SectionLabel label="Team" count={teamEmployees.length} />
             {teamEmployees.map((employee) => (

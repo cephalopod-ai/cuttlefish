@@ -21,6 +21,7 @@ import type {
   SidebarOrder,
   ViewMode,
 } from "./sidebar-types"
+import type { ProjectSessionNode, SessionProject } from "./project-session-tree"
 
 export const DIRECT_GROUP = "__direct__"
 export const CRON_GROUP = "__cron__"
@@ -54,6 +55,8 @@ export type VirtualItem =
   | { kind: "older-line" }
   | { kind: "older-header" }
   | { kind: "employee"; item: FlatItem }
+  | { kind: "project-header"; project: SessionProject }
+  | { kind: "project-session"; project: SessionProject; node: ProjectSessionNode }
   | { kind: "room-header"; room: DepartmentRoom }
   | { kind: "cron-header" }
   | { kind: "cron-session"; session: Session }
@@ -318,6 +321,9 @@ export function buildSidebarOrder({
   olderPinned,
   olderUnpinned,
   expanded,
+  projects = [],
+  expandedProjects = new Set<string>(),
+  managementItems = [],
 }: {
   searching: boolean
   searchRows: FlatRow[]
@@ -333,6 +339,9 @@ export function buildSidebarOrder({
   olderPinned: FlatItem[]
   olderUnpinned: FlatItem[]
   expanded: Record<string, boolean>
+  projects?: SessionProject[]
+  expandedProjects?: Set<string>
+  managementItems?: FlatItem[]
 }): SidebarOrder {
   const sessionIds: string[] = []
   const seen = new Set<string>()
@@ -346,6 +355,32 @@ export function buildSidebarOrder({
   if (searching) {
     for (const row of searchRows) push(row.session.id)
     return { sessionIds, employeeNames: [], employeeSessionMap: {} }
+  }
+
+  if (viewMode === "projects") {
+    for (const project of projects) {
+      if (expandedProjects.has(project.rootSessionId)) {
+        for (const node of project.nodes) push(node.session.id)
+      } else {
+        push(project.rootSessionId)
+      }
+    }
+    return { sessionIds, employeeNames: [], employeeSessionMap: {} }
+  }
+
+  if (viewMode === "management") {
+    for (const item of managementItems) {
+      const ids = item.sessions?.map((session) => session.id) ?? []
+      if (expanded[item.employeeName!]) ids.forEach(push)
+      else if (ids.length > 0) push(ids[0])
+    }
+    return {
+      sessionIds,
+      employeeNames: managementItems.map((item) => item.employeeName!),
+      employeeSessionMap: Object.fromEntries(
+        managementItems.map((item) => [item.employeeName!, item.sessions?.map((session) => session.id) ?? []]),
+      ),
+    }
   }
 
   if (viewMode === "rooms") {
@@ -428,6 +463,9 @@ export function buildVirtualItems({
   portalSlug,
   portalName,
   employeeData,
+  projects = [],
+  expandedProjects = new Set<string>(),
+  managementItems = [],
 }: {
   searching: boolean
   searchRows: FlatRow[]
@@ -450,10 +488,31 @@ export function buildVirtualItems({
   portalSlug: string
   portalName: string
   employeeData: Map<string, Employee>
+  projects?: SessionProject[]
+  expandedProjects?: Set<string>
+  managementItems?: FlatItem[]
 }): VirtualItem[] {
   const list: VirtualItem[] = []
   if (searching) {
     for (const row of searchRows) list.push({ kind: "flat", row })
+    return list
+  }
+
+  if (viewMode === "projects") {
+    for (const project of projects) {
+      list.push({ kind: "project-header", project })
+      if (expandedProjects.has(project.rootSessionId)) {
+        for (const node of project.nodes) list.push({ kind: "project-session", project, node })
+      }
+    }
+    return list
+  }
+
+  if (viewMode === "management") {
+    if (managementItems.length > 0) {
+      list.push({ kind: "section", id: "management", label: "Manager conversations", count: managementItems.length })
+      for (const item of managementItems) list.push({ kind: "employee", item })
+    }
     return list
   }
 

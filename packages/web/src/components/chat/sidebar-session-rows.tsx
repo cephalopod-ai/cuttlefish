@@ -164,11 +164,13 @@ function SessionContextMenu({
 interface SessionRowProps extends SidebarSharedRowProps {
   session: Session
   parentSessions?: Session[]
+  depth?: number
 }
 
 export const SessionRow = React.memo(function SessionRow({
   session,
   parentSessions,
+  depth,
   selectedId,
   readSessions,
   pinnedSessions,
@@ -220,9 +222,10 @@ export const SessionRow = React.memo(function SessionRow({
   return (
     <SessionContextMenu pinned={isPinned} {...actions}>
       <div
+        style={depth === undefined ? undefined : { paddingLeft: `${24 + depth * 16}px` }}
         className={cn(
           "group/session relative flex w-full items-center gap-2.5 border-l-2 px-4 py-2 text-left transition-colors",
-          parentSessions ? "pl-11" : "pl-6",
+          depth === undefined && (parentSessions ? "pl-11" : "pl-6"),
           sessionIsActive
             ? "border-l-[var(--text-tertiary)] bg-[var(--fill-secondary)]"
             : "border-l-transparent hover:bg-[var(--fill-tertiary)]",

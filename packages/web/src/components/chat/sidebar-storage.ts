@@ -14,6 +14,24 @@ const READ_WATERMARKS_STORAGE_KEY = "cuttlefish-session-read-watermarks"
 // header so agents/sessions stop dominating the list; the room IS the nav unit,
 // its sessions are revealed on demand).
 const ROOMS_EXPANDED_STORAGE_KEY = "cuttlefish-sidebar-rooms-expanded"
+const PROJECTS_EXPANDED_STORAGE_KEY = "cuttlefish-sidebar-projects-expanded"
+
+export function loadExpandedProjects(): Set<string> {
+  try {
+    const raw = localStorage.getItem(PROJECTS_EXPANDED_STORAGE_KEY)
+    if (!raw) return new Set()
+    const arr = JSON.parse(raw)
+    return Array.isArray(arr) ? new Set(arr.filter((x): x is string => typeof x === "string")) : new Set()
+  } catch {
+    return new Set()
+  }
+}
+
+export function saveExpandedProjects(set: Set<string>): void {
+  try {
+    localStorage.setItem(PROJECTS_EXPANDED_STORAGE_KEY, JSON.stringify(Array.from(set)))
+  } catch {}
+}
 
 export function loadExpandedRooms(): Set<string> {
   try {

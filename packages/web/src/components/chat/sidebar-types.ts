@@ -38,10 +38,11 @@ export interface FlatRow {
   displayName: string
 }
 
-// Primary sidebar grouping. "rooms" (default) groups chats into department
-// project-rooms; "focused"/"all" keep the flat recency list (operator's own
-// chats vs. everything). Persisted in FOCUS_MODE_STORAGE_KEY.
-export type ViewMode = "rooms" | "focused" | "all"
+// The surfaced collaboration lanes are project/session Team view and the
+// manager-only Management view. Legacy values remain accepted internally so
+// old focused/room tests and persisted state can be migrated without a hard
+// failure; the sidebar no longer offers those modes.
+export type ViewMode = "projects" | "management" | "rooms" | "focused" | "all"
 
 export interface StatusDotState {
   color: string

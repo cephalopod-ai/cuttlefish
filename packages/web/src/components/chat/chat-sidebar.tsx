@@ -2,7 +2,6 @@ import React, { startTransition, useCallback, useEffect, useMemo, useRef, useSta
 import { useQueryClient } from "@tanstack/react-query"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { useToast } from "@/components/ui/toast"
-import { Search, X } from "lucide-react"
 import { api, type Employee, type SessionsResponse } from "@/lib/api"
 import { useOrg } from "@/hooks/use-employees"
 import {
@@ -17,8 +16,6 @@ import {
 import { queryKeys } from "@/lib/query-keys"
 import { useSettings } from "@/routes/settings-provider"
 import { portalEmployeeSlug } from "@/lib/portal-slug"
-import { groupSessionsByDepartment } from "@/lib/rooms/grouping"
-import type { DepartmentRoom, RoomEmployee, RoomSession } from "@/lib/rooms/types"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -28,10 +25,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { cn } from "@/lib/utils"
 import { SidebarListSurface } from "./sidebar-list-surface"
 import { ArchiveDialog, type ArchiveDialogTarget } from "./archive-dialog"
-import { StatusDot, type SidebarDeleteTarget, type SidebarSharedRowProps } from "./sidebar-row-components"
+import { type SidebarDeleteTarget, type SidebarSharedRowProps } from "./sidebar-row-components"
 import { useSidebarViewPreferences } from "./use-sidebar-view-preferences"
 import {
   getPinnedSessions,
@@ -58,6 +54,8 @@ import {
   VIRTUALIZE_THRESHOLD,
 } from "./sidebar-view-model"
 import { isNeedsAttention, resolveReadSessions } from "./sidebar-session-helpers"
+import { groupSessionsByProject, type SessionProject } from "./project-session-tree"
+import { SidebarHeader } from "./sidebar-header"
 
 export type { SidebarOrder } from "./sidebar-types"
 export {
@@ -145,8 +143,8 @@ export function ChatSidebar({
     selectViewMode,
     olderExpanded,
     toggleOlderExpanded,
-    expandedRooms,
-    toggleRoomExpanded,
+    expandedProjects,
+    toggleProjectExpanded,
   } = useSidebarViewPreferences()
   const [loadingMore, setLoadingMore] = useState<Set<string>>(new Set())
   const [deleteTarget, setDeleteTarget] = useState<SidebarDeleteTarget | null>(null)
@@ -353,27 +351,31 @@ export function ChatSidebar({
     [search, contactableEmployees, portalSlug],
   )
   const managerEmployeeNames = useMemo(
-    () => new Set(managerEmployees.map((employee) => employee.name)),
-    [managerEmployees],
+    () => new Set(
+      orgEmployees
+        .filter((employee) => employee.rank === "manager" || employee.rank === "executive")
+        .map((employee) => employee.name),
+    ),
+    [orgEmployees],
   )
   const teamEmployees = useMemo(
     () => contactableEmployees.filter((employee) => !managerEmployeeNames.has(employee.name)),
     [contactableEmployees, managerEmployeeNames],
   )
 
-  const rooms = useMemo<DepartmentRoom[]>(() => {
-    if (viewMode !== "rooms") return []
-    return groupSessionsByDepartment(
-      sessions as unknown as RoomSession[],
-      orgEmployees as RoomEmployee[],
-    )
-  }, [viewMode, sessions, orgEmployees])
+  const projects = useMemo(() => groupSessionsByProject(sessions), [sessions])
+  const managementItems = useMemo(
+    () => [...pinnedFlat, ...unpinnedFlat].filter((item) =>
+      item.employeeName === portalSlug || managerEmployeeNames.has(item.employeeName ?? ""),
+    ),
+    [managerEmployeeNames, pinnedFlat, portalSlug, unpinnedFlat],
+  )
 
   const allFlatIds = useMemo(() => buildSidebarOrder({
     searching,
     searchRows,
     viewMode,
-    rooms,
+    rooms: [],
     sortedCron,
     pinnedFlat,
     unpinnedFlat,
@@ -384,11 +386,13 @@ export function ChatSidebar({
     olderPinned,
     olderUnpinned,
     expanded,
+    projects,
+    expandedProjects,
+    managementItems,
   }), [
     searching,
     searchRows,
     viewMode,
-    rooms,
     sortedCron,
     pinnedFlat,
     unpinnedFlat,
@@ -399,6 +403,9 @@ export function ChatSidebar({
     olderPinned,
     olderUnpinned,
     expanded,
+    projects,
+    expandedProjects,
+    managementItems,
   ])
 
   const orderRef = useRef("")
@@ -425,6 +432,11 @@ export function ChatSidebar({
       onEmployeeSessionsAvailable?.(employeeSessions)
     }
   }, [expanded, onEmployeeSessionsAvailable, onSelect, toggleEmployeeExpanded])
+
+  const handleProjectClick = useCallback((project: SessionProject) => {
+    onSelect(project.rootSessionId)
+    onEmployeeSessionsAvailable?.(project.sessions)
+  }, [onEmployeeSessionsAvailable, onSelect])
 
   const fixTitle = useCallback((title: string | undefined, employee: string | undefined) => {
     if (!title) return employee || portalName
@@ -493,8 +505,8 @@ export function ChatSidebar({
     searching,
     searchRows,
     viewMode,
-    rooms,
-    expandedRooms,
+    rooms: [],
+    expandedRooms: new Set(),
     cronSessions,
     cronCollapsed,
     sortedCron,
@@ -511,12 +523,13 @@ export function ChatSidebar({
     portalSlug,
     portalName,
     employeeData,
+    projects,
+    expandedProjects,
+    managementItems,
   }), [
     searching,
     searchRows,
     viewMode,
-    rooms,
-    expandedRooms,
     cronSessions,
     cronCollapsed,
     sortedCron,
@@ -533,6 +546,9 @@ export function ChatSidebar({
     portalSlug,
     portalName,
     employeeData,
+    projects,
+    expandedProjects,
+    managementItems,
   ])
 
   const shouldVirtualize = virtualItems.length >= VIRTUALIZE_THRESHOLD
@@ -614,101 +630,19 @@ export function ChatSidebar({
 
   return (
     <div className="relative z-10 flex h-full flex-col bg-[var(--sidebar-bg)] shadow-[var(--shadow-card)]">
-      <div
-        className={cn(
-          "shrink-0 bg-[var(--sidebar-bg)] px-3 py-2 transition-shadow duration-150",
-          listScrolled && "shadow-[0_1px_0_0_var(--separator)]",
-        )}
-      >
-        <div className="relative flex h-9 items-center">
-          <div
-            className={cn(
-              "flex w-full items-center gap-2 transition-opacity duration-200 [transition-timing-function:var(--ease-smooth)] motion-reduce:transition-none",
-              searchOpen ? "pointer-events-none opacity-0" : "opacity-100",
-            )}
-            aria-hidden={searchOpen}
-          >
-            <div className="flex items-center gap-0.5 rounded-full bg-[var(--fill-tertiary)] p-0.5 text-[11px] font-medium">
-              {(["rooms", "focused", "all"] as const).map((mode) => (
-                <button
-                  key={mode}
-                  onClick={() => selectViewMode(mode)}
-                  aria-pressed={viewMode === mode}
-                  title={
-                    mode === "rooms" ? "Group chats into department rooms"
-                    : mode === "focused" ? "Only chats you started"
-                    : "Include automated & delegated sessions"
-                  }
-                  className={cn(
-                    "rounded-full px-2.5 py-1 capitalize transition-all",
-                    viewMode === mode
-                      ? "bg-[var(--bg-secondary)] text-foreground shadow-[var(--shadow-subtle)]"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {mode}
-                </button>
-              ))}
-            </div>
-
-            {needsAttentionSessions.length > 0 ? (
-              <button
-                onClick={() => onSelect(needsAttentionSessions[0].id)}
-                title={`${needsAttentionSessions.length} ${needsAttentionSessions.length === 1 ? "chat needs" : "chats need"} you`}
-                className="flex shrink-0 items-center gap-1.5 rounded-full bg-[var(--fill-tertiary)] px-2.5 py-1 text-[11px] font-medium text-[var(--system-orange)] transition-colors hover:bg-[var(--fill-secondary)]"
-              >
-                <StatusDot color="var(--system-orange)" pulse className="size-1.5" />
-                {needsAttentionSessions.length} need you
-              </button>
-            ) : null}
-
-            <div className="flex-1" />
-
-            <button
-              onClick={() => setSearchOpen(true)}
-              title="Search chats"
-              aria-label="Search chats"
-              className="inline-flex size-9 shrink-0 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-[var(--fill-secondary)] hover:text-foreground"
-            >
-              <Search className="size-[18px]" />
-            </button>
-          </div>
-
-          <div
-            className={cn(
-              "absolute inset-y-0 right-0 flex items-center gap-2 overflow-hidden rounded-[var(--radius-md)] bg-[var(--fill-tertiary)] transition-[width,opacity] duration-200 [transition-timing-function:var(--ease-smooth)] motion-reduce:transition-none",
-              searchOpen ? "w-full px-3 opacity-100" : "w-0 px-0 opacity-0",
-            )}
-          >
-            <Search className="size-3.5 shrink-0 text-[var(--text-tertiary)]" />
-            <input
-              id="chat-search"
-              ref={searchInputRef}
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  e.preventDefault()
-                  closeSearch()
-                }
-              }}
-              placeholder="Search..."
-              aria-label="Search chats"
-              tabIndex={searchOpen ? 0 : -1}
-              className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-[var(--text-tertiary)]"
-            />
-            <button
-              onClick={closeSearch}
-              tabIndex={searchOpen ? 0 : -1}
-              aria-label="Close search"
-              className="inline-flex size-7 shrink-0 items-center justify-center rounded-full text-[var(--text-tertiary)] transition-colors hover:bg-[var(--fill-secondary)] hover:text-foreground"
-            >
-              <X className="size-3.5" />
-            </button>
-          </div>
-        </div>
-      </div>
+      <SidebarHeader
+        listScrolled={listScrolled}
+        viewMode={viewMode}
+        selectViewMode={selectViewMode}
+        needsAttentionCount={needsAttentionSessions.length}
+        onOpenAttention={() => onSelect(needsAttentionSessions[0].id)}
+        searchOpen={searchOpen}
+        onOpenSearch={() => setSearchOpen(true)}
+        closeSearch={closeSearch}
+        search={search}
+        setSearch={setSearch}
+        searchInputRef={searchInputRef}
+      />
 
       <SidebarListSurface
         loading={loading}
@@ -719,9 +653,12 @@ export function ChatSidebar({
         virtualItems={virtualItems}
         sharedRowProps={sharedRowProps}
         selectedId={selectedId}
-        expandedRooms={expandedRooms}
-        toggleRoomExpanded={toggleRoomExpanded}
+        expandedRooms={new Set()}
+        toggleRoomExpanded={() => {}}
         onSelectRoom={onSelectRoom}
+        expandedProjects={expandedProjects}
+        toggleProjectExpanded={toggleProjectExpanded}
+        handleProjectClick={handleProjectClick}
         expanded={expanded}
         handleEmployeeClick={handleEmployeeClick}
         handleMarkAllRead={handleMarkAllRead}

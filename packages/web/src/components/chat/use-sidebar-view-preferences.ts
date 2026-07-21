@@ -1,21 +1,21 @@
 import { useCallback, useEffect, useState } from "react"
 import type { ViewMode } from "./sidebar-types"
-import { loadExpandedRooms, saveExpandedRooms } from "./sidebar-storage"
+import { loadExpandedProjects, saveExpandedProjects } from "./sidebar-storage"
 
 const OLDER_EXPANDED_STORAGE_KEY = "cuttlefish-sidebar-older-expanded"
-const VIEW_MODE_STORAGE_KEY = "cuttlefish-sidebar-focus-mode"
+const VIEW_MODE_STORAGE_KEY = "cuttlefish-sidebar-collaboration-lane"
 
 function isViewMode(value: string | null): value is ViewMode {
-  return value === "rooms" || value === "focused" || value === "all"
+  return value === "projects" || value === "management"
 }
 
 export function useSidebarViewPreferences() {
-  const [viewMode, setViewMode] = useState<ViewMode>("rooms")
+  const [viewMode, setViewMode] = useState<ViewMode>("projects")
   const [olderExpanded, setOlderExpanded] = useState(false)
-  const [expandedRooms, setExpandedRooms] = useState<Set<string>>(new Set())
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
 
   useEffect(() => {
-    setExpandedRooms(loadExpandedRooms())
+    setExpandedProjects(loadExpandedProjects())
     try {
       setOlderExpanded(localStorage.getItem(OLDER_EXPANDED_STORAGE_KEY) === "true")
       const stored = localStorage.getItem(VIEW_MODE_STORAGE_KEY)
@@ -40,12 +40,12 @@ export function useSidebarViewPreferences() {
     })
   }, [])
 
-  const toggleRoomExpanded = useCallback((roomId: string) => {
-    setExpandedRooms((prev) => {
+  const toggleProjectExpanded = useCallback((rootSessionId: string) => {
+    setExpandedProjects((prev) => {
       const next = new Set(prev)
-      if (next.has(roomId)) next.delete(roomId)
-      else next.add(roomId)
-      saveExpandedRooms(next)
+      if (next.has(rootSessionId)) next.delete(rootSessionId)
+      else next.add(rootSessionId)
+      saveExpandedProjects(next)
       return next
     })
   }, [])
@@ -55,7 +55,7 @@ export function useSidebarViewPreferences() {
     selectViewMode,
     olderExpanded,
     toggleOlderExpanded,
-    expandedRooms,
-    toggleRoomExpanded,
+    expandedProjects,
+    toggleProjectExpanded,
   }
 }

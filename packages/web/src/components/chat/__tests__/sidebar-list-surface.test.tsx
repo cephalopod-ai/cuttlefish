@@ -14,6 +14,7 @@ vi.mock("../sidebar-row-components", () => ({
   FlatSessionRow: ({ displayName }: { displayName: string }) => <div>flat:{displayName}</div>,
   SessionRow: ({ session }: { session: { id: string } }) => <div>session:{session.id}</div>,
   EmployeeRow: ({ item }: { item: { employeeName?: string } }) => <div>employee:{item.employeeName}</div>,
+  StatusDot: () => <span>status-dot</span>,
   ContactRow: ({ emp, onContact }: { emp: Employee; onContact: (name: string) => void }) => (
     <button onClick={() => onContact(emp.name)}>contact:{emp.displayName ?? emp.name}</button>
   ),
@@ -51,6 +52,9 @@ function renderSurface(props?: Partial<React.ComponentProps<typeof SidebarListSu
       selectedId={null}
       expandedRooms={new Set()}
       toggleRoomExpanded={vi.fn()}
+      expandedProjects={new Set()}
+      toggleProjectExpanded={vi.fn()}
+      handleProjectClick={vi.fn()}
       expanded={{}}
       handleEmployeeClick={vi.fn()}
       handleMarkAllRead={vi.fn()}
@@ -136,6 +140,45 @@ describe("SidebarListSurface", () => {
     expect(onSelectRoom).toHaveBeenCalledWith("platform")
   })
 
+  it("renders a project root and wires tree expansion + root selection", () => {
+    const toggleProjectExpanded = vi.fn()
+    const handleProjectClick = vi.fn()
+    const root = {
+      id: "root",
+      source: "web",
+      sourceRef: "web:root",
+      title: "Launch campaign",
+      createdAt: "2026-07-21T10:00:00.000Z",
+      lastActivity: "2026-07-21T10:00:00.000Z",
+    }
+    const project = {
+      rootSessionId: "root",
+      rootSession: root,
+      title: "Launch campaign",
+      lastActivity: root.lastActivity,
+      sessions: [root],
+      nodes: [{ session: root, depth: 0 }],
+      participantIds: ["program-manager"],
+      runningCount: 0,
+      needsAttentionCount: 0,
+      integrity: "valid" as const,
+    }
+
+    renderSurface({
+      viewMode: "projects",
+      virtualItems: [{ kind: "project-header", project }],
+      expandedProjects: new Set(["root"]),
+      toggleProjectExpanded,
+      handleProjectClick,
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Launch campaign" }))
+    expect(toggleProjectExpanded).toHaveBeenCalledWith("root")
+    fireEvent.click(screen.getByText("Launch campaign"))
+    expect(handleProjectClick).toHaveBeenCalledWith(project)
+    expect(screen.getByText("1 session")).toBeTruthy()
+  })
+
   it("renders a distinct 'need you' badge alongside the running badge", () => {
     const room: DepartmentRoom = {
       id: "platform",
@@ -206,9 +249,10 @@ describe("SidebarListSurface", () => {
     expect(screen.getByText("session:cron-1")).toBeTruthy()
   })
 
-  it("renders manager and team contact rows when provided", () => {
+  it("renders manager contacts only in Management", () => {
     const onContactEmployee = vi.fn()
     renderSurface({
+      viewMode: "management",
       onContactEmployee,
       managerEmployees: [
         {
@@ -235,10 +279,30 @@ describe("SidebarListSurface", () => {
     })
 
     expect(screen.getByText(/Managers:1/)).toBeTruthy()
-    expect(screen.getByText(/Team:1/)).toBeTruthy()
     fireEvent.click(screen.getByText("contact:Boss"))
-    fireEvent.click(screen.getByText("contact:Alice"))
     expect(onContactEmployee).toHaveBeenCalledWith("boss")
+    expect(screen.queryByText("contact:Alice")).toBeNull()
+  })
+
+  it("renders team contacts only in Team", () => {
+    const onContactEmployee = vi.fn()
+    renderSurface({
+      viewMode: "projects",
+      onContactEmployee,
+      managerEmployees: [],
+      teamEmployees: [{
+        name: "alice",
+        displayName: "Alice",
+        department: "platform",
+        rank: "employee",
+        engine: "claude",
+        model: "opus",
+        persona: "",
+      }],
+    })
+
+    expect(screen.getByText(/Team:1/)).toBeTruthy()
+    fireEvent.click(screen.getByText("contact:Alice"))
     expect(onContactEmployee).toHaveBeenCalledWith("alice")
   })
 })
