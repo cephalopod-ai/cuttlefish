@@ -198,3 +198,28 @@ export function scopedTokenSessionMismatch(
   if (targetId === "bulk-delete" || targetId === "cancel-all") return false;
   return targetId !== principalSessionId.toLowerCase();
 }
+
+/**
+ * Return the target session id when a scoped token is making the one
+ * cross-session read the delegation protocol requires: reading the ordinary
+ * detail/messages resource for a session. Authorization is deliberately not
+ * decided here because it depends on the live parentSessionId relationship;
+ * the principal gate verifies that relationship before allowing the request.
+ *
+ * Keep this exact. Raw transcripts and every mutation/subresource remain under
+ * normal same-session confinement.
+ */
+export function scopedTokenChildDetailReadTarget(
+  method: string | undefined,
+  rawPathname: string,
+): string | null {
+  if ((method || "GET").toUpperCase() !== "GET") return null;
+  const pathname = path.posix.normalize(rawPathname || "/").toLowerCase();
+  const match = /^\/api\/sessions\/([^/]+)$/.exec(pathname);
+  if (!match) return null;
+  const targetId = match[1];
+  if (targetId === "bulk-delete" || targetId === "cancel-all" || targetId === "interrupted") {
+    return null;
+  }
+  return targetId;
+}

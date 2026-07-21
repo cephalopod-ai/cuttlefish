@@ -106,8 +106,46 @@ describe("resolvePrincipalGate (CF2-120)", () => {
       authRequiredNow: () => false,
       gatewayAuthToken: TOKEN,
       cuttlefishHome: "/tmp/does-not-matter",
+      isDirectChildSession: () => false,
     });
     expect(gate.status).toBe(403);
+  });
+
+  it("allows a parent session to poll the detail/messages of its direct delegated child", () => {
+    const scoped = createScopedSessionToken("manager-run", TOKEN);
+    const gate = resolvePrincipalGate({
+      req: req({ authorization: `Bearer ${scoped}` }),
+      method: "GET",
+      pathname: "/api/sessions/child-run",
+      authRequiredNow: () => false,
+      gatewayAuthToken: TOKEN,
+      cuttlefishHome: "/tmp/does-not-matter",
+      isDirectChildSession: (parentId, childId) => parentId === "manager-run" && childId === "child-run",
+    });
+    expect(gate).toMatchObject({ status: 200, principal: { kind: "session", sessionId: "manager-run" } });
+  });
+
+  it("keeps sibling, grandchild, raw-transcript, and mutation access confined", () => {
+    const scoped = createScopedSessionToken("manager-run", TOKEN);
+    const directChild = (parentId: string, childId: string) => parentId === "manager-run" && childId === "child-run";
+    for (const [method, pathname] of [
+      ["GET", "/api/sessions/sibling-run"],
+      ["GET", "/api/sessions/grandchild-run"],
+      ["GET", "/api/sessions/child-run/transcript"],
+      ["GET", "/api/sessions/child-run/children"],
+      ["POST", "/api/sessions/child-run/message"],
+    ] as const) {
+      const gate = resolvePrincipalGate({
+        req: req({ authorization: `Bearer ${scoped}` }),
+        method,
+        pathname,
+        authRequiredNow: () => false,
+        gatewayAuthToken: TOKEN,
+        cuttlefishHome: "/tmp/does-not-matter",
+        isDirectChildSession: directChild,
+      });
+      expect(gate.status, `${method} ${pathname}`).toBe(403);
+    }
   });
 
   it("403s a scoped session token on global integration and message-search reads", () => {

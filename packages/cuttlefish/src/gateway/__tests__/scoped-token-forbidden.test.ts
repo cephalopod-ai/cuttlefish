@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   principalBodySessionForbidden,
+  scopedTokenChildDetailReadTarget,
   scopedTokenCollectionForbidden,
   scopedTokenForbidden,
   scopedTokenSessionMismatch,
@@ -176,5 +177,20 @@ describe("scopedTokenSessionMismatch — per-session confinement (ARC-CF-001)", 
     expect(scopedTokenSessionMismatch("S-1", "/api/sessions/s-1/message")).toBe(false);
     // A traversal resolving back to the own session stays allowed.
     expect(scopedTokenSessionMismatch("s-1", "/api/sessions/s-2/../s-1/message")).toBe(false);
+  });
+});
+
+describe("scopedTokenChildDetailReadTarget — delegation poll surface", () => {
+  it("recognizes only the ordinary GET detail route", () => {
+    expect(scopedTokenChildDetailReadTarget("GET", "/api/sessions/child-1")).toBe("child-1");
+    expect(scopedTokenChildDetailReadTarget(undefined, "/api/sessions/CHILD-1")).toBe("child-1");
+  });
+
+  it("does not widen access to child mutations or other read subresources", () => {
+    expect(scopedTokenChildDetailReadTarget("POST", "/api/sessions/child-1")).toBeNull();
+    expect(scopedTokenChildDetailReadTarget("POST", "/api/sessions/child-1/message")).toBeNull();
+    expect(scopedTokenChildDetailReadTarget("GET", "/api/sessions/child-1/transcript")).toBeNull();
+    expect(scopedTokenChildDetailReadTarget("GET", "/api/sessions/child-1/children")).toBeNull();
+    expect(scopedTokenChildDetailReadTarget("GET", "/api/sessions/interrupted")).toBeNull();
   });
 });

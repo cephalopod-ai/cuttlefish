@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Employee } from "../../shared/types.js";
-import { authorizeManagerScope, isHrHumanOnlyBlocked, isManagerNameAuthorizedForPrincipal } from "../manager-auth.js";
+import { authorizeManagerScope, isDirectChildSession, isHrHumanOnlyBlocked, isManagerNameAuthorizedForPrincipal } from "../manager-auth.js";
 import { HR_EMPLOYEE_NAME } from "../org-policy.js";
 
 function employee(overrides: Partial<Employee>): Employee {
@@ -86,6 +86,18 @@ describe("isManagerNameAuthorizedForPrincipal (Ledger-0007 Finding 4 partial mit
     expect(
       isManagerNameAuthorizedForPrincipal("manager-a", { kind: "session", sessionId: "s1" }, { getSession }),
     ).toBe(false);
+  });
+});
+
+describe("isDirectChildSession", () => {
+  it("binds access to the concrete parent session for this delegation run", () => {
+    const getSession = vi.fn((id: string) => id === "child-run"
+      ? { id, parentSessionId: "manager-run" }
+      : undefined) as any;
+
+    expect(isDirectChildSession("manager-run", "child-run", { getSession })).toBe(true);
+    expect(isDirectChildSession("other-manager-run", "child-run", { getSession })).toBe(false);
+    expect(isDirectChildSession("manager-run", "missing", { getSession })).toBe(false);
   });
 });
 

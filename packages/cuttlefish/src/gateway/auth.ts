@@ -13,6 +13,7 @@ export {
   createScopedSessionToken,
   verifyScopedSessionToken,
   scopedTokenForbidden,
+  scopedTokenChildDetailReadTarget,
   scopedTokenCollectionForbidden,
   scopedTokenSessionMismatch,
   principalBodySessionForbidden,

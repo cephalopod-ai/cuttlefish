@@ -52,6 +52,20 @@ export function isManagerNameAuthorizedForPrincipal(
   return callerSession?.employee === managerName;
 }
 
+/**
+ * A delegated child belongs to the specific parent session that spawned it,
+ * not broadly to an employee identity. This run-local relationship is the
+ * authorization boundary used when a parent polls its direct child's result.
+ */
+export function isDirectChildSession(
+  parentSessionId: string,
+  childSessionId: string,
+  deps: { getSession: typeof getSession } = { getSession },
+): boolean {
+  const child = deps.getSession(childSessionId);
+  return child?.parentSessionId?.toLowerCase() === parentSessionId.toLowerCase();
+}
+
 /** Fields a manager-scoped employee update (PATCH with a `managerName` claim)
  *  may touch. Anything else is an authorization failure — a manager-scoped
  *  caller may retune its report's engine/model/effort, not reassign it,

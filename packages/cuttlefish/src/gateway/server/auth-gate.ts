@@ -4,10 +4,12 @@ import {
   authenticateGatewayRequest,
   authRequiredForRequest,
   scopedTokenForbidden,
+  scopedTokenChildDetailReadTarget,
   scopedTokenCollectionForbidden,
   scopedTokenSessionMismatch,
   type GatewayPrincipal,
 } from "../auth.js";
+import { isDirectChildSession } from "../manager-auth.js";
 
 /**
  * Pure principal-resolution/authorization decision for the HTTP and WebSocket
@@ -73,6 +75,7 @@ export function resolvePrincipalGate(opts: {
   authRequiredNow: () => boolean;
   gatewayAuthToken: string;
   cuttlefishHome: string;
+  isDirectChildSession?: (parentSessionId: string, childSessionId: string) => boolean;
 }): PrincipalGateResult {
   const auth = authenticateGatewayRequest(opts.req, opts.gatewayAuthToken, opts.cuttlefishHome);
 
@@ -104,7 +107,12 @@ export function resolvePrincipalGate(opts: {
       return { status: 403, reason: "Forbidden: cross-session collection route for a session-scoped token" };
     }
     if (scopedTokenSessionMismatch(auth.principal.sessionId, opts.pathname)) {
-      return { status: 403, reason: "Forbidden: session-scoped token bound to a different session" };
+      const childTarget = scopedTokenChildDetailReadTarget(opts.method, opts.pathname);
+      const ownsDirectChild = childTarget !== null
+        && (opts.isDirectChildSession ?? isDirectChildSession)(auth.principal.sessionId, childTarget);
+      if (!ownsDirectChild) {
+        return { status: 403, reason: "Forbidden: session-scoped token bound to a different session" };
+      }
     }
   }
 
