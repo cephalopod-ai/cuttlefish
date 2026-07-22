@@ -82,10 +82,11 @@ export async function runLimits(opts: LimitsOptions = {}): Promise<void> {
   }
 
   const config = loadConfig();
-  await refreshCodexModels(config);
-  await refreshPiModels(config);
-  await refreshGrokModels(config);
-  await refreshHermesModels(config);
+  const refreshOptions = opts.json ? { quiet: true } : undefined;
+  await refreshCodexModels(config, refreshOptions);
+  await refreshPiModels(config, refreshOptions);
+  await refreshGrokModels(config, refreshOptions);
+  await refreshHermesModels(config, refreshOptions);
   const snapshot = await collectEngineLimits(config, { engine: opts.engine });
 
   if (opts.json) {

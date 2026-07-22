@@ -139,11 +139,15 @@ let discoveredHermesModels: HermesModelDiscovery | null = null;
 /** Snapshot of env-derived Aider models (null until first discovery). */
 let discoveredAiderModels: AiderModelDiscovery | null = null;
 
+export interface ModelRefreshOptions {
+  quiet?: boolean;
+}
+
 /**
  * Discover Codex's available models via `codex app-server --stdio` `model/list`.
  * Never throws; on failure the registry falls back to config/synthesized entries.
  */
-export async function refreshCodexModels(config: CuttlefishConfig): Promise<void> {
+export async function refreshCodexModels(config: CuttlefishConfig, options: ModelRefreshOptions = {}): Promise<void> {
   if (!engineAvailable(config, "codex")) {
     discoveredCodexModels = null;
     invalidateModelRegistry();
@@ -152,9 +156,9 @@ export async function refreshCodexModels(config: CuttlefishConfig): Promise<void
   try {
     const discovered = await discoverCodexModels(config);
     discoveredCodexModels = discovered.models.length > 0 ? discovered : null;
-    logger.info(`Codex model discovery: ${discovered.models.length} model(s)`);
+    if (!options.quiet) logger.info(`Codex model discovery: ${discovered.models.length} model(s)`);
   } catch (err) {
-    logger.warn(`Codex model discovery failed: ${err instanceof Error ? err.message : err}`);
+    if (!options.quiet) logger.warn(`Codex model discovery failed: ${err instanceof Error ? err.message : err}`);
     discoveredCodexModels = null;
   } finally {
     invalidateModelRegistry();
@@ -166,7 +170,7 @@ export async function refreshCodexModels(config: CuttlefishConfig): Promise<void
  * Async — populates a snapshot the synchronous registry reads. Never throws;
  * degrades to the config/synthesized fallback when Pi is absent or discovery fails.
  */
-export async function refreshPiModels(config: CuttlefishConfig): Promise<void> {
+export async function refreshPiModels(config: CuttlefishConfig, options: ModelRefreshOptions = {}): Promise<void> {
   if (!engineAvailable(config, "pi")) {
     discoveredPiModels = null;
     invalidateModelRegistry();
@@ -175,9 +179,9 @@ export async function refreshPiModels(config: CuttlefishConfig): Promise<void> {
   try {
     const bin = resolveBin("pi", engineBinOverride(config, "pi"));
     discoveredPiModels = await discoverPiModels(bin);
-    logger.info(`Pi model discovery: ${discoveredPiModels.length} local model(s)`);
+    if (!options.quiet) logger.info(`Pi model discovery: ${discoveredPiModels.length} local model(s)`);
   } catch (err) {
-    logger.warn(`Pi model discovery failed: ${err instanceof Error ? err.message : err}`);
+    if (!options.quiet) logger.warn(`Pi model discovery failed: ${err instanceof Error ? err.message : err}`);
     discoveredPiModels = null;
   } finally {
     invalidateModelRegistry();
@@ -189,7 +193,7 @@ export async function refreshPiModels(config: CuttlefishConfig): Promise<void> {
  * Never throws; until discovery succeeds the registry uses Cuttlefish's known Grok model
  * catalog so the UI still shows the public Grok choices.
  */
-export async function refreshGrokModels(config: CuttlefishConfig): Promise<void> {
+export async function refreshGrokModels(config: CuttlefishConfig, options: ModelRefreshOptions = {}): Promise<void> {
   if (!engineAvailable(config, "grok")) {
     discoveredGrokModels = null;
     invalidateModelRegistry();
@@ -198,9 +202,9 @@ export async function refreshGrokModels(config: CuttlefishConfig): Promise<void>
   try {
     const bin = resolveBin("grok", engineBinOverride(config, "grok"));
     discoveredGrokModels = await discoverGrokModels(bin);
-    logger.info(`Grok model discovery: ${discoveredGrokModels.models.length} model(s)`);
+    if (!options.quiet) logger.info(`Grok model discovery: ${discoveredGrokModels.models.length} model(s)`);
   } catch (err) {
-    logger.warn(`Grok model discovery failed: ${err instanceof Error ? err.message : err}`);
+    if (!options.quiet) logger.warn(`Grok model discovery failed: ${err instanceof Error ? err.message : err}`);
     discoveredGrokModels = null;
   } finally {
     invalidateModelRegistry();
@@ -212,7 +216,7 @@ export async function refreshGrokModels(config: CuttlefishConfig): Promise<void>
  * Never throws; until discovery succeeds the registry uses Cuttlefish's known Hermes model
  * catalog so the UI still shows the public Hermes choices.
  */
-export async function refreshHermesModels(config: CuttlefishConfig): Promise<void> {
+export async function refreshHermesModels(config: CuttlefishConfig, options: ModelRefreshOptions = {}): Promise<void> {
   if (!engineAvailable(config, "hermes")) {
     discoveredHermesModels = null;
     invalidateModelRegistry();
@@ -221,9 +225,9 @@ export async function refreshHermesModels(config: CuttlefishConfig): Promise<voi
   try {
     const bin = resolveBin("hermes", engineBinOverride(config, "hermes"));
     discoveredHermesModels = await discoverHermesModels(bin);
-    logger.info(`Hermes model discovery: ${discoveredHermesModels.models.length} model(s)`);
+    if (!options.quiet) logger.info(`Hermes model discovery: ${discoveredHermesModels.models.length} model(s)`);
   } catch (err) {
-    logger.warn(`Hermes model discovery failed: ${err instanceof Error ? err.message : err}`);
+    if (!options.quiet) logger.warn(`Hermes model discovery failed: ${err instanceof Error ? err.message : err}`);
     discoveredHermesModels = null;
   } finally {
     invalidateModelRegistry();

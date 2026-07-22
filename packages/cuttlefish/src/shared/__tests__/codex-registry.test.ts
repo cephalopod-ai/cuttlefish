@@ -3,6 +3,12 @@ import type { CuttlefishConfig } from "../types.js";
 
 const discoverCodexModels = vi.fn();
 const isInstalled = vi.fn();
+const logger = {
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+};
 
 vi.mock("../codex-models.js", () => ({
   discoverCodexModels,
@@ -15,6 +21,8 @@ vi.mock("../resolve-bin.js", async () => {
     isInstalled,
   };
 });
+
+vi.mock("../logger.js", () => ({ logger }));
 
 function cfg(partial?: Partial<CuttlefishConfig["engines"]>, models?: CuttlefishConfig["models"]): CuttlefishConfig {
   return {
@@ -34,6 +42,8 @@ describe("Codex model registry refresh", () => {
   beforeEach(() => {
     vi.resetModules();
     discoverCodexModels.mockReset();
+    logger.info.mockReset();
+    logger.warn.mockReset();
     isInstalled.mockImplementation((bin: string) => bin === "codex" || bin === "claude");
   });
 
@@ -54,6 +64,20 @@ describe("Codex model registry refresh", () => {
 
     expect(entry.defaultModel).toBe("gpt-5.5");
     expect(entry.models.map((model) => model.id)).toEqual(["gpt-5.6", "gpt-5.5"]);
+    expect(logger.info).toHaveBeenCalledWith("Codex model discovery: 2 model(s)");
+  });
+
+  it("can refresh without writing discovery diagnostics", async () => {
+    discoverCodexModels.mockResolvedValue({
+      defaultModel: "gpt-5.6",
+      models: [{ id: "gpt-5.6", label: "GPT-5.6", supportsEffort: true, effortLevels: ["low", "high"] }],
+    });
+
+    const { refreshCodexModels } = await import("../models.js");
+    await refreshCodexModels(cfg(), { quiet: true });
+
+    expect(logger.info).not.toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 
   it("overlays configured contextWindow onto a discovered Codex model while keeping discovery's effort support authoritative", async () => {
