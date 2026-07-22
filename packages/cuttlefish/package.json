@@ -8,7 +8,7 @@
     "node": ">=24 <25"
   },
   "bin": {
-    "cuttlefish": "./dist/bin/cuttlefish.js"
+    "cuttlefish": "dist/bin/cuttlefish.js"
   },
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
