@@ -1,5 +1,5 @@
 # No published npm release exists as of 2026-07-22. The previous entry
-# (cuttlefish-cli-0.1.0.tgz, bumped by CI on 2026-07-21) pointed at a
+# (cuttlefish-cli-0.23.5.tgz, bumped by CI on 2026-07-21) pointed at a
 # tarball that briefly existed on the npm registry and now 404s there;
 # `brew install` against that URL fails. See
 # .giles/feature-ledger/giles-ledger-0087-release-cuttlefish-cli-v0.23.4-20260722.md
@@ -8,8 +8,8 @@
 class Cuttlefish < Formula
   desc "Lightweight AI gateway daemon orchestrating professional AI coding CLIs"
   homepage "https://github.com/cephalopod-ai/cuttlefish"
-  url "https://registry.npmjs.org/cuttlefish-cli/-/cuttlefish-cli-PLACEHOLDER.tgz"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  url "https://registry.npmjs.org/cuttlefish-cli/-/cuttlefish-cli-0.23.5.tgz"
+  sha256 "0671755f8d7f3e7e267289a6a085f41aef2f524ee1d072fa807767838a28b2b1"
   license "MIT"
 
   livecheck do
