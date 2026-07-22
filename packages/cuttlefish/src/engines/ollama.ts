@@ -11,6 +11,49 @@ import { capAppend, ENGINE_OUTPUT_MAX } from "../shared/cap-append.js";
 const TURN_TIMEOUT_MS = 14 * 24 * 60 * 60 * 1000;
 const STDERR_MAX = 10 * 1024;
 
+class OllamaOutputSanitizer {
+  private state: "text" | "escape" | "csi" | "osc" | "osc_escape" = "text";
+
+  push(text: string): string {
+    let clean = "";
+    for (const char of text) {
+      const code = char.charCodeAt(0);
+      if (this.state === "text") {
+        if (char === "\u001B") {
+          this.state = "escape";
+        } else if (char === "\u009B") {
+          this.state = "csi";
+        } else if (char === "\n" || char === "\t" || code >= 0x20 && code !== 0x7f) {
+          clean += char;
+        }
+        continue;
+      }
+      if (this.state === "escape") {
+        if (char === "[") this.state = "csi";
+        else if (char === "]") this.state = "osc";
+        else this.state = "text";
+        continue;
+      }
+      if (this.state === "csi") {
+        if (code >= 0x40 && code <= 0x7e) this.state = "text";
+        continue;
+      }
+      if (this.state === "osc") {
+        if (char === "\u0007") this.state = "text";
+        else if (char === "\u001B") this.state = "osc_escape";
+        continue;
+      }
+      if (char === "\\") this.state = "text";
+      else if (char !== "\u001B") this.state = "osc";
+    }
+    return clean;
+  }
+}
+
+export function sanitizeOllamaOutput(text: string): string {
+  return new OllamaOutputSanitizer().push(text);
+}
+
 interface LiveProcess {
   proc: ChildProcess;
   terminationReason: string | null;
@@ -103,7 +146,16 @@ export class OllamaEngine implements InterruptibleEngine {
     const model = opts.model || "gemma4";
     const history = opts.historyMessages ?? (opts.sessionId ? getMessages(opts.sessionId) : []);
     const prompt = buildOllamaPrompt(opts, history);
-    const args = ["run", ...stripDisallowedCliFlags(opts.cliFlags ?? []), model, prompt];
+    // The CLI otherwise prints model reasoning and terminal word-wrap cursor
+    // corrections on stdout. Those bytes are UI protocol, not assistant text.
+    const args = [
+      "run",
+      ...stripDisallowedCliFlags(opts.cliFlags ?? []),
+      "--hidethinking",
+      "--nowordwrap",
+      model,
+      prompt,
+    ];
 
     logger.info(
       `Ollama engine starting: ${bin} run ${model} (history messages: ${history.length}, resume: ${opts.resumeSessionId || "synthetic"})`,
@@ -123,6 +175,7 @@ export class OllamaEngine implements InterruptibleEngine {
       let stderr = "";
       let settled = false;
       let hardTimeout: NodeJS.Timeout | undefined;
+      const outputSanitizer = new OllamaOutputSanitizer();
 
       const finish = (result: EngineResult) => {
         if (settled) return;
@@ -145,7 +198,8 @@ export class OllamaEngine implements InterruptibleEngine {
       hardTimeout.unref?.();
 
       proc.stdout.on("data", (chunk: Buffer | string) => {
-        const text = typeof chunk === "string" ? chunk : chunk.toString("utf-8");
+        const raw = typeof chunk === "string" ? chunk : chunk.toString("utf-8");
+        const text = outputSanitizer.push(raw);
         if (!text) return;
         opts.onActivity?.();
         stdout = capAppend(stdout, text, ENGINE_OUTPUT_MAX); // bound long-turn retention (AR-09)
