@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+## [0.23.4] - 2026-07-22
+
+First release cut with the tag aligned to the package version (`v0.23.4` ==
+`cuttlefish-cli@0.23.4`), so the npm publish, platform-archive, and Homebrew
+formula workflows can run to completion. Intended as the first published npm
+release of `cuttlefish-cli`.
+
+### Features
+- Collaboration chat routes and UI.
+- Orchestration workers data view with end-to-end coverage.
+- CLI registers the orchestration command groups.
+
+### Security
+- Hardened gateway session, org, and upload handling.
+- Fixed auth provider validation and added security regression coverage.
+- Bounded security reviewer runs during screening.
+- `js-yaml` bumped to 4.3.0.
+
+### Bug Fixes
+- CLI `limits` command preserves JSON stdout.
+- Ollama assistant output stays canonical.
+- Checkpoints return coherent decision session state and reject conflicting
+  terminal decisions.
+- Gateway accounts completed web session turns.
+- Skill installs report idempotent outcomes.
+
+### Internal
+- Chat sidebar refactored into a project session tree.
+- Release automation and package metadata updates.
+
 ### Packaging
 - **Windows releasable install path.** `scripts/install.ps1` installs from source,
   a local archive, or a GitHub Release `win32-x64` zip into
