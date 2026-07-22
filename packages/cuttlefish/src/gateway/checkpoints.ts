@@ -264,11 +264,12 @@ export async function applyCheckpointDecision(
       updatedAt: new Date().toISOString(),
       resultingAction,
     });
-    await exportCheckpointDecision(resolved, paused, context);
+    const current = getSession(paused.id) ?? paused;
+    await exportCheckpointDecision(resolved, current, context);
     context.emit("session:updated", { sessionId: paused.id });
     context.emit("approval:resolved", { approvalId: resolved.id, sessionId: resolved.sessionId, state: resolved.state });
     context.emit("checkpoint:resolved", { checkpointId: resolved.id, sessionId: resolved.sessionId, state: resolved.state, resultingAction });
-    return { checkpoint: resolved, session: paused };
+    return { checkpoint: resolved, session: current };
   }
 
   if (resultingAction === "stop_session") {
@@ -284,11 +285,12 @@ export async function applyCheckpointDecision(
       updatedAt: new Date().toISOString(),
       resultingAction,
     });
-    await exportCheckpointDecision(resolved, stopped, context);
+    const current = getSession(stopped.id) ?? stopped;
+    await exportCheckpointDecision(resolved, current, context);
     context.emit("session:updated", { sessionId: stopped.id });
     context.emit("approval:resolved", { approvalId: resolved.id, sessionId: resolved.sessionId, state: resolved.state });
     context.emit("checkpoint:resolved", { checkpointId: resolved.id, sessionId: resolved.sessionId, state: resolved.state, resultingAction });
-    return { checkpoint: resolved, session: stopped };
+    return { checkpoint: resolved, session: current };
   }
 
   const recorded = updateSession(session.id, {
@@ -302,9 +304,10 @@ export async function applyCheckpointDecision(
     updatedAt: new Date().toISOString(),
     resultingAction,
   });
-  await exportCheckpointDecision(resolved, recorded, context);
+  const current = getSession(recorded.id) ?? recorded;
+  await exportCheckpointDecision(resolved, current, context);
   context.emit("session:updated", { sessionId: recorded.id });
   context.emit("approval:resolved", { approvalId: resolved.id, sessionId: resolved.sessionId, state: resolved.state });
   context.emit("checkpoint:resolved", { checkpointId: resolved.id, sessionId: resolved.sessionId, state: resolved.state, resultingAction });
-  return { checkpoint: resolved, session: recorded };
+  return { checkpoint: resolved, session: current };
 }

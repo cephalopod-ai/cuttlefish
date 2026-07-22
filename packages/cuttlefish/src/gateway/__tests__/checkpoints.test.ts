@@ -211,8 +211,50 @@ describe("checkpoint routes", () => {
       decisionNotes: "Wait until the maintenance window opens.",
       resultingAction: "stay_paused",
     }));
+    expect(cap.body.session.transportMeta.humanCheckpoint).toEqual(expect.objectContaining({
+      checkpointId: checkpoint.id,
+      state: "deferred",
+      resultingAction: "stay_paused",
+    }));
     expect(reg.getSession(session.id)?.status).toBe("waiting");
   });
+
+  it.each([
+    { decision: "rejected", resultingAction: "stop_session", expectedStatus: "error" },
+    { decision: "approved", resultingAction: "record_only", expectedStatus: "idle" },
+    { decision: "revised", resultingAction: "stay_paused", expectedStatus: "waiting" },
+  ] as const)(
+    "returns coherent session checkpoint metadata for a $decision decision",
+    async ({ decision, resultingAction, expectedStatus }) => {
+      const session = reg.createSession({
+        engine: "claude",
+        source: "web",
+        sourceRef: `web:cp-coherent-${decision}`,
+        prompt: "x",
+      });
+      const checkpoint = store.createApproval({
+        sessionId: session.id,
+        type: "checkpoint",
+        payload: { decisionNeeded: "Choose next action", why: "Need a coherent first response" },
+      });
+      const cap = makeRes();
+
+      await api.handleApiRequest(
+        makeJsonReq("POST", `/api/checkpoints/${checkpoint.id}/decision`, { decision }),
+        cap.res,
+        makeCtx(),
+      );
+
+      expect(cap.status).toBe(200);
+      expect(cap.body.checkpoint.state).toBe(decision);
+      expect(cap.body.session.status).toBe(expectedStatus);
+      expect(cap.body.session.transportMeta.humanCheckpoint).toEqual(expect.objectContaining({
+        checkpointId: checkpoint.id,
+        state: decision,
+        resultingAction,
+      }));
+    },
+  );
 
   it("marks an identical terminal checkpoint decision as an explicit idempotent replay", async () => {
     const session = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:cp-idempotent", prompt: "x" });
