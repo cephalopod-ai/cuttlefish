@@ -78,8 +78,9 @@ import { createGatewayCleanup, type GatewayCleanup } from "./server/cleanup.js";
 import { createSleepGuard } from "./sleep-guard.js";
 import { serveStatic, isAllowedCorsOrigin } from "./server/http-static.js";
 import { bindOrchestrationRuntimeHandlers } from "./server/orchestration.js";
-import { createGatewayTransports } from "./server/transports.js";
+import { createGatewayTransports, type GatewayWebSocket } from "./server/transports.js";
 import { recoverOrphanedRunsAtStartup } from "../shared/run-recovery.js";
+import { canSendWsEventToPrincipal } from "./ws-event-scope.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -315,11 +316,15 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
   logger.info(`Loaded ${cronJobs.length} cron job(s)`);
 
   const startTime = Date.now();
-  const wsClients = new Set<import("ws").WebSocket>();
+  const wsClients = new Set<GatewayWebSocket>();
+  const canSendWsEvent = (client: GatewayWebSocket, payload: unknown): boolean => {
+    return canSendWsEventToPrincipal(client.cuttlefishPrincipal, payload, getSession);
+  };
   const emit = (event: string, payload: unknown): void => {
     const message = JSON.stringify({ event, payload, ts: Date.now() });
     for (const client of wsClients) {
       if (client.readyState === 1) {
+        if (!canSendWsEvent(client, payload)) continue;
         try {
           client.send(message);
         } catch (err) {
@@ -815,7 +820,7 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
       aiderEngine.killAll();
       aiderInteractiveEngine.killAll();
     },
-    orchestrationRuntime,
+    getOrchestrationRuntime: () => orchestrationRuntime,
     ptyWss: transports.ptyWss,
     server: transports.server,
     stopBoardWorker,

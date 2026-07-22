@@ -86,7 +86,7 @@ describe("KiloEngine", () => {
     const args = spawnCalls[0]?.args ?? [];
     expect(args).toContain("run");
     expect(args).toContain("--auto");
-    expect(args).toContain("--dangerously-skip-permissions");
+    expect(args).not.toContain("--dangerously-skip-permissions");
     expect(args).not.toContain("--model");
     expect(args).not.toContain("kilo-auto/free");
     expect(args).not.toContain("--variant");

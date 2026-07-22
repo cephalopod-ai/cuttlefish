@@ -12,6 +12,7 @@ import { resolveBestSessionForTicket, resolveTicketSessionFallbackState, resolve
 import { dispatchTicket } from "../../ticket-dispatch.js";
 import { RESERVED_ORG_DIRS, isActiveEmployee, scanOrg } from "../../org.js";
 import { HR_EMPLOYEE_NAME } from "../../org-policy.js";
+import { buildCrossRequestBrief, buildOrgServices, findServiceProvider } from "../../org-services.js";
 import { parseChangeInput } from "../../org-validation.js";
 import { resolveUserHeader } from "../../connector-reply.js";
 import type { ApiContext } from "../context.js";
@@ -35,24 +36,6 @@ interface ExecutionProfileSummary {
   hasCustomRoleOverrides: boolean;
 }
 
-interface OrgServiceSummary {
-  name: string;
-  description: string;
-  provider: {
-    name: string;
-    displayName: string;
-    department: string;
-    rank: Employee["rank"];
-  };
-}
-
-const SERVICE_RANK_PRIORITY: Record<Employee["rank"], number> = {
-  executive: 0,
-  manager: 1,
-  senior: 2,
-  employee: 3,
-};
-
 function computeExecutionProfileSummary(emp: Employee): ExecutionProfileSummary {
   const exec = effectiveExecution(emp);
   const tier = (EXECUTION_TIERS as readonly string[]).includes(exec.tier) ? exec.tier : "solo";
@@ -63,88 +46,6 @@ function computeExecutionProfileSummary(emp: Employee): ExecutionProfileSummary 
     reviewerToolProfile: exec.reviewerToolProfile,
     hasCustomRoleOverrides: !!(exec.roles?.implementer || exec.roles?.reviewer),
   };
-}
-
-function buildOrgServices(registry: Map<string, Employee>): OrgServiceSummary[] {
-  const services = new Map<string, OrgServiceSummary>();
-  for (const employee of registry.values()) {
-    if (employee.name === HR_EMPLOYEE_NAME) continue;
-    if (!isActiveEmployee(employee) || !Array.isArray(employee.provides)) continue;
-    for (const service of employee.provides) {
-      const key = service.name.trim().toLowerCase();
-      if (!key) continue;
-      const candidate: OrgServiceSummary = {
-        name: service.name.trim(),
-        description: service.description.trim(),
-        provider: {
-          name: employee.name,
-          displayName: employee.displayName,
-          department: employee.department,
-          rank: employee.rank,
-        },
-      };
-      const current = services.get(key);
-      if (!current) {
-        services.set(key, candidate);
-        continue;
-      }
-      const candidatePriority = SERVICE_RANK_PRIORITY[candidate.provider.rank];
-      const currentPriority = SERVICE_RANK_PRIORITY[current.provider.rank];
-      if (
-        candidatePriority < currentPriority ||
-        (candidatePriority === currentPriority && candidate.provider.name.localeCompare(current.provider.name) < 0)
-      ) {
-        services.set(key, candidate);
-      }
-    }
-  }
-  return [...services.values()].sort((a, b) => a.name.localeCompare(b.name));
-}
-
-function findServiceProvider(registry: Map<string, Employee>, serviceName: string): { employee: Employee; service: { name: string; description: string } } | null {
-  const key = serviceName.trim().toLowerCase();
-  if (!key) return null;
-  let best: { employee: Employee; service: { name: string; description: string } } | null = null;
-  for (const employee of registry.values()) {
-    if (employee.name === HR_EMPLOYEE_NAME) continue;
-    if (!isActiveEmployee(employee) || !Array.isArray(employee.provides)) continue;
-    for (const service of employee.provides) {
-      if (service.name.trim().toLowerCase() !== key) continue;
-      const candidate = { employee, service: { name: service.name.trim(), description: service.description.trim() } };
-      if (!best) {
-        best = candidate;
-        continue;
-      }
-      const candidatePriority = SERVICE_RANK_PRIORITY[candidate.employee.rank];
-      const bestPriority = SERVICE_RANK_PRIORITY[best.employee.rank];
-      if (
-        candidatePriority < bestPriority ||
-        (candidatePriority === bestPriority && candidate.employee.name.localeCompare(best.employee.name) < 0)
-      ) {
-        best = candidate;
-      }
-    }
-  }
-  return best;
-}
-
-function buildCrossRequestBrief(input: {
-  requester: Employee;
-  service: { name: string; description: string };
-  prompt: string;
-}): string {
-  return [
-    "## Cross-service request",
-    "",
-    `**From**: ${input.requester.displayName} (${input.requester.department})`,
-    `**Service**: ${input.service.name} - ${input.service.description}`,
-    "",
-    "### Request",
-    input.prompt,
-    "",
-    "---",
-    "Handle this as a priority request from a colleague.",
-  ].join("\n");
 }
 
 async function reconcileDepartmentBoardView(department: string, context: ApiContext): Promise<void> {

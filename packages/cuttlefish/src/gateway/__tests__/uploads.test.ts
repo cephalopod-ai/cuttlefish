@@ -9,13 +9,20 @@ const { home: tmp } = withStaticTempCuttlefishHome("cuttlefish-up-");
 
 type Files = typeof import("../files.js");
 type Paths = typeof import("../../shared/paths.js");
+type Uploads = typeof import("../files/uploads.js");
+type Registry = typeof import("../../sessions/registry.js");
 
 let files: Files;
 let paths: Paths;
+let uploads: Uploads;
+let registry: Registry;
 
 beforeAll(async () => {
   paths = await import("../../shared/paths.js");
   files = await import("../files.js");
+  uploads = await import("../files/uploads.js");
+  registry = await import("../../sessions/registry.js");
+  registry.initDb();
 });
 
 describe("sanitizeUploadFilename", () => {
@@ -84,5 +91,51 @@ describe("isServablePath (download scoping guard)", () => {
     fs.symlinkSync(outside, link);
 
     expect(files.isServablePath(link)).toBe(false);
+  });
+});
+
+describe("saveFile persistence safety", () => {
+  it("stores same-name session uploads under distinct file-id paths", async () => {
+    const context = { getConfig: () => ({ gateway: {} }), emit: () => {} } as any;
+
+    const first = await uploads.saveFile({
+      id: "same-name-a",
+      filename: "report.txt",
+      buffer: Buffer.from("first"),
+      customPath: null,
+      open: false,
+      sessionId: "session-uploads",
+    }, context);
+    const second = await uploads.saveFile({
+      id: "same-name-b",
+      filename: "report.txt",
+      buffer: Buffer.from("second"),
+      customPath: null,
+      open: false,
+      sessionId: "session-uploads",
+    }, context);
+
+    expect(first.path).not.toBe(second.path);
+    expect(fs.readFileSync(first.path!, "utf-8")).toBe("first");
+    expect(fs.readFileSync(second.path!, "utf-8")).toBe("second");
+  });
+
+  it("does not insert metadata when a custom-path write is rejected", async () => {
+    const context = { getConfig: () => ({ gateway: { allowFileCustomPaths: true } }), emit: () => {} } as any;
+    const customPath = path.join(paths.FILES_DIR, "custom-existing", "report.txt");
+    fs.mkdirSync(path.dirname(customPath), { recursive: true });
+    fs.writeFileSync(customPath, "existing");
+
+    await expect(uploads.saveFile({
+      id: "custom-rejected",
+      filename: "report.txt",
+      buffer: Buffer.from("new"),
+      customPath,
+      open: false,
+    }, context)).rejects.toThrow(/already exists/);
+
+    expect(registry.getFile("custom-rejected")).toBeUndefined();
+    expect(fs.existsSync(path.join(paths.FILES_DIR, "custom-rejected", "report.txt"))).toBe(false);
+    expect(fs.readFileSync(customPath, "utf-8")).toBe("existing");
   });
 });

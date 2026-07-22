@@ -36,6 +36,24 @@ describe("buildEngineEnv", () => {
     expect(env.TWILIO_AUTH_TOKEN).toBeUndefined();
   });
 
+  it("strips generic secret-shaped host variables by default", () => {
+    process.env.QDRANT_API_KEY = "qdrant-secret";
+    process.env.BRAVE_API_KEY = "brave-secret";
+    process.env.STRIPE_KEY = "stripe-secret";
+    process.env.SERVICE_KEY = "service-secret";
+    process.env.CUSTOM_AUTH = "auth-secret";
+    process.env.CUTTLEFISH_TEST_PUBLIC_FLAG = "kept";
+
+    const env = buildEngineEnv({});
+
+    expect(env.QDRANT_API_KEY).toBeUndefined();
+    expect(env.BRAVE_API_KEY).toBeUndefined();
+    expect(env.STRIPE_KEY).toBeUndefined();
+    expect(env.SERVICE_KEY).toBeUndefined();
+    expect(env.CUSTOM_AUTH).toBeUndefined();
+    expect(env.CUTTLEFISH_TEST_PUBLIC_FLAG).toBe("kept");
+  });
+
   it("allows only an exact provider key without reopening prefix-denied integration secrets", () => {
     process.env.ANTHROPIC_API_KEY = "provider-key";
     process.env.TWILIO_SID = "twilio-sid";

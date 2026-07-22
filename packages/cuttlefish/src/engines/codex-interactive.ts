@@ -380,7 +380,7 @@ export class CodexInteractiveEngine implements InterruptibleEngine, PtyViewEngin
   private buildArgs(opts: EngineRunOpts, prompt?: string, resumeSessionId?: string): string[] {
     const args: string[] = [];
     if (resumeSessionId) args.push("resume");
-    args.push("--no-alt-screen", "--dangerously-bypass-approvals-and-sandbox");
+    args.push("--no-alt-screen", "--sandbox", "workspace-write", "--ask-for-approval", "never");
     if (opts.model) args.push("--model", opts.model);
     if (opts.effortLevel && opts.effortLevel !== "default") args.push("-c", `model_reasoning_effort="${opts.effortLevel}"`);
     if (opts.cwd) args.push("-C", opts.cwd);

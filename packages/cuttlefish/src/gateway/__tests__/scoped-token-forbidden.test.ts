@@ -43,7 +43,7 @@ describe("scopedTokenForbidden — operator control plane", () => {
     expect(scopedTokenForbidden("GET", "/api/org")).toBe(false);
     expect(scopedTokenForbidden("POST", "/api/org/change-requests")).toBe(false);
     expect(scopedTokenForbidden("POST", "/api/org/change-requests/change-1/approve")).toBe(true);
-    expect(scopedTokenForbidden("GET", "/api/status")).toBe(false);
+    expect(scopedTokenForbidden("GET", "/api/status")).toBe(true);
     expect(scopedTokenForbidden("POST", "/api/sessions")).toBe(false);
     expect(scopedTokenForbidden("POST", "/api/sessions/s-1/message")).toBe(false);
     expect(scopedTokenForbidden("POST", "/api/files")).toBe(false);

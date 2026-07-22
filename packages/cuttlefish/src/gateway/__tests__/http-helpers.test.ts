@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Readable } from "node:stream";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { DEFAULT_JSON_BODY_MAX_BYTES, readJsonBody } from "../http-helpers.js";
+import { DEFAULT_JSON_BODY_MAX_BYTES, readJsonBody, readJsonObjectBody } from "../http-helpers.js";
 
 function reqWithBody(body: string): IncomingMessage {
   const req = Readable.from([Buffer.from(body)]);
@@ -42,5 +42,15 @@ describe("readJsonBody", () => {
     const parsed = await readJsonBody(reqWithBody(body), res, { maxBytes: body.length + 16 });
 
     expect(parsed).toEqual({ ok: true, body: JSON.parse(body) });
+  });
+
+  it("rejects non-object JSON bodies for object-only routes", async () => {
+    const { res, out } = resCapture();
+
+    const parsed = await readJsonObjectBody(reqWithBody(JSON.stringify([{ prompt: "x" }])), res);
+
+    expect(parsed.ok).toBe(false);
+    expect(out.status).toBe(400);
+    expect(out.body).toEqual({ error: "Invalid JSON body: expected an object" });
   });
 });

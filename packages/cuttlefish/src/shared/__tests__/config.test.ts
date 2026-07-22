@@ -67,6 +67,15 @@ describe("validateConfigShape", () => {
     })).toEqual([]);
   });
 
+  it("rejects removed no-op mcp.gateway config", () => {
+    expect(validateConfigShape({
+      gateway: { port: 8888, host: "127.0.0.1" },
+      engines: { claude: { bin: "claude", model: "opus" } },
+      logging: { file: true, stdout: true, level: "info" },
+      mcp: { gateway: { enabled: true } },
+    })).toContain("unknown mcp config keys: gateway");
+  });
+
   it("accepts a full default-shaped config", () => {
     expect(validateConfigShape({
       cuttlefish: { version: "1.0.0" },
@@ -108,7 +117,6 @@ describe("validateConfigShape", () => {
       mcp: {
         browser: { enabled: true, provider: "playwright" },
         fetch: { enabled: true },
-        gateway: { enabled: true },
       },
       knowledge: {
         sink: {

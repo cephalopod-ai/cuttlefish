@@ -145,7 +145,15 @@ export default function SkillsPage() {
               <Card
                 key={skill.name}
                 className="py-4 cursor-pointer transition-colors hover:border-[var(--accent)]"
+                role="button"
+                tabIndex={0}
+                aria-label={`Open skill ${skill.name}`}
                 onClick={() => openSkill(skill)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  event.preventDefault();
+                  openSkill(skill);
+                }}
               >
                 <CardContent className="flex flex-col gap-3">
                   <div

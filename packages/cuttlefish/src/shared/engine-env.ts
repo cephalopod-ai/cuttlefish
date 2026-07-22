@@ -20,6 +20,33 @@ const SECRET_DENYLIST: ReadonlySet<string> = new Set([
 
 const SECRET_PREFIX_DENYLIST = ["TWILIO_"] as const;
 
+function keySegments(key: string): string[] {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .split(/[^a-zA-Z0-9]+/)
+    .map((segment) => segment.toLowerCase())
+    .filter(Boolean);
+}
+
+function isSensitiveEnvKey(key: string): boolean {
+  const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (
+    normalized.includes("token") ||
+    normalized.includes("secret") ||
+    normalized.includes("apikey") ||
+    normalized.includes("privatekey") ||
+    normalized.includes("password") ||
+    normalized.includes("credential") ||
+    normalized.includes("bearer") ||
+    normalized.includes("cookie") ||
+    normalized === "authorization"
+  ) {
+    return true;
+  }
+  const segments = keySegments(key);
+  return segments.includes("key") || segments.includes("auth") || segments.includes("pat") || segments.includes("dsn") || segments.includes("connstr");
+}
+
 export interface EngineEnvOptions {
   stripPrefixes?: string[];
   /** Exact provider credential names an engine requires to authenticate itself. */
@@ -52,7 +79,7 @@ export function buildEngineEnv(
     // material. Exact provider keys may be granted deliberately, but a broad
     // bypass must never re-expose Twilio or a future prefix-denied secret.
     if (SECRET_PREFIX_DENYLIST.some((prefix) => key.startsWith(prefix))) continue;
-    if (SECRET_DENYLIST.has(key) && !allowedSecrets.has(key)) continue;
+    if ((SECRET_DENYLIST.has(key) || isSensitiveEnvKey(key)) && !allowedSecrets.has(key)) continue;
     if (opts.stripPrefixes?.some((prefix) => key.startsWith(prefix))) continue;
     result[key] = value;
   }

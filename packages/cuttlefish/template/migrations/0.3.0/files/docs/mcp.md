@@ -1,6 +1,6 @@
 # MCP (Model Context Protocol) Integration
 
-{{portalName}} automatically configures MCP servers for AI engine sessions, giving employees access to browser automation, web search, and gateway tools without manual setup.
+{{portalName}} automatically configures MCP servers for AI engine sessions, giving employees access to browser automation, web search, and reviewed custom tools without manual setup.
 
 ## How It Works
 
@@ -37,20 +37,6 @@ mcp:
 The historical built-in fetch package is no longer published. Configure a
 reviewed, pinned custom fetch MCP server instead.
 
-### Gateway
-Built-in MCP server that wraps {{portalName}}'s own API. Gives employees tools to:
-- Send messages via connectors (Slack, etc.)
-- List and query sessions
-- Manage cron jobs
-- Query the org structure
-- Update department boards
-
-```yaml
-mcp:
-  gateway:
-    enabled: true  # enabled by default
-```
-
 ## Custom MCP Servers
 
 Add any MCP server via the `custom:` section:
@@ -81,7 +67,7 @@ mcp: false  # No MCP servers at all
 # Or specific servers only:
 mcp:
   - search
-  - gateway
+  - my-database
 ```
 
 By default, all globally enabled MCP servers are available to all employees.

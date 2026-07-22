@@ -585,6 +585,7 @@ describe("GET /api/status", () => {
     await handleApiRequest(makeReq("GET", "/api/readyz"), readiness.res, statusCtx);
     expect(readiness.status).toBe(503);
     expect(readiness.body).toMatchObject({ status: "not_ready" });
+    expect(readiness.body).not.toHaveProperty("checks");
   });
 
   it("keeps liveness independent from readiness", async () => {

@@ -40,7 +40,7 @@ import { parseLeaseTransportMeta } from "../orchestration/lease-meta.js";
 import { emitSessionSummaryBestEffort, knowledgeRelayOptions } from "../knowledge/outbox-service.js";
 import { positiveNumberOr, resolveStallLeaderName, resolveTurnStallWatchdogConfig, shouldNotifyLeaderReviewOnStall, shouldRetrySameEngineAfterStall } from "./turn-stall-policy.js";
 export { resolveStallLeaderName, resolveTurnStallWatchdogConfig, shouldNotifyLeaderReviewOnStall, shouldRetrySameEngineAfterStall } from "./turn-stall-policy.js";
-import { isExecutionDepthBlocked } from "./employee-execution.js";
+import { isExecutionDepthBlocked, resolveEffectiveExecution } from "./employee-execution.js";
 import { createScopedSessionToken } from "./auth.js";
 import { prepareWebSessionRun } from "./web-session-preflight.js";
 import { isHumanDelegateRole, isHumanDelegationModelAllowed, operatorDelegationPromptHash, readOperatorDelegationScopesForTurn } from "../sessions/operator-delegation.js";
@@ -80,6 +80,10 @@ export function recordSuccessfulWebSessionTurn(
 ): void {
   if (result.error) return;
   accumulateSessionCost(sessionId, result.cost ?? 0, result.numTurns ?? 1);
+}
+
+function finitePositiveNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
 /**
@@ -126,6 +130,10 @@ export async function runWebSession(
   // sessions, so `employee?.alwaysNotify` is undefined (not false) and would
   // otherwise pass the "notify" default — explicitly force it off here instead.
   const parentNotifyAlwaysNotify = isRoleChildSession ? false : employee?.alwaysNotify;
+  const executionBudget = employee && !isRoleChildSession ? resolveEffectiveExecution(employee) : null;
+  const executionWallClockMs = finitePositiveNumber(executionBudget?.maxWallClockMs);
+  const executionToolCallLimit = finitePositiveNumber(executionBudget?.maxToolCalls);
+  const executionCostLimitUsd = finitePositiveNumber(executionBudget?.maxEstimatedCostUsd ?? employee?.maxCostUsd);
 
   if (isKnownEngine(currentSession.engine) && !engineAvailable(config, currentSession.engine)) {
     const errMsg = engineUnavailableMessage(config, currentSession.engine);
@@ -486,141 +494,167 @@ export async function runWebSession(
     const turnStartedAt = Date.now();
     let result!: Awaited<ReturnType<typeof engine.run>>;
     let stalledReason: string | null = null;
-    try {
-    for (let stallAttempt = 0; ; stallAttempt++) {
-      stalledReason = null;
-      lastStreamAt = Date.now();
-      const attemptStartedAt = Date.now();
-      let stallKilled = false;
-      let stallWatchdog: ReturnType<typeof setInterval> | null = null;
-      stallWatchdog = canKill
-        ? setInterval(() => {
-            if (!getSession(currentSession.id)) { clearInterval(stallWatchdog!); return; }
-            const idleMs = Date.now() - lastStreamAt;
-            const totalMs = Date.now() - attemptStartedAt;
-            maybeNotifyLeaderReview(idleMs);
-            if (idleMs >= stallInactivityMs || totalMs >= stallHardCeilingMs) {
-              stalledReason =
-                idleMs >= stallInactivityMs
-                  ? `no engine activity for ${Math.round(idleMs / 1000)}s`
-                  : `turn exceeded the ${Math.round(stallHardCeilingMs / 1000)}s ceiling`;
-              stallKilled = true;
-              clearInterval(stallWatchdog!);
-              logger.warn(
-                `[watchdog] web session ${currentSession.id} (${currentSession.engine}) stalled: ${stalledReason} ` +
-                  `— interrupting${shouldRetrySameEngineAfterStall(stallAttempt, maxStallRetries) ? " and retrying" : ""}`,
-              );
-              killer?.kill(currentSession.id, `Interrupted: stalled — ${stalledReason}`);
-            }
-          }, stallPolicy.tickMs)
-        : null;
-      try {
-      // Reconcile explicit effort/cliFlags against the (possibly post-fallback)
-      // engine's implicit capabilities — strip effort inputs an engine can't accept.
-      const invocation = resolveEngineInvocation(config, currentSession.engine, {
-        effortLevel,
-        cliFlags: employee?.cliFlags,
-      });
-
-      result = await runWithEngineEnvironment(
-        scopedSessionToken ? { CUTTLEFISH_SESSION_TOKEN: scopedSessionToken } : {},
-        () => engine.run({
-      prompt: contextPacket?.prompt ?? promptToRun,
-      resumeSessionId: currentSession.engineSessionId ?? undefined,
-      systemPrompt: contextPacket?.systemPrompt ?? systemPrompt,
-      cwd: currentSession.cwd || CUTTLEFISH_HOME,
-      bin: engineConfig.bin,
-      model: currentSession.model ?? engineConfig.model,
-      effortLevel: invocation.effortLevel,
-      cliFlags: invocation.cliFlags,
-      restrictToJudgeOnly: isAutonomousVerdictSession(currentSession.transportMeta),
-      attachments: attachments?.length ? attachments : undefined,
-      ...(contextPacket?.historyMessages ? { historyMessages: contextPacket.historyMessages } : {}),
-      sessionId: currentSession.id,
-      source: currentSession.source,
-      onActivity: () => { lastStreamAt = Date.now(); },
-      onStream: (delta) => {
-        if (!getSession(currentSession.id)) return;
-        if (delta.type === "context") {
-          const ctx = Number(delta.content);
-          if (Number.isFinite(ctx) && ctx > 0) {
-            updateSession(currentSession.id, { lastContextTokens: ctx });
-          }
-        }
-        const now = Date.now();
-        lastStreamAt = now; // any delta is proof of life — feeds the stall watchdog
-        if (now - lastHeartbeatAt >= 2000) {
-          lastHeartbeatAt = now;
-          updateSession(currentSession.id, {
-            status: "running",
-            lastActivity: new Date(now).toISOString(),
-          });
-        }
-        try {
-          context.emit("session:delta", {
-            sessionId: currentSession.id,
-            type: delta.type,
-            content: delta.content,
-            toolName: delta.toolName,
-            toolId: delta.toolId,
-            input: delta.input,
-          });
-        } catch (err) {
-          logger.warn(`Failed to emit stream delta for session ${currentSession.id}: ${err instanceof Error ? err.message : err}`);
-        }
-        try {
-          persistPartialDelta(delta);
-        } catch (err) {
-          logger.warn(`Failed to persist partial block for session ${currentSession.id}: ${err instanceof Error ? err.message : err}`);
-        }
-        if (
-          currentSession.source === "talk" &&
-          !isTalkMuted(currentSession.id) &&
-          delta.type === "text" &&
-          typeof delta.content === "string"
-        ) {
-          feedTalkText(currentSession.id, delta.content, config.talk?.kokoro, context.emit);
-        }
-      },
-      onLateRecovery: ({ result: lateText, sessionId: engineSid }) => {
-        const live = getSession(currentSession.id);
-        if (!live || live.status === "running") return;
-        insertMessage(currentSession.id, "assistant", lateText);
-        const recovered = updateSession(currentSession.id, {
-          ...(engineSid.trim() ? { engineSessionId: engineSid } : {}),
-          status: "idle",
-          lastActivity: new Date().toISOString(),
-          lastError: null,
-        });
-        const labelled = `(recovered — this supersedes the earlier reported failure)\n\n${lateText}`;
-        if (recovered) {
-          notifyParentSession(recovered, { result: labelled, error: null }, { alwaysNotify: parentNotifyAlwaysNotify, sink: context.notificationSink });
-          void deliverConnectorReply(recovered, labelled, context.connectors, { emit: context.emit }).catch((err) => {
-            logger.warn(`Failed to deliver connector reply for session ${recovered.id}: ${err instanceof Error ? err.message : String(err)}`);
-          });
-        }
-        context.emit("session:completed", {
-          sessionId: currentSession.id,
-          employee: currentSession.employee || config.portal?.portalName || "Cuttlefish",
-          title: currentSession.title,
-          result: lateText,
-          error: null,
-        });
-        logger.info(`Web session ${currentSession.id} recovered by late Stop after a failed turn`);
-      },
-        }),
-      );
-      } finally {
-        if (stallWatchdog) clearInterval(stallWatchdog);
+    let executionBudgetReason: string | null = null;
+    let executionWallClockTimer: ReturnType<typeof setTimeout> | null = null;
+    let streamedToolCalls = 0;
+    const killForExecutionBudget = (reason: string): void => {
+      if (executionBudgetReason) return;
+      executionBudgetReason = reason;
+      logger.warn(`[execution-budget] web session ${currentSession.id} exceeded budget: ${reason}`);
+      if (killer) {
+        killer.kill(currentSession.id, `Interrupted: execution budget exceeded — ${reason}`);
       }
-      if (!stallKilled || !shouldRetrySameEngineAfterStall(stallAttempt, maxStallRetries)) break;
-      deletePartialMessages(currentSession.id);
-      logger.warn(
-        `[watchdog] web session ${currentSession.id} retrying after stall ` +
-          `(attempt ${stallAttempt + 2}/${maxStallRetries + 1})`,
-      );
-    }
+    };
+    try {
+      executionWallClockTimer = executionWallClockMs && killer
+        ? setTimeout(() => {
+            if (getSession(currentSession.id)) {
+              killForExecutionBudget(`wall-clock limit (${Math.round(executionWallClockMs / 1000)}s) exceeded`);
+            }
+          }, executionWallClockMs)
+        : null;
+      executionWallClockTimer?.unref?.();
+      for (let stallAttempt = 0; ; stallAttempt++) {
+        stalledReason = null;
+        lastStreamAt = Date.now();
+        const attemptStartedAt = Date.now();
+        let stallKilled = false;
+        let stallWatchdog: ReturnType<typeof setInterval> | null = null;
+        stallWatchdog = canKill
+          ? setInterval(() => {
+              if (!getSession(currentSession.id)) { clearInterval(stallWatchdog!); return; }
+              const idleMs = Date.now() - lastStreamAt;
+              const totalMs = Date.now() - attemptStartedAt;
+              maybeNotifyLeaderReview(idleMs);
+              if (idleMs >= stallInactivityMs || totalMs >= stallHardCeilingMs) {
+                stalledReason =
+                  idleMs >= stallInactivityMs
+                    ? `no engine activity for ${Math.round(idleMs / 1000)}s`
+                    : `turn exceeded the ${Math.round(stallHardCeilingMs / 1000)}s ceiling`;
+                stallKilled = true;
+                clearInterval(stallWatchdog!);
+                logger.warn(
+                  `[watchdog] web session ${currentSession.id} (${currentSession.engine}) stalled: ${stalledReason} ` +
+                    `— interrupting${shouldRetrySameEngineAfterStall(stallAttempt, maxStallRetries) ? " and retrying" : ""}`,
+                );
+                killer?.kill(currentSession.id, `Interrupted: stalled — ${stalledReason}`);
+              }
+            }, stallPolicy.tickMs)
+          : null;
+        try {
+          // Reconcile explicit effort/cliFlags against the (possibly post-fallback)
+          // engine's implicit capabilities — strip effort inputs an engine can't accept.
+          const invocation = resolveEngineInvocation(config, currentSession.engine, {
+            effortLevel,
+            cliFlags: employee?.cliFlags,
+          });
+
+          result = await runWithEngineEnvironment(
+            scopedSessionToken ? { CUTTLEFISH_SESSION_TOKEN: scopedSessionToken } : {},
+            () => engine.run({
+              prompt: contextPacket?.prompt ?? promptToRun,
+              resumeSessionId: currentSession.engineSessionId ?? undefined,
+              systemPrompt: contextPacket?.systemPrompt ?? systemPrompt,
+              cwd: currentSession.cwd || CUTTLEFISH_HOME,
+              bin: engineConfig.bin,
+              model: currentSession.model ?? engineConfig.model,
+              effortLevel: invocation.effortLevel,
+              cliFlags: invocation.cliFlags,
+              restrictToJudgeOnly: isAutonomousVerdictSession(currentSession.transportMeta),
+              attachments: attachments?.length ? attachments : undefined,
+              ...(contextPacket?.historyMessages ? { historyMessages: contextPacket.historyMessages } : {}),
+              sessionId: currentSession.id,
+              source: currentSession.source,
+              onActivity: () => { lastStreamAt = Date.now(); },
+              onStream: (delta) => {
+                if (!getSession(currentSession.id)) return;
+                if (delta.type === "tool_use" && executionToolCallLimit !== undefined) {
+                  streamedToolCalls += 1;
+                  if (streamedToolCalls > executionToolCallLimit) {
+                    killForExecutionBudget(`tool-call limit (${executionToolCallLimit}) exceeded`);
+                  }
+                }
+                if (delta.type === "context") {
+                  const ctx = Number(delta.content);
+                  if (Number.isFinite(ctx) && ctx > 0) {
+                    updateSession(currentSession.id, { lastContextTokens: ctx });
+                  }
+                }
+                const now = Date.now();
+                lastStreamAt = now; // any delta is proof of life — feeds the stall watchdog
+                if (now - lastHeartbeatAt >= 2000) {
+                  lastHeartbeatAt = now;
+                  updateSession(currentSession.id, {
+                    status: "running",
+                    lastActivity: new Date(now).toISOString(),
+                  });
+                }
+                try {
+                  context.emit("session:delta", {
+                    sessionId: currentSession.id,
+                    type: delta.type,
+                    content: delta.content,
+                    toolName: delta.toolName,
+                    toolId: delta.toolId,
+                    input: delta.input,
+                  });
+                } catch (err) {
+                  logger.warn(`Failed to emit stream delta for session ${currentSession.id}: ${err instanceof Error ? err.message : err}`);
+                }
+                try {
+                  persistPartialDelta(delta);
+                } catch (err) {
+                  logger.warn(`Failed to persist partial block for session ${currentSession.id}: ${err instanceof Error ? err.message : err}`);
+                }
+                if (
+                  currentSession.source === "talk" &&
+                  !isTalkMuted(currentSession.id) &&
+                  delta.type === "text" &&
+                  typeof delta.content === "string"
+                ) {
+                  feedTalkText(currentSession.id, delta.content, config.talk?.kokoro, context.emit);
+                }
+              },
+              onLateRecovery: ({ result: lateText, sessionId: engineSid }) => {
+                const live = getSession(currentSession.id);
+                if (!live || live.status === "running") return;
+                insertMessage(currentSession.id, "assistant", lateText);
+                const recovered = updateSession(currentSession.id, {
+                  ...(engineSid.trim() ? { engineSessionId: engineSid } : {}),
+                  status: "idle",
+                  lastActivity: new Date().toISOString(),
+                  lastError: null,
+                });
+                const labelled = `(recovered — this supersedes the earlier reported failure)\n\n${lateText}`;
+                if (recovered) {
+                  notifyParentSession(recovered, { result: labelled, error: null }, { alwaysNotify: parentNotifyAlwaysNotify, sink: context.notificationSink });
+                  void deliverConnectorReply(recovered, labelled, context.connectors, { emit: context.emit }).catch((err) => {
+                    logger.warn(`Failed to deliver connector reply for session ${recovered.id}: ${err instanceof Error ? err.message : String(err)}`);
+                  });
+                }
+                context.emit("session:completed", {
+                  sessionId: currentSession.id,
+                  employee: currentSession.employee || config.portal?.portalName || "Cuttlefish",
+                  title: currentSession.title,
+                  result: lateText,
+                  error: null,
+                });
+                logger.info(`Web session ${currentSession.id} recovered by late Stop after a failed turn`);
+              },
+            }),
+          );
+        } finally {
+          if (stallWatchdog) clearInterval(stallWatchdog);
+        }
+        if (!stallKilled || !shouldRetrySameEngineAfterStall(stallAttempt, maxStallRetries)) break;
+        deletePartialMessages(currentSession.id);
+        logger.warn(
+          `[watchdog] web session ${currentSession.id} retrying after stall ` +
+            `(attempt ${stallAttempt + 2}/${maxStallRetries + 1})`,
+        );
+      }
     } finally {
+      if (executionWallClockTimer) clearTimeout(executionWallClockTimer);
       clearInterval(runHeartbeat);
       if (partialFlushTimer) { clearTimeout(partialFlushTimer); partialFlushTimer = null; }
       flushPartialText();
@@ -696,6 +730,18 @@ export async function runWebSession(
       );
     }
 
+    if (!quietPreempted && executionBudgetReason) {
+      result.error = `Execution budget exceeded: ${executionBudgetReason}`;
+      if (!result.result?.trim()) {
+        insertMessage(currentSession.id, "notification", `⛔ ${result.error}`);
+      }
+    }
+
+    if (!quietPreempted && executionCostLimitUsd !== undefined && finitePositiveNumber(result.cost) !== undefined && result.cost! > executionCostLimitUsd) {
+      result.error = `Execution budget exceeded: estimated cost $${result.cost!.toFixed(4)} is above limit $${executionCostLimitUsd.toFixed(4)}`;
+      insertMessage(currentSession.id, "notification", `⛔ ${result.error}`);
+    }
+
     if (!quietPreempted && isOrchestrationImplementationTurn(currentSession) && !result.error && !result.result?.trim()) {
       result.error = "Orchestration implementation turn produced no output";
     }
@@ -706,7 +752,8 @@ export async function runWebSession(
     if (preserveStreamedBlocks) finalizePartialMessages(currentSession.id);
     else deletePartialMessages(currentSession.id);
 
-    const rateLimit = !quietPreempted ? detectRateLimit(result) : { limited: false as const };
+    const executionBudgetExceeded = Boolean(executionBudgetReason) || result.error?.startsWith("Execution budget exceeded:");
+    const rateLimit = !quietPreempted && !executionBudgetExceeded ? detectRateLimit(result) : { limited: false as const };
 
     if (rateLimit.limited) {
       recordEngineRateLimit(currentSession.engine, rateLimit.resetsAt);

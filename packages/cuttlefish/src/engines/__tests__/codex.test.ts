@@ -164,9 +164,9 @@ describe("codexSandboxFlags — judge-only sandboxing (autonomous verdict sessio
     ]);
   });
 
-  it("keeps the ordinary bypass flag for normal turns", () => {
-    expect(codexSandboxFlags({})).toEqual(["--dangerously-bypass-approvals-and-sandbox"]);
-    expect(codexSandboxFlags({ restrictToJudgeOnly: false })).toEqual(["--dangerously-bypass-approvals-and-sandbox"]);
+  it("keeps normal turns in a workspace sandbox with no approval prompts", () => {
+    expect(codexSandboxFlags({})).toEqual(["--sandbox", "workspace-write", "--ask-for-approval", "never"]);
+    expect(codexSandboxFlags({ restrictToJudgeOnly: false })).toEqual(["--sandbox", "workspace-write", "--ask-for-approval", "never"]);
   });
 });
 

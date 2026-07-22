@@ -42,9 +42,17 @@ export async function attachResourcesToSession(
   const legacyFileIds = Array.isArray(body.attachments)
     ? body.attachments.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
     : [];
+
+  // Validate the complete incoming set before mutating attachment storage. The
+  // legacy string-id path re-homes files into the target session; doing that
+  // before validating sibling resource objects can leave files moved even
+  // though the API request is rejected.
+  const validatedIncoming = await resolveIncomingRunAttachments(incomingSpecs, context);
   if (legacyFileIds.length > 0) rehomeAttachmentsToSession(legacyFileIds, session.id);
 
-  const incoming = await resolveIncomingRunAttachments(incomingSpecs, context);
+  const incoming = legacyFileIds.length > 0
+    ? await resolveIncomingRunAttachments(incomingSpecs, context)
+    : validatedIncoming;
   const merged = mergeRunAttachments(existing, incoming);
   const screened = await screenRunAttachmentsForSession(
     session,
@@ -69,4 +77,3 @@ export function describeSessionResources(session: Session): DescribedSessionReso
 export function attachmentMedia(body: Record<string, unknown>) {
   return fileIdsToMedia(Array.isArray(body.attachments) ? body.attachments : undefined);
 }
-

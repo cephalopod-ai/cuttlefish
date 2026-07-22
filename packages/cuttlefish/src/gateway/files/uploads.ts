@@ -123,32 +123,6 @@ export async function saveFile(result: UploadResult, context: ApiContext): Promi
   if (result.customPath && (!allowCustomUploadPaths(context) || !customPath)) {
     throw new FileRequestError("custom upload paths are disabled or outside managed storage");
   }
-
-  const sessionScoped = !!result.sessionId;
-  const storageDir = sessionScoped
-    ? uploadDir(result.sessionId!)
-    : `${FILES_DIR}/${result.id}`;
-  await fs.promises.mkdir(storageDir, { recursive: true });
-  const storagePath = `${storageDir}/${safeName}`;
-  await fs.promises.writeFile(storagePath, result.buffer);
-
-  const mimetype = mimeFromFilename(safeName);
-  const sha256 = crypto.createHash("sha256").update(result.buffer).digest("hex");
-  const meta = insertFile({
-    id: result.id,
-    filename: safeName,
-    size: result.buffer.length,
-    mimetype,
-    path: sessionScoped ? storagePath : customPath,
-    sha256,
-    artifactKind: result.artifactKind,
-    producingRunId: result.producingRunId ?? null,
-    sourceUrl: result.sourceUrl ?? null,
-    sourcePath: result.sourcePath ?? null,
-    tags: result.tags,
-    notes: result.notes ?? null,
-  });
-
   if (customPath) {
     try {
       await fs.promises.access(customPath);
@@ -156,8 +130,51 @@ export async function saveFile(result: UploadResult, context: ApiContext): Promi
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
     }
-    await fs.promises.mkdir(path.dirname(customPath), { recursive: true });
-    await fs.promises.writeFile(customPath, result.buffer);
+  }
+
+  const sessionScoped = !!result.sessionId;
+  const storageDir = sessionScoped
+    ? path.join(uploadDir(result.sessionId!), result.id)
+    : `${FILES_DIR}/${result.id}`;
+  const storagePath = path.join(storageDir, safeName);
+
+  const mimetype = mimeFromFilename(safeName);
+  const sha256 = crypto.createHash("sha256").update(result.buffer).digest("hex");
+  let wroteStorage = false;
+  let wroteCustom = false;
+  let meta: FileMeta;
+  try {
+    await fs.promises.mkdir(storageDir, { recursive: true });
+    await fs.promises.writeFile(storagePath, result.buffer);
+    wroteStorage = true;
+    if (customPath) {
+      await fs.promises.mkdir(path.dirname(customPath), { recursive: true });
+      await fs.promises.writeFile(customPath, result.buffer);
+      wroteCustom = true;
+    }
+    meta = insertFile({
+      id: result.id,
+      filename: safeName,
+      size: result.buffer.length,
+      mimetype,
+      path: sessionScoped ? storagePath : customPath,
+      sha256,
+      artifactKind: result.artifactKind,
+      producingRunId: result.producingRunId ?? null,
+      sourceUrl: result.sourceUrl ?? null,
+      sourcePath: result.sourcePath ?? null,
+      tags: result.tags,
+      notes: result.notes ?? null,
+    });
+  } catch (err) {
+    if (wroteCustom && customPath) {
+      try { await fs.promises.rm(customPath, { force: true }); } catch {}
+    }
+    if (wroteStorage) {
+      try { await fs.promises.rm(storagePath, { force: true }); } catch {}
+      try { await fs.promises.rmdir(storageDir); } catch {}
+    }
+    throw err;
   }
 
   if (result.open && allowUploadedFileOpen(context)) {

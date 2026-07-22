@@ -239,6 +239,11 @@ describe("CodexInteractiveEngine — effort/model PTY args + respawn", () => {
     const args = lastArgs();
     expect(args).toContain("--model");
     expect(args[args.indexOf("--model") + 1]).toBe("gpt-5.5");
+    expect(args).toContain("--no-alt-screen");
+    expect(args).toContain("--sandbox");
+    expect(args[args.indexOf("--sandbox") + 1]).toBe("workspace-write");
+    expect(args).toContain("--ask-for-approval");
+    expect(args[args.indexOf("--ask-for-approval") + 1]).toBe("never");
     expect(reasoningEffortArg(args)).toBe("high");
     lifecycle.dispose();
   });

@@ -99,6 +99,7 @@ export function scopedTokenForbidden(method: string | undefined, rawPathname: st
   if (pathname === "/api/config" || pathname.startsWith("/api/config/")) return true;
   if (pathname === "/api/system" || pathname.startsWith("/api/system/")) return true;
   if (pathname === "/api/auth" || pathname.startsWith("/api/auth/")) return true;
+  if (pathname === "/api/status") return true;
   if (pathname === "/api/logs") return true;
   if (pathname === "/api/instances") return true;
   if (pathname === "/api/connectors/reload") return true;

@@ -83,6 +83,28 @@ describe("MCP resolver", () => {
     }
   });
 
+  it("resolves custom MCP env placeholders without mutating source config", () => {
+    process.env.TEST_MCP_SECRET = "resolved-secret";
+    try {
+      const config = {
+        custom: {
+          private: {
+            command: "node",
+            args: ["server.js"],
+            env: { SERVICE_KEY: "${TEST_MCP_SECRET}", SAFE_VALUE: "kept" },
+          },
+        },
+      };
+
+      const resolved = resolveMcpServers(config);
+
+      expect((resolved.mcpServers.private as any).env).toEqual({ SERVICE_KEY: "resolved-secret", SAFE_VALUE: "kept" });
+      expect(config.custom.private.env).toEqual({ SERVICE_KEY: "${TEST_MCP_SECRET}", SAFE_VALUE: "kept" });
+    } finally {
+      delete process.env.TEST_MCP_SECRET;
+    }
+  });
+
   describe("writeMcpConfigFile", () => {
     let originalHome: string | undefined;
     let tmpHome: string;

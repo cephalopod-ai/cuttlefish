@@ -1,11 +1,12 @@
 import type http from "node:http";
 import fs from "node:fs";
-import type { WebSocket, WebSocketServer } from "ws";
+import type { WebSocketServer } from "ws";
 import type { Connector } from "../../shared/types.js";
 import { logger } from "../../shared/logger.js";
 import type { HookRegistry } from "../hook-registry.js";
 import type { PtyLifecycleManager } from "../../engines/pty-lifecycle.js";
 import type { OrchestrationRuntime } from "../../orchestration/runtime.js";
+import type { GatewayWebSocket } from "./transports.js";
 
 export type GatewayCleanup = () => Promise<void>;
 
@@ -17,7 +18,7 @@ interface GatewayCleanupDeps {
   hookRegistry: HookRegistry;
   interruptSession: (sessionId: string) => void;
   killEngines: () => void;
-  orchestrationRuntime: OrchestrationRuntime | undefined;
+  getOrchestrationRuntime: () => OrchestrationRuntime | undefined;
   ptyWss: WebSocketServer;
   server: http.Server;
   stopBoardWorker: () => void;
@@ -36,7 +37,7 @@ interface GatewayCleanupDeps {
   stopSleepGuard?: () => void;
   /** Kill the Kokoro TTS sidecar (if one was spawned this session). */
   stopTts?: () => void;
-  wsClients: Set<WebSocket>;
+  wsClients: Set<GatewayWebSocket>;
   wss: WebSocketServer;
 }
 
@@ -48,7 +49,7 @@ export function createGatewayCleanup({
   hookRegistry,
   interruptSession,
   killEngines,
-  orchestrationRuntime,
+  getOrchestrationRuntime,
   ptyWss,
   server,
   stopBoardWorker,
@@ -152,13 +153,13 @@ export function createGatewayCleanup({
     }
 
     try {
-      await orchestrationRuntime?.prepareForShutdown("Interrupted: gateway shutting down gracefully");
+      await getOrchestrationRuntime()?.prepareForShutdown("Interrupted: gateway shutting down gracefully");
     } catch (err) {
       logger.warn(`Failed to prepare orchestration runtime for shutdown: ${err instanceof Error ? err.message : err}`);
     }
 
     try {
-      orchestrationRuntime?.close();
+      getOrchestrationRuntime()?.close();
     } catch (err) {
       logger.warn(`Failed to close orchestration runtime: ${err instanceof Error ? err.message : err}`);
     }

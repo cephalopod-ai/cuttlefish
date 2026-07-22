@@ -69,6 +69,15 @@ artifacts unless explicitly published.
 
 ## Session and Audit Log Summaries
 
+- `docs/audits/072026/2026-07-22-full-agent-skills-repo-audit.md`,
+  `docs/audits/072026/2026-07-22-full-agent-skills-findings.json`,
+  `docs/audits/072026/2026-07-22-full-agent-skills-vulnerability-details.md`,
+  `docs/logs/session/072026/2026-07-22-full-agent-skills-repo-audit.md`, and
+  `docs/logs/session/072026/2026-07-22-full-agent-skills-repair-campaign.md`:
+  full current-source private agent-skills audit across 39 applicable lenses;
+  records fifteen confirmed findings and their repair-campaign closure,
+  separates informational dependency/Giles/header residuals, and preserves
+  browser automation as a blocked capability gate.
 - `docs/audits/072026/2026-07-21-full-scenario-library-playtest.md` and
   `docs/logs/session/072026/2026-07-21-full-scenario-library-playtest.md`, plus
   `docs/logs/session/072026/2026-07-21-playtest-defect-repair-campaign.md`:

@@ -32,18 +32,16 @@ export function codexCliFlags(flags: string[] | undefined): string[] {
 }
 
 /**
- * Every ordinary turn bypasses Codex's own sandbox/approval machinery
- * entirely (Cuttlefish owns the security-review/checkpoint gate instead).
- * `restrictToJudgeOnly` is the one exception: verdict/reviewer sessions that
- * must only be able to read and reason, never act. `--sandbox read-only`
- * plus `--ask-for-approval never` is engine-enforced (unlike a prompt-level
- * instruction) and still fully headless — a denied write/network action is
- * reported back to the model as a failure, never a blocking prompt.
+ * Ordinary turns run with Codex's workspace sandbox instead of the unrestricted
+ * bypass. Cuttlefish still owns the higher-level security-review/checkpoint
+ * gate, but the engine process no longer gets ambient same-user read access to
+ * gateway credentials such as ~/.cuttlefish/gateway.json. `restrictToJudgeOnly`
+ * tightens that further to read-only for verdict/reviewer sessions.
  */
 export function codexSandboxFlags(opts: Pick<EngineRunOpts, "restrictToJudgeOnly">): string[] {
   return opts.restrictToJudgeOnly
     ? ["--sandbox", "read-only", "--ask-for-approval", "never"]
-    : ["--dangerously-bypass-approvals-and-sandbox"];
+    : ["--sandbox", "workspace-write", "--ask-for-approval", "never"];
 }
 
 /**

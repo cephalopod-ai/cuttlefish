@@ -144,6 +144,55 @@ describe("POST /api/sessions prompt validation (I-1)", () => {
     expect(hoisted.dispatchWebSessionRun).not.toHaveBeenCalled();
   });
 
+  it("rejects array JSON bodies on create instead of coercing them into an empty object", async () => {
+    const { api, reg } = await setup();
+    const ctx = makeCtx(api);
+    ctx.getConfig = () => ({ gateway: {}, engines: { default: "claude", claude: { bin: "claude", model: "sonnet" } }, portal: {} }) as any;
+
+    const cap = makeRes();
+    await api.handleApiRequest(makeJsonReq("POST", "/api/sessions", [{ prompt: "hello" }]), cap.res, ctx);
+
+    expect(cap.status).toBe(400);
+    expect(cap.body).toEqual({ error: "Invalid JSON body: expected an object" });
+    expect(reg.listSessions()).toHaveLength(0);
+  });
+
+  it("uses random UUID-backed web session keys instead of timestamp-only keys", async () => {
+    const { api, reg } = await setup();
+    const ctx = makeCtx(api);
+    ctx.getConfig = () => ({ gateway: {}, engines: { default: "claude", claude: { bin: "claude", model: "sonnet" } }, portal: {} }) as any;
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1234567890);
+    try {
+      await api.handleApiRequest(makeJsonReq("POST", "/api/sessions", { prompt: "first" }), makeRes().res, ctx);
+      await api.handleApiRequest(makeJsonReq("POST", "/api/sessions", { prompt: "second" }), makeRes().res, ctx);
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    const keys = reg.listSessions().map((session) => session.sessionKey);
+    expect(keys).toHaveLength(2);
+    expect(new Set(keys).size).toBe(2);
+    expect(keys.every((key) => typeof key === "string" && /^web:[0-9a-f-]{36}$/.test(key))).toBe(true);
+  });
+
+  it("rolls back a newly created session when resource validation fails", async () => {
+    const { api, reg } = await setup();
+    const ctx = makeCtx(api);
+    ctx.getConfig = () => ({ gateway: {}, engines: { default: "claude", claude: { bin: "claude", model: "sonnet" } }, portal: {} }) as any;
+
+    const cap = makeRes();
+    await api.handleApiRequest(makeJsonReq("POST", "/api/sessions", {
+      prompt: "use this missing resource",
+      resources: [{ artifactId: "missing-artifact" }],
+    }), cap.res, ctx);
+
+    expect(cap.status).toBe(400);
+    expect(cap.body.error).toMatch(/Attachment artifact not found/);
+    expect(reg.listSessions()).toHaveLength(0);
+    expect(hoisted.dispatchWebSessionRun).not.toHaveBeenCalled();
+    expect(hoisted.dispatchEmployeeSessionRun).not.toHaveBeenCalled();
+  });
+
   it("fails fast with 429 (no session created) when the concurrent-run cap is already exhausted (Ledger-0007 Finding 2)", async () => {
     const { api, reg } = await setup();
     const ctx = makeCtx(api);

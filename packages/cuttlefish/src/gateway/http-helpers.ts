@@ -95,3 +95,17 @@ export async function readJsonBody(
     return { ok: false };
   }
 }
+
+export async function readJsonObjectBody(
+  req: HttpRequest,
+  res: ServerResponse,
+  opts: ReadJsonBodyOpts = {},
+): Promise<{ ok: true; body: Record<string, unknown> } | { ok: false }> {
+  const parsed = await readJsonBody(req, res, opts);
+  if (!parsed.ok) return parsed;
+  if (!parsed.body || typeof parsed.body !== "object" || Array.isArray(parsed.body)) {
+    errorJson(res, { error: "Invalid JSON body: expected an object" }, 400);
+    return { ok: false };
+  }
+  return { ok: true, body: parsed.body as Record<string, unknown> };
+}

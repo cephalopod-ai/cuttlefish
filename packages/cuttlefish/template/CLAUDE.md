@@ -358,7 +358,7 @@ The gateway base URL (host:port) is provided in your session context under "Curr
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/status` | GET | Gateway status, uptime, engine info |
+| `/api/readyz` | GET | Coarse gateway readiness |
 | `/api/sessions` | GET | List all sessions |
 | `/api/sessions/:id` | GET | Session detail (`?last=N` for just the latest messages) |
 | `/api/sessions` | POST | Create new session (`{prompt, engine?, employee?, parentSessionId?}`) |

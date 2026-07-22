@@ -37,7 +37,14 @@ export function isSensitiveConfigKey(key: string): boolean {
   // "GITHUB_PAT", "SENTRY_DSN") — matched as a raw substring they'd
   // false-positive on ordinary keys like "path" or "pattern".
   const segments = keySegments(key);
-  return segments.includes("pat") || segments.includes("dsn") || segments.includes("connstr");
+  return (
+    segments.includes("pat") ||
+    segments.includes("dsn") ||
+    segments.includes("connstr") ||
+    segments.includes("key") ||
+    segments.includes("auth") ||
+    (segments.includes("database") && segments.includes("url"))
+  );
 }
 
 // CF2-208: a DSN/connection string or any `scheme://user:pass@host` value can

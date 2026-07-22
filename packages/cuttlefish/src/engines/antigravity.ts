@@ -44,10 +44,6 @@ const TURN_QUIET_DONE_MS = 6000;       // fallback: wait longer around tool/ambi
 const TAIL_POLL_MS = 200;
 const CONV_DISCOVER_TIMEOUT_MS = 30 * 1000;
 const CONV_POLL_MS = 150;
-/** Accepted by agy without a startup error (verified); harmless in chat mode,
- *  bypasses approvals in agent mode. */
-const SKIP_PERMISSIONS_FLAG = "--dangerously-skip-permissions";
-
 /** Bracketed-paste `text` into the agy PTY and submit. The paste markers and the
  *  submit CR MUST go in a single write — empirically, sending the CR as a separate
  *  delayed write through node-pty is dropped and agy never submits the turn.
@@ -272,7 +268,6 @@ export class AntigravityEngine implements InterruptibleEngine, PtyViewEngine {
     const args: string[] = [];
     if (resumeConvId) args.push("--conversation", resumeConvId);
     if (model) args.push("--model", model);
-    args.push(SKIP_PERMISSIONS_FLAG);
     return args;
   }
 

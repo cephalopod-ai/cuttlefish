@@ -21,7 +21,7 @@ connectors:
     shareSessionInChannel: false
     ignoreOldMessagesOnBoot: true
 
-# MCP servers provide employees with browser, search, and messaging capabilities.
+# MCP servers provide employees with browser, search, and custom tool access.
 # These are injected automatically into Claude Code sessions via --mcp-config.
 mcp:
   browser:
@@ -33,8 +33,6 @@ mcp:
     # apiKey: ${BRAVE_API_KEY}
   fetch:
     enabled: false          # Deprecated: use a reviewed pinned mcp.custom fetch server
-  gateway:
-    enabled: true          # Built-in MCP server for messaging, org, cron, sessions
   # custom:
   #   my-server:
   #     enabled: true

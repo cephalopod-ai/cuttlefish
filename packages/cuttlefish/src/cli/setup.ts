@@ -349,12 +349,11 @@ connectors: {}
 portal: {}
 
 # ── Optional blocks (uncomment to customize) ──────────────────────────────
-# MCP servers give employees browser, search, fetch, and messaging tools.
+# MCP servers give employees browser, search, and custom tool access.
 # mcp:
 #   browser: { enabled: true, provider: playwright }
 #   search:  { enabled: false, provider: brave }   # set true + add BRAVE_API_KEY
 #   fetch:   { enabled: true }
-#   gateway: { enabled: true }                      # built-in gateway MCP server
 # Per-session safety limits (can be overridden per-employee in their YAML).
 # sessions:
 #   maxDurationMinutes: 30

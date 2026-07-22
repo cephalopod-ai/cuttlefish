@@ -2,13 +2,13 @@
 
 ## Summary
 
-This release adds the Model Context Protocol (MCP) integration system, session cost/duration limits, and cron failure alerting. Employees now automatically get browser, search, fetch, and gateway MCP tools injected into their sessions.
+This release adds the Model Context Protocol (MCP) integration system, session cost/duration limits, and cron failure alerting. Employees can get browser, search, fetch, and reviewed custom MCP tools injected into their sessions.
 
 ## Template files changed
 
 ### `config.default.yaml`
 - `cuttlefish.version` bumped from `"0.2.0"` to `"0.3.0"`
-- Added entire `mcp:` section with four built-in servers (browser, search, fetch, gateway) and custom server support
+- Added entire `mcp:` section with built-in browser/search/fetch settings and custom server support
 - Added `sessions.maxDurationMinutes: 30` and `sessions.maxCostUsd: 10.00` — per-session resource limits
 - Added `cron:` section with commented-out `alertConnector` and `alertChannel` keys
 
@@ -25,7 +25,6 @@ This release adds the Model Context Protocol (MCP) integration system, session c
 | `mcp.search.provider` | string | `"brave"` | Search provider |
 | `mcp.search.apiKey` | string | _(unset)_ | Brave API key (or use `${BRAVE_API_KEY}` env var) |
 | `mcp.fetch.enabled` | boolean | `true` | Enable URL fetch/parse MCP |
-| `mcp.gateway.enabled` | boolean | `true` | Enable built-in gateway MCP (messaging, sessions, org, cron tools) |
 | `sessions.maxDurationMinutes` | number | `30` | Maximum session duration in minutes (overridable per-employee) |
 | `sessions.maxCostUsd` | number | `10.00` | Maximum session cost in USD (overridable per-employee) |
 | `cron.alertConnector` | string | _(unset)_ | Connector to send cron failure alerts to (e.g. `"slack"`) |

@@ -47,7 +47,7 @@ function build(opts: BuildOpts = {}) {
     hookRegistry: { dispose: vi.fn() } as unknown as HookRegistry,
     interruptSession: vi.fn(),
     killEngines,
-    orchestrationRuntime: undefined as OrchestrationRuntime | undefined,
+    getOrchestrationRuntime: () => undefined as OrchestrationRuntime | undefined,
     ptyWss: fakeWss(),
     server: fakeServer(),
     stopBoardWorker,
@@ -112,7 +112,7 @@ describe("createGatewayCleanup fault isolation", () => {
         throw new Error("interrupt failed");
       }),
       killEngines,
-      orchestrationRuntime: undefined as OrchestrationRuntime | undefined,
+      getOrchestrationRuntime: () => undefined as OrchestrationRuntime | undefined,
       ptyWss: fakeWss(),
       server: fakeServer(),
       stopBoardWorker: vi.fn(),

@@ -496,7 +496,7 @@ function validateMcp(
     problems.push("mcp must be a mapping");
     return;
   }
-  pushUnknownKeys(problems, value, ["browser", "search", "fetch", "custom", "gateway"], "mcp");
+  pushUnknownKeys(problems, value, ["browser", "search", "fetch", "custom"], "mcp");
   if (value.browser !== undefined) {
     if (!isPlainObject(value.browser)) {
       problems.push("mcp.browser must be a mapping");
@@ -522,14 +522,6 @@ function validateMcp(
     } else {
       pushUnknownKeys(problems, value.fetch, ["enabled"], "mcp.fetch");
       if (value.fetch.enabled !== undefined) validateBoolean(problems, "mcp.fetch.enabled", value.fetch.enabled);
-    }
-  }
-  if (value.gateway !== undefined) {
-    if (!isPlainObject(value.gateway)) {
-      problems.push("mcp.gateway must be a mapping");
-    } else {
-      pushUnknownKeys(problems, value.gateway, ["enabled"], "mcp.gateway");
-      if (value.gateway.enabled !== undefined) validateBoolean(problems, "mcp.gateway.enabled", value.gateway.enabled);
     }
   }
   if (value.custom !== undefined) {

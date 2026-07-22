@@ -398,11 +398,12 @@
 - `GET /api/healthz` is an unauthenticated liveness probe and only confirms the
   process can answer HTTP. `GET /api/readyz` is an unauthenticated readiness
   probe: it returns `200 { status: "ready" }` only when its dependency checks
-  are healthy, otherwise `503 { status: "not_ready", checks }`. Enabled email
-  inboxes participate in readiness; inbox errors fail readiness and unseen or
-  degraded inbox health is reported as not-ready rather than silently healthy.
-- `GET /api/status` remains the detailed operator status payload, including the
-  same checks, connector health, and redacted email inbox health.
+  are healthy, otherwise `503 { status: "not_ready" }`; the public response is
+  intentionally coarse. Enabled email inboxes participate in readiness; inbox
+  errors fail readiness and unseen or degraded inbox health is reported as
+  not-ready rather than silently healthy.
+- Authenticated `GET /api/status` remains the detailed operator status payload,
+  including checks, connector health, and redacted email inbox health.
 - This is inbound-only in the current implementation. SMTP send/reply,
   threading replies back to providers, and mailbox mutation are not part of the
   shipped surface.
@@ -760,8 +761,11 @@
   checkpoint instead of always auto-dispatching the agent turn; see the checkpoints UI.
 - `PATCH /api/org/employees/:name` with `managerName` set now returns `403` when a
   session-scoped caller claims a manager identity other than its own bound employee.
-- An employee's `execution.maxToolCalls` (if configured) is now enforced per engine
-  session via the internal hook endpoint instead of being silently ignored.
+- Employee execution budgets are enforced at runtime: `execution.maxToolCalls`
+  is enforced through Claude's internal hook endpoint and through stream-visible
+  tool-use deltas for other engines, `execution.maxWallClockMs` interrupts
+  interruptible engine turns, and `execution.maxEstimatedCostUsd`/`maxCostUsd`
+  marks over-budget reported-cost turns as errors.
 
 
 ### Security hardening for scoped sessions and connector turns

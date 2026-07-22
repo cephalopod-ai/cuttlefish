@@ -56,7 +56,6 @@ export class KiloEngine implements InterruptibleEngine {
     const args = [
       "run",
       "--auto",
-      "--dangerously-skip-permissions",
       "--dir",
       opts.cwd,
       ...(model !== KILO_AUTO_MODEL ? ["--model", model] : []),

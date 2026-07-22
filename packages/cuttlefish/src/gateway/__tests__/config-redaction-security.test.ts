@@ -16,6 +16,9 @@ describe("GET /api/config redaction", () => {
     expect(isSensitiveConfigKey("GITHUB_PAT")).toBe(true);
     expect(isSensitiveConfigKey("slack-pat")).toBe(true);
     expect(isSensitiveConfigKey("SENTRY_DSN")).toBe(true);
+    expect(isSensitiveConfigKey("SERVICE_KEY")).toBe(true);
+    expect(isSensitiveConfigKey("CUSTOM_AUTH")).toBe(true);
+    expect(isSensitiveConfigKey("DATABASE_URL")).toBe(true);
     expect(isSensitiveConfigKey("dbConnectionString")).toBe(true);
     expect(isSensitiveConfigKey("Cookie")).toBe(true);
     expect(isSensitiveConfigKey("x-auth-cookie")).toBe(true);

@@ -35,9 +35,6 @@ export interface McpGlobalConfig {
     /** Deprecated compatibility key. Use a reviewed pinned `mcp.custom` server. */
     enabled: boolean;
   };
-  gateway?: {
-    enabled?: boolean;
-  };
   /** Custom MCP servers defined by the user */
   custom?: Record<string, (McpServerStdioConfig | McpServerUrlConfig) & { enabled?: boolean }>;
 }

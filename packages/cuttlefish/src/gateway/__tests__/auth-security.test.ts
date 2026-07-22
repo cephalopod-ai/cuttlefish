@@ -55,6 +55,7 @@ describe("gateway auth", () => {
     expect(authRequiredForRequest("POST", "/api/internal/hook")).toBe(false);
     expect(authRequiredForRequest("GET", "/api/internal/hook")).toBe(true);
     expect(authRequiredForRequest("GET", "/api/readyz")).toBe(false);
+    expect(authRequiredForRequest("GET", "/api/status")).toBe(true);
   });
 
   it("requires auth for remote/network exposure but not default loopback unless explicitly enabled", () => {

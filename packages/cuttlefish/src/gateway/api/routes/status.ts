@@ -365,7 +365,6 @@ export async function handleStatusRoutes(
     const ready = snapshot.overall === "ok";
     json(res, {
       status: ready ? "ready" : "not_ready",
-      checks: snapshot.checks,
       uptime: Math.floor((Date.now() - context.startTime) / 1000),
     }, ready ? 200 : 503);
     return true;

@@ -13,6 +13,9 @@ import type { PtyViewEngine } from "../../engines/pty-view-engine.js";
 import { isAllowedCorsOrigin, serveStatic, setCorsHeaders } from "./http-static.js";
 import { isBlockedCrossSiteWrite, isHostAllowed, isPtyUpgradeAllowed } from "./request-guards.js";
 import { resolvePrincipalGate } from "./auth-gate.js";
+import type { GatewayPrincipal } from "../scoped-token.js";
+
+export type GatewayWebSocket = WebSocket & { cuttlefishPrincipal?: GatewayPrincipal };
 
 interface GatewayTransportDeps {
   apiContext: ApiContext;
@@ -27,7 +30,7 @@ interface GatewayTransportDeps {
   ptyViewEngines: Record<string, Engine & PtyViewEngine>;
   getSession: (id: string) => { engine: string } | undefined;
   webDir: string;
-  wsClients: Set<WebSocket>;
+  wsClients: Set<GatewayWebSocket>;
 }
 
 export function createGatewayTransports({
@@ -140,8 +143,11 @@ export function createGatewayTransports({
     },
   });
 
-  wss.on("connection", (ws) => {
-    wsClients.add(ws);
+  wss.on("connection", (ws, req) => {
+    const client = ws as GatewayWebSocket;
+    const principal = (req as http.IncomingMessage & { cuttlefishPrincipal?: GatewayPrincipal }).cuttlefishPrincipal;
+    if (principal) client.cuttlefishPrincipal = principal;
+    wsClients.add(client);
     trackHeartbeat(ws);
     logger.info(`WebSocket client connected (${wsClients.size} total)`);
 
@@ -156,13 +162,13 @@ export function createGatewayTransports({
     });
 
     ws.on("close", () => {
-      wsClients.delete(ws);
+      wsClients.delete(client);
       logger.info(`WebSocket client disconnected (${wsClients.size} total)`);
     });
 
     ws.on("error", (err) => {
       logger.error(`WebSocket error: ${err.message}`);
-      wsClients.delete(ws);
+      wsClients.delete(client);
     });
   });
 
@@ -206,6 +212,9 @@ export function createGatewayTransports({
         return;
       }
       wss.handleUpgrade(req, socket, head, (ws) => {
+        if (gate.principal) {
+          (req as http.IncomingMessage & { cuttlefishPrincipal?: GatewayPrincipal }).cuttlefishPrincipal = gate.principal;
+        }
         wss.emit("connection", ws, req);
       });
       return;

@@ -70,6 +70,25 @@ function isStringRecord(value: unknown): value is Record<string, string> {
   return isPlainObject(value) && Object.values(value).every((entry) => typeof entry === "string");
 }
 
+function cloneCustomServerConfig(
+  value: (McpServerStdioConfig | McpServerUrlConfig) & { enabled?: boolean },
+): (McpServerStdioConfig | McpServerUrlConfig) & { enabled?: boolean } {
+  if ("url" in value) {
+    return {
+      url: value.url,
+      ...(value.type !== undefined ? { type: value.type } : {}),
+      ...(value.headers ? { headers: { ...value.headers } } : {}),
+      ...(value.enabled !== undefined ? { enabled: value.enabled } : {}),
+    };
+  }
+  return {
+    command: value.command,
+    ...(value.args ? { args: [...value.args] } : {}),
+    ...(value.env ? { env: { ...value.env } } : {}),
+    ...(value.enabled !== undefined ? { enabled: value.enabled } : {}),
+  };
+}
+
 /**
  * Shape-validate one entry of `mcp.custom` before it is used to spawn a
  * process or dial a URL (FSR-CF-016). Config is operator-authored and may
@@ -177,8 +196,9 @@ function buildAvailableServers(config: McpGlobalConfig): Record<string, McpServe
   if (config.custom) {
     for (const [name, serverConfig] of Object.entries(config.custom)) {
       if (!isValidCustomServerEntry(name, serverConfig)) continue;
-      if (serverConfig.enabled === false) continue;
-      const { enabled, ...rest } = serverConfig;
+      const cloned = cloneCustomServerConfig(serverConfig);
+      if (cloned.enabled === false) continue;
+      const { enabled, ...rest } = cloned;
 
       // URL-based MCP server (HTTP/SSE transport)
       // Claude Code requires "type": "sse" for URL-based servers

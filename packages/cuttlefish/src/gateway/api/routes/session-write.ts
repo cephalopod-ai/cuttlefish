@@ -1,4 +1,5 @@
 import type { IncomingMessage as HttpRequest, ServerResponse } from "node:http";
+import { randomUUID } from "node:crypto";
 import { resolveModelAlias, validateCwd, validateNewSessionSelection, validateSessionPatch } from "../../../sessions/session-patch.js";
 import { getModelRegistry } from "../../../shared/models.js";
 import {
@@ -30,7 +31,7 @@ import { maybeEmitTalkGraph } from "../../../talk/graph.js";
 import { clearTalkMuted } from "../../../talk/mute-state.js";
 import { createPtyAccessToken } from "../../auth.js";
 import { fileIdsToMedia, handleSessionAttachment } from "../../files.js";
-import { readJsonBody } from "../../http-helpers.js";
+import { readJsonObjectBody } from "../../http-helpers.js";
 import { attachResourcesToSession, describeSessionResources } from "../../session-resources.js";
 import { exportRunBundle } from "../../run-bundles.js";
 import { supersedeRunningTurn } from "../../session-turn-state.js";
@@ -101,7 +102,7 @@ export async function handleSessionWriteRoutes(
       notFound(res);
       return true;
     }
-    const parsed = await readJsonBody(req, res);
+    const parsed = await readJsonObjectBody(req, res);
     if (!parsed.ok) return true;
     const body = parsed.body as any;
     const updates: UpdateSessionFields = {};
@@ -378,7 +379,7 @@ export async function handleSessionWriteRoutes(
   }
 
   if (method === "POST" && pathname === "/api/sessions/bulk-delete") {
-    const parsed = await readJsonBody(req, res);
+    const parsed = await readJsonObjectBody(req, res);
     if (!parsed.ok) return true;
     const body = parsed.body as any;
     // De-duplicate: a duplicate id would otherwise be counted twice in
@@ -444,7 +445,7 @@ export async function handleSessionWriteRoutes(
   }
 
   if (method === "POST" && pathname === "/api/sessions") {
-    const parsed = await readJsonBody(req, res);
+    const parsed = await readJsonObjectBody(req, res);
     if (!parsed.ok) return true;
     const body = parsed.body as any;
     const prompt = (typeof body.prompt === "string" ? body.prompt : typeof body.message === "string" ? body.message : "").trim();
@@ -525,7 +526,7 @@ export async function handleSessionWriteRoutes(
     const engineName = selection.engine || config.engines.default;
     const delegationModel = selection.model ?? configuredEngineModel(config, engineName);
     const singletonSessionKey = singletonEmployeeSessionKey(employeeName);
-    const sessionKey = singletonSessionKey ?? `web:${Date.now()}`;
+    const sessionKey = singletonSessionKey ?? `web:${randomUUID()}`;
     const userId = resolveUserHeader(req.headers, config.gateway.userHeader);
     const requestedDelegationScopes = parseOperatorDelegationScopes(prompt);
     if (requestedDelegationScopes) {
@@ -627,6 +628,14 @@ export async function handleSessionWriteRoutes(
     try {
       attached = await attachResourcesToSession(session, body, context);
     } catch (err) {
+      if (!existingSingletonSession) {
+        try {
+          deleteSession(session.id);
+          maybeEmitTalkGraph(session.id, "removed", { getSession, emit: context.emit });
+          context.emit("session:deleted", { sessionId: session.id });
+        } catch {
+        }
+      }
       badRequest(res, err instanceof Error ? err.message : "invalid resources");
       return true;
     }
@@ -691,12 +700,12 @@ export async function handleSessionWriteRoutes(
 
   params = matchRoute("/api/sessions/:id/message", pathname);
   if (method === "POST" && params) {
-    const parsed = await readJsonBody(req, res);
+    const parsed = await readJsonObjectBody(req, res);
     if (!parsed.ok) return true;
     const principal = (req as HttpRequest & { cuttlefishPrincipal?: GatewayPrincipal }).cuttlefishPrincipal;
     const result = await continueSession({
       sessionId: params.id,
-      body: parsed.body as Record<string, unknown>,
+      body: parsed.body,
       context,
       principal,
       userId: resolveUserHeader(req.headers, context.getConfig().gateway.userHeader),
@@ -728,7 +737,7 @@ export async function handleSessionWriteRoutes(
       return true;
     }
     if (method === "POST") {
-      const parsed = await readJsonBody(req, res);
+      const parsed = await readJsonObjectBody(req, res);
       if (!parsed.ok) return true;
       const body = parsed.body as any;
       let attached;
