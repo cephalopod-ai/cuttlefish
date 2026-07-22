@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { api, type Employee } from "@/lib/api"
 import { useGateway } from "@/hooks/use-gateway"
+import { useOrg } from "@/hooks/use-employees"
 import { usePageVisibility } from "@/hooks/use-page-visibility"
 import { describeCron, formatDuration } from "@/lib/cron-utils"
 import { PageLayout, ToolbarActions } from "@/components/page-layout"
@@ -177,18 +178,14 @@ export default function CronPage() {
   const [updatedAgo, setUpdatedAgo] = useState("just now")
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date())
   const [triggering, setTriggering] = useState<Record<string, TriggerState>>({})
-  const [employeeMap, setEmployeeMap] = useState<Map<string, Employee>>(new Map())
-
-  // Fetch employee display names
-  useEffect(() => {
-    api.getOrg().then((org) => {
-      const map = new Map<string, Employee>()
-      for (const emp of org.employees) {
-        map.set(emp.name, emp)
-      }
-      setEmployeeMap(map)
-    }).catch(() => {})
-  }, [])
+  const { data: orgData } = useOrg()
+  const employeeMap = useMemo(() => {
+    const map = new Map<string, Employee>()
+    for (const emp of orgData?.employees ?? []) {
+      map.set(emp.name, emp)
+    }
+    return map
+  }, [orgData?.employees])
 
   const refresh = useCallback(() => {
     setError(null)

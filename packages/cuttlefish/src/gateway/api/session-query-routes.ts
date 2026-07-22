@@ -19,6 +19,34 @@ import { matchRoute } from "./match-route.js";
 import { json, notFound } from "./responses.js";
 import { buildSessionJobStateMap, serializeSession } from "./serialize-session.js";
 
+interface SessionQueryState {
+  allSessions: ReturnType<typeof listSessions>;
+  jobStates: ReturnType<typeof buildSessionJobStateMap>;
+  latestAgentMessages: ReturnType<typeof listLatestAgentMessageTimestamps>;
+}
+
+function buildSessionQueryState(context: ApiContext): SessionQueryState {
+  const allSessions = listSessions();
+  return {
+    allSessions,
+    jobStates: buildSessionJobStateMap(allSessions, context),
+    latestAgentMessages: listLatestAgentMessageTimestamps(),
+  };
+}
+
+function serializeWithState(
+  sessions: ReturnType<typeof listSessions>,
+  context: ApiContext,
+  state: SessionQueryState,
+) {
+  return sessions.map((session) => serializeSession(
+    session,
+    context,
+    state.jobStates.get(session.id),
+    state.latestAgentMessages.get(session.id),
+  ));
+}
+
 export function sliceLastMessages<T>(messages: T[], lastParam: string | null): T[] {
   const lastN = parseInt(lastParam || "0", 10);
   if (lastN > 0 && messages.length > lastN) {
@@ -27,13 +55,28 @@ export function sliceLastMessages<T>(messages: T[], lastParam: string | null): T
   return messages;
 }
 
+function isSessionQueryState(value: unknown): value is SessionQueryState {
+  return Boolean(
+    value
+    && typeof value === "object"
+    && "allSessions" in value
+    && "jobStates" in value
+    && "latestAgentMessages" in value,
+  );
+}
+
 export function loadSessionMessagesForApi(
   sessionId: string,
   context: ApiContext,
+  stateOrLastParam: SessionQueryState | string | null = null,
   lastParam: string | null = null,
 ): { session: ReturnType<typeof serializeSession>; messages: ReturnType<typeof getMessages> } | null {
   const session = getSession(sessionId);
   if (!session) return null;
+  const state = isSessionQueryState(stateOrLastParam)
+    ? stateOrLastParam
+    : buildSessionQueryState(context);
+  const effectiveLastParam = isSessionQueryState(stateOrLastParam) ? lastParam : stateOrLastParam;
 
   let messages = getMessages(sessionId);
 
@@ -43,11 +86,9 @@ export function loadSessionMessagesForApi(
     scheduleOnLoadTailSync(sessionId, context.emit);
   }
 
-  messages = sliceLastMessages(messages, lastParam);
-  const jobStates = buildSessionJobStateMap(listSessions(), context);
-  const latestAgentMessages = listLatestAgentMessageTimestamps();
+  messages = sliceLastMessages(messages, effectiveLastParam);
   return {
-    session: serializeSession(session, context, jobStates.get(session.id), latestAgentMessages.get(session.id)),
+    session: serializeSession(session, context, state.jobStates.get(session.id), state.latestAgentMessages.get(session.id)),
     messages,
   };
 }
@@ -60,22 +101,13 @@ export async function handleSessionQueryRoutes(
   context: ApiContext,
   perGroup: number,
 ): Promise<boolean> {
-  const serializeWithJobStates = (sessions: ReturnType<typeof listSessions>) => {
-    const all = listSessions();
-    const jobStates = buildSessionJobStateMap(all, context);
-    const latestAgentMessages = listLatestAgentMessageTimestamps();
-    return sessions.map((session) => serializeSession(
-      session,
-      context,
-      jobStates.get(session.id),
-      latestAgentMessages.get(session.id),
-    ));
-  };
+  let cachedState: SessionQueryState | undefined;
+  const getState = (): SessionQueryState => (cachedState ??= buildSessionQueryState(context));
   if (method === "GET" && pathname === "/api/sessions") {
     const query = url.searchParams.get("q");
     if (query && query.trim()) {
       const matches = searchSessions(query.trim());
-      json(res, serializeWithJobStates(matches));
+      json(res, serializeWithState(matches, context, getState()));
       return true;
     }
 
@@ -86,26 +118,18 @@ export async function handleSessionQueryRoutes(
       const limit = Math.max(1, parseInt(rawLimit || "50", 10) || 50);
       const offset = Math.max(0, parseInt(url.searchParams.get("offset") || "0", 10) || 0);
       const page = listSessionsForGroup(group, limit, offset, portalSlug);
-      json(res, serializeWithJobStates(page));
+      json(res, serializeWithState(page, context, getState()));
       return true;
     }
 
     if (rawLimit === "0") {
-      const all = listSessions();
-      const jobStates = buildSessionJobStateMap(all, context);
-      const latestAgentMessages = listLatestAgentMessageTimestamps();
-      json(res, all.map((session) => serializeSession(
-        session,
-        context,
-        jobStates.get(session.id),
-        latestAgentMessages.get(session.id),
-      )));
+      json(res, serializeWithState(getState().allSessions, context, getState()));
       return true;
     }
 
     const sessions = listRecentPerGroup(perGroup, portalSlug);
     json(res, {
-      sessions: serializeWithJobStates(sessions),
+      sessions: serializeWithState(sessions, context, getState()),
       counts: getSessionGroupCounts(portalSlug),
       perGroup,
     });
@@ -114,14 +138,14 @@ export async function handleSessionQueryRoutes(
 
   if (method === "GET" && pathname === "/api/sessions/interrupted") {
     const interrupted = getInterruptedSessions();
-    json(res, serializeWithJobStates(interrupted));
+    json(res, serializeWithState(interrupted, context, getState()));
     return true;
   }
 
   const childrenParams = matchRoute("/api/sessions/:id/children", pathname);
   if (method === "GET" && childrenParams) {
     const children = listChildSessions(childrenParams.id);
-    json(res, serializeWithJobStates(children));
+    json(res, serializeWithState(children, context, getState()));
     return true;
   }
 
@@ -153,7 +177,7 @@ export async function handleSessionQueryRoutes(
   }
 
   if (method === "GET" && sessionParams) {
-    const detail = loadSessionMessagesForApi(sessionParams.id, context, url.searchParams.get("last"));
+    const detail = loadSessionMessagesForApi(sessionParams.id, context, getState(), url.searchParams.get("last"));
     if (!detail) {
       notFound(res);
       return true;

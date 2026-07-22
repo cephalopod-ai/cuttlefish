@@ -97,11 +97,15 @@ vi.mock("@/components/org/reports-to-field", async () => {
 
 const createEmployee = vi.fn()
 const getOrg = vi.fn()
+const useOrg = vi.fn()
 vi.mock("@/lib/api", () => ({
   api: {
     createEmployee: (...a: unknown[]) => createEmployee(...a),
     getOrg: (...a: unknown[]) => getOrg(...a),
   },
+}))
+vi.mock("@/hooks/use-employees", () => ({
+  useOrg: () => useOrg(),
 }))
 
 import { EmployeeCreateForm } from "./employee-create-form"
@@ -115,6 +119,7 @@ async function chooseSelect(label: string, option: string) {
 beforeEach(() => {
   createEmployee.mockReset()
   getOrg.mockReset()
+  useOrg.mockReset()
   getOrg.mockResolvedValue({
     departments: ["platform"],
     employees: [
@@ -122,6 +127,16 @@ beforeEach(() => {
       { name: "lead-a", department: "platform" },
       { name: "lead-b", department: "platform" },
     ],
+  })
+  useOrg.mockReturnValue({
+    data: {
+      departments: ["platform"],
+      employees: [
+        { name: "cuttlefish", department: "" },
+        { name: "lead-a", department: "platform" },
+        { name: "lead-b", department: "platform" },
+      ],
+    },
   })
 })
 

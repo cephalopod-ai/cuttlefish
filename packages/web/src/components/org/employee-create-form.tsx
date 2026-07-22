@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { api } from "@/lib/api"
 import type { Employee, EmployeeCreate } from "@/lib/api"
+import { useOrg } from "@/hooks/use-employees"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
@@ -114,16 +115,17 @@ export function EmployeeCreateForm({
   const [maxWallClockMs, setMaxWallClockMs] = useState<string>("300000")
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { data: orgData } = useOrg()
 
   useEffect(() => {
-    api.getOrg().then((org) => {
-      setDepartments(org.departments)
-      setOrgEmployees(org.employees)
-      setEmployeeNames(buildSupervisorOptions(org.employees, {
-        portalName: settings.portalName,
-      }))
-    }).catch(() => {})
-  }, [settings.portalName])
+    const employees = orgData?.employees ?? []
+    const departments = orgData?.departments ?? []
+    setDepartments(departments)
+    setOrgEmployees(employees)
+    setEmployeeNames(buildSupervisorOptions(employees, {
+      portalName: settings.portalName,
+    }))
+  }, [orgData?.departments, orgData?.employees, settings.portalName])
 
   const employeeByName = useMemo(() => {
     const map = new Map<string, Employee>()

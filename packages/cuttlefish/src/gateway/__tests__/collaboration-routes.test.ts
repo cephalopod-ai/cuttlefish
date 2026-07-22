@@ -11,16 +11,15 @@ const hoisted = vi.hoisted(() => ({
     body: { status: "queued", sessionId },
     insertedMessageId: `message-${sessionId}`,
   })),
-}));
-
-vi.mock("../continue-session.js", () => ({ continueSession: hoisted.dispatchTurn }));
-vi.mock("../org.js", () => ({
-  scanOrg: () => new Map([
+  scanOrg: vi.fn(() => new Map([
     ["lead", { name: "lead", displayName: "Lead", department: "engineering", rank: "manager", engine: "codex", model: "gpt-5.6-sol", persona: "lead", reportsTo: "cuttlefish" }],
     ["program-manager", { name: "program-manager", displayName: "Program Manager", department: "program", rank: "manager", engine: "codex", model: "gpt-5.6-sol", persona: "pm", reportsTo: "cuttlefish" }],
     ["dev", { name: "dev", displayName: "Developer", department: "engineering", rank: "employee", engine: "codex", model: "gpt-5.6-sol", persona: "dev", reportsTo: "lead" }],
-  ]),
+  ])),
 }));
+
+vi.mock("../continue-session.js", () => ({ continueSession: hoisted.dispatchTurn }));
+vi.mock("../org.js", () => ({ scanOrg: hoisted.scanOrg }));
 
 type Registry = typeof import("../../sessions/registry.js");
 type Routes = typeof import("../api/routes/collaboration.js");
@@ -35,6 +34,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   hoisted.dispatchTurn.mockClear();
+  hoisted.scanOrg.mockClear();
 });
 
 function responseCapture() {
@@ -109,6 +109,7 @@ describe("collaboration API routes", () => {
     const project = createProject("read");
     const listing = await call("GET", "/api/projects?limit=200");
     expect(listing.status).toBe(200);
+    expect(hoisted.scanOrg).not.toHaveBeenCalled();
     expect(listing.body.projects).toContainEqual(expect.objectContaining({ rootSessionId: project.root.id, sessionCount: 2 }));
     const tree = await call("GET", `/api/projects/${project.root.id}/tree`);
     expect(tree.body.tree[0].children[0].session.id).toBe(project.child.id);

@@ -117,12 +117,16 @@ vi.mock("@/components/ui/select", async () => {
 const updateEmployee = vi.fn()
 const deleteEmployee = vi.fn()
 const getOrg = vi.fn()
+const useOrg = vi.fn()
 vi.mock("@/lib/api", () => ({
   api: {
     updateEmployee: (...a: unknown[]) => updateEmployee(...a),
     deleteEmployee: (...a: unknown[]) => deleteEmployee(...a),
     getOrg: (...a: unknown[]) => getOrg(...a),
   },
+}))
+vi.mock("@/hooks/use-employees", () => ({
+  useOrg: () => useOrg(),
 }))
 
 import { EmployeeEditor } from "./employee-editor"
@@ -151,12 +155,22 @@ beforeEach(() => {
   updateEmployee.mockReset()
   deleteEmployee.mockReset()
   getOrg.mockReset()
+  useOrg.mockReset()
   getOrg.mockResolvedValue({
     departments: ["content", "engineering"],
     employees: [
       { name: "content-lead", department: "content" },
       { name: "review-lead", department: "engineering" },
     ],
+  })
+  useOrg.mockReturnValue({
+    data: {
+      departments: ["content", "engineering"],
+      employees: [
+        { name: "content-lead", department: "content" },
+        { name: "review-lead", department: "engineering" },
+      ],
+    },
   })
 })
 
@@ -353,6 +367,7 @@ describe("EmployeeEditor", () => {
 
     await waitFor(() => expect(updateEmployee).toHaveBeenCalledTimes(1))
     expect(updateEmployee).toHaveBeenCalledWith("content-writer", {
+      department: "engineering",
       reportsTo: ["review-lead", "content-lead"],
     })
     await waitFor(() =>

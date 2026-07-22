@@ -5,6 +5,7 @@ import type {
   ProjectDeleteRequest,
   ProjectTreeNode,
 } from "@cuttlefish/contracts";
+import type { Session } from "../../../shared/types.js";
 import { OPERATOR_DELEGATION_SCOPES } from "../../../sessions/operator-delegation.js";
 import {
   getSession,
@@ -54,23 +55,35 @@ function parseScopes(value: unknown): OperatorDelegationScope[] | null {
     : null;
 }
 
-function apiState(context: ApiContext) {
+function createApiState(context: ApiContext) {
   const sessions = listSessions();
-  const graph = buildProjectGraph(sessions);
-  const jobStates = buildSessionJobStateMap(sessions, context);
-  const latestMessages = listLatestAgentMessageTimestamps();
-  const publicSessions = sessions.map((session) => serializeSession(
-    session,
-    context,
-    jobStates.get(session.id),
-    latestMessages.get(session.id),
-  ));
-  const publicGraph = buildProjectGraph(publicSessions);
   const config = context.getConfig();
-  const employees = withPortalExecutive(scanOrg(), config.portal?.portalName);
-  const hierarchy = resolveOrgHierarchy(employees);
-  const roster = managementRoster(employees, config.portal?.portalName ?? "Cuttlefish");
-  return { sessions, graph, publicGraph, employees, hierarchy, roster };
+  let graph: ReturnType<typeof buildProjectGraph<Session>> | undefined;
+  let publicGraph: ReturnType<typeof buildProjectGraph<ReturnType<typeof serializeSession>>> | undefined;
+  let publicSessions: ReturnType<typeof serializeSession>[] | undefined;
+  let jobStates: ReturnType<typeof buildSessionJobStateMap> | undefined;
+  let latestMessages: ReturnType<typeof listLatestAgentMessageTimestamps> | undefined;
+  let employees: ReturnType<typeof withPortalExecutive> | undefined;
+  let hierarchy: ReturnType<typeof resolveOrgHierarchy> | undefined;
+  let roster: ReturnType<typeof managementRoster> | undefined;
+
+  const getGraph = () => (graph ??= buildProjectGraph(sessions));
+  const getEmployees = () => (employees ??= withPortalExecutive(scanOrg(), config.portal?.portalName));
+  const getHierarchy = () => (hierarchy ??= resolveOrgHierarchy(getEmployees()));
+  const getRoster = () => (roster ??= managementRoster(getEmployees(), config.portal?.portalName ?? "Cuttlefish"));
+  const getPublicSessions = () => (publicSessions ??= sessions.map((session) => {
+    jobStates ??= buildSessionJobStateMap(sessions, context);
+    latestMessages ??= listLatestAgentMessageTimestamps();
+    return serializeSession(
+      session,
+      context,
+      jobStates.get(session.id),
+      latestMessages.get(session.id),
+    );
+  }));
+  const getPublicGraph = () => (publicGraph ??= buildProjectGraph(getPublicSessions()));
+
+  return { sessions, getGraph, getPublicGraph, getEmployees, getHierarchy, getRoster };
 }
 
 function publicTree(nodes: ProjectGraphNode<ReturnType<typeof serializeSession>>[]): ProjectTreeNode[] {
@@ -112,12 +125,12 @@ export async function handleCollaborationRoutes(
 ): Promise<boolean> {
   if (!pathname.startsWith("/api/projects") && !pathname.startsWith("/api/management")) return false;
   const principal = principalOf(req);
-  const state = apiState(context);
+  const state = createApiState(context);
 
   if (method === "GET" && pathname === "/api/projects") {
     const query = url.searchParams.get("q")?.trim().toLowerCase();
     const decoded = decodeProjectCursor(url.searchParams.get("cursor"));
-    let projects = state.publicGraph.projects.filter((project) => projectForPrincipal(project, principal));
+    let projects = state.getPublicGraph().projects.filter((project) => projectForPrincipal(project, principal));
     if (query) {
       projects = projects.filter((project) => {
         const summary = summarizeProject(project);
@@ -141,7 +154,7 @@ export async function handleCollaborationRoutes(
 
   const treeParams = matchRoute("/api/projects/:rootSessionId/tree", pathname);
   if (method === "GET" && treeParams) {
-    const project = state.publicGraph.projects.find((entry) => entry.rootSessionId === treeParams.rootSessionId);
+    const project = state.getPublicGraph().projects.find((entry) => entry.rootSessionId === treeParams.rootSessionId);
     if (!project || !projectForPrincipal(project, principal)) {
       json(res, { error: "Project not found" }, 404);
       return true;
@@ -152,7 +165,7 @@ export async function handleCollaborationRoutes(
 
   const feedParams = matchRoute("/api/projects/:rootSessionId/feed", pathname);
   if (method === "GET" && feedParams) {
-    const project = state.graph.projects.find((entry) => entry.rootSessionId === feedParams.rootSessionId);
+    const project = state.getGraph().projects.find((entry) => entry.rootSessionId === feedParams.rootSessionId);
     if (!project || !projectForPrincipal(project, principal)) {
       json(res, { error: "Project not found" }, 404);
       return true;
@@ -164,7 +177,7 @@ export async function handleCollaborationRoutes(
     }
     json(res, projectFeed({
       project,
-      employees: state.employees,
+      employees: state.getEmployees(),
       cursor: url.searchParams.get("cursor"),
       limit: pageLimit(url),
       sessionId,
@@ -178,7 +191,7 @@ export async function handleCollaborationRoutes(
       json(res, { error: "Project messages require a direct human operator", code: "operator_only" }, 403);
       return true;
     }
-    const project = state.graph.projects.find((entry) => entry.rootSessionId === messageParams.rootSessionId);
+    const project = state.getGraph().projects.find((entry) => entry.rootSessionId === messageParams.rootSessionId);
     if (!project) {
       json(res, { error: "Project not found" }, 404);
       return true;
@@ -191,7 +204,7 @@ export async function handleCollaborationRoutes(
       recipientMode: body.recipientMode,
       confirmAllRecipients: body.confirmAllRecipients,
       projectSessions: project.sessions,
-      employees: state.employees,
+      employees: state.getEmployees(),
     });
     if (resolved.error) {
       json(res, { error: resolved.error }, 400);
@@ -199,7 +212,7 @@ export async function handleCollaborationRoutes(
     }
     const targets = resolved.recipientIds.map((recipientId) => ({
       recipientId,
-      employee: state.employees.get(recipientId),
+      employee: state.getEmployees().get(recipientId),
       session: latestWritableSessionForEmployee(project.sessions, recipientId),
     }));
     const result = await dispatchCollaborationMessage({
@@ -245,9 +258,9 @@ export async function handleCollaborationRoutes(
     const projectRootSessionId = url.searchParams.get("projectRootSessionId");
     json(res, managementFeed({
       sessions: state.sessions,
-      managerIds: new Set(state.roster.filter((recipient) => recipient.active).map((recipient) => recipient.id)),
-      employees: state.employees,
-      projectBySessionId: state.graph.projectBySessionId,
+      managerIds: new Set(state.getRoster().filter((recipient) => recipient.active).map((recipient) => recipient.id)),
+      employees: state.getEmployees(),
+      projectBySessionId: state.getGraph().projectBySessionId,
       cursor: url.searchParams.get("cursor"),
       limit: pageLimit(url),
       projectRootSessionId,
@@ -258,12 +271,12 @@ export async function handleCollaborationRoutes(
   if (method === "GET" && pathname === "/api/management/recipients") {
     const projectRootSessionId = url.searchParams.get("projectRootSessionId");
     const project = projectRootSessionId
-      ? state.graph.projects.find((entry) => entry.rootSessionId === projectRootSessionId)
+      ? state.getGraph().projects.find((entry) => entry.rootSessionId === projectRootSessionId)
       : undefined;
     const resolution = resolveManagementRecipients({
       projectParticipantIds: project?.sessions.flatMap((session) => session.employee ? [session.employee] : []),
-      roster: state.roster,
-      hierarchy: state.hierarchy,
+      roster: state.getRoster(),
+      hierarchy: state.getHierarchy(),
     });
     json(res, { recipients: resolution.recipients, defaultRecipientId: resolution.defaultRecipientId, defaultReason: resolution.defaultReason });
     return true;
@@ -274,7 +287,7 @@ export async function handleCollaborationRoutes(
     if (!parsed.ok) return true;
     const body = parsed.body as CollaborationSendRequest;
     const project = body.projectRootSessionId
-      ? state.graph.projects.find((entry) => entry.rootSessionId === body.projectRootSessionId)
+      ? state.getGraph().projects.find((entry) => entry.rootSessionId === body.projectRootSessionId)
       : undefined;
     if (body.projectRootSessionId && !project) {
       json(res, { error: "Project not found" }, 404);
@@ -285,8 +298,8 @@ export async function handleCollaborationRoutes(
       recipientMode: body.recipientMode,
       confirmAllRecipients: body.confirmAllRecipients,
       projectParticipantIds: project?.sessions.flatMap((session) => session.employee ? [session.employee] : []),
-      roster: state.roster,
-      hierarchy: state.hierarchy,
+      roster: state.getRoster(),
+      hierarchy: state.getHierarchy(),
     });
     if (resolution.error) {
       json(res, { error: resolution.error, recipients: resolution.recipients }, 400);
@@ -307,7 +320,7 @@ export async function handleCollaborationRoutes(
     }
     const targets = resolution.recipientIds.map((recipientId) => ({
       recipientId,
-      employee: recipientId === COO_RECIPIENT_ID ? undefined : state.employees.get(recipientId),
+      employee: recipientId === COO_RECIPIENT_ID ? undefined : state.getEmployees().get(recipientId),
       session: latestDirectManagementSession(state.sessions, recipientId),
     }));
     const result = await dispatchCollaborationMessage({

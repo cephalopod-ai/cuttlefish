@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { PageLayout } from "@/components/page-layout"
 import { useBreadcrumbs } from "@/context/breadcrumb-context"
+import { useOrg } from "@/hooks/use-employees"
 import { useModelRegistry } from "@/hooks/use-model-registry"
 import { usePageVisibility } from "@/hooks/use-page-visibility"
 import { api } from "@/lib/api"
@@ -106,19 +107,14 @@ export default function SettingsPage() {
   const [waQr, setWaQr] = useState<string | null>(null)
   const [waStatus, setWaStatus] = useState("unknown")
   const pageVisible = usePageVisibility()
-  const [employees, setEmployees] = useState<Array<{ name: string; displayName: string }>>([])
-
-  useEffect(() => {
-    api.getOrg().then((org: any) => {
-      if (org?.employees) {
-        setEmployees(org.employees.map((e: any) => (
-          typeof e === "string"
-            ? { name: e, displayName: e }
-            : { name: e.name, displayName: e.displayName || e.name }
-        )))
-      }
-    }).catch(() => {})
-  }, [])
+  const { data: orgData } = useOrg()
+  const employees = useMemo(
+    () => (orgData?.employees ?? []).map((employee) => ({
+      name: employee.name,
+      displayName: employee.displayName || employee.name,
+    })),
+    [orgData?.employees],
+  )
 
   useEffect(() => {
     setNameValue(settings.portalName ?? "")

@@ -174,6 +174,22 @@ describe("session query routes", () => {
     );
   }, 15_000);
 
+  it("builds the request-scoped session snapshot once for GET /api/sessions?limit=0", async () => {
+    const { api, reg } = await setup();
+    const ctx = makeCtx(api);
+
+    reg.createSession({ engine: "claude", source: "web", sourceRef: "web:one", prompt: "one" });
+    reg.createSession({ engine: "claude", source: "web", sourceRef: "web:two", prompt: "two" });
+    const listSessionsSpy = vi.spyOn(reg, "listSessions");
+
+    const cap = makeRes();
+    await api.handleApiRequest(makeReq("GET", "/api/sessions?limit=0"), cap.res, ctx);
+
+    expect(cap.status).toBe(200);
+    expect(Array.isArray(cap.body)).toBe(true);
+    expect(listSessionsSpy).toHaveBeenCalledTimes(1);
+  });
+
   it("persists a selected cwd for POST /api/sessions", async () => {
     const { api, reg } = await setup();
     const ctx = makeCtx(api);

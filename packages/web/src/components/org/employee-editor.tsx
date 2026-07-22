@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { api } from "@/lib/api"
 import type { Employee, EmployeeUpdate } from "@/lib/api"
+import { useOrg } from "@/hooks/use-employees"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
@@ -142,17 +143,18 @@ export function EmployeeEditor({
   const [error, setError] = useState<string | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const { data: orgData } = useOrg()
 
   useEffect(() => {
-    api.getOrg().then((o) => {
-      setDepartments(o.departments)
-      setOrgEmployees(o.employees)
-      setEmployeeNames(buildSupervisorOptions(o.employees, {
-        portalName: settings.portalName,
-        excludeName: employee.name,
-      }))
-    }).catch(() => {})
-  }, [employee.name, settings.portalName])
+    const employees = orgData?.employees ?? []
+    const departments = orgData?.departments ?? []
+    setDepartments(departments)
+    setOrgEmployees(employees)
+    setEmployeeNames(buildSupervisorOptions(employees, {
+      portalName: settings.portalName,
+      excludeName: employee.name,
+    }))
+  }, [employee.name, orgData?.departments, orgData?.employees, settings.portalName])
 
   const employeeByName = useMemo(() => {
     const map = new Map<string, Employee>()
