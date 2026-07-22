@@ -83,12 +83,12 @@ jobs:
           $stagingPkg = Join-Path $staging "package.json"
           $srcPkg = Join-Path $pkgSrc "package.json"
           node --input-type=module -e @"
-import fs from 'node:fs';
-const pkg = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
-pkg.dependencies['@cuttlefish/contracts'] = 'file:./vendor/contracts';
-delete pkg.bundledDependencies;
-fs.writeFileSync(process.argv[2], JSON.stringify(pkg, null, 2) + '\n', 'utf8');
-"@ $srcPkg $stagingPkg
+          import fs from 'node:fs';
+          const pkg = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+          pkg.dependencies['@cuttlefish/contracts'] = 'file:./vendor/contracts';
+          delete pkg.bundledDependencies;
+          fs.writeFileSync(process.argv[2], JSON.stringify(pkg, null, 2) + '\n', 'utf8');
+          "@ $srcPkg $stagingPkg
           Push-Location $staging
           $env:npm_config_ignore_scripts = "false"
           npm install --omit=dev --no-fund --no-audit
