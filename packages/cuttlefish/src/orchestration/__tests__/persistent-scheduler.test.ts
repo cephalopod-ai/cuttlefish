@@ -54,6 +54,47 @@ describe("PersistentMatrixScheduler", () => {
     second.close();
   });
 
+  // Residual-risk finding (2026-07-23 playtest, orchestration/persistent-scheduler.ts:98-112):
+  // commitMutation() re-hydrates from the store on every call, inside a BEGIN
+  // IMMEDIATE transaction, so its snapshot-delta write can never be computed
+  // from state that's already stale relative to another writer on the same DB
+  // file. This proves the round trip end to end: two independently opened
+  // schedulers (simulating a second writer process) both mutate the same DB,
+  // and a third, freshly opened scheduler sees BOTH mutations reconciled —
+  // neither writer's delta clobbers the other's.
+  it("does not lose one writer's mutation to another writer's snapshot-delta commit", () => {
+    const first = PersistentMatrixScheduler.open(config(), { dbPath, now: () => fixedNow, expireOnHydrate: false });
+    const second = PersistentMatrixScheduler.open(config(), { dbPath, now: () => fixedNow, expireOnHydrate: false });
+
+    const firstAllocation = first.requestAllocation(request({ taskId: "task-first" }));
+    expect(firstAllocation.ok).toBe(true);
+    const queued = second.requestAllocation(request({ taskId: "task-second", coordinatorId: "coord-second" }));
+    expect(queued.ok).toBe(false);
+
+    // "second" releases the lease it never held the in-memory record for at
+    // request time — it must re-hydrate "first"'s committed lease before it
+    // can act on it, not operate on its own stale pre-request snapshot.
+    const leaseId = firstAllocation.ok ? firstAllocation.allocation.leases[0]?.leaseId : undefined;
+    expect(leaseId).toBeDefined();
+    second.releaseLease(leaseId!, "coord-1");
+    const retried = second.retryQueued();
+    expect(retried).toHaveLength(1);
+    expect(retried[0].ok).toBe(true);
+
+    first.close();
+    second.close();
+
+    // A third writer, opened only after both prior writers closed, must see
+    // both mutations reconciled: the original lease released, task-second
+    // running, and nothing silently reverted or duplicated.
+    const third = PersistentMatrixScheduler.open(config(), { dbPath, now: () => fixedNow, expireOnHydrate: false });
+    const runningLeases = third.listLeases().filter((lease) => lease.state === "running");
+    expect(runningLeases).toHaveLength(1);
+    expect(runningLeases[0]).toMatchObject({ taskId: "task-second", coordinatorId: "coord-second" });
+    expect(third.listQueue()).toHaveLength(0);
+    third.close();
+  });
+
   it("persists queued work and resumes it after a release across restart", () => {
     const first = PersistentMatrixScheduler.open(config(), { dbPath, now: () => fixedNow });
     const running = first.requestAllocation(request({ taskId: "task-1" }));
