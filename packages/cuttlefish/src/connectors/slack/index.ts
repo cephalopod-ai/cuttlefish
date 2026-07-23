@@ -1,5 +1,6 @@
 import { App } from "@slack/bolt";
 import type {
+  Attachment,
   Connector,
   ConnectorCapabilities,
   ConnectorHealth,
@@ -40,6 +41,33 @@ export class SlackConnector implements Connector {
     reactions: true,
     attachments: true,
   };
+
+  /**
+   * Download a message's Slack file attachments, bounded by count (AR-08).
+   * Downloads run concurrently — sequential `for...of` + `await` here delayed
+   * session creation and webhook acknowledgement on high-latency networks when
+   * a message carried several large attachments. Order is preserved to match
+   * `files`, and a single failed download is dropped (logged) rather than
+   * failing the whole batch, matching the previous sequential behavior.
+   */
+  private async downloadEventAttachments(files: any[], token: string): Promise<Attachment[]> {
+    if (files.length === 0) return [];
+    if (files.length > SLACK_MAX_ATTACHMENTS) {
+      logger.warn(`Slack message has ${files.length} attachments; processing only the first ${SLACK_MAX_ATTACHMENTS}`);
+    }
+    const downloaded = await Promise.all(
+      files.slice(0, SLACK_MAX_ATTACHMENTS).map(async (file): Promise<Attachment | null> => {
+        try {
+          const localPath = await downloadAttachment(file.url_private, token, TMP_DIR);
+          return { name: file.name, url: file.url_private, mimeType: file.mimetype, localPath };
+        } catch (err) {
+          logger.warn(`Failed to download attachment: ${err}`);
+          return null;
+        }
+      }),
+    );
+    return downloaded.filter((attachment): attachment is Attachment => attachment !== null);
+  }
 
   /**
    * Set the AI assistant typing status in a thread.
@@ -202,30 +230,8 @@ export class SlackConnector implements Connector {
       }
 
       // Download attachments if present, bounded by count (AR-08).
-      const attachments = [];
       const files = ((event as any).files ?? []) as any[];
-      if (files.length > 0) {
-        if (files.length > SLACK_MAX_ATTACHMENTS) {
-          logger.warn(`Slack message has ${files.length} attachments; processing only the first ${SLACK_MAX_ATTACHMENTS}`);
-        }
-        for (const file of files.slice(0, SLACK_MAX_ATTACHMENTS)) {
-          try {
-            const localPath = await downloadAttachment(
-              file.url_private,
-              this.app.client.token!,
-              TMP_DIR,
-            );
-            attachments.push({
-              name: file.name,
-              url: file.url_private,
-              mimeType: file.mimetype,
-              localPath,
-            });
-          } catch (err) {
-            logger.warn(`Failed to download attachment: ${err}`);
-          }
-        }
-      }
+      const attachments = await this.downloadEventAttachments(files, this.app.client.token!);
 
       const channelName = await this.resolveChannelName((event as any).channel);
 
@@ -290,30 +296,8 @@ export class SlackConnector implements Connector {
       const channelName = await this.resolveChannelName(event.channel);
 
       // Download attachments if present, bounded by count (AR-08).
-      const attachments = [];
       const files = ((event as any).files ?? []) as any[];
-      if (files.length > 0) {
-        if (files.length > SLACK_MAX_ATTACHMENTS) {
-          logger.warn(`Slack message has ${files.length} attachments; processing only the first ${SLACK_MAX_ATTACHMENTS}`);
-        }
-        for (const file of files.slice(0, SLACK_MAX_ATTACHMENTS)) {
-          try {
-            const localPath = await downloadAttachment(
-              file.url_private,
-              this.app.client.token!,
-              TMP_DIR,
-            );
-            attachments.push({
-              name: file.name,
-              url: file.url_private,
-              mimeType: file.mimetype,
-              localPath,
-            });
-          } catch (err) {
-            logger.warn(`Failed to download attachment: ${err}`);
-          }
-        }
-      }
+      const attachments = await this.downloadEventAttachments(files, this.app.client.token!);
 
       const msg: IncomingMessage = {
         connector: this.name,
