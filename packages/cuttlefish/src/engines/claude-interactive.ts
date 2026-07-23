@@ -37,6 +37,15 @@ const NATIVE_COMMAND_MIN_MS = 3000;
 const NATIVE_COMMAND_MAX_MS = 90_000;
 const LOST_STOP_RECOVERY_QUIET_MS = 60_000;
 const LOST_STOP_RECOVERY_MIN_MS = 5 * 60_000;
+const LOST_STOP_RECOVERY_POLL_MS = 2000;
+// Cheap pre-filter tolerance for the mtime staleness check below, matching the
+// poll interval so filesystem mtime granularity or minor clock drift can't be
+// stricter than the loop's own resolution — a missed tick just retries in
+// LOST_STOP_RECOVERY_POLL_MS. Correctness does NOT depend on this: the actual
+// safety boundary is lastAssistantTextFromTranscript's per-line timestamp
+// filter (each transcript line's own recorded timestamp vs. startedAt), which
+// this check only avoids calling unnecessarily on an untouched file.
+const LOST_STOP_RECOVERY_MTIME_TOLERANCE_MS = LOST_STOP_RECOVERY_POLL_MS;
 
 export class InteractiveClaudeEngine implements InterruptibleEngine, PtyViewEngine {
   name = "claude" as const;
@@ -137,7 +146,7 @@ export class InteractiveClaudeEngine implements InterruptibleEngine, PtyViewEngi
 
     // A previous turn may have left a late-recovery listener armed; this new
     // turn owns the session (and the hook registration) now.
-    this.cancelLateRecovery(cuttlefishSessionId);
+    this.cancelLateRecovery(cuttlefishSessionId, "a new turn started before the previous turn's delayed Stop hook arrived");
     // Retract any reported post-settle background activity — the session is
     // about to be "running", which supersedes the background indicator.
     this.suppressBackground(cuttlefishSessionId);
@@ -276,7 +285,7 @@ export class InteractiveClaudeEngine implements InterruptibleEngine, PtyViewEngi
           const transcript = sid ? findTranscriptForSession(sid) : undefined;
           if (!transcript) return;
           try {
-            if (fs.statSync(transcript).mtimeMs < startedAt - 1000) return;
+            if (fs.statSync(transcript).mtimeMs < startedAt - LOST_STOP_RECOVERY_MTIME_TOLERANCE_MS) return;
           } catch {
             return;
           }
@@ -285,7 +294,7 @@ export class InteractiveClaudeEngine implements InterruptibleEngine, PtyViewEngi
             logger.warn(`InteractiveClaudeEngine: recovered completed turn for ${cuttlefishSessionId} after missing Stop hook`);
             resolver.completeRecovered(recovered, sid);
           }
-        }, 2000);
+        }, LOST_STOP_RECOVERY_POLL_MS);
         lostStopRecoveryTimer.unref?.();
       }
 
@@ -576,7 +585,7 @@ export class InteractiveClaudeEngine implements InterruptibleEngine, PtyViewEngi
   }
 
   kill(sessionId: string, reason = "Interrupted"): void {
-    this.cancelLateRecovery(sessionId);
+    this.cancelLateRecovery(sessionId, `session killed (${reason})`);
     const e = this.active.get(sessionId);
     e?.resolver.interrupt(reason.startsWith("Interrupted") ? reason : `Interrupted: ${reason}`);
     this.lifecycle.releaseSession(sessionId);
@@ -626,7 +635,7 @@ export class InteractiveClaudeEngine implements InterruptibleEngine, PtyViewEngi
   }
 
   /** Tear down a pending late-recovery listener (new turn starting / kill / expiry). */
-  cancelLateRecovery(cuttlefishSessionId: string): void {
-    this.lateRecovery.cancel(cuttlefishSessionId);
+  cancelLateRecovery(cuttlefishSessionId: string, reason?: string): void {
+    this.lateRecovery.cancel(cuttlefishSessionId, reason);
   }
 }
