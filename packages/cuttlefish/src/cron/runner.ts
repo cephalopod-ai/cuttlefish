@@ -13,7 +13,7 @@ export async function runCronJob(
   sessionManager: SessionManager,
   config: CuttlefishConfig,
   connectors: Map<string, Connector>,
-  opts: { runId?: string; trigger?: CronRunEntry["trigger"] } = {},
+  opts: { runId?: string; trigger?: CronRunEntry["trigger"]; sessionKey?: string } = {},
 ): Promise<CronRunEntry> {
   const startTime = Date.now();
   const runId = opts.runId ?? crypto.randomUUID();
@@ -30,7 +30,10 @@ export async function runCronJob(
 
   const connector = new CronConnector(connectors, delivery);
   const startedAt = new Date().toISOString();
-  const sessionKey = `cron:${job.id}:${Date.now()}`;
+  // Prefer the caller's sessionKey (scheduler.ts generates one up front so its
+  // watchdog can look up and kill this run's session if it wedges) over minting
+  // a fresh one, so both sides agree on the same key.
+  const sessionKey = opts.sessionKey ?? `cron:${job.id}:${Date.now()}`;
   appendRunLog(job.id, {
     runId,
     timestamp: startedAt,
