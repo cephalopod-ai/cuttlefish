@@ -285,6 +285,28 @@ export function effortLevelsForModel(config: CuttlefishConfig, engine: string, m
   return model?.supportsEffort ? model.effortLevels : [];
 }
 
+/**
+ * Does this install's registry actually advertise `modelId` for `engine`?
+ *
+ * Answers "may a model-fallback ladder dispatch this rung", which is NOT the
+ * same question as `engineAvailable`. A rung names a specific model id, and
+ * handing the CLI a `--model` the install never advertised turns an automatic
+ * fallback into a hard failure — precisely when the session is already degraded.
+ *
+ * Returns true when config declares no `models:` block for the engine. In that
+ * case `getModelRegistry` back-fills a single synthesized entry from
+ * `engines.<name>.model`; that is a default, not a statement of what the engine
+ * can run, so enforcing it would reject every rung except the configured
+ * default. Only an operator-declared (or discovery-backed) registry is treated
+ * as authoritative enough to exclude a rung.
+ */
+export function registryAdvertisesModel(config: CuttlefishConfig, engine: string, modelId: string): boolean {
+  if (!config.models?.[engine]) return true;
+  const models = getModelRegistry(config)[engine]?.models;
+  if (!models || models.length === 0) return true;
+  return models.some((m) => m.id === modelId);
+}
+
 /** Context window (tokens) for a session's engine+model, or undefined if unknown. */
 export function contextWindowForModel(config: CuttlefishConfig, engine: string, modelId?: string): number | undefined {
   const entry = getModelRegistry(config)[engine];

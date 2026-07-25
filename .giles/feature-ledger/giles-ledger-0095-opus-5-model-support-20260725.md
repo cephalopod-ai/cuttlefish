@@ -29,11 +29,12 @@ also missing from the price table (it silently fell through to the default
 - `packages/cuttlefish/src/cli/setup.ts` — seeded `claude-opus-5` registry entry; `opus` relabelled; global fallback chain pins `claude-opus-5`
 - `packages/cuttlefish/src/gateway/org-hierarchy.ts` — portal COO fallback pins `claude-opus-5`
 - `packages/cuttlefish/src/shared/model-escalation.ts` — tier 2 gains `claude-opus-5`
-- `packages/cuttlefish/src/gateway/run-web-session.ts` — the escalation availability gate is now registry-aware instead of engine-only, so a ladder rung naming a model this install never advertised is skipped rather than dispatched
+- `packages/cuttlefish/src/shared/models.ts` — new `registryAdvertisesModel()`; the escalation availability gate is registry-aware where the registry is operator-declared, and engine-only where it is back-compat synthesis
+- `packages/cuttlefish/src/gateway/run-web-session.ts` — the escalation availability gate calls that helper instead of ignoring its model argument
 - `packages/cuttlefish/src/engines/claude-interactive-transcript.ts` — prices for `claude-opus-5` and `claude-opus-4-8`; corrected the current Opus tier (5/4.8/4.7) from 15/75 to 5/25; added the bare `opus`/`sonnet`/`haiku` alias rows, which previously fell through to the 15/75 unknown-model default
 - `packages/web/src/routes/settings/settings-config-sections.tsx` — "Opus 5" option
 - `packages/web/src/components/onboarding-wizard.tsx` — eyebrow label for `claude-opus-5`
-- tests: `shared/__tests__/model-escalation.test.ts` (rung-skipping), `sessions/__tests__/session-patch.test.ts`, `sessions/__tests__/operator-delegation.test.ts`, `cli/__tests__/config-seed.test.ts`, `gateway/__tests__/org-hierarchy.test.ts`
+- tests: `shared/__tests__/registry-advertises-model.test.ts` (new), `shared/__tests__/model-escalation.test.ts` (rung-skipping), `sessions/__tests__/session-patch.test.ts`, `sessions/__tests__/operator-delegation.test.ts`, `cli/__tests__/config-seed.test.ts`, `gateway/__tests__/org-hierarchy.test.ts`
 - docs: `README.md`, `docs/USER_MANUAL.md`, `docs/feature_inventory.md` (the alias table there also listed two stale expansions — `sonnet` → `claude-sonnet-4-6` and `haiku` → `claude-haiku-4-5-20251001` — corrected to match the code)
 
 **validation run:**
