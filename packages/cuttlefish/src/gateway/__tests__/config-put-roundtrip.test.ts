@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import type { ServerResponse } from "node:http";
 import { Readable } from "node:stream";
-import yaml from "js-yaml";
+import * as yaml from "js-yaml";
 import type { ApiContext } from "../api.js";
 
 const { home: tmpHome } = withStaticTempCuttlefishHome("cuttlefish-config-api-");

@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import yaml from "js-yaml";
+import * as yaml from "js-yaml";
 import { formatZodError } from "../orchestration/schemas.js";
 import { loadAllocationRequest, loadOrchestrationConfig, loadSimulationScenario } from "../orchestration/config.js";
 import { loadCoordinatorTaskBrief, planCoordinatorAllocation } from "../orchestration/coordinator.js";

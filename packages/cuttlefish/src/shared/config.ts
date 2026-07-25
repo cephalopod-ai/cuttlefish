@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import yaml from "js-yaml";
+import * as yaml from "js-yaml";
 import { CONFIG_PATH } from "./paths.js";
 import { safeWriteYaml } from "./safe-write.js";
 import { KNOWLEDGE_OUTBOX_JSONL } from "./paths.js";

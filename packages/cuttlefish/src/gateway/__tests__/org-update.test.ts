@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import yaml from "js-yaml";
+import * as yaml from "js-yaml";
 import type { CuttlefishConfig, Employee } from "../../shared/types.js";
 
 let tmpDir: string;

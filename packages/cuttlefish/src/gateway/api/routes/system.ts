@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { IncomingMessage as HttpRequest, ServerResponse } from "node:http";
-import yaml from "js-yaml";
+import * as yaml from "js-yaml";
 import { getModelRegistry, invalidateModelRegistry, refreshCodexModels, refreshGrokModels, refreshHermesModels, refreshPiModels } from "../../../shared/models.js";
 import { collectEngineLimits } from "../../../shared/engine-limits.js";
 import { CONFIG_PATH, CUTTLEFISH_HOME, LOGS_DIR, TMP_DIR } from "../../../shared/paths.js";
