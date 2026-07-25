@@ -24,11 +24,12 @@ also missing from the price table (it silently fell through to the default
 
 **touched files:**
 - `packages/cuttlefish/src/sessions/session-patch.ts` — `opus` alias → `claude-opus-5`
-- `packages/cuttlefish/src/sessions/operator-delegation.ts` — allow `claude::claude-opus-5`
+- `packages/cuttlefish/src/sessions/operator-delegation.ts` — allow `claude::claude-opus-5`; export `HUMAN_DELEGATION_MODELS_LABEL` derived from the allowlist
+- `packages/cuttlefish/src/sessions/context.ts`, `gateway/api/routes/session-write.ts`, `gateway/continue-session.ts` — the injected delegation guidance and both 403 bodies now render that derived label instead of a hand-restated model list that had gone stale
 - `packages/cuttlefish/src/cli/setup.ts` — seeded `claude-opus-5` registry entry; `opus` relabelled; global fallback chain pins `claude-opus-5`
 - `packages/cuttlefish/src/gateway/org-hierarchy.ts` — portal COO fallback pins `claude-opus-5`
 - `packages/cuttlefish/src/shared/model-escalation.ts` — tier 2 gains `claude-opus-5`
-- `packages/cuttlefish/src/engines/claude-interactive-transcript.ts` — prices for `claude-opus-5` and `claude-opus-4-8`; corrected the current Opus tier (5/4.8/4.7) from 15/75 to 5/25 and Sonnet 5 from 3/15 to 2/10; added the bare `opus`/`sonnet`/`haiku` alias rows, which previously fell through to the 15/75 unknown-model default
+- `packages/cuttlefish/src/engines/claude-interactive-transcript.ts` — prices for `claude-opus-5` and `claude-opus-4-8`; corrected the current Opus tier (5/4.8/4.7) from 15/75 to 5/25; added the bare `opus`/`sonnet`/`haiku` alias rows, which previously fell through to the 15/75 unknown-model default
 - `packages/web/src/routes/settings/settings-config-sections.tsx` — "Opus 5" option
 - `packages/web/src/components/onboarding-wizard.tsx` — eyebrow label for `claude-opus-5`
 - tests: `sessions/__tests__/session-patch.test.ts`, `sessions/__tests__/operator-delegation.test.ts`, `cli/__tests__/config-seed.test.ts`, `gateway/__tests__/org-hierarchy.test.ts`
@@ -42,6 +43,7 @@ also missing from the price table (it silently fell through to the default
 **remaining open items:**
 - The seeded `opus` registry row and the pinned `claude-opus-5` row now coexist. Anthropic documents the `opus` alias as tracking the newest Opus, so the two are equivalent today; they diverge only if a deployment pins an older CLI.
 - The seeded registry keeps both `claude-opus-5` and the `opus` alias entry. A deployment that wants only the pinned id can drop the alias row from its `config.yaml`; no code change is needed.
+- Sonnet 5 stays on the standard 3/15 rather than its 2/10 introductory rate (which ends 2026-08-31), because this table feeds execution cost caps and under-reporting is the unsafe direction. Revisit if the table ever becomes date-aware.
 - `docs/plans/**` and `docs/test_scenarios/**` still narrate "Opus 4.8" in historical write-ups; left as-is because they record what shipped at the time.
 
 **provenance:** original — authored in a cloud/remote session against branch

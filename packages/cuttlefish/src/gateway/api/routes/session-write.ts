@@ -60,6 +60,7 @@ import {
   isHumanDelegateRole,
   isHumanDelegationModelAllowed,
   parseOperatorDelegationScopes,
+  HUMAN_DELEGATION_MODELS_LABEL,
 } from "../../../sessions/operator-delegation.js";
 import { continueSession } from "../../continue-session.js";
 
@@ -539,7 +540,7 @@ export async function handleSessionWriteRoutes(
         return true;
       }
       if (!isHumanDelegationModelAllowed(engineName, delegationModel)) {
-        json(res, { error: "Human-delegated authority requires GPT-5.5, GPT-5.6-sol, Opus 4.8, or Fable", code: "operator_delegation_model_forbidden" }, 403);
+        json(res, { error: `Human-delegated authority requires one of: ${HUMAN_DELEGATION_MODELS_LABEL}`, code: "operator_delegation_model_forbidden" }, 403);
         return true;
       }
     }

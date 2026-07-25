@@ -22,6 +22,18 @@ const ALLOWED_MODELS = new Set([
   "claude::claude-fable-5",
 ]);
 
+/**
+ * Human-readable rendering of {@link ALLOWED_MODELS}, for the 403 bodies and the
+ * runtime guidance injected into a delegated turn.
+ *
+ * Derived from the set rather than restated: the two were previously written out
+ * by hand in three places, so widening the allowlist left the agent being told a
+ * model was forbidden that the gateway had just accepted.
+ */
+export const HUMAN_DELEGATION_MODELS_LABEL: string = [...ALLOWED_MODELS]
+  .map((rung) => rung.replace("::", "/"))
+  .join(", ");
+
 function normalize(value: string | null | undefined): string {
   return (value ?? "").trim().toLowerCase();
 }

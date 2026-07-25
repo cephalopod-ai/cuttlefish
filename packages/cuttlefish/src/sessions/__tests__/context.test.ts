@@ -320,7 +320,11 @@ describe("buildContext — audience scoping", () => {
     });
     expect(out).toContain("## Human-delegated authority");
     expect(out).toContain("for this turn only");
-    expect(out).toContain("GPT-5.5, GPT-5.6-sol, Opus 4.8, or Fable");
+    // Derived from the allowlist, so widening it can never leave the injected
+    // guidance contradicting what the gateway accepts.
+    expect(out).toContain("claude/claude-opus-5")
+    expect(out).toContain("codex/gpt-5.5")
+    expect(out).toContain("claude/claude-fable-5")
     expect(out).toContain("You may inspect and resolve approvals/checkpoints");
     expect(out).not.toContain("Never call an approve, reject, or apply endpoint");
   });

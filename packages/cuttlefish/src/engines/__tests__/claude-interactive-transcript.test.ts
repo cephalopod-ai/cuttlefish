@@ -27,7 +27,7 @@ describe("computeInteractiveTurnStats — cumulative totals for the whole transc
 
     const stats = computeInteractiveTurnStats(file, "claude-sonnet-5");
     expect(stats?.cost?.turns).toBe(2);
-    expect(stats?.cost?.cost).toBeCloseTo(4, 5); // 2 * ($2/M input tokens)
+    expect(stats?.cost?.cost).toBeCloseTo(6, 5); // 2 * ($3/M input tokens)
   });
 
   it("prices the bare `opus` alias as the current Opus tier, not the unknown-model default", () => {
@@ -40,7 +40,7 @@ describe("computeInteractiveTurnStats — cumulative totals for the whole transc
     // the session's model reaches the price table unexpanded. Falling through
     // to DEFAULT_PRICE would report $15 for this turn instead of $5.
     expect(computeInteractiveTurnStats(file, "opus")?.cost?.cost).toBeCloseTo(5, 5);
-    expect(computeInteractiveTurnStats(file, "sonnet")?.cost?.cost).toBeCloseTo(2, 5);
+    expect(computeInteractiveTurnStats(file, "sonnet")?.cost?.cost).toBeCloseTo(3, 5);
     expect(computeInteractiveTurnStats(file, "haiku")?.cost?.cost).toBeCloseTo(1, 5);
   });
 });
@@ -54,23 +54,23 @@ describe("computeInteractiveTurnStatsSinceAnchor — per-turn delta, not session
     // Turn 1: first usage line lands in the transcript.
     appendAssistantUsage(file, { input_tokens: 1_000_000, output_tokens: 0 });
     const turn1 = computeInteractiveTurnStatsSinceAnchor(file, "claude-sonnet-5", undefined);
-    expect(turn1?.cost).toEqual({ cost: 2, turns: 1 });
-    expect(turn1?.cumulative).toEqual({ cost: 2, turns: 1 });
+    expect(turn1?.cost).toEqual({ cost: 3, turns: 1 });
+    expect(turn1?.cumulative).toEqual({ cost: 3, turns: 1 });
 
     // Turn 2: more usage is appended to the SAME (session-cumulative) transcript.
-    // Without anchoring, computeInteractiveTurnStats would now read cost:4, turns:2
+    // Without anchoring, computeInteractiveTurnStats would now read cost:6, turns:2
     // for the whole file — the bug this guards against is reporting that running
     // total as if it were turn 2's own cost.
     appendAssistantUsage(file, { input_tokens: 1_000_000, output_tokens: 0 });
     const turn2 = computeInteractiveTurnStatsSinceAnchor(file, "claude-sonnet-5", turn1?.cumulative);
-    expect(turn2?.cost).toEqual({ cost: 2, turns: 1 }); // delta only, not the cumulative 4/2
-    expect(turn2?.cumulative).toEqual({ cost: 4, turns: 2 });
+    expect(turn2?.cost).toEqual({ cost: 3, turns: 1 }); // delta only, not the cumulative 6/2
+    expect(turn2?.cumulative).toEqual({ cost: 6, turns: 2 });
 
     // Turn 3: a bigger turn, anchored off turn 2's cumulative snapshot.
     appendAssistantUsage(file, { input_tokens: 2_000_000, output_tokens: 0 });
     const turn3 = computeInteractiveTurnStatsSinceAnchor(file, "claude-sonnet-5", turn2?.cumulative);
-    expect(turn3?.cost).toEqual({ cost: 4, turns: 1 });
-    expect(turn3?.cumulative).toEqual({ cost: 8, turns: 3 });
+    expect(turn3?.cost).toEqual({ cost: 6, turns: 1 });
+    expect(turn3?.cumulative).toEqual({ cost: 12, turns: 3 });
   });
 
   it("treats a missing anchor (first turn / unknown session) as a 0 baseline, so the delta equals the raw cumulative total", () => {
@@ -80,7 +80,7 @@ describe("computeInteractiveTurnStatsSinceAnchor — per-turn delta, not session
     appendAssistantUsage(file, { input_tokens: 1_000_000, output_tokens: 1_000_000 });
 
     const stats = computeInteractiveTurnStatsSinceAnchor(file, "claude-sonnet-5", undefined);
-    expect(stats?.cost).toEqual({ cost: 12, turns: 1 }); // $2 in + $10 out
+    expect(stats?.cost).toEqual({ cost: 18, turns: 1 }); // $3 in + $15 out
   });
 
   it("clamps to 0 instead of going negative when the anchor is stale/ahead of the transcript", () => {

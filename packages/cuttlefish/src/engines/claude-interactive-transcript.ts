@@ -16,7 +16,11 @@ const MODEL_PRICES: Record<string, { in: number; out: number }> = {
   "claude-opus-5": { in: 5, out: 25 },
   "claude-opus-4-8": { in: 5, out: 25 },
   "claude-opus-4-7": { in: 5, out: 25 },
-  "claude-sonnet-5": { in: 2, out: 10 },
+  // Sonnet 5's $2/$10 is introductory pricing through 2026-08-31, reverting to
+  // $3/$15. These numbers feed the execution cost caps, where under-reporting
+  // lets an over-budget turn through, so the standard rate is the safe choice
+  // rather than a rate that silently goes stale on 2026-09-01.
+  "claude-sonnet-5": { in: 3, out: 15 },
   "claude-sonnet-4-6": { in: 3, out: 15 },
   "claude-haiku-4-5": { in: 1, out: 5 },
   // Bare aliases are looked up verbatim: the shipped `cuttlefish setup`
@@ -24,7 +28,7 @@ const MODEL_PRICES: Record<string, { in: number; out: number }> = {
   // keeps it and the session's model string arrives here unexpanded. Without
   // these rows an alias session silently falls through to DEFAULT_PRICE.
   opus: { in: 5, out: 25 },
-  sonnet: { in: 2, out: 10 },
+  sonnet: { in: 3, out: 15 },
   haiku: { in: 1, out: 5 },
 };
 const DEFAULT_PRICE = { in: 15, out: 75 };
