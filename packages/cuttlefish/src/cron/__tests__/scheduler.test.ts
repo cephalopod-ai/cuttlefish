@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CronJob, CronRunEntry } from "../../shared/types.js";
 
 const appendRunLog = vi.hoisted(() => vi.fn());
 const runCronJob = vi.hoisted(() => vi.fn());
+const getSessionBySessionKey = vi.hoisted(() => vi.fn());
 
 vi.mock("../jobs.js", () => ({
   appendRunLog,
@@ -12,6 +13,10 @@ vi.mock("../jobs.js", () => ({
 
 vi.mock("../runner.js", () => ({
   runCronJob,
+}));
+
+vi.mock("../../sessions/registry.js", () => ({
+  getSessionBySessionKey,
 }));
 
 vi.mock("../../shared/logger.js", () => ({
@@ -48,6 +53,41 @@ describe("startCronJobRun", () => {
     vi.resetModules();
     appendRunLog.mockReset();
     runCronJob.mockReset();
+    getSessionBySessionKey.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("kills the wedged run's engine process when the watchdog fires, not just the overlap guard", async () => {
+    vi.useFakeTimers();
+    const { startCronJobRun, isCronJobRunning } = await import("../scheduler.js");
+
+    // The run never settles on its own — this simulates a hung PTY / stuck route.
+    runCronJob.mockReturnValueOnce(new Promise<CronRunEntry>(() => {}));
+
+    const kill = vi.fn();
+    const engine = { name: "claude", run: vi.fn(), kill, isAlive: vi.fn(), killAll: vi.fn(), killIdle: vi.fn() };
+    const sessionManager = { getEngine: vi.fn(() => engine) };
+    getSessionBySessionKey.mockReturnValue({ id: "session-1", engine: "claude", status: "running" });
+
+    const config = { cron: { maxRunMs: 1000 } } as any;
+    const result = startCronJobRun(makeJob(), sessionManager as any, config, new Map(), "scheduled");
+    expect(result.started).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(getSessionBySessionKey).toHaveBeenCalledWith(expect.stringContaining("cron:job-1:"));
+    expect(sessionManager.getEngine).toHaveBeenCalledWith("claude");
+    expect(kill).toHaveBeenCalledWith("session-1", expect.stringContaining("exceeded maxRunMs"));
+    expect(appendRunLog).toHaveBeenCalledWith("job-1", expect.objectContaining({
+      status: "timed_out",
+      error: expect.stringContaining("engine process killed"),
+    }));
+
+    // The overlap guard is also cleared so the schedule is not wedged.
+    expect(isCronJobRunning("job-1")).toBe(false);
   });
 
   it("logs skipped_overlap instead of starting a second run while one is in flight", async () => {

@@ -49,9 +49,19 @@ vi.mock("@slack/bolt", () => {
   return { App: FakeApp };
 });
 
+vi.mock("./format.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./format.js")>();
+  return { ...actual, downloadAttachment: vi.fn() };
+});
+
 import { SlackConnector } from "./index.js";
+import { downloadAttachment } from "./format.js";
 
 const config = { appToken: "xapp-fake", botToken: "xoxb-fake", allowFrom: ["U1"] };
+
+function makeFile(name: string) {
+  return { name, url_private: `https://files.slack.com/${name}`, mimetype: "image/png" };
+}
 
 describe("SlackConnector connection monitor (TMP-CUT-017)", () => {
   beforeEach(() => {
@@ -108,5 +118,58 @@ describe("SlackConnector connection monitor (TMP-CUT-017)", () => {
     const health = connector.getHealth();
     expect(health.status).toBe("stopped");
     expect(health.detail).toBeUndefined();
+  });
+});
+
+describe("SlackConnector attachment downloads", () => {
+  beforeEach(() => {
+    vi.mocked(downloadAttachment).mockReset();
+  });
+
+  it("downloads a message's attachments concurrently instead of one at a time", async () => {
+    const resolvers: Array<(path: string) => void> = [];
+    vi.mocked(downloadAttachment).mockImplementation(
+      () => new Promise((resolve) => resolvers.push(resolve)),
+    );
+
+    const connector = new SlackConnector(config) as any;
+    const files = [makeFile("a.png"), makeFile("b.png"), makeFile("c.png")];
+    const promise = connector.downloadEventAttachments(files, "xoxb-fake");
+
+    // A sequential for-await loop would only have called downloadAttachment
+    // once at this point, waiting on the first file before starting the next.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(downloadAttachment).toHaveBeenCalledTimes(3);
+
+    resolvers[0]("/tmp/a.png");
+    resolvers[1]("/tmp/b.png");
+    resolvers[2]("/tmp/c.png");
+
+    const attachments = await promise;
+    expect(attachments.map((a: { name: string }) => a.name)).toEqual(["a.png", "b.png", "c.png"]);
+  });
+
+  it("drops a failed download without failing the rest of the batch, preserving order", async () => {
+    vi.mocked(downloadAttachment).mockImplementation((url: string) =>
+      url.includes("b.png") ? Promise.reject(new Error("network error")) : Promise.resolve(`/tmp/${url.split("/").pop()}`),
+    );
+
+    const connector = new SlackConnector(config) as any;
+    const files = [makeFile("a.png"), makeFile("b.png"), makeFile("c.png")];
+    const attachments = await connector.downloadEventAttachments(files, "xoxb-fake");
+
+    expect(attachments.map((a: { name: string }) => a.name)).toEqual(["a.png", "c.png"]);
+  });
+
+  it("caps downloads at SLACK_MAX_ATTACHMENTS (10)", async () => {
+    vi.mocked(downloadAttachment).mockImplementation((url: string) => Promise.resolve(`/tmp/${url}`));
+
+    const connector = new SlackConnector(config) as any;
+    const files = Array.from({ length: 15 }, (_, i) => makeFile(`f${i}.png`));
+    const attachments = await connector.downloadEventAttachments(files, "xoxb-fake");
+
+    expect(downloadAttachment).toHaveBeenCalledTimes(10);
+    expect(attachments).toHaveLength(10);
   });
 });
