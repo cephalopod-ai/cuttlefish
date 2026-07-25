@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { Readable } from "node:stream";
 import type { ServerResponse } from "node:http";
-import yaml from "js-yaml";
+import * as yaml from "js-yaml";
 
 const testHome = withTempCuttlefishHome("cuttlefish-org-dept-rename-");
 let tmpHome: string;

@@ -12,7 +12,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import yaml from "js-yaml";
+import * as yaml from "js-yaml";
 import { ORG_CHANGES_DIR } from "../shared/paths.js";
 import { safeWriteJson } from "../shared/safe-write.js";
 import { logger } from "../shared/logger.js";

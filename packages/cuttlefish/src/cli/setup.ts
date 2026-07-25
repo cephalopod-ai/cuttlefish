@@ -4,7 +4,7 @@ import path from "node:path";
 import readline from "node:readline";
 import { execFile, execSync } from "node:child_process";
 import { promisify } from "node:util";
-import yaml from "js-yaml";
+import * as yaml from "js-yaml";
 import { isInstalled, resolveBin } from "../shared/resolve-bin.js";
 import { safeWriteFile } from "../shared/safe-write.js";
 import { buildEngineEnv } from "../shared/engine-env.js";

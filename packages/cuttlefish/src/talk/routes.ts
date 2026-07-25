@@ -13,7 +13,7 @@
  * the run loop in api.ts) and streamed as talk:audio over the WebSocket.
  */
 import fs from "node:fs";
-import yaml from "js-yaml";
+import * as yaml from "js-yaml";
 import type { IncomingMessage as HttpRequest, ServerResponse } from "node:http";
 import type { ApiContext } from "../gateway/api.js";
 import { principalBodySessionForbidden, type GatewayPrincipal } from "../gateway/auth.js";
