@@ -8,16 +8,16 @@ function cfg(): CuttlefishConfig {
     gateway: { port: 8888, host: "127.0.0.1" },
     engines: {
       default: "claude",
-      claude: { bin: "claude", model: "claude-opus-4-8" },
+      claude: { bin: "claude", model: "claude-opus-5" },
       codex: { bin: "codex", model: "gpt-5.4" },
       antigravity: { model: "gemini-3-flash-preview" },
       grok: { bin: "grok", model: "grok-build" },
     },
     models: {
       claude: {
-        default: "claude-opus-4-8",
+        default: "claude-opus-5",
         models: [
-          { id: "claude-opus-4-8", label: "Opus 4.8", supportsEffort: true, effortLevels: ["low", "medium", "high"] },
+          { id: "claude-opus-5", label: "Opus 5", supportsEffort: true, effortLevels: ["low", "medium", "high"] },
           { id: "claude-sonnet-5", label: "Sonnet 5", supportsEffort: true, effortLevels: ["low", "medium", "high"] },
         ],
       },
@@ -71,7 +71,7 @@ beforeEach(() => invalidateModelRegistry());
 describe("model alias resolution against the shipped registry (opus/haiku 400 regression)", () => {
   it("accepts model 'opus' when the registry registers it under the literal id 'opus'", () => {
     const r = validateNewSessionSelection(shippedCfg(), { engine: "claude", model: "opus" });
-    // Must NOT be rewritten to claude-opus-4-8 (which is not a registered id here).
+    // Must NOT be rewritten to claude-opus-5 (which is not a registered id here).
     expect(r).toMatchObject({ ok: true, engine: "claude", model: "opus" });
   });
 
@@ -85,9 +85,9 @@ describe("model alias resolution against the shipped registry (opus/haiku 400 re
     expect(r).toMatchObject({ ok: true, model: "claude-haiku-4-5" });
   });
 
-  it("still expands 'opus' to claude-opus-4-8 when THAT is the registered id", () => {
+  it("still expands 'opus' to claude-opus-5 when THAT is the registered id", () => {
     const r = validateNewSessionSelection(cfg(), { engine: "claude", model: "opus" });
-    expect(r).toMatchObject({ ok: true, model: "claude-opus-4-8" });
+    expect(r).toMatchObject({ ok: true, model: "claude-opus-5" });
   });
 
   it("patches model to 'opus' against the shipped registry without rewriting it", () => {
@@ -134,7 +134,7 @@ describe("validateNewSessionSelection", () => {
     expect(r).toEqual({
       ok: true,
       engine: "claude",
-      model: "claude-opus-4-8",
+      model: "claude-opus-5",
       effortLevel: "medium",
     });
   });

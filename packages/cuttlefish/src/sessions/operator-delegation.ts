@@ -16,6 +16,7 @@ const PROGRAM_MANAGER_NAME = "program-manager";
 const ALLOWED_MODELS = new Set([
   "codex::gpt-5.5",
   "codex::gpt-5.6-sol",
+  "claude::claude-opus-5",
   "claude::claude-opus-4-8",
   "claude::opus",
   "claude::claude-fable-5",

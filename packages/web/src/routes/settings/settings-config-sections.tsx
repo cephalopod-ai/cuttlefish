@@ -421,6 +421,7 @@ export function EngineConfigurationSection({
           onChange={(v) => updateConfig(["engines", "claude", "model"], v)}
           options={modelOptions("claude", [
             { value: "claude-fable-5", label: "Fable 5" },
+            { value: "claude-opus-5", label: "Opus 5" },
             { value: "opus", label: "Opus" },
             { value: "sonnet", label: "Sonnet" },
             { value: "haiku", label: "Haiku" },

@@ -56,6 +56,7 @@ const FEATURES = [
 /** Plain-language eyebrow labels shown only when the default engine is Claude
  *  and all three known model IDs are present in the registry. */
 const CLAUDE_EYEBROW: Record<string, string> = {
+  "claude-opus-5":     "Smartest",
   opus:                "Smartest",
   "claude-sonnet-5":   "Balanced",
   "claude-haiku-4-5":  "Fastest",
