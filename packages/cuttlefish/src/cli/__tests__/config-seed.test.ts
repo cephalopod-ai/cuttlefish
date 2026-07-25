@@ -33,7 +33,7 @@ describe("fresh-install: talk seeding + config guidance", () => {
     const setup = readFileSync(SETUP, "utf-8");
     expect(setup).toMatch(/claude:\s+bin: claude\s+model: claude-fable-5\s+effortLevel: medium/s);
     expect(setup).toMatch(/claude:\s+default: claude-fable-5/s);
-    expect(setup).toMatch(/id: claude-opus-5, label: "Opus 5".*effortLevels: \[low, medium, high, max\]/);
+    expect(setup).toMatch(/id: claude-opus-5, label: "Opus 5".*effortLevels: \[low, medium, high, xhigh, max\]/);
     expect(setup).toMatch(/globalChain:\s+- \{ engine: claude, model: claude-opus-5, effortLevel: max/s);
   });
 
