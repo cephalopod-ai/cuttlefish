@@ -2,6 +2,48 @@
 
 ## [Unreleased]
 
+## [0.23.6] - 2026-07-25
+
+### Bug Fixes
+- Fixed gateway session-query and collaboration routes, plus employee
+  create/editor forms, cron, and settings pages.
+- Cron watchdog now interrupts the run's engine when `maxRunMs` fires,
+  instead of only clearing the overlap guard and leaving the hung
+  PTY/route promise running indefinitely.
+- `js-yaml` 5.x dropped its CommonJS default export; switched all 16
+  call sites in this repo from a default import to a namespace import
+  (`import * as yaml from "js-yaml"`) so `yaml.load`/`yaml.dump` keep
+  working (org/employee YAML parsing, config read/write, orchestration
+  config were all silently broken by the default-import pattern).
+- Claude-interactive's late-Stop-recovery cancellation now logs when it
+  drops a still-armed listener from a previous turn instead of silently
+  discarding it; named the previously-bare `1000`ms transcript mtime
+  staleness tolerance.
+
+### Performance
+- Slack attachment downloads for a single message now run concurrently
+  instead of sequentially, reducing session-creation latency on
+  high-latency networks.
+
+### Security
+- Pinned transitive `protobufjs` (via `@whiskeysockets/baileys` >
+  `libsignal`) to >=7.6.5, closing a moderate denial-of-service advisory
+  (GHSA-j3f2-48v5-ccww) in `.proto` option parsing.
+
+### Dependencies
+- `js-yaml` 4.3.0 -> 5.2.2, `better-sqlite3` 12.x -> 13.0.1, `vite` 7 ->
+  8, `lucide-react` 0.577.0 -> 1.26.0, `react`/`react-dom` 19.1 -> 19.2,
+  `radix-ui` 1.6.2 -> 1.6.7, `tailwindcss`/`postcss`/`@tailwindcss/postcss`
+  patch bumps, `@tanstack/react-virtual`, `imapflow`, `ws`,
+  `@playwright/test`, `eslint`, `turbo`, `typescript-eslint`,
+  `@next/eslint-plugin-next`, `actions/checkout` (CI).
+
+### Tests
+- Added an end-to-end regression proving the persistent scheduler's
+  multi-writer read-modify-write safety under `BEGIN IMMEDIATE`
+  transactions (verified-not-a-defect; documented the existing
+  invariant rather than changing behavior).
+
 ## [0.23.5] - 2026-07-22
 
 Corrected follow-up release after the `v0.23.4` GitHub workflow reached npm
