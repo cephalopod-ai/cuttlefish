@@ -40,7 +40,7 @@
     "busboy": "^1.6.0",
     "chokidar": "^5.0.0",
     "commander": "^15.0.0",
-    "imapflow": "^1.4.7",
+    "imapflow": "^1.5.0",
     "js-yaml": "^5.2.2",
     "mailparser": "^3.9.14",
     "node-cron": "^4.6.0",
@@ -48,7 +48,7 @@
     "qrcode": "^1.5.4",
     "twilio": "6.0.2",
     "uuid": "^14.0.1",
-    "ws": "^8.18.0",
+    "ws": "^8.21.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
