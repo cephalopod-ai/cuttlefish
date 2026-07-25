@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { InteractiveClaudeEngine } from "../claude-interactive.js";
 import { PtyLifecycleManager } from "../pty-lifecycle.js";
 import { HookRegistry } from "../../gateway/hook-registry.js";
+import { logger } from "../../shared/logger.js";
 
 describe("InteractiveClaudeEngine — late-recovery supersede", () => {
   let registry: HookRegistry;
@@ -62,6 +63,21 @@ describe("InteractiveClaudeEngine — late-recovery supersede", () => {
     engine.cancelLateRecovery("cuttlefish-1");
     registry.deliver("cuttlefish-1", { hook_event_name: "Stop", last_assistant_message: "too late" });
     expect(recovered).toEqual([]);
+  });
+
+  it("logs when a reason is given and a pending listener is actually dropped", () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    engine.armLateRecovery("cuttlefish-1", { prompt: "x", cwd: "/tmp", onLateRecovery: () => {} });
+    engine.cancelLateRecovery("cuttlefish-1", "a new turn started before the previous turn's delayed Stop hook arrived");
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("dropped a pending late Stop recovery listener for cuttlefish-1"));
+    warn.mockRestore();
+  });
+
+  it("does not log when cancel is called with a reason but nothing was armed", () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    engine.cancelLateRecovery("cuttlefish-1", "no-op cancel");
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it("expires after the recovery window", () => {

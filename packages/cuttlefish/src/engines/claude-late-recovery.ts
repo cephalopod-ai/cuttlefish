@@ -32,11 +32,17 @@ export class ClaudeLateRecovery {
     });
   }
 
-  cancel(cuttlefishSessionId: string): void {
+  /** `reason`, when given, is logged only if a listener was actually armed —
+   *  callers that always call cancel() defensively (e.g. at turn start) should
+   *  pass one so a real drop of a pending late-Stop recovery is not silent. */
+  cancel(cuttlefishSessionId: string, reason?: string): void {
     const lr = this.lateRecovery.get(cuttlefishSessionId);
     if (!lr) return;
     clearTimeout(lr.timer);
     this.lateRecovery.delete(cuttlefishSessionId);
     this.hookRegistry.unregister(cuttlefishSessionId);
+    if (reason) {
+      logger.warn(`InteractiveClaudeEngine: dropped a pending late Stop recovery listener for ${cuttlefishSessionId} — ${reason}`);
+    }
   }
 }

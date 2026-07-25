@@ -93,6 +93,16 @@ export class PersistentMatrixScheduler {
     return this.refreshScheduler().resolveLease(selector);
   }
 
+  // Residual-risk note (2026-07-23 playtest): this deliberately never mutates
+  // `this.scheduler` directly, and never bases `before`/the delta on it — both
+  // come from hydrateScheduler() called AFTER transactionImmediate's `BEGIN
+  // IMMEDIATE` has already taken the write lock. Any other writer on this DB
+  // file (another PersistentMatrixScheduler instance, another process) either
+  // committed and is fully reflected in this read, or is blocked until this
+  // transaction ends — there is no window in which `before` can be stale
+  // relative to a concurrent commit. See
+  // persistent-scheduler.test.ts "does not lose one writer's mutation to
+  // another writer's snapshot-delta commit" for the end-to-end proof.
   private commitMutation<T>(mutate: (scheduler: MatrixScheduler) => T): T {
     try {
       return this.store.transactionImmediate(() => {
