@@ -29,7 +29,7 @@
 ### Default COO execution profile
 
 - The virtual portal COO uses Claude Fable 5 at Medium effort.
-- The default model-fallback chain continues on Claude Opus 4.8 at Max effort
+- The default model-fallback chain continues on Claude Opus 5 at Max effort
   when Fable 5 cannot continue. An employee's own fallback policy remains the
   first choice for that employee.
 
@@ -262,8 +262,8 @@
 ### Session model alias expansion
 - `packages/cuttlefish/src/sessions/session-patch.ts`
 - The session create and session-patch API now accept short Claude model aliases:
-  `sonnet` → `claude-sonnet-4-6`, `opus` → `claude-opus-4-8`,
-  `haiku` → `claude-haiku-4-5-20251001`. Aliases are expanded before registry
+  `sonnet` → `claude-sonnet-5`, `opus` → `claude-opus-5`,
+  `haiku` → `claude-haiku-4-5`. Aliases are expanded before registry
   validation so callers using convenience names receive a valid session instead of
   an "unknown model" rejection.
 - Only the `claude` engine is affected; other engines pass the model string through unchanged.
@@ -509,7 +509,7 @@
   is expired in the dispatch `finally` path. Agent messages, quoted directives,
   other roles, stale/replayed tokens, and model changes fail authorization.
 - Delegated human authority is restricted to `codex/gpt-5.5`,
-  `codex/gpt-5.6-sol`, Claude Opus 4.8 (`claude-opus-4-8` or `opus`), and
+  `codex/gpt-5.6-sol`, Claude Opus 5 (`claude-opus-5`, `claude-opus-4-8`, or `opus`), and
   Claude Fable (`claude-fable-5`). Decisions record an actor such as
   `operator-delegate:cuttlefish-coo:<sessionId>` or
   `operator-delegate:program-manager:<sessionId>`.

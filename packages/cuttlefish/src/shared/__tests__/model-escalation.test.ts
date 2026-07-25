@@ -3,6 +3,26 @@ import { resolveModelEscalation, rungKey, DEFAULT_MODEL_LADDER } from "../model-
 
 const allAvailable = () => true;
 
+describe("resolveModelEscalation — a rung the install cannot run is skipped", () => {
+  it("falls through the pinned claude-opus-5 rung to the opus alias when only the alias is registered", () => {
+    // Mirrors an upgraded install whose Claude registry still has the old
+    // shipped shape: the literal `opus` id, but not the pinned `claude-opus-5`.
+    // Escalating into tier 2 must not hand the CLI a --model it never
+    // advertised; it should keep walking the tier to a rung that works.
+    const registered = new Set(["opus", "gpt-5.5"]);
+    const got = resolveModelEscalation({
+      fromEngine: "claude",
+      fromModel: "claude-sonnet-5",
+      triedRungs: new Set([
+        rungKey("claude", "claude-sonnet-5"),
+        rungKey("codex", "gpt-5.5"),
+      ]),
+      isAvailable: (_engine, model) => registered.has(model),
+    });
+    expect(got).toEqual({ engine: "claude", model: "opus", via: "higher" });
+  });
+});
+
 describe("resolveModelEscalation (default ladder)", () => {
   it("user example: a small model (haiku) climbs to the mid tier (gpt-5.4 first)", () => {
     const got = resolveModelEscalation({

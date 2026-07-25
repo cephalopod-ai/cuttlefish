@@ -29,6 +29,20 @@ describe("computeInteractiveTurnStats — cumulative totals for the whole transc
     expect(stats?.cost?.turns).toBe(2);
     expect(stats?.cost?.cost).toBeCloseTo(6, 5); // 2 * ($3/M input tokens)
   });
+
+  it("prices the bare `opus` alias as the current Opus tier, not the unknown-model default", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cuttlefish-stats-alias-"));
+    const file = path.join(tmp, "sess.jsonl");
+    fs.writeFileSync(file, "");
+    appendAssistantUsage(file, { input_tokens: 1_000_000, output_tokens: 0 });
+
+    // The shipped setup template registers `opus` as a literal registry id, so
+    // the session's model reaches the price table unexpanded. Falling through
+    // to DEFAULT_PRICE would report $15 for this turn instead of $5.
+    expect(computeInteractiveTurnStats(file, "opus")?.cost?.cost).toBeCloseTo(5, 5);
+    expect(computeInteractiveTurnStats(file, "sonnet")?.cost?.cost).toBeCloseTo(3, 5);
+    expect(computeInteractiveTurnStats(file, "haiku")?.cost?.cost).toBeCloseTo(1, 5);
+  });
 });
 
 describe("computeInteractiveTurnStatsSinceAnchor — per-turn delta, not session-cumulative total", () => {

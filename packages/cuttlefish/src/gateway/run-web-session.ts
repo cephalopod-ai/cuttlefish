@@ -5,7 +5,7 @@ import { isInterruptibleEngine } from "../shared/types.js";
 import { rungKey } from "../shared/model-escalation.js";
 import { resolveModelFallback } from "../shared/model-fallback.js";
 import { recordEngineRateLimit } from "../shared/usage-status.js";
-import { effortLevelsForModel, engineAvailable, isKnownEngine, engineUnavailableMessage } from "../shared/models.js";
+import { effortLevelsForModel, engineAvailable, isKnownEngine, engineUnavailableMessage, registryAdvertisesModel } from "../shared/models.js";
 import { createApproval } from "./approvals.js";
 import { isAutonomousVerdictSession } from "./autonomous-mode.js";
 import { buildContext } from "../sessions/context.js";
@@ -303,7 +303,24 @@ export async function runWebSession(
         triedRungs: tried,
         ladder: customLadder,
         excludeEngines: trigger === "usage" ? new Set([live.engine]) : undefined,
-        isAvailable: (e) => isKnownEngine(e) && !!context.sessionManager.getEngine(e) && engineAvailable(config, e),
+        // Registry-aware where the registry is authoritative, engine-only where
+        // it is not. A ladder rung names a specific model id, and checking only
+        // the engine let escalation hand the CLI a `--model` it never advertised
+        // (e.g. a pinned `claude-opus-5` rung on an install whose Claude
+        // registry still only carries the `opus` alias), turning an automatic
+        // fallback into a hard failure.
+        //
+        // The gate applies ONLY when config declares a `models:` block for the
+        // engine. Without one, `getModelRegistry` back-fills a single synthesized
+        // entry from `engines.<name>.model` — that is a default, not a statement
+        // of what the engine can run, and enforcing it would filter out every
+        // rung except the configured default and strand configs that relied on
+        // engine-only fallback.
+        isAvailable: (e, model) =>
+          isKnownEngine(e) &&
+          !!context.sessionManager.getEngine(e) &&
+          engineAvailable(config, e) &&
+          registryAdvertisesModel(config, e, model),
       });
       if (!fallbackDecision.target) return false;
       const candidate = fallbackDecision.target;

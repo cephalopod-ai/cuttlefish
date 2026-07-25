@@ -174,7 +174,7 @@ describe("resolveOrgHierarchy", () => {
       model: "claude-fable-5",
       effortLevel: "medium",
       modelPolicy: {
-        fallback_chain: [{ engine: "claude", model: "opus", effortLevel: "max" }],
+        fallback_chain: [{ engine: "claude", model: "claude-opus-5", effortLevel: "max" }],
       },
     });
     expect(coo).toMatchObject({
