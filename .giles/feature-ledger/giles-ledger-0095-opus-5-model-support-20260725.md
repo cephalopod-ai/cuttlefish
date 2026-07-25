@@ -28,7 +28,7 @@ also missing from the price table (it silently fell through to the default
 - `packages/cuttlefish/src/cli/setup.ts` — seeded `claude-opus-5` registry entry; `opus` relabelled; global fallback chain pins `claude-opus-5`
 - `packages/cuttlefish/src/gateway/org-hierarchy.ts` — portal COO fallback pins `claude-opus-5`
 - `packages/cuttlefish/src/shared/model-escalation.ts` — tier 2 gains `claude-opus-5`
-- `packages/cuttlefish/src/engines/claude-interactive-transcript.ts` — prices for `claude-opus-5` and `claude-opus-4-8`; corrected the whole current Opus tier (5/4.8/4.7) from 15/75 to the actual 5/25 per Mtok
+- `packages/cuttlefish/src/engines/claude-interactive-transcript.ts` — prices for `claude-opus-5` and `claude-opus-4-8`; corrected the current Opus tier (5/4.8/4.7) from 15/75 to 5/25 and Sonnet 5 from 3/15 to 2/10; added the bare `opus`/`sonnet`/`haiku` alias rows, which previously fell through to the 15/75 unknown-model default
 - `packages/web/src/routes/settings/settings-config-sections.tsx` — "Opus 5" option
 - `packages/web/src/components/onboarding-wizard.tsx` — eyebrow label for `claude-opus-5`
 - tests: `sessions/__tests__/session-patch.test.ts`, `sessions/__tests__/operator-delegation.test.ts`, `cli/__tests__/config-seed.test.ts`, `gateway/__tests__/org-hierarchy.test.ts`
@@ -40,7 +40,7 @@ also missing from the price table (it silently fell through to the default
 - `pnpm lint` — 3/3 tasks pass (`--max-warnings=0`)
 
 **remaining open items:**
-- `claude-sonnet-5` is listed at 3/15 in the transcript price table, but gosling's bundled models.dev snapshot has the Sonnet 5 tier at 2/10. Left unchanged — it predates this change and is a different tier — but it is very likely stale in the same way the Opus rows were.
+- The seeded `opus` registry row and the pinned `claude-opus-5` row now coexist. Anthropic documents the `opus` alias as tracking the newest Opus, so the two are equivalent today; they diverge only if a deployment pins an older CLI.
 - The seeded registry keeps both `claude-opus-5` and the `opus` alias entry. A deployment that wants only the pinned id can drop the alias row from its `config.yaml`; no code change is needed.
 - `docs/plans/**` and `docs/test_scenarios/**` still narrate "Opus 4.8" in historical write-ups; left as-is because they record what shipped at the time.
 

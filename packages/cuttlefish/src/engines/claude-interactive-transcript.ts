@@ -16,9 +16,16 @@ const MODEL_PRICES: Record<string, { in: number; out: number }> = {
   "claude-opus-5": { in: 5, out: 25 },
   "claude-opus-4-8": { in: 5, out: 25 },
   "claude-opus-4-7": { in: 5, out: 25 },
-  "claude-sonnet-5": { in: 3, out: 15 },
+  "claude-sonnet-5": { in: 2, out: 10 },
   "claude-sonnet-4-6": { in: 3, out: 15 },
   "claude-haiku-4-5": { in: 1, out: 5 },
+  // Bare aliases are looked up verbatim: the shipped `cuttlefish setup`
+  // template registers `opus` as a literal registry id, so `resolveModelAlias`
+  // keeps it and the session's model string arrives here unexpanded. Without
+  // these rows an alias session silently falls through to DEFAULT_PRICE.
+  opus: { in: 5, out: 25 },
+  sonnet: { in: 2, out: 10 },
+  haiku: { in: 1, out: 5 },
 };
 const DEFAULT_PRICE = { in: 15, out: 75 };
 
