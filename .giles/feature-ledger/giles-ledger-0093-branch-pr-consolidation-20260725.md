@@ -52,6 +52,14 @@
   standalone. Each merged PR's own CI (build, e2e, typecheck, unit-tests)
   was confirmed green before merge; only Gitleaks failed, uniformly, for a
   documented pre-existing reason.
+- **Correction (see [[giles-ledger-0094]]):** #53 was NOT cleanly merged as
+  described above. The "push merge-commit back to the PR branch to force
+  recompute" workaround caused Dependabot to auto-close #53 as abandoned
+  (it treats non-Dependabot commits on its branches that way). #53's
+  dependency bumps were instead recovered via a fresh direct commit to
+  `main` — see the follow-up ledger entry for details. Left in place
+  uncorrected above (rather than rewritten) per the ledger's
+  no-overwrite rule.
 - **Remaining open items:** `GITLEAKS_LICENSE` GitHub secret is missing at
   the org level (`cephalopod-ai`), so the Gitleaks Scan check will continue
   to fail on every PR/push until an operator with org admin access adds it
