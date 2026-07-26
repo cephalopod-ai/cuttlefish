@@ -295,7 +295,8 @@ models:
     effortMechanism: claude-flag
     models:
       - { id: claude-fable-5, label: "Fable 5", supportsEffort: true, effortLevels: [low, medium, high], contextWindow: 1000000 }
-      - { id: opus, label: "Opus 4.8", supportsEffort: true, effortLevels: [low, medium, high, max], contextWindow: 1000000 }
+      - { id: claude-opus-5, label: "Opus 5", supportsEffort: true, effortLevels: [low, medium, high, xhigh, max], contextWindow: 1000000 }
+      - { id: opus, label: "Opus (latest alias)", supportsEffort: true, effortLevels: [low, medium, high, xhigh, max], contextWindow: 1000000 }
       - { id: claude-sonnet-5, label: "Sonnet 5", supportsEffort: true, effortLevels: [low, medium, high], contextWindow: 1000000 }
       - { id: claude-haiku-4-5, label: "Haiku 4.5", supportsEffort: true, effortLevels: [low, medium, high], contextWindow: 200000 }
   codex:
@@ -344,7 +345,7 @@ modelFallback:
   enabled: true
   defaultMode: auto
   globalChain:
-    - { engine: claude, model: opus, effortLevel: max, reason: "COO fallback when Fable 5 cannot continue" }
+    - { engine: claude, model: claude-opus-5, effortLevel: max, reason: "COO fallback when Fable 5 cannot continue" }
 connectors: {}
 portal: {}
 

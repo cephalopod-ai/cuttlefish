@@ -64,6 +64,7 @@ export const DEFAULT_MODEL_LADDER: ModelLadder = [
   // Tier 2 — large / most capable
   [
     { engine: "codex", model: "gpt-5.5" },
+    { engine: "claude", model: "claude-opus-5" },
     { engine: "claude", model: "opus" },
     { engine: "antigravity", model: "Gemini 3.1 Pro (High)" },
   ],

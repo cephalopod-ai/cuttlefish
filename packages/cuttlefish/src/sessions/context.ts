@@ -7,6 +7,7 @@ import { INBOUND_MESSAGE_SAFETY_CONTEXT, isUntrustedSource } from "../sessions/u
 import { buildManagerDelegationDiscipline, resolveSupervisedNodes } from "./manager-delegation.js";
 import { describeGrokModelForOperator } from "../shared/grok-models.js";
 import type { OperatorDelegationScope } from "./operator-delegation.js";
+import { HUMAN_DELEGATION_MODELS_LABEL } from "./operator-delegation.js";
 
 /**
  * Token budget strategy:
@@ -498,7 +499,7 @@ function buildOperatorDelegationContext(scopes: OperatorDelegationScope[], gatew
   const lines = [
     `## Human-delegated authority`,
     `The direct human operator explicitly delegated these scopes for this turn only: **${scopeText}**. Act within the task and constraints in that same message; do not generalize this grant to another turn, session, employee, or objective.`,
-    `This grant is valid only because this session is Cuttlefish (COO) or Program Manager on an allowed high-capability model. A model change outside GPT-5.5, GPT-5.6-sol, Opus 4.8, or Fable invalidates it.`,
+    `This grant is valid only because this session is Cuttlefish (COO) or Program Manager on an allowed high-capability model. A model change outside ${HUMAN_DELEGATION_MODELS_LABEL} invalidates it.`,
   ];
   if (scopes.includes("approve") || scopes.includes("decide")) {
     lines.push(`You may inspect and resolve approvals/checkpoints through \`${gatewayUrl}/api/approvals\` and \`${gatewayUrl}/api/checkpoints\` using the injected session token. The gateway records you as an operator delegate.`);
