@@ -218,3 +218,18 @@ scenario (or an explicit not-applicable/blocked note):
 - [ ] Operator-attention and delegated-job terminal state visible in both API and UI
 - [ ] Same-target authority collision freezes before side effects and resolves to one accountable winner
 - [ ] Agent-to-human FYI/reply/approval indicators remain visible without requiring a Kanban board
+
+## Run history and qualified runners
+
+*(Section appended 2026-07-25 by the replay workflow's library-adoption step;
+cards and all sections above are untouched. Replay reports are append-only
+under [`runs/`](runs/).)*
+
+A runner (model + harness) is **qualified** to be trusted with deliverables
+from this repo only after completing a full-library pass on the current
+library with every card Pass or explained, and after at least one other
+distinct runner has completed the same pass.
+
+| Runner (model + harness) | Scope completed | Run report | Status |
+|---|---|---|---|
+| Claude Fable 5 + Claude Code 2.1.198 | Smoke (01, 02, 10 + riders) | `runs/2026-07-25-fable5-smoke.md` | Pending — smoke only; full pass + second runner required |
