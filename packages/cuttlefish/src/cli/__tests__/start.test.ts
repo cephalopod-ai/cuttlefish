@@ -11,6 +11,8 @@ const lifecycle = vi.hoisted(() => ({
   restartDetached: vi.fn(() => true),
   startForeground: vi.fn(),
   startDaemon: vi.fn(),
+  waitForPortListening: vi.fn(() => Promise.resolve(true)),
+  readDaemonStartupLogTail: vi.fn((): string | null => null),
 }));
 const config = vi.hoisted(() => ({
   loadConfig: vi.fn(() => ({ gateway: { host: "127.0.0.1", port: 8888 }, engines: { default: "claude" } })),
@@ -61,6 +63,50 @@ describe("runStart", () => {
     expect(instances.ensureDefaultInstance).toHaveBeenCalledWith(8891);
     expect(lifecycle.startDaemon).toHaveBeenCalledTimes(1);
     expect(lifecycle.restartDetached).not.toHaveBeenCalled();
+  });
+
+  it("reports failure instead of claiming success when the daemon never becomes ready (REL-001)", async () => {
+    lifecycle.getStatus.mockReturnValueOnce({ running: false, pid: 0 });
+    lifecycle.waitForPortListening.mockResolvedValueOnce(false);
+    lifecycle.readDaemonStartupLogTail.mockReturnValueOnce("Error: EADDRINUSE :8888");
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    try {
+      await runStart({ daemon: true });
+
+      expect(lifecycle.startDaemon).toHaveBeenCalledTimes(1);
+      expect(log).not.toHaveBeenCalledWith("Gateway started in background.");
+      expect(error).toHaveBeenCalledWith(expect.stringContaining("did not become ready"));
+      expect(error).toHaveBeenCalledWith(expect.stringContaining("EADDRINUSE"));
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = previousExitCode;
+      log.mockRestore();
+      error.mockRestore();
+    }
+  });
+
+  it("reports a clean error instead of a false success when startDaemon itself throws (REL-002)", async () => {
+    lifecycle.getStatus.mockReturnValueOnce({ running: false, pid: 0 });
+    lifecycle.startDaemon.mockImplementationOnce(() => {
+      throw new Error("Could not find Node.js >= 24");
+    });
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    try {
+      await runStart({ daemon: true });
+
+      expect(log).not.toHaveBeenCalledWith("Gateway started in background.");
+      expect(error).toHaveBeenCalledWith(expect.stringContaining("Could not find Node.js >= 24"));
+      expect(lifecycle.waitForPortListening).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = previousExitCode;
+      log.mockRestore();
+      error.mockRestore();
+    }
   });
 
   it("prints a clean config error instead of letting Commander emit a stack trace", async () => {

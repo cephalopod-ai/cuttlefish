@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { safeWriteFile } from "../shared/safe-write.js";
-import { PID_FILE, CUTTLEFISH_HOME } from "../shared/paths.js";
+import { PID_FILE, CUTTLEFISH_HOME, LOGS_DIR } from "../shared/paths.js";
 import { logger } from "../shared/logger.js";
 import type { CuttlefishConfig } from "../shared/types.js";
 import { startGateway } from "./server.js";
@@ -52,11 +52,40 @@ function resolveNodeExecutable(): string {
     }
   }
 
-  logger.error(
-    `Could not find Node.js >= ${MIN_NODE_MAJOR} — daemon may crash (current execPath is Node ${nodeMajor(current)}). ` +
+  // REL-002: refuse to spawn a daemon that is expected to crash. This used to
+  // log and fall back to `current` anyway; because the daemon is spawned
+  // detached with stdio ignored, that crash was then completely invisible to
+  // the operator (compounding REL-001). Throwing here means startDaemon()
+  // never spawns the child, and the CLI can report the real cause instead of
+  // a false "started in background".
+  throw new Error(
+    `Could not find Node.js >= ${MIN_NODE_MAJOR} (current execPath is Node ${nodeMajor(current)}). ` +
     `Install Node.js 24+ from https://nodejs.org or set CUTTLEFISH_NODE_PATH.`,
   );
-  return current;
+}
+
+/** Where startDaemon() redirects the detached child's stdout/stderr, since
+ *  the daemon's own file logger (configureLogger, in server.ts) isn't wired
+ *  up until well into startup — anything that goes wrong before that point
+ *  (lock acquisition, config load, PTY module load) would otherwise vanish
+ *  into the ignored stdio of a detached process. Overwritten (not appended)
+ *  on every start so it only ever holds the most recent attempt — see REL-001.
+ */
+const DAEMON_STARTUP_LOG_FILE = path.join(LOGS_DIR, "daemon-startup.log");
+
+/** Best-effort tail of the last daemon startup attempt's captured output, for
+ *  the CLI to show the operator when startDaemon() spawned successfully but
+ *  the gateway never came up (see REL-001). Returns null if nothing was
+ *  captured. */
+export function readDaemonStartupLogTail(maxBytes = 4000): string | null {
+  try {
+    const buf = fs.readFileSync(DAEMON_STARTUP_LOG_FILE);
+    if (buf.length === 0) return null;
+    const tail = buf.length > maxBytes ? buf.subarray(buf.length - maxBytes) : buf;
+    return tail.toString("utf8").trim() || null;
+  } catch {
+    return null;
+  }
 }
 
 function pidIsAlive(pid: number): boolean {
@@ -229,11 +258,22 @@ export function startDaemon(config: CuttlefishConfig): void {
   ];
   const entryScript = candidateEntryScripts.find((p) => fs.existsSync(p)) ?? candidateEntryScripts[0];
 
-  const child = spawn(resolveNodeExecutable(), [entryScript], {
-    detached: true,
-    stdio: "ignore",
-    env: { ...process.env, CUTTLEFISH_HOME },
-  });
+  const nodeExecutable = resolveNodeExecutable();
+  fs.mkdirSync(path.dirname(DAEMON_STARTUP_LOG_FILE), { recursive: true });
+  const startupLogFd = fs.openSync(DAEMON_STARTUP_LOG_FILE, "w");
+  let child;
+  try {
+    child = spawn(nodeExecutable, [entryScript], {
+      detached: true,
+      stdio: ["ignore", startupLogFd, startupLogFd],
+      env: { ...process.env, CUTTLEFISH_HOME },
+    });
+  } finally {
+    // spawn() dup's the fd for the child; the parent's copy must be closed
+    // either way or it leaks for the life of this (possibly long-lived,
+    // foreground-invoking) process.
+    fs.closeSync(startupLogFd);
+  }
 
   if (child.pid) {
     writeGatewayPid(child.pid);
