@@ -3,7 +3,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { CUTTLEFISH_HOME } from "../shared/paths.js";
 import { loadConfig } from "../shared/config.js";
-import { startForeground, startDaemon, getStatus, restartDetached } from "../gateway/lifecycle.js";
+import { startForeground, startDaemon, getStatus, restartDetached, waitForPortListening, readDaemonStartupLogTail } from "../gateway/lifecycle.js";
 import { compareSemver, getPackageVersion, getInstanceVersion } from "../shared/version.js";
 import { ensureDefaultInstance } from "./instances.js";
 
@@ -98,7 +98,27 @@ export async function runStart(opts: { daemon?: boolean; port?: number }): Promi
   }
 
   if (opts.daemon) {
-    startDaemon(config);
+    // REL-001/REL-002: startDaemon() spawning successfully only means the
+    // Node process launched, not that the gateway came up — a bad lock,
+    // config, or missing Node 24+ used to fail silently behind stdio:"ignore"
+    // while this printed success unconditionally. Mirror the same
+    // wait-then-verify restart-entry.ts already does for the restart path.
+    try {
+      startDaemon(config);
+    } catch (err) {
+      console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+      process.exitCode = 1;
+      return;
+    }
+    const connectHost = !config.gateway.host || config.gateway.host === "0.0.0.0" ? "127.0.0.1" : config.gateway.host;
+    const ready = await waitForPortListening(config.gateway.port, connectHost);
+    if (!ready) {
+      console.error(`Error: gateway did not become ready on ${connectHost}:${config.gateway.port} within the timeout.`);
+      const startupLog = readDaemonStartupLogTail();
+      if (startupLog) console.error(`\nLast daemon startup output:\n${startupLog}`);
+      process.exitCode = 1;
+      return;
+    }
     console.log("Gateway started in background.");
   } else {
     const url = `http://${config.gateway.host}:${config.gateway.port}`;

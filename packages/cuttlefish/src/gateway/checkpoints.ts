@@ -8,7 +8,7 @@ import type {
   Session,
 } from "../shared/types.js";
 import { ApprovalStateError, createApproval, getApproval, listApprovals, resolveApproval, resolveApprovalAsAutonomous } from "./approvals.js";
-import { getSession, insertMessage, patchSessionTransportMeta, updateSession } from "../sessions/registry.js";
+import { getSession, initDb, insertMessage, patchSessionTransportMeta, updateSession } from "../sessions/registry.js";
 import type { ApiContext } from "./api/context.js";
 import { dispatchWebSessionRun } from "./api/session-dispatch.js";
 import { emitCheckpointDecisionBestEffort, knowledgeRelayOptions } from "../knowledge/outbox-service.js";
@@ -191,13 +191,43 @@ export async function applyCheckpointDecision(
   const resolve = input.autonomous ? resolveApprovalAsAutonomous : resolveApproval;
   let resolved: Approval;
   try {
-    resolved = resolve(
-      checkpoint.id,
-      input.decision,
-      input.actor ?? null,
-      input.notes ?? null,
-      resultingAction,
-    );
+    // REL-003: for the resume_session outcome, commit the approval AND flip
+    // the session back to "running" in one atomic transaction. Previously
+    // these were two separate writes with dispatchWebSessionRun() dispatched
+    // only after both — a crash between them left the checkpoint durably
+    // approved while the session stayed "waiting" forever, invisible to
+    // status-reconciler.ts (which only sweeps status:"running" sessions for
+    // stalled heartbeats — a "running" session that failed to actually
+    // dispatch IS covered by that sweep, so closing this narrower window is
+    // sufficient). better-sqlite3 nests db.transaction() calls as SAVEPOINTs,
+    // so this composes safely with resolve()'s and updateSession()'s own
+    // internal transactions.
+    if (resultingAction === "resume_session") {
+      const db = initDb();
+      resolved = db.transaction(() => {
+        const approval = resolve(
+          checkpoint.id,
+          input.decision,
+          input.actor ?? null,
+          input.notes ?? null,
+          resultingAction,
+        );
+        updateSession(approval.sessionId, {
+          status: "running",
+          lastActivity: new Date().toISOString(),
+          lastError: null,
+        });
+        return approval;
+      })();
+    } else {
+      resolved = resolve(
+        checkpoint.id,
+        input.decision,
+        input.actor ?? null,
+        input.notes ?? null,
+        resultingAction,
+      );
+    }
   } catch (err) {
     if (err instanceof ApprovalStateError) {
       const current = getCheckpoint(checkpoint.id);
@@ -219,11 +249,10 @@ export async function applyCheckpointDecision(
 
   if (resultingAction === "resume_session") {
     const engine = context.sessionManager.getEngine(session.engine)!;
-    const rolled = updateSession(session.id, {
-      status: "running",
-      lastActivity: new Date().toISOString(),
-      lastError: null,
-    }) ?? session;
+    // status:"running" was already committed atomically with the approval
+    // resolve above (see REL-003 comment); `session` (fetched after that
+    // transaction) already reflects it — no second updateSession call here.
+    const rolled = session;
     updateSessionCheckpointMeta(session.id, {
       checkpointId: resolved.id,
       state: resolved.state,

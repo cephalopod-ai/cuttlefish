@@ -82,11 +82,6 @@ Never fabricate org state, metrics, or results. Job still running → say it's i
 
 Stay terse. Speak the headline, card the detail, route the depth.`;
 
-/**
- * Backwards-compatible alias. Prefer getOrchestratorPersona() for live tuning.
- */
-export const ORCHESTRATOR_PERSONA = DEFAULT_ORCHESTRATOR_PERSONA;
-
 /** The hot-reloadable persona file, editable without a rebuild/restart.
  *  Resolved via CUTTLEFISH_HOME (not a hardcoded ~/.cuttlefish) so isolated/test gateways
  *  never hot-load the production persona. */

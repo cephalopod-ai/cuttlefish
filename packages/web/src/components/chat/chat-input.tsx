@@ -422,6 +422,28 @@ export function ChatInput({
     stt.handleMicClick()
   }
 
+  // DESIGN-001: the mic button previously wired only pointer events, so it
+  // was completely unreachable via keyboard. Enter/Space toggles exactly
+  // like a quick tap: start recording (leaving it running, like the pointer
+  // quick-tap path does), or stop+transcribe if already recording.
+  function handleMicKeyDown(e: React.KeyboardEvent<HTMLButtonElement>) {
+    if (e.key !== 'Enter' && e.key !== ' ') return
+    e.preventDefault()
+    if (e.repeat) return
+    if (stt.state === 'transcribing') return
+
+    if (micToggleActiveRef.current || stt.state === 'recording') {
+      micToggleActiveRef.current = false
+      micDownAtRef.current = null
+      if (micHoldTimerRef.current) { clearTimeout(micHoldTimerRef.current); micHoldTimerRef.current = null }
+      void transcribeAndFill()
+      return
+    }
+
+    stt.handleMicClick()
+    micToggleActiveRef.current = true
+  }
+
   function handleMicPointerUp() {
     const downAt = micDownAtRef.current
     if (downAt == null) return // no active press (e.g. toggle-off already handled)
@@ -501,6 +523,7 @@ export function ChatInput({
         onFileAttach={handleFileAttach}
         onMicPointerDown={handleMicPointerDown}
         onMicPointerUp={handleMicPointerUp}
+        onMicKeyDown={handleMicKeyDown}
         onSubmit={handleSubmit}
         onInterrupt={onInterrupt}
       />

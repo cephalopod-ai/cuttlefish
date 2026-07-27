@@ -20,6 +20,7 @@ interface ChatInputComposerProps {
   onFileAttach: (e: React.ChangeEvent<HTMLInputElement>) => void
   onMicPointerDown: (e: React.PointerEvent<HTMLButtonElement>) => void
   onMicPointerUp: () => void
+  onMicKeyDown: (e: React.KeyboardEvent<HTMLButtonElement>) => void
   onSubmit: () => void
   onInterrupt?: () => void
 }
@@ -40,6 +41,7 @@ export function ChatInputComposer({
   onFileAttach,
   onMicPointerDown,
   onMicPointerUp,
+  onMicKeyDown,
   onSubmit,
   onInterrupt,
 }: ChatInputComposerProps) {
@@ -117,6 +119,7 @@ export function ChatInputComposer({
           onPointerDown={onMicPointerDown}
           onPointerUp={onMicPointerUp}
           onPointerCancel={onMicPointerUp}
+          onKeyDown={onMicKeyDown}
           disabled={stt.state === 'transcribing'}
           className={`w-[36px] h-[36px] shrink-0 flex items-center justify-center border-none transition-all duration-150 ease-in-out touch-none select-none ${stt.state === 'recording' ? 'rounded-full bg-[var(--system-red)] text-white cursor-pointer' : `rounded-full bg-transparent text-[var(--text-secondary)] hover:bg-[var(--fill-secondary)] hover:text-[var(--text-primary)] ${stt.state === 'transcribing' ? 'cursor-wait' : 'cursor-pointer'}`}`}
           title={stt.state === 'recording' ? 'Stop recording' : stt.state === 'transcribing' ? 'Transcribing…' : 'Hold to talk · tap to toggle'}

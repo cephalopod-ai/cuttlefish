@@ -51,6 +51,21 @@ describe("scopedTokenForbidden — operator control plane", () => {
     expect(scopedTokenForbidden("GET", "/api/talk/engine")).toBe(false);
   });
 
+  it("blocks the collaboration/project routes for agent tokens (SEC-001)", () => {
+    // A "project" spans every session sharing a common root ancestor
+    // (root -> managers -> workers -> sub-agents); a leaf worker's token
+    // must not be able to read the tree/feed for the whole project.
+    expect(scopedTokenForbidden("GET", "/api/projects")).toBe(true);
+    expect(scopedTokenForbidden("GET", "/api/projects/root-1/tree")).toBe(true);
+    expect(scopedTokenForbidden("GET", "/api/projects/root-1/feed")).toBe(true);
+    expect(scopedTokenForbidden("POST", "/api/projects/root-1/messages")).toBe(true);
+    expect(scopedTokenForbidden("DELETE", "/api/projects/root-1")).toBe(true);
+    expect(scopedTokenForbidden("GET", "/api/management/feed")).toBe(true);
+    expect(scopedTokenForbidden("GET", "/api/management/recipients")).toBe(true);
+    // Traversal collapse still applies.
+    expect(scopedTokenForbidden("GET", "/api/sessions/../projects/root-1/feed")).toBe(true);
+  });
+
   it("blocks path-traversal, redundant-slash, and case bypass attempts", () => {
     // The router resolves `..` before dispatch, so the deny list must too.
     expect(scopedTokenForbidden("POST", "/api/sessions/../approvals/abc/approve")).toBe(true);

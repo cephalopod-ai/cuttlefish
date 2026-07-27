@@ -1,7 +1,7 @@
 name: CI
 on:
   push:
-    branches: [main, feature/project-phoenix]
+    branches: [main]
   pull_request:
     branches: [main]
 
@@ -22,6 +22,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm validate:rdc-r03
+      - run: pnpm test:rdc-r03
 
   unit-tests:
     runs-on: ubuntu-latest

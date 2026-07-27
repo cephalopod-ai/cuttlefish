@@ -141,13 +141,35 @@ export async function runOrchestrationTask(opts: RunOrchestrationTaskOptions): P
   }
 
   runtime.deleteLiveContinuation(task.taskId, task.coordinatorId);
-  return runAllocatedOrchestrationTask({
-    context: opts.context,
-    mode,
-    task,
-    allocation: allocationResult.allocation,
-    reviewPolicy: allocationResult.reviewPolicy,
-  });
+  // CONC-001: seed a "dispatching" continuation before running, and resolve
+  // it to completed/failed once the run settles, so an immediately-allocated
+  // task gets the same crash-recovery guarantee a queued/resumed one already
+  // has (see beginDispatchingLiveContinuation's doc comment in runtime.ts).
+  runtime.beginDispatchingLiveContinuation(mode, task);
+  const allocationId = allocationResult.allocation.allocationId;
+  try {
+    const result = await runAllocatedOrchestrationTask({
+      context: opts.context,
+      mode,
+      task,
+      allocation: allocationResult.allocation,
+      reviewPolicy: allocationResult.reviewPolicy,
+    });
+    if (result.ok) {
+      runtime.markLiveContinuationCompleted(task.taskId, task.coordinatorId, allocationId);
+    } else if (result.state === "failed") {
+      runtime.markLiveContinuationFailed(task.taskId, task.coordinatorId, result.errorSummary, allocationId);
+    }
+    return result;
+  } catch (err) {
+    runtime.markLiveContinuationFailed(
+      task.taskId,
+      task.coordinatorId,
+      err instanceof Error ? err.message : String(err),
+      allocationId,
+    );
+    throw err;
+  }
 }
 
 export async function runAllocatedOrchestrationTask(opts: RunAllocatedOrchestrationTaskOptions): Promise<OrchestrationRunTaskResult> {

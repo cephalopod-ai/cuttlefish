@@ -40,7 +40,7 @@ import { discoverCodexModels, type CodexModelDiscovery } from "./codex-models.js
  */
 
 /** Engines registered in this build (mirrors server.ts engine map). */
-const ENGINE_NAMES = ["claude", "codex", "antigravity", "grok", "pi", "kiro", "hermes", "ollama", "kilo", "aider"] as const;
+export const ENGINE_NAMES = ["claude", "codex", "antigravity", "grok", "pi", "kiro", "hermes", "ollama", "kilo", "aider"] as const;
 export type EngineName = (typeof ENGINE_NAMES)[number];
 
 /** Binary name probed for each engine's availability (override via engines.<name>.bin). */

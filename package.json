@@ -22,7 +22,8 @@
     "stop": "node scripts/run-cuttlefish-cli.mjs stop",
     "nuke": "node scripts/run-cuttlefish-cli.mjs nuke",
     "status": "node scripts/run-cuttlefish-cli.mjs status",
-    "validate:rdc-r03": "node scripts/validate-rdc-r03.mjs"
+    "validate:rdc-r03": "node scripts/validate-rdc-r03.mjs",
+    "test:rdc-r03": "node --test scripts/validate-rdc-r03.test.mjs"
   },
   "pnpm": {
     "overrides": {

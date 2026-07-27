@@ -11,7 +11,6 @@ import { createAuthToken, safeEqual } from "./auth-crypto.js";
 export { createPtyAccessToken, verifyPtyAccessToken } from "./pty-auth.js";
 export {
   createScopedSessionToken,
-  verifyScopedSessionToken,
   verifyScopedSessionPrincipal,
   scopedTokenForbidden,
   scopedTokenChildDetailReadTarget,

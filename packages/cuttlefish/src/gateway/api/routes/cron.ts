@@ -85,14 +85,22 @@ export async function handleCronRoutes(
   params = matchRoute("/api/cron/:id", pathname);
   if (method === "PUT" && params) {
     const routeParams = params;
+    // CONC-004: read the request body (an await point) *before* loading
+    // jobs.json, mirroring the POST handler above. Loading first and reading
+    // the body second — the prior order — left an await gap between
+    // loadJobs() and saveJobs() during which a concurrent PUT/POST/DELETE
+    // could save its own change; this handler would then overwrite it with a
+    // save built from its now-stale snapshot (lost update). With no await
+    // between load and save, the two are effectively atomic under Node's
+    // single-threaded event loop.
+    const parsed = await readJsonBody(req, res);
+    if (!parsed.ok) return true;
     const jobs = loadJobs();
     const idx = jobs.findIndex((job) => job.id === routeParams.id);
     if (idx === -1) {
       notFound(res);
       return true;
     }
-    const parsed = await readJsonBody(req, res);
-    if (!parsed.ok) return true;
     try {
       jobs[idx] = { ...patchCronJob(jobs[idx], parsed.body), id: routeParams.id };
     } catch (err) {

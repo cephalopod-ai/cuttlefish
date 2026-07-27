@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act } from 'react'
 import { ChatMessages } from '../chat-messages'
 import type { Message } from '@/lib/conversations'
 
@@ -175,5 +176,40 @@ describe('ChatMessages tool groups', () => {
     expect(within(group).getByText('tool_11')).toBeTruthy()
     expect(within(group).getByText('tool_12')).toBeTruthy()
     expect(within(group).queryByRole('button', { name: /show 2 more/i })).toBeNull()
+  })
+})
+
+// DESIGN-002: the primary chat surface had no aria-live region at all, unlike
+// the secondary Collaboration view. A screen-reader user got no announcement
+// when a response started or finished streaming.
+describe('ChatMessages aria-live announcements (DESIGN-002)', () => {
+  it('announces when the assistant starts responding and when it completes', () => {
+    const messages: Message[] = [{ id: 'm1', role: 'user', content: 'hi', timestamp: 100 }]
+    const { rerender } = render(<ChatMessages messages={messages} loading streamingText="" />)
+
+    const region = screen.getByRole('status')
+    expect(region.textContent).toBe('')
+
+    act(() => {
+      rerender(<ChatMessages messages={messages} loading streamingText="Hello" />)
+    })
+    expect(region.textContent).toBe('Assistant is responding')
+
+    act(() => {
+      rerender(<ChatMessages messages={messages} loading={false} streamingText="" />)
+    })
+    expect(region.textContent).toBe('Response complete')
+  })
+
+  it('announces when the user sends a message', () => {
+    const initial: Message[] = []
+    const { rerender } = render(<ChatMessages messages={initial} loading={false} />)
+
+    const region = screen.getByRole('status')
+    const withUserMessage: Message[] = [{ id: 'm1', role: 'user', content: 'hi', timestamp: 100 }]
+    act(() => {
+      rerender(<ChatMessages messages={withUserMessage} loading />)
+    })
+    expect(region.textContent).toBe('Message sent')
   })
 })

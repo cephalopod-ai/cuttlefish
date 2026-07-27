@@ -296,13 +296,32 @@ function assertSchemaVersionNotNewer(db: Database.Database): void {
  * generation active when they were created so stale-continuation recovery
  * at boot can cross-check against it, as a signal independent of wall-clock
  * time (which can skew or jump).
+ *
+ * CONC-005: two processes opening the same DB file around the same time
+ * (e.g. a daemon restart racing a still-shutting-down prior instance) could
+ * both read the same stamped value before either wrote back the increment,
+ * producing a duplicate boot generation instead of a monotonically
+ * increasing one. `BEGIN IMMEDIATE` acquires the write lock before the read,
+ * so the second opener blocks until the first commits and then reads its
+ * already-incremented value — mirroring the `transactionImmediate` pattern
+ * used elsewhere in the store for the same class of cross-process
+ * read-modify-write race (see store.ts). Inlined here (rather than imported)
+ * because store.ts imports this module, and importing back would be
+ * circular.
  */
 function advanceBootGeneration(db: Database.Database): number {
-  const stamped = getMetaValue(db, BOOT_GENERATION_META_KEY);
-  const previous = stamped !== undefined ? Number(stamped) : 0;
-  const next = Number.isFinite(previous) && previous > 0 ? previous + 1 : 1;
-  setMeta(db, BOOT_GENERATION_META_KEY, String(next));
-  return next;
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const stamped = getMetaValue(db, BOOT_GENERATION_META_KEY);
+    const previous = stamped !== undefined ? Number(stamped) : 0;
+    const next = Number.isFinite(previous) && previous > 0 ? previous + 1 : 1;
+    setMeta(db, BOOT_GENERATION_META_KEY, String(next));
+    db.exec("COMMIT");
+    return next;
+  } catch (err) {
+    if (db.inTransaction) db.exec("ROLLBACK");
+    throw err;
+  }
 }
 
 function ensureArtifactCoordinatorColumn(db: Database.Database): void {

@@ -11,6 +11,7 @@ import { logger } from "../../../shared/logger.js";
 import { redactText } from "../../../shared/redact.js";
 import { downloadModel, getSttStatus, resolveLanguages, transcribe as sttTranscribe, WHISPER_LANGUAGES } from "../../../stt/stt.js";
 import { onboardingNeeded, applyEngineChoice } from "../../onboarding-policy.js";
+import { isKnownEngine } from "../../../shared/models.js";
 import { readJsonBody, readBodyRaw, BodyTooLargeError } from "../../http-helpers.js";
 import { safeWriteFile } from "../../../shared/safe-write.js";
 import type { ApiContext } from "../context.js";
@@ -138,6 +139,16 @@ export async function handleSystemRoutes(
     const model = typeof body.model === "string" ? body.model : undefined;
     const effortLevel = typeof body.effortLevel === "string" ? body.effortLevel : undefined;
 
+    // DFI-005: PUT /api/config and POST /api/talk/engine both validate the
+    // engine before persisting it; this route didn't, so an unknown engine
+    // from the onboarding wizard could be written straight into
+    // engines.default with no sibling engine config, unlike every other
+    // config-writing path.
+    if (engine !== undefined && !isKnownEngine(engine)) {
+      badRequest(res, `Unknown engine "${engine}" (expected one of: claude, codex, antigravity, grok, pi, kiro, hermes, ollama, kilo, aider)`);
+      return true;
+    }
+
     const config = context.getConfig();
     const updated = {
       ...applyEngineChoice(config, { engine, model, effortLevel }),
@@ -150,6 +161,11 @@ export async function handleSystemRoutes(
         ...(language !== undefined && { language: language || undefined }),
       },
     };
+    const configProblems = validateConfigShape(updated);
+    if (configProblems.length > 0) {
+      badRequest(res, `Invalid config:\n- ${configProblems.join("\n- ")}`);
+      return true;
+    }
 
     saveConfigAtomic(updated, { lineWidth: -1 });
     context.reloadConfig?.();

@@ -186,6 +186,73 @@ describe("OrchestrationStore", () => {
     reopened.close();
   });
 
+  it("markLiveContinuationState with expectedCurrentState no-ops on a state mismatch instead of overwriting (REL-004)", () => {
+    const store = OrchestrationStore.open(dbPath);
+    store.upsertLiveContinuation({
+      taskId: "task-race",
+      coordinatorId: "coord-race",
+      mode: "single_worker",
+      state: "queued",
+      task: {
+        taskId: "task-race",
+        coordinatorId: "coord-race",
+        priority: "normal",
+        leaseDurationMs: 60_000,
+        prompt: "Resume me later",
+      },
+      enqueuedAt: fixedNow.toISOString(),
+      updatedAt: fixedNow.toISOString(),
+      retryCount: 0,
+    });
+    store.claimQueuedLiveContinuation("task-race", "coord-race", { allocationId: "alloc-race" });
+
+    // Winner: the normal-completion writer lands first.
+    const completed = store.markLiveContinuationState("task-race", "coord-race", "completed", {
+      allocationId: "alloc-race",
+      expectedCurrentState: "dispatching",
+    });
+    expect(completed).toMatchObject({ state: "completed" });
+
+    // Loser: a shutdown forced-failure sweep racing the same transition
+    // arrives second and finds the row is no longer "dispatching" — it must
+    // back off instead of clobbering the real "completed" outcome.
+    const forcedFailed = store.markLiveContinuationState("task-race", "coord-race", "failed", {
+      allocationId: "alloc-race",
+      lastError: "gateway shutting down gracefully",
+      expectedCurrentState: "dispatching",
+    });
+    expect(forcedFailed).toBeUndefined();
+    expect(store.getLiveContinuation("task-race", "coord-race")).toMatchObject({ state: "completed" });
+    store.close();
+  });
+
+  it("markLiveContinuationState without expectedCurrentState keeps the prior unconditional-overwrite behavior", () => {
+    const store = OrchestrationStore.open(dbPath);
+    store.upsertLiveContinuation({
+      taskId: "task-plain",
+      coordinatorId: "coord-plain",
+      mode: "single_worker",
+      state: "failed",
+      task: {
+        taskId: "task-plain",
+        coordinatorId: "coord-plain",
+        priority: "normal",
+        leaseDurationMs: 60_000,
+        prompt: "Retry me",
+      },
+      enqueuedAt: fixedNow.toISOString(),
+      updatedAt: fixedNow.toISOString(),
+      retryCount: 1,
+    });
+
+    const requeued = store.markLiveContinuationState("task-plain", "coord-plain", "queued", {
+      allocationId: null,
+      lastError: null,
+    });
+    expect(requeued).toMatchObject({ state: "queued" });
+    store.close();
+  });
+
   it("refuses to open a DB stamped with a schema_version newer than this binary's (TMP-CUT-015)", () => {
     const store = OrchestrationStore.open(dbPath);
     store.close();

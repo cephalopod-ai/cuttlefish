@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ClientProviders } from './routes/client-providers'
 import { lazyRoute } from './lib/lazy-route'
 import LandingRoute from './routes/landing-route'
+import NotFoundRoute from './routes/not-found-route'
 import './routes/globals.css'
 
 const CommandPage = lazyRoute(() => import('./routes/command/page'), 'command')
@@ -77,7 +78,7 @@ export function App() {
               <Route path="/skills" element={<SkillsPage />} />
               <Route path="/file" element={<FilePage />} />
               <Route path="/talk" element={<Navigate to="/?lane=team" replace />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
+              <Route path="*" element={<NotFoundRoute />} />
             </Routes>
           </Suspense>
         </ClientProviders>

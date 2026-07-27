@@ -3,6 +3,7 @@ import { renderHook } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { useGoToNavigation, GO_TO_TARGETS } from '../use-go-to-navigation'
+import { setSingleKeyShortcutsEnabled } from '../use-shortcuts-enabled'
 
 const navigateMock = vi.fn()
 
@@ -90,6 +91,20 @@ describe('useGoToNavigation', () => {
     fireKey('g')
     fireKey('o')
     expect(navigateMock).not.toHaveBeenCalled()
+  })
+
+  // DESIGN-006 / WCAG 2.1.4: "g then <key>" is a single-character,
+  // no-modifier shortcut, so it must be able to be turned off globally.
+  it('does nothing when single-key shortcuts are globally disabled', () => {
+    setSingleKeyShortcutsEnabled(false)
+    try {
+      renderHook(() => useGoToNavigation(), { wrapper })
+      fireKey('g')
+      fireKey('o')
+      expect(navigateMock).not.toHaveBeenCalled()
+    } finally {
+      setSingleKeyShortcutsEnabled(true)
+    }
   })
 
   it('removes its listener on unmount', () => {

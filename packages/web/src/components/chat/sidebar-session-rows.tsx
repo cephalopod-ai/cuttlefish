@@ -300,7 +300,10 @@ export const SessionRow = React.memo(function SessionRow({
           {isPinned ? (
             <Pin className="size-3 shrink-0 text-[var(--text-tertiary)] group-hover/session:lg:hidden group-has-[[data-state=open]]/session:lg:hidden" />
           ) : null}
-          <span className="shrink-0 text-[10px] text-[var(--text-quaternary)] group-hover/session:lg:hidden group-has-[[data-state=open]]/session:lg:hidden">
+          {/* DESIGN-003: real content (last-activity time), not decoration —
+              text-quaternary fails WCAG AA contrast by design; text-tertiary
+              is the lowest tier that's actually contrast-checked. */}
+          <span className="shrink-0 text-[10px] text-[var(--text-tertiary)] group-hover/session:lg:hidden group-has-[[data-state=open]]/session:lg:hidden">
             {sessionTime}
           </span>
         </button>

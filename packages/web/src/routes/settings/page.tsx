@@ -33,6 +33,7 @@ import {
   RecoveryFallbacksSection,
 } from "./settings-config-sections"
 import { FieldRow, Section, SettingsInput, SettingsSelect, ToggleSwitch } from "./settings-fields"
+import { KeyboardShortcutsSection } from "./keyboard-shortcuts-section"
 import { SttSettingsSection } from "./stt-section"
 
 type FeedbackState = {
@@ -272,6 +273,7 @@ export default function SettingsPage() {
             logout={auth.logout}
             unpairDevice={auth.unpairDevice}
           />
+          <KeyboardShortcutsSection />
 
           <ConfigFeedback feedback={feedback} />
           <ConfigLoadState configError={configError} configLoading={configLoading} />

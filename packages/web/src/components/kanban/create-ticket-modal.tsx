@@ -191,6 +191,7 @@ export function CreateTicketModal({
                   <button
                     key={p}
                     type="button"
+                    aria-pressed={isSelected}
                     onClick={() => setForm((f) => ({ ...f, priority: p }))}
                     className="flex-1 flex items-center justify-center gap-[var(--space-1)] py-[var(--space-2)] px-[var(--space-3)] rounded-[var(--radius-md)] cursor-pointer text-[length:var(--text-caption1)] font-[var(--weight-medium)] transition-all duration-150 ease-[var(--ease-smooth)]"
                     style={{
@@ -226,6 +227,7 @@ export function CreateTicketModal({
                   <button
                     key={complexity}
                     type="button"
+                    aria-pressed={isSelected}
                     onClick={() => setForm((f) => ({ ...f, complexity }))}
                     className="flex-1 flex items-center justify-center py-[var(--space-2)] px-[var(--space-3)] rounded-[var(--radius-md)] cursor-pointer text-[length:var(--text-caption1)] font-[var(--weight-medium)] transition-all duration-150 ease-[var(--ease-smooth)]"
                     style={{

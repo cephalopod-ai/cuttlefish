@@ -48,6 +48,35 @@ export function setCorsHeaders(req: http.IncomingMessage, res: http.ServerRespon
   return allowed;
 }
 
+/**
+ * Applied to every response this module serves. SECN-NODE-001: the dashboard
+ * previously carried no security headers at all.
+ *
+ * `script-src`/`style-src` include 'unsafe-inline' because index.html ships
+ * two small inline bootstrap scripts (a crypto.randomUUID polyfill and the
+ * pre-paint theme-flash guard) and Google Fonts' stylesheet requires inline
+ * style permissiveness too — neither has a build-time nonce/hash mechanism,
+ * and disabling inline entirely would break both without one. This still
+ * meaningfully restricts which *origins* scripts/styles/fonts/images/connections
+ * can come from, and frame-ancestors/X-Frame-Options/nosniff are unaffected.
+ * img-src allows https: because chat cards render arbitrary validated
+ * https:/data: image URLs (see talk/card-validate.ts).
+ */
+const SECURITY_HEADERS: Record<string, string> = {
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "Content-Security-Policy": [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com data:",
+    "img-src 'self' data: blob: https:",
+    "connect-src 'self'",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+  ].join("; "),
+};
+
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html",
   ".js": "application/javascript",
@@ -81,7 +110,7 @@ export function serveStatic(
   // separator and wrongly 403 every file.
   const rel = path.relative(root, resolved);
   if (rel !== "" && (rel === ".." || rel.startsWith(".." + path.sep) || path.isAbsolute(rel))) {
-    res.writeHead(403);
+    res.writeHead(403, SECURITY_HEADERS);
     res.end("Forbidden");
     return true;
   }
@@ -92,6 +121,7 @@ export function serveStatic(
   if (!fs.existsSync(resolved) || fs.statSync(resolved).isDirectory()) {
     if (urlPath.startsWith("/assets/")) {
       res.writeHead(404, {
+        ...SECURITY_HEADERS,
         "Content-Type": "text/plain",
         "Cache-Control": "no-store",
       });
@@ -101,7 +131,7 @@ export function serveStatic(
 
     const indexPath = path.join(webDir, "index.html");
     if (fs.existsSync(indexPath)) {
-      res.writeHead(200, { "Content-Type": "text/html", "Cache-Control": "no-store" });
+      res.writeHead(200, { ...SECURITY_HEADERS, "Content-Type": "text/html", "Cache-Control": "no-store" });
       fs.createReadStream(indexPath).pipe(res);
       return true;
     }
@@ -111,7 +141,7 @@ export function serveStatic(
   const ext = path.extname(resolved);
   const contentType = MIME_TYPES[ext] || "application/octet-stream";
   const enc = isCompressibleExt(ext) ? pickEncoding(req.headers["accept-encoding"]) : null;
-  const headers: Record<string, string> = { "Content-Type": contentType, "Cache-Control": cacheControl };
+  const headers: Record<string, string> = { ...SECURITY_HEADERS, "Content-Type": contentType, "Cache-Control": cacheControl };
   if (enc) {
     headers["Content-Encoding"] = enc;
     headers["Vary"] = "Accept-Encoding";

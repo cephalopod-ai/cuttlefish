@@ -58,6 +58,7 @@ import {
   type OrchestrationRuntimeRefreshState,
 } from "./orchestration-runtime-manager.js";
 import { scanOrg } from "./org.js";
+import { recoverInterruptedDepartmentRename } from "./department-rename.js";
 import { screenUntrustedText, screeningMetaForSession, screeningNotification } from "./content-screening.js";
 import { reconcileOrphanedTickets } from "./orphaned-ticket-reconciler.js";
 import { openUntrustedContentCheckpoint } from "./security-review.js";
@@ -301,6 +302,9 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
   const connectorNames = configuredConnectorNames(config);
 
   const sessionManager = new SessionManager(config, engines, connectorNames, gatewayAuthToken);
+  // Self-heal a department rename left mid-flight by a crash before priming
+  // the registry, so a stale rename marker never lingers unnoticed — DFI-002.
+  recoverInterruptedDepartmentRename();
   let employeeRegistry = scanOrg();
   logger.info(`Loaded ${employeeRegistry.size} employee(s) from org directory`);
 

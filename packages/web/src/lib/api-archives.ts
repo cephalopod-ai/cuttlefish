@@ -1,4 +1,5 @@
 import { del, get, post } from "./api-core"
+import type { ChatBlock } from "@cuttlefish/contracts"
 
 export type ArchiveKind = "room" | "scheduled" | "chat"
 
@@ -16,6 +17,8 @@ export interface ArchivedMessage {
   timestamp: number
   toolCall?: string
   media?: ArchivedMessageMedia[]
+  /** Structured chat-view blocks, carried through from the live message — see DFI-006. */
+  blocks?: ChatBlock[]
 }
 
 export interface ArchivedSessionSnapshot {

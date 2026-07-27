@@ -71,6 +71,12 @@ function makeReq(method: string, urlPath: string) {
   } as any;
 }
 
+function makeReqAs(method: string, urlPath: string, sessionId: string) {
+  const req = makeReq(method, urlPath);
+  req.cuttlefishPrincipal = { kind: "session", sessionId };
+  return req;
+}
+
 function makeJsonReq(method: string, urlPath: string, body: unknown) {
   const req = Readable.from([Buffer.from(JSON.stringify(body))]) as any;
   Object.assign(req, {
@@ -639,6 +645,72 @@ describe("session query routes", () => {
       "a8",
     ]);
     expect(scheduleOnLoadTailSync).toHaveBeenCalledWith(newer.id, ctx.emit);
+  });
+
+  it("hides a ticket session's transcript from an unrelated session-scoped token, but allows the session itself and its direct parent (SEC-002)", async () => {
+    const { api, reg } = await setup();
+    const ctx = makeCtx(api);
+    const deptDir = path.join(tmpHome, "org", "software-delivery");
+    fs.mkdirSync(deptDir, { recursive: true });
+    fs.writeFileSync(path.join(deptDir, "board.json"), JSON.stringify([
+      {
+        id: "ticket-scoped",
+        title: "Scoped worker",
+        description: "",
+        status: "in_progress",
+        priority: "medium",
+        complexity: "medium",
+        assignee: "worker",
+        createdAt: "2026-06-22T00:00:00.000Z",
+        updatedAt: "2026-06-22T00:00:00.000Z",
+      },
+    ]));
+
+    const parent = reg.createSession({
+      engine: "claude",
+      source: "manual",
+      sourceRef: "manual:parent",
+      employee: "manager",
+      prompt: "parent",
+    });
+    const target = reg.createSession({
+      engine: "claude",
+      source: "manual",
+      sourceRef: "manual:software-delivery:ticket-scoped",
+      employee: "worker",
+      prompt: "target",
+      replyContext: { channel: "kanban:ticket-scoped" } as any,
+      parentSessionId: parent.id,
+    });
+    reg.updateSession(target.id, { status: "running" });
+    reg.insertMessage(target.id, "assistant", "secret ticket transcript");
+
+    const unrelated = reg.createSession({
+      engine: "claude",
+      source: "manual",
+      sourceRef: "manual:unrelated",
+      employee: "someone-else",
+      prompt: "unrelated",
+    });
+
+    const url = "/api/org/departments/software-delivery/tickets/ticket-scoped/session";
+
+    const unrelatedCap = makeRes();
+    await api.handleApiRequest(makeReqAs("GET", url, unrelated.id), unrelatedCap.res, ctx);
+    expect(unrelatedCap.body).toEqual({ found: false });
+
+    const selfCap = makeRes();
+    await api.handleApiRequest(makeReqAs("GET", url, target.id), selfCap.res, ctx);
+    expect(selfCap.body).toMatchObject({ found: true, sessionId: target.id });
+
+    const parentCap = makeRes();
+    await api.handleApiRequest(makeReqAs("GET", url, parent.id), parentCap.res, ctx);
+    expect(parentCap.body).toMatchObject({ found: true, sessionId: target.id });
+
+    // An operator (no principal / non-session principal) is unaffected.
+    const operatorCap = makeRes();
+    await api.handleApiRequest(makeReq("GET", url), operatorCap.res, ctx);
+    expect(operatorCap.body).toMatchObject({ found: true, sessionId: target.id });
   });
 
   it("surfaces truthful stalled and fallback metadata from persisted session state", async () => {

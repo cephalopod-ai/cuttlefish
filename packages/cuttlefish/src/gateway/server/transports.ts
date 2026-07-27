@@ -14,6 +14,7 @@ import { isAllowedCorsOrigin, serveStatic, setCorsHeaders } from "./http-static.
 import { isBlockedCrossSiteWrite, isHostAllowed, isPtyUpgradeAllowed } from "./request-guards.js";
 import { resolvePrincipalGate } from "./auth-gate.js";
 import type { GatewayPrincipal } from "../scoped-token.js";
+import { engineAvailable, engineUnavailableMessage, isKnownEngine } from "../../shared/models.js";
 
 export type GatewayWebSocket = WebSocket & { cuttlefishPrincipal?: GatewayPrincipal };
 
@@ -244,6 +245,21 @@ export function createGatewayTransports({
       const ptySession = getSession(sessionId);
       const ptyEngine = ptySession ? ptyViewEngines[ptySession.engine] : undefined;
       if (!ptyEngine) {
+        socket.destroy();
+        return;
+      }
+      // DEP-001: the message-send path (sessions/manager.ts, run-web-session.ts)
+      // already preflights engineAvailable() before spawning, so a missing CLI
+      // binary fails fast with an actionable error instead of an engine spawn
+      // that exits silently. The terminal-view path shared this same
+      // idle-spawn mechanism (engine.ensureIdleSpawn in pty-ws.ts) without the
+      // guard — reject the upgrade with a clear reason instead of leaving the
+      // client's "Waiting for the interactive PTY…" placeholder spinning
+      // forever with no error.
+      if (isKnownEngine(ptySession!.engine) && !engineAvailable(apiContext.getConfig(), ptySession!.engine)) {
+        const message = engineUnavailableMessage(apiContext.getConfig(), ptySession!.engine);
+        logger.warn(`PTY websocket for ${sessionId}: ${message}`);
+        socket.write(`HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Type: text/plain\r\n\r\n${message}`);
         socket.destroy();
         return;
       }

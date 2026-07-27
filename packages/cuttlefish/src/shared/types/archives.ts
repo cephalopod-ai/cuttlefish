@@ -1,4 +1,5 @@
 import type { Session } from "./sessions.js";
+import type { ChatBlock } from "./chat.js";
 
 export type ArchiveKind = "room" | "scheduled" | "chat";
 
@@ -16,6 +17,10 @@ export interface ArchivedMessage {
   timestamp: number;
   toolCall?: string;
   media?: ArchivedMessageMedia[];
+  /** Structured chat-view blocks (e.g. cards, embeds). Carried through so an
+   *  archived message stays byte-for-byte equivalent to the live one before
+   *  its source row is deleted — see DFI-006. */
+  blocks?: ChatBlock[];
 }
 
 export interface ArchivedSessionSnapshot {

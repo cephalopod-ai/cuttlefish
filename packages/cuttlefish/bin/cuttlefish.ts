@@ -88,6 +88,39 @@ program
     await runStatus();
   });
 
+// DEAD-002: src/cli/startup.ts (systemd user-service enable/disable/status)
+// had no command registered here, so it was unreachable from the CLI despite
+// being fully implemented.
+{
+  const startupCmd = program
+    .command("startup")
+    .description("Manage starting the gateway automatically via systemd (Linux)");
+
+  startupCmd
+    .command("enable")
+    .description("Install and enable the systemd user service")
+    .action(async () => {
+      const { runStartupEnable } = await import("../src/cli/startup.js");
+      await runStartupEnable();
+    });
+
+  startupCmd
+    .command("disable")
+    .description("Disable the systemd user service")
+    .action(async () => {
+      const { runStartupDisable } = await import("../src/cli/startup.js");
+      await runStartupDisable();
+    });
+
+  startupCmd
+    .command("status")
+    .description("Show systemd startup integration status")
+    .action(async () => {
+      const { runStartupStatus } = await import("../src/cli/startup.js");
+      await runStartupStatus();
+    });
+}
+
 program
   .command("pair")
   .description("Create a one-time code for pairing another browser")
