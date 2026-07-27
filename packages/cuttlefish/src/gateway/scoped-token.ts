@@ -152,6 +152,17 @@ export function scopedTokenForbidden(method: string | undefined, rawPathname: st
   if (pathname === "/api/activity" || pathname === "/api/work" || pathname === "/api/command-center") return true;
   if (pathname === "/api/workspace-profiles") return true;
   if (pathname === "/api/connectors" || pathname === "/api/connectors/whatsapp/qr") return true;
+  // SEC-001: a "project" is every session sharing a common root ancestor,
+  // walked arbitrarily deep/wide (root -> managers -> N workers -> N
+  // sub-agents) — collaboration.ts's projectForPrincipal() passes a session
+  // token whenever the caller is ANY member of that tree, so /tree and /feed
+  // returned full message content for every session in the tree to a single
+  // leaf worker's token, not just its own lineage. The route already denies
+  // POST /messages and DELETE outright for session principals
+  // ("requires a direct human operator") — extend that same operator-only
+  // posture to the reads instead of narrowing the tree-membership model.
+  if (pathname === "/api/projects" || pathname.startsWith("/api/projects/")) return true;
+  if (pathname === "/api/management" || pathname.startsWith("/api/management/")) return true;
   return false;
 }
 

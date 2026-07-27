@@ -5,7 +5,7 @@ import { ORG_DIR } from "../../../shared/paths.js";
 import { logger } from "../../../shared/logger.js";
 import { createSession, getSession, insertMessage, listSessions } from "../../../sessions/registry.js";
 import { readJsonBody } from "../../http-helpers.js";
-import { authorizeManagerScope, disallowedManagerScopedFields, isHrHumanOnlyBlocked, isManagerNameAuthorizedForPrincipal, MANAGER_MUTABLE_EMPLOYEE_FIELDS } from "../../manager-auth.js";
+import { authorizeManagerScope, disallowedManagerScopedFields, isDirectChildSession, isHrHumanOnlyBlocked, isManagerNameAuthorizedForPrincipal, MANAGER_MUTABLE_EMPLOYEE_FIELDS } from "../../manager-auth.js";
 import type { GatewayPrincipal } from "../../auth.js";
 import { archiveEmployeeBoardTickets, BoardConflictError, defaultBoardState, readBoardArray, readBoardState, validateBoardAssigneesForDepartment, writeMergedBoardPartial } from "../../board-service.js";
 import { resolveBestSessionForTicket, resolveTicketSessionFallbackState, resolveTicketSessionFailureReason, resolveTicketSessionStalled, shouldExposeSessionForTicket } from "../../ticket-session-resolver.js";
@@ -649,6 +649,23 @@ export async function handleOrgRoutes(
       return true;
     }
     if (!shouldExposeSessionForTicket(ticket, session)) {
+      json(res, { found: false });
+      return true;
+    }
+    // SEC-002: scopedTokenForbidden only blocks non-GET verbs under /api/org/*
+    // ("roster is readable"), so this GET route was reachable by any
+    // session-scoped agent token with no check that the caller has anything
+    // to do with `session` — shouldExposeSessionForTicket only inspects
+    // ticket/session *status*, never caller identity. Require the caller to
+    // be the session itself or its direct parent, mirroring the same
+    // isDirectChildSession primitive auth-gate.ts already uses for the
+    // analogous /api/sessions/:id case.
+    const principal = (req as HttpRequest & { cuttlefishPrincipal?: GatewayPrincipal }).cuttlefishPrincipal;
+    if (
+      principal?.kind === "session" &&
+      principal.sessionId.toLowerCase() !== session.id.toLowerCase() &&
+      !isDirectChildSession(principal.sessionId, session.id)
+    ) {
       json(res, { found: false });
       return true;
     }
