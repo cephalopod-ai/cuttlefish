@@ -2,7 +2,7 @@ name: Governance
 
 on:
   push:
-    branches: [main, feature/project-phoenix]
+    branches: [main]
   pull_request:
     branches: [main]
 

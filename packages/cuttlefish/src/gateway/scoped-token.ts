@@ -76,10 +76,6 @@ export function verifyScopedSessionPrincipal(token: string, secret: string, now 
   }
 }
 
-export function verifyScopedSessionToken(token: string, secret: string, now = Date.now()): string | null {
-  return verifyScopedSessionPrincipal(token, secret, now)?.sessionId ?? null;
-}
-
 /**
  * Routes a session-scoped (agent) token must NOT reach — the operator control
  * plane and any operator-wide data collection. Agents keep only the endpoints
