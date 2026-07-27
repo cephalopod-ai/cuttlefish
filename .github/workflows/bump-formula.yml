@@ -26,9 +26,15 @@ jobs:
           ref: main
 
       - name: Resolve published version
+        env:
+          # SECN-NODE-002: bind the untrusted branch name to an env var
+          # instead of interpolating it into the script text, so a crafted
+          # value is treated as shell data by bash, not as script content by
+          # the Actions template engine.
+          WORKFLOW_RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
           if [ "${GITHUB_EVENT_NAME}" = "workflow_run" ]; then
-            TAG="${{ github.event.workflow_run.head_branch }}"
+            TAG="${WORKFLOW_RUN_HEAD_BRANCH}"
             case "${TAG}" in
               v[0-9]*.[0-9]*.[0-9]*) VERSION="${TAG#v}" ;;
               *) echo "Expected a v<semver> release tag, got: ${TAG}" >&2; exit 1 ;;

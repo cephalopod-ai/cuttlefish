@@ -88,4 +88,65 @@ describe('web static asset fallback', () => {
       rmSync(parent, { recursive: true, force: true })
     }
   })
+
+  describe('security headers (SECN-NODE-001)', () => {
+    function expectSecurityHeaders(headers: Record<string, string>) {
+      expect(headers['X-Content-Type-Options']).toBe('nosniff')
+      expect(headers['X-Frame-Options']).toBe('DENY')
+      expect(headers['Content-Security-Policy']).toContain("frame-ancestors 'none'")
+      expect(headers['Content-Security-Policy']).toContain("default-src 'self'")
+    }
+
+    it('are present on the SPA index.html fallback (200)', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'cuttlefish-web-'))
+      try {
+        writeFileSync(join(dir, 'index.html'), '<div id="root"></div>')
+        const { res } = await callServeStatic('/limits', dir)
+        expect(res.statusCode).toBe(200)
+        expectSecurityHeaders(res.headers)
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    })
+
+    it('are present on a served asset (200)', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'cuttlefish-web-'))
+      try {
+        mkdirSync(join(dir, 'assets'))
+        writeFileSync(join(dir, 'assets', 'app.js'), 'console.log(1)')
+        const { res } = await callServeStatic('/assets/app.js', dir)
+        expect(res.statusCode).toBe(200)
+        expectSecurityHeaders(res.headers)
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    })
+
+    it('are present on a missing-asset 404', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'cuttlefish-web-'))
+      try {
+        mkdirSync(join(dir, 'assets'))
+        writeFileSync(join(dir, 'index.html'), '<div id="root"></div>')
+        const { res } = await callServeStatic('/assets/missing.js', dir)
+        expect(res.statusCode).toBe(404)
+        expectSecurityHeaders(res.headers)
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    })
+
+    it('are present on a rejected traversal 403', async () => {
+      const parent = mkdtempSync(join(tmpdir(), 'cuttlefish-web-parent-'))
+      try {
+        const webDir = join(parent, 'web')
+        mkdirSync(webDir)
+        writeFileSync(join(webDir, 'index.html'), '<div id="root"></div>')
+        const { res } = await callServeStatic('/../etc/passwd', webDir)
+        expect(res.statusCode).toBe(403)
+        expectSecurityHeaders(res.headers)
+      } finally {
+        rmSync(parent, { recursive: true, force: true })
+      }
+    })
+  })
 })
