@@ -179,4 +179,96 @@ describe("PATCH /api/org/departments/:name", () => {
     expect(readEmployee("platform", "alpha").department).toBe("platform");
     expect(readEmployee("platform", "beta").department).toBe("platform");
   });
+
+  it("clears the intent marker on a successful rename (DFI-002)", async () => {
+    writeEmployee("platform", "dev");
+    const { renameDepartment } = await import("../department-rename.js");
+
+    const result = renameDepartment("platform", "product");
+
+    expect(result.ok).toBe(true);
+    expect(fs.existsSync(path.join(tmpHome, "org", ".department-rename-pending.json"))).toBe(false);
+  });
+
+  it("clears the intent marker after a fully-restored rollback", async () => {
+    writeEmployee("platform", "dev");
+    const oldDir = path.join(tmpHome, "org", "platform");
+    const newDir = path.join(tmpHome, "org", "product");
+    const originalRenameSync = fs.renameSync.bind(fs);
+    vi.spyOn(fs, "renameSync").mockImplementation((from, to) => {
+      if (from === oldDir && to === newDir) throw new Error("rename blocked");
+      return originalRenameSync(from, to);
+    });
+    const { renameDepartment } = await import("../department-rename.js");
+
+    const result = renameDepartment("platform", "product");
+
+    expect(result).toMatchObject({ ok: false, status: 409 });
+    expect(fs.existsSync(path.join(tmpHome, "org", ".department-rename-pending.json"))).toBe(false);
+    expect(fs.existsSync(oldDir)).toBe(true);
+    expect(fs.existsSync(newDir)).toBe(false);
+  });
+});
+
+describe("recoverInterruptedDepartmentRename (DFI-002)", () => {
+  function writeIntentMarker(intent: { previousDepartment: string; department: string; employees: string[] }) {
+    fs.writeFileSync(
+      path.join(tmpHome, "org", ".department-rename-pending.json"),
+      JSON.stringify({ ...intent, startedAt: new Date(0).toISOString() }),
+    );
+  }
+
+  it("finishes a rename crashed AFTER the employee field write but BEFORE the directory move", async () => {
+    writeEmployee("platform", "dev");
+    const { updateEmployeeYaml } = await import("../org.js");
+    // Simulate the crashed step: the field write landed, the directory move
+    // never ran (still called "platform" on disk).
+    expect(updateEmployeeYaml("dev", { department: "product" })).toBe(true);
+    writeIntentMarker({ previousDepartment: "platform", department: "product", employees: ["dev"] });
+
+    const { recoverInterruptedDepartmentRename } = await import("../department-rename.js");
+    recoverInterruptedDepartmentRename(path.join(tmpHome, "org"));
+
+    expect(fs.existsSync(path.join(tmpHome, "org", "platform"))).toBe(false);
+    expect(fs.existsSync(path.join(tmpHome, "org", "product"))).toBe(true);
+    expect(readEmployee("product", "dev").department).toBe("product");
+    expect(fs.existsSync(path.join(tmpHome, "org", ".department-rename-pending.json"))).toBe(false);
+  });
+
+  it("finishes a rename crashed BEFORE either step ran", async () => {
+    writeEmployee("platform", "dev");
+    writeIntentMarker({ previousDepartment: "platform", department: "product", employees: ["dev"] });
+
+    const { recoverInterruptedDepartmentRename } = await import("../department-rename.js");
+    recoverInterruptedDepartmentRename(path.join(tmpHome, "org"));
+
+    expect(fs.existsSync(path.join(tmpHome, "org", "platform"))).toBe(false);
+    expect(fs.existsSync(path.join(tmpHome, "org", "product"))).toBe(true);
+    expect(readEmployee("product", "dev").department).toBe("product");
+    expect(fs.existsSync(path.join(tmpHome, "org", ".department-rename-pending.json"))).toBe(false);
+  });
+
+  it("is a no-op when no intent marker is present", async () => {
+    writeEmployee("platform", "dev");
+    const { recoverInterruptedDepartmentRename } = await import("../department-rename.js");
+    expect(() => recoverInterruptedDepartmentRename(path.join(tmpHome, "org"))).not.toThrow();
+    expect(readEmployee("platform", "dev").department).toBe("platform");
+  });
+
+  it("self-heals a leftover marker at the start of the next renameDepartment call", async () => {
+    writeEmployee("platform", "dev");
+    const { updateEmployeeYaml } = await import("../org.js");
+    expect(updateEmployeeYaml("dev", { department: "product" })).toBe(true);
+    writeIntentMarker({ previousDepartment: "platform", department: "product", employees: ["dev"] });
+    writeEmployee("other", "third");
+
+    const { renameDepartment } = await import("../department-rename.js");
+    const result = renameDepartment("other", "third-dept");
+
+    // The leftover "platform" -> "product" rename is healed as a side effect,
+    // in addition to the newly-requested "other" -> "third-dept" rename.
+    expect(result.ok).toBe(true);
+    expect(fs.existsSync(path.join(tmpHome, "org", "product"))).toBe(true);
+    expect(readEmployee("product", "dev").department).toBe("product");
+  });
 });

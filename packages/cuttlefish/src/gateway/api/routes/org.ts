@@ -10,43 +10,18 @@ import type { GatewayPrincipal } from "../../auth.js";
 import { archiveEmployeeBoardTickets, BoardConflictError, defaultBoardState, readBoardArray, readBoardState, validateBoardAssigneesForDepartment, writeMergedBoardPartial } from "../../board-service.js";
 import { resolveBestSessionForTicket, resolveTicketSessionFallbackState, resolveTicketSessionFailureReason, resolveTicketSessionStalled, shouldExposeSessionForTicket } from "../../ticket-session-resolver.js";
 import { dispatchTicket } from "../../ticket-dispatch.js";
-import { RESERVED_ORG_DIRS, isActiveEmployee, scanOrg } from "../../org.js";
+import { isActiveEmployee, scanOrg } from "../../org.js";
 import { HR_EMPLOYEE_NAME } from "../../org-policy.js";
-import { buildCrossRequestBrief, buildOrgServices, findServiceProvider } from "../../org-services.js";
+import { buildCrossRequestBrief, buildOrgServices, computeExecutionProfileSummary, findServiceProvider, listOrgDepartments } from "../../org-services.js";
 import { parseChangeInput } from "../../org-validation.js";
 import { resolveUserHeader } from "../../connector-reply.js";
 import type { ApiContext } from "../context.js";
 import { matchRoute } from "../match-route.js";
 import { badRequest, json, notFound, serverError } from "../responses.js";
 import { loadSessionMessagesForApi } from "../session-query-routes.js";
-import { EXECUTION_TIERS, type Employee, type EmployeeExecutionConfig, type OrgWarning } from "../../../shared/types.js";
+import type { OrgWarning } from "../../../shared/types.js";
 
 const TICKET_SESSION_TAIL_LIMIT = 8;
-
-/** Effective execution config — applies V1 defaults for absent fields. */
-function effectiveExecution(emp: Employee): EmployeeExecutionConfig {
-  return emp.execution ?? { tier: "solo" };
-}
-
-interface ExecutionProfileSummary {
-  tier: "solo" | "mid_pair";
-  label: string;
-  reviewerLossPolicy?: string;
-  reviewerToolProfile?: string;
-  hasCustomRoleOverrides: boolean;
-}
-
-function computeExecutionProfileSummary(emp: Employee): ExecutionProfileSummary {
-  const exec = effectiveExecution(emp);
-  const tier = (EXECUTION_TIERS as readonly string[]).includes(exec.tier) ? exec.tier : "solo";
-  return {
-    tier,
-    label: tier === "mid_pair" ? "Built-in review" : "Solo",
-    reviewerLossPolicy: exec.reviewerLossPolicy,
-    reviewerToolProfile: exec.reviewerToolProfile,
-    hasCustomRoleOverrides: !!(exec.roles?.implementer || exec.roles?.reviewer),
-  };
-}
 
 async function reconcileDepartmentBoardView(department: string, context: ApiContext): Promise<void> {
   const { reconcileDepartmentOrphanedTickets } = await import("../../orphaned-ticket-reconciler.js");
@@ -74,21 +49,10 @@ export async function handleOrgRoutes(
       json(res, { departments: [], employees: [], hierarchy: { root: null, sorted: [], warnings: [] } });
       return true;
     }
-    const entries = fs.readdirSync(ORG_DIR, { withFileTypes: true });
-    const directoryDepartments = entries
-      .filter((entry) => entry.isDirectory() && !RESERVED_ORG_DIRS.has(entry.name))
-      .map((entry) => entry.name);
     const { resolveOrgHierarchy, withPortalExecutive } = await import("../../org-hierarchy.js");
     const scanWarnings: OrgWarning[] = [];
     const orgRegistry = withPortalExecutive(scanOrg(scanWarnings), context.getConfig().portal?.portalName);
-    const departments = [
-      ...new Set([
-        ...directoryDepartments,
-        ...[...orgRegistry.values()]
-          .map((employee) => employee.department.trim())
-          .filter(Boolean),
-      ]),
-    ];
+    const { directoryDepartments, departments } = listOrgDepartments(ORG_DIR, orgRegistry);
     const hierarchy = resolveOrgHierarchy(orgRegistry);
     const employees = hierarchy.sorted.map((name) => {
       const node = hierarchy.nodes[name];

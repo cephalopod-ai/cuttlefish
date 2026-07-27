@@ -29,7 +29,9 @@ import {
   retireEmployeeYaml,
   listRetiredEmployees,
   findEmployeeYamlPath,
+  validateOrgChange,
 } from "../org.js";
+import type { CuttlefishConfig } from "../../shared/types.js";
 
 function writeEmployee(subdir: string, filename: string, content: string) {
   const dir = path.join(orgDir, subdir);
@@ -98,5 +100,52 @@ describe("retireEmployeeYaml", () => {
 
   it("returns false for an unknown employee", () => {
     expect(retireEmployeeYaml("ghost")).toBe(false);
+  });
+
+  it("refuses to retire a manager who still has direct reports (DFI-003)", () => {
+    writeEmployee("eng", "mgr.yaml", "name: mgr\ndisplayName: Manager\npersona: leads a team\nrank: manager\n");
+    writeEmployee("eng", "report.yaml", "name: report\ndisplayName: Report\npersona: reports to mgr\nreportsTo: mgr\n");
+
+    const ok = retireEmployeeYaml("mgr");
+    expect(ok).toBe(false);
+
+    // Refused, not partially applied: still active, still in the original file.
+    expect(scanOrg().has("mgr")).toBe(true);
+    expect(findEmployeeYamlPath("mgr")).toBe(path.join(orgDir, "eng", "mgr.yaml"));
+    expect(listRetiredEmployees()).toHaveLength(0);
+  });
+
+  it("allows retiring once the last report is reassigned", () => {
+    writeEmployee("eng", "mgr2.yaml", "name: mgr2\ndisplayName: Manager 2\npersona: leads a team\nrank: manager\n");
+    writeEmployee("eng", "report2.yaml", "name: report2\ndisplayName: Report 2\npersona: x\nreportsTo: other\n");
+
+    expect(retireEmployeeYaml("mgr2")).toBe(true);
+    expect(scanOrg().has("mgr2")).toBe(false);
+  });
+});
+
+describe("validateOrgChange — retire_agent orphan guard (DFI-003)", () => {
+  const config = { engines: { default: "claude" } } as unknown as CuttlefishConfig;
+
+  it("rejects a retire_agent change while dependents remain", () => {
+    writeEmployee("eng", "mgr.yaml", "name: mgr\ndisplayName: Manager\npersona: x\nrank: manager\n");
+    writeEmployee("eng", "report.yaml", "name: report\ndisplayName: Report\npersona: x\nreportsTo: mgr\n");
+
+    const result = validateOrgChange(config, { changeType: "retire_agent", employeeName: "mgr", proposed: {} });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain("report");
+  });
+
+  it("allows a retire_agent change once there are no dependents", () => {
+    writeEmployee("eng", "solo.yaml", "name: solo\ndisplayName: Solo\npersona: x\n");
+    const result = validateOrgChange(config, { changeType: "retire_agent", employeeName: "solo", proposed: {} });
+    expect(result.ok).toBe(true);
+  });
+
+  it("still allows disable_agent with dependents present (no orphan risk — stays in the registry)", () => {
+    writeEmployee("eng", "mgr3.yaml", "name: mgr3\ndisplayName: Manager 3\npersona: x\nrank: manager\n");
+    writeEmployee("eng", "report3.yaml", "name: report3\ndisplayName: Report 3\npersona: x\nreportsTo: mgr3\n");
+    const result = validateOrgChange(config, { changeType: "disable_agent", employeeName: "mgr3", proposed: {} });
+    expect(result.ok).toBe(true);
   });
 });

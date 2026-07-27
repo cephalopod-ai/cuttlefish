@@ -99,7 +99,7 @@ export const WRITABLE_FIELDS = [
 // `execution` is accepted but handled separately since it's an object block.
 const ACCEPTED_UPDATE_FIELDS = [...WRITABLE_FIELDS, "fallbackEngine", "fallbackModel", "avatar", "emoji", "execution"] as const;
 
-const VALID_RANKS: ReadonlyArray<Employee["rank"]> = [
+export const VALID_RANKS: ReadonlyArray<Employee["rank"]> = [
   "executive",
   "manager",
   "senior",

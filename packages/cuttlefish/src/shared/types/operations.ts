@@ -285,7 +285,7 @@ export interface OrgNode {
 /** Warning about a hierarchy issue. */
 export interface OrgWarning {
   employee: string;
-  type: "broken_ref" | "cycle" | "self_ref" | "cross_department" | "multiple_executives" | "parse_error";
+  type: "broken_ref" | "cycle" | "self_ref" | "cross_department" | "multiple_executives" | "parse_error" | "duplicate_name";
   message: string;
   /** The invalid reportsTo value that caused this warning */
   ref?: string;

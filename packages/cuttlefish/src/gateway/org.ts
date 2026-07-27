@@ -33,6 +33,7 @@ import {
   isNonEmptyRecord,
   validateEmployeeCreate,
   validateEmployeeUpdate,
+  VALID_RANKS,
   WRITABLE_FIELDS,
 } from "./org-validation.js";
 import type {
@@ -122,7 +123,12 @@ function walkEmployeeYamls<T>(
   dir: string,
   visit: (fullPath: string) => T | undefined,
 ): T | undefined {
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  // Deterministic order (matches buildOrgFingerprint's walk) so that scanOrg's
+  // duplicate-name resolution and findEmployeeYamlPath's first-match lookup
+  // always agree on which physical file backs a given employee name — see
+  // DFI-001.
+  const entries = fs.readdirSync(dir, { withFileTypes: true })
+    .sort((a, b) => a.name.localeCompare(b.name));
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
@@ -304,7 +310,22 @@ export function scanOrg(warningsOut?: OrgWarning[]): Map<string, Employee> {
     try {
       const data = yaml.load(fs.readFileSync(fullPath, "utf-8")) as any;
       const employee = parseEmployeeData(data, fullPath);
-      if (employee) registry.set(employee.name, employee);
+      if (employee) {
+        // Same `name` claimed by two files: keep the file the sorted walk
+        // visits FIRST (matching findEmployeeYamlPath's first-match order,
+        // so a read and a subsequent write always target the same physical
+        // file) and warn instead of silently letting the later file win — see
+        // DFI-001.
+        if (registry.has(employee.name)) {
+          warnings.push({
+            employee: employee.name,
+            type: "duplicate_name",
+            message: `Employee name "${employee.name}" is claimed by more than one YAML file under org/; keeping the first one found (${path.relative(ORG_DIR, fullPath)} was ignored).`,
+          });
+        } else {
+          registry.set(employee.name, employee);
+        }
+      }
     } catch (err) {
       logger.warn(`Failed to parse employee file ${fullPath}: ${err}`);
       warnings.push({
@@ -377,6 +398,25 @@ export function readEmployeeYamlText(name: string): string | null {
 }
 
 /**
+ * Structural invariants enforced at the persistence boundary itself, so a
+ * caller that skips the API-layer validators (org-validation.ts) — e.g.
+ * department-rename.ts's direct `updateEmployeeYaml` call — cannot silently
+ * write a structurally-invalid employee record. Bounded to checks that need
+ * no external context (config/model registry, full reportsTo-cycle
+ * detection); those remain the API layer's responsibility — see DFI-004.
+ */
+function assertPersistedEmployeeFieldsValid(data: unknown): void {
+  if (!data || typeof data !== "object") return;
+  const record = data as Record<string, unknown>;
+  if (record.rank !== undefined && !(VALID_RANKS as readonly string[]).includes(record.rank as string)) {
+    throw new Error(`refusing to persist employee YAML with invalid rank "${String(record.rank)}"`);
+  }
+  if (record.lifecycle !== undefined && !(EMPLOYEE_LIFECYCLES as readonly string[]).includes(record.lifecycle as string)) {
+    throw new Error(`refusing to persist employee YAML with invalid lifecycle "${String(record.lifecycle)}"`);
+  }
+}
+
+/**
  * Update an employee's YAML file by read-merging the provided writable fields.
  * Only keys in WRITABLE_FIELDS are written; `name` is never touched (immutable).
  * Untouched YAML fields are preserved. Returns true on success, false if the
@@ -395,7 +435,11 @@ export function updateEmployeeYaml(
     if (!data || typeof data !== "object") return false;
 
     const merged = mergeEmployeeUpdateData(data, updates);
-    safeWriteYaml(filePath, merged, { dumpOptions: { lineWidth: -1 }, audit: { actor: "gateway", op: "org.employee.save" } });
+    safeWriteYaml(filePath, merged, {
+      dumpOptions: { lineWidth: -1 },
+      audit: { actor: "gateway", op: "org.employee.save" },
+      validate: assertPersistedEmployeeFieldsValid,
+    });
     invalidateOrgScanCache();
     return true;
   } catch (err) {
@@ -568,7 +612,11 @@ export function createEmployeeYaml(employee: EmployeeCreate): boolean {
   try {
     fs.mkdirSync(departmentDir, { recursive: true });
     const data = buildEmployeeCreateData(employee);
-    safeWriteYaml(filePath, data, { dumpOptions: { lineWidth: -1 }, audit: { actor: "gateway", op: "org.employee.create" } });
+    safeWriteYaml(filePath, data, {
+      dumpOptions: { lineWidth: -1 },
+      audit: { actor: "gateway", op: "org.employee.create" },
+      validate: assertPersistedEmployeeFieldsValid,
+    });
     invalidateOrgScanCache();
     return true;
   } catch (err) {
@@ -606,19 +654,31 @@ export function deleteEmployeeYaml(name: string): boolean {
 /**
  * Soft-retire an employee: stamp `lifecycle: retired` and MOVE the YAML to
  * `org/_retired/` (excluded from the active scan) instead of hard-deleting it.
- * Returns false when the employee can't be found/parsed. Callers should run the
- * same orphan guard the DELETE path uses before retiring.
+ * Returns false when the employee can't be found/parsed, or when they still
+ * have direct/matrix reports (same orphan guard as `deleteEmployeeYaml`).
  */
 export function retireEmployeeYaml(name: string): boolean {
   const filePath = findEmployeeYamlPath(name);
   if (!filePath) return false;
+  // Same orphan guard as deleteEmployeeYaml (audit §7.2): retiring moves the
+  // employee out of the active registry exactly like deleting does, so a
+  // manager with direct/matrix reports must be refused here too — see DFI-003.
+  const dependents = [...scanOrg().values()].filter((emp) => getAllParents(emp.reportsTo).includes(name));
+  if (dependents.length > 0) {
+    logger.warn(`Refusing to retire "${name}" via retireEmployeeYaml: ${dependents.length} employee(s) still report to them`);
+    return false;
+  }
   try {
     const raw = fs.readFileSync(filePath, "utf-8");
     const data = yaml.load(raw) as Record<string, unknown>;
     if (!data || typeof data !== "object") return false;
     data.lifecycle = "retired";
     const retiredPath = path.join(ORG_RETIRED_DIR, `${name}.yaml`);
-    safeWriteYaml(retiredPath, data, { dumpOptions: { lineWidth: -1 }, audit: { actor: "gateway", op: "org.employee.retire" } });
+    safeWriteYaml(retiredPath, data, {
+      dumpOptions: { lineWidth: -1 },
+      audit: { actor: "gateway", op: "org.employee.retire" },
+      validate: assertPersistedEmployeeFieldsValid,
+    });
     fs.unlinkSync(filePath);
     invalidateOrgScanCache();
     return true;
@@ -668,8 +728,22 @@ export function validateOrgChange(
   if (!current) {
     return { ok: false, error: `employee "${input.employeeName}" not found` };
   }
-  // retire/disable carry no writable fields — the employee existing is enough.
-  if (input.changeType === "retire_agent" || input.changeType === "disable_agent") {
+  // retire/disable carry no writable fields — the employee existing is enough,
+  // except retire also moves the employee out of the active registry (like
+  // delete), so it must be rejected while direct/matrix reports remain — see
+  // DFI-003. disable_agent keeps the employee in the registry (lifecycle flag
+  // only), so it has no orphan risk.
+  if (input.changeType === "retire_agent") {
+    const dependents = [...registry.values()].filter((emp) => getAllParents(emp.reportsTo).includes(input.employeeName));
+    if (dependents.length > 0) {
+      return {
+        ok: false,
+        error: `cannot retire "${input.employeeName}": ${dependents.length} employee(s) still report to them`,
+      };
+    }
+    return { ok: true };
+  }
+  if (input.changeType === "disable_agent") {
     return { ok: true };
   }
   const result = validateEmployeeUpdate(config, current, proposed);

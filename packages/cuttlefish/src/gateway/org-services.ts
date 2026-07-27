@@ -1,10 +1,62 @@
-import type { Employee } from "../shared/types.js";
-import { isActiveEmployee } from "./org.js";
+import fs from "node:fs";
+import { EXECUTION_TIERS, type Employee, type EmployeeExecutionConfig } from "../shared/types.js";
+import { isActiveEmployee, RESERVED_ORG_DIRS } from "./org.js";
 import { HR_EMPLOYEE_NAME } from "./org-policy.js";
 
 interface ServiceSummary {
   name: string;
   description: string;
+}
+
+/**
+ * The department list the org UI shows: every department directory under
+ * `orgDir` (skipping HR/Org-Steward reserved dirs), unioned with every
+ * department name any active employee in `registry` claims — an employee's
+ * YAML can carry a `department` field the on-disk directory layout hasn't
+ * caught up to yet. Domain logic moved out of the `/api/org` route handler,
+ * which previously did the `fs.readdirSync` scan and this dedup inline in
+ * violation of this repo's own router-file contract (AGENTS.md) — see ARC-001.
+ */
+export function listOrgDepartments(orgDir: string, registry: Map<string, Employee>): { directoryDepartments: string[]; departments: string[] } {
+  if (!fs.existsSync(orgDir)) return { directoryDepartments: [], departments: [] };
+  const entries = fs.readdirSync(orgDir, { withFileTypes: true });
+  const directoryDepartments = entries
+    .filter((entry) => entry.isDirectory() && !RESERVED_ORG_DIRS.has(entry.name))
+    .map((entry) => entry.name);
+  const departments = [
+    ...new Set([
+      ...directoryDepartments,
+      ...[...registry.values()]
+        .map((employee) => employee.department.trim())
+        .filter(Boolean),
+    ]),
+  ];
+  return { directoryDepartments, departments };
+}
+
+/** Effective execution config — applies V1 defaults for absent fields. */
+export function effectiveExecution(emp: Employee): EmployeeExecutionConfig {
+  return emp.execution ?? { tier: "solo" };
+}
+
+export interface ExecutionProfileSummary {
+  tier: "solo" | "mid_pair";
+  label: string;
+  reviewerLossPolicy?: string;
+  reviewerToolProfile?: string;
+  hasCustomRoleOverrides: boolean;
+}
+
+export function computeExecutionProfileSummary(emp: Employee): ExecutionProfileSummary {
+  const exec = effectiveExecution(emp);
+  const tier = (EXECUTION_TIERS as readonly string[]).includes(exec.tier) ? exec.tier : "solo";
+  return {
+    tier,
+    label: tier === "mid_pair" ? "Built-in review" : "Solo",
+    reviewerLossPolicy: exec.reviewerLossPolicy,
+    reviewerToolProfile: exec.reviewerToolProfile,
+    hasCustomRoleOverrides: !!(exec.roles?.implementer || exec.roles?.reviewer),
+  };
 }
 
 export interface OrgServiceSummary extends ServiceSummary {
