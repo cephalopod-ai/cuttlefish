@@ -23,12 +23,16 @@ describe('App routes', () => {
 
   afterEach(() => window.history.replaceState({}, '', '/'))
 
-  it('redirects an unknown route home instead of rendering a blank shell', async () => {
+  // DESIGN-007: an unknown route used to silently redirect home instead of
+  // rendering a blank shell — which looked identical to a normal visit, so a
+  // broken/stale link gave no indication anything was wrong. It now renders
+  // a dedicated 404 with a way back home, rather than either extreme.
+  it('renders a 404 for an unknown route instead of a blank shell or a silent redirect', async () => {
     window.history.replaceState({}, '', '/nonsense-route-xyz')
     render(<App />)
 
-    expect(await screen.findByText('Chat page')).toBeTruthy()
-    expect(window.location.pathname).toBe('/')
+    expect(await screen.findByText('Page not found')).toBeTruthy()
+    expect(window.location.pathname).toBe('/nonsense-route-xyz')
   })
 
   it('redirects stale Talk links into the Team collaboration lane', async () => {

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { renderHook } from '@testing-library/react'
+import { act, renderHook } from '@testing-library/react'
 import { useKeyboardShortcuts, type ShortcutDef } from '../use-keyboard-shortcuts'
+import { setSingleKeyShortcutsEnabled } from '../use-shortcuts-enabled'
 
 function fireKey(key: string, opts: Partial<KeyboardEventInit> = {}) {
   window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...opts }))
@@ -170,6 +171,64 @@ describe('useKeyboardShortcuts', () => {
 
       fireKey('Escape')
       expect(escAction).toHaveBeenCalledOnce()
+    })
+  })
+
+  // DESIGN-006 / WCAG 2.1.4: single-character, no-modifier shortcuts must be
+  // able to be turned off.
+  describe('single-key shortcuts toggle', () => {
+    afterEach(() => {
+      setSingleKeyShortcutsEnabled(true)
+    })
+
+    it('blocks single-key shortcuts when the toggle is off', () => {
+      setSingleKeyShortcutsEnabled(false)
+      const action = vi.fn()
+      const shortcuts: ShortcutDef[] = [
+        { key: 'n', category: 'Actions', description: 'New chat', action },
+      ]
+      renderHook(() => useKeyboardShortcuts(shortcuts))
+      fireKey('n')
+      expect(action).not.toHaveBeenCalled()
+    })
+
+    it('still allows modifier shortcuts when the toggle is off', () => {
+      setSingleKeyShortcutsEnabled(false)
+      const action = vi.fn()
+      const shortcuts: ShortcutDef[] = [
+        { key: 'w', modifiers: ['meta'], category: 'Actions', description: 'Close tab', action },
+      ]
+      renderHook(() => useKeyboardShortcuts(shortcuts))
+      fireKey('w', { metaKey: true })
+      expect(action).toHaveBeenCalledOnce()
+    })
+
+    it('still allows Escape when the toggle is off', () => {
+      setSingleKeyShortcutsEnabled(false)
+      const action = vi.fn()
+      const shortcuts: ShortcutDef[] = [
+        { key: 'Escape', category: 'Navigation', description: 'Close', action },
+      ]
+      renderHook(() => useKeyboardShortcuts(shortcuts))
+      fireKey('Escape')
+      expect(action).toHaveBeenCalledOnce()
+    })
+
+    it('resumes firing single-key shortcuts once turned back on', () => {
+      setSingleKeyShortcutsEnabled(false)
+      const action = vi.fn()
+      const shortcuts: ShortcutDef[] = [
+        { key: 'n', category: 'Actions', description: 'New chat', action },
+      ]
+      renderHook(() => useKeyboardShortcuts(shortcuts))
+      fireKey('n')
+      expect(action).not.toHaveBeenCalled()
+
+      act(() => {
+        setSingleKeyShortcutsEnabled(true)
+      })
+      fireKey('n')
+      expect(action).toHaveBeenCalledOnce()
     })
   })
 

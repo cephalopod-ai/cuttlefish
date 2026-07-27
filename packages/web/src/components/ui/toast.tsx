@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react"
@@ -48,10 +49,36 @@ function ToastCard({
   toast: ToastRecord
   onDismiss: (id: string) => void
 }) {
+  // DESIGN-004 / WCAG 2.2.1 (Timing Adjustable): the auto-dismiss timer used
+  // to run unconditionally, giving a screen-reader or low-vision user no
+  // chance to read a toast before it vanished. Pause the remaining time on
+  // hover/focus and resume it on leave/blur, so an interacting user always
+  // gets the full duration once they stop.
+  const durationMs = toast.durationMs ?? 4000
+  const remainingRef = useRef(durationMs)
+  const startedAtRef = useRef(Date.now())
+  const timeoutRef = useRef<number | undefined>(undefined)
+
+  const scheduleDismiss = useCallback(() => {
+    startedAtRef.current = Date.now()
+    timeoutRef.current = window.setTimeout(() => onDismiss(toast.id), remainingRef.current)
+  }, [onDismiss, toast.id])
+
   useEffect(() => {
-    const timeout = window.setTimeout(() => onDismiss(toast.id), toast.durationMs ?? 4000)
-    return () => window.clearTimeout(timeout)
-  }, [onDismiss, toast.durationMs, toast.id])
+    remainingRef.current = durationMs
+    scheduleDismiss()
+    return () => window.clearTimeout(timeoutRef.current)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-schedule only when the toast identity/duration changes, not on every pause/resume
+  }, [durationMs, toast.id])
+
+  const pause = useCallback(() => {
+    window.clearTimeout(timeoutRef.current)
+    remainingRef.current = Math.max(0, remainingRef.current - (Date.now() - startedAtRef.current))
+  }, [])
+
+  const resume = useCallback(() => {
+    scheduleDismiss()
+  }, [scheduleDismiss])
 
   const tone = toast.tone ?? "info"
 
@@ -59,6 +86,10 @@ function ToastCard({
     <div
       role={tone === "error" ? "alert" : "status"}
       aria-live="polite"
+      onMouseEnter={pause}
+      onMouseLeave={resume}
+      onFocus={pause}
+      onBlur={resume}
       className={`pointer-events-auto min-w-[280px] max-w-[420px] rounded-[var(--radius-lg)] border px-[var(--space-4)] py-[var(--space-3)] shadow-[var(--shadow-overlay)] backdrop-blur-xl ${toastToneClass(tone)}`}
     >
       <div className="flex items-start gap-[var(--space-3)]">

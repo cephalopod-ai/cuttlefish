@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react"
 import { useNavigate } from "react-router-dom"
+import { useSingleKeyShortcutsEnabled } from "./use-shortcuts-enabled"
 
 export interface GoToTarget {
   key: string
@@ -45,9 +46,13 @@ export function useGoToNavigation(enabled = true) {
   const navigate = useNavigate()
   const armed = useRef(false)
   const timeoutRef = useRef<number | undefined>(undefined)
+  // DESIGN-006 / WCAG 2.1.4: "g then <key>" is a single-character,
+  // no-modifier shortcut, so it must be able to be turned off. See
+  // use-shortcuts-enabled.ts.
+  const singleKeyShortcutsEnabled = useSingleKeyShortcutsEnabled()
 
   useEffect(() => {
-    if (!enabled) return
+    if (!enabled || !singleKeyShortcutsEnabled) return
 
     function disarm() {
       armed.current = false
@@ -84,5 +89,5 @@ export function useGoToNavigation(enabled = true) {
       window.removeEventListener("keydown", handleKeyDown)
       window.clearTimeout(timeoutRef.current)
     }
-  }, [enabled, navigate])
+  }, [enabled, singleKeyShortcutsEnabled, navigate])
 }

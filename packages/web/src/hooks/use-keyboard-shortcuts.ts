@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useSingleKeyShortcutsEnabled } from './use-shortcuts-enabled'
 
 export interface ShortcutDef {
   key: string
@@ -41,6 +42,12 @@ function matchesShortcut(e: KeyboardEvent, s: ShortcutDef): boolean {
 }
 
 export function useKeyboardShortcuts(shortcuts: ShortcutDef[], options: ShortcutOptions = {}) {
+  // DESIGN-006 / WCAG 2.1.4: single-character, no-modifier shortcuts must be
+  // able to be turned off. Escape is exempt — it's a non-printable control
+  // key, not the kind of "character key" 2.1.4 targets, and disabling it
+  // would trap users in overlays/dialogs with no keyboard way out.
+  const singleKeyShortcutsEnabled = useSingleKeyShortcutsEnabled()
+
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       const isEscape = e.key === 'Escape'
@@ -55,6 +62,8 @@ export function useKeyboardShortcuts(shortcuts: ShortcutDef[], options: Shortcut
         const hasModifiers = (s.modifiers ?? []).length > 0
         const isThisEscape = s.key === 'Escape'
 
+        if (!singleKeyShortcutsEnabled && !hasModifiers && !isThisEscape) continue
+
         // Modal guard: only Escape passes
         if (options.isModalOpen && !isThisEscape) continue
 
@@ -68,5 +77,5 @@ export function useKeyboardShortcuts(shortcuts: ShortcutDef[], options: Shortcut
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [shortcuts, options.isModalOpen])
+  }, [shortcuts, options.isModalOpen, singleKeyShortcutsEnabled])
 }
