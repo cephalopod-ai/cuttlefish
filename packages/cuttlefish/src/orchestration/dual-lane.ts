@@ -128,12 +128,34 @@ export async function runDualLaneTask(opts: {
   }
 
   runtime.deleteLiveContinuation(opts.task.taskId, opts.task.coordinatorId);
-  return runAllocatedDualLaneTask({
-    context: opts.context,
-    task: opts.task,
-    allocation: allocationResult.allocation,
-    reviewPolicy: allocationResult.reviewPolicy,
-  });
+  // CONC-001: seed a "dispatching" continuation before running, and resolve
+  // it to completed/failed once the run settles — mirrors the equivalent
+  // fix in run-mode.ts's runOrchestrationTask (see
+  // beginDispatchingLiveContinuation's doc comment in runtime.ts).
+  runtime.beginDispatchingLiveContinuation("dual_lane", opts.task);
+  const allocationId = allocationResult.allocation.allocationId;
+  try {
+    const result = await runAllocatedDualLaneTask({
+      context: opts.context,
+      task: opts.task,
+      allocation: allocationResult.allocation,
+      reviewPolicy: allocationResult.reviewPolicy,
+    });
+    if (result.ok) {
+      runtime.markLiveContinuationCompleted(opts.task.taskId, opts.task.coordinatorId, allocationId);
+    } else if (result.state === "failed") {
+      runtime.markLiveContinuationFailed(opts.task.taskId, opts.task.coordinatorId, result.errorSummary, allocationId);
+    }
+    return result;
+  } catch (err) {
+    runtime.markLiveContinuationFailed(
+      opts.task.taskId,
+      opts.task.coordinatorId,
+      err instanceof Error ? err.message : String(err),
+      allocationId,
+    );
+    throw err;
+  }
 }
 
 export async function runAllocatedDualLaneTask(opts: {

@@ -424,13 +424,21 @@ describe("runOrchestrationTask", () => {
 
     expect(blocked.ok).toBe(false);
     if (blocked.ok || blocked.state !== "blocked_resource") return;
-    expect(runtime.listLiveContinuations()).toMatchObject([{ taskId: "task-2", state: "queued" }]);
+    // CONC-001: task-1 got an immediate allocation (no blocked/queued
+    // detour) and is still mid-run here, so it must already have its own
+    // "dispatching" continuation — the guard against a crash losing it
+    // silently — alongside task-2's "queued" one.
+    expect(runtime.listLiveContinuations()).toMatchObject([
+      { taskId: "task-1", state: "dispatching" },
+      { taskId: "task-2", state: "queued" },
+    ]);
     engine.unblockNext();
     const completed = await firstRun;
     expect(completed.ok).toBe(true);
 
     await waitFor(() => engine.run.mock.calls.length === 2);
     await waitFor(() => runtime.listLiveContinuations().find((entry) => entry.taskId === "task-2")?.state === "completed");
+    expect(runtime.listLiveContinuations().find((entry) => entry.taskId === "task-1")?.state).toBe("completed");
     expect(runtime.listQueue()).toEqual([]);
     expect(runtime.listLeases().every((lease) => lease.state === "released")).toBe(true);
     runtime.close();

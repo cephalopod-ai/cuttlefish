@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import type { ServerResponse } from "node:http";
-import { Readable } from "node:stream";
+import { PassThrough, Readable } from "node:stream";
 
 /**
  * Route-level tests for two hardened GET handlers in ../api.ts:
@@ -301,6 +301,50 @@ describe("GET /api/cron — invalid schedules", () => {
         lastRun: null,
       }),
     ]);
+  });
+});
+
+// CONC-004: PUT /api/cron/:id used to call loadJobs() *before* awaiting the
+// request body, then saveJobs() after. Two concurrent PUTs for different job
+// ids could both load the same pre-update jobs.json before either saved,
+// so whichever finished last would overwrite the other's change with a
+// save built from its own now-stale snapshot (lost update). The fix reads
+// the body first so load+mutate+save has no await in between.
+describe("PUT /api/cron/:id — concurrent updates", () => {
+  it("does not lose a concurrent update to a different job", async () => {
+    fs.mkdirSync(path.dirname(cronJobsFile), { recursive: true });
+    fs.writeFileSync(cronJobsFile, JSON.stringify([
+      { id: "job-a", name: "Job A", enabled: true, schedule: "0 * * * *", prompt: "run a" },
+      { id: "job-b", name: "Job B", enabled: true, schedule: "0 * * * *", prompt: "run b" },
+    ]));
+
+    // job-a's request body arrives late: readJsonBody won't resolve until
+    // this stream is explicitly ended below.
+    const slowBody = new PassThrough();
+    const slowReq = Object.assign(slowBody, {
+      method: "PUT",
+      url: "/api/cron/job-a",
+      headers: { host: "localhost" },
+    }) as unknown as Parameters<typeof handleApiRequest>[0];
+
+    const capA = makeRes();
+    const putA = handleApiRequest(slowReq, capA.res, ctx);
+
+    // job-b's request has its body ready immediately, so it fully completes
+    // (load, mutate, save) before job-a's body arrives.
+    const capB = makeRes();
+    await handleApiRequest(makeReq("PUT", "/api/cron/job-b", { prompt: "run b updated" }), capB.res, ctx);
+    expect(capB.status).toBe(200);
+
+    // Now let job-a's body land — with the fix, job-a's loadJobs() runs
+    // *after* this, so it observes job-b's already-saved update.
+    slowBody.end(Buffer.from(JSON.stringify({ prompt: "run a updated" })));
+    await putA;
+    expect(capA.status).toBe(200);
+
+    const saved = JSON.parse(fs.readFileSync(cronJobsFile, "utf-8")) as Array<{ id: string; prompt: string }>;
+    expect(saved.find((job) => job.id === "job-a")?.prompt).toBe("run a updated");
+    expect(saved.find((job) => job.id === "job-b")?.prompt).toBe("run b updated");
   });
 });
 

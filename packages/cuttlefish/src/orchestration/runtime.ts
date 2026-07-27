@@ -9,7 +9,7 @@ import { appendOrchestrationAudit } from "./audit.js";
 import { buildCoordinatorTaskBrief, type CoordinatorMode } from "./coordinator.js";
 import { resolveCrossFamilyReviewPolicy, type CrossFamilyReviewPolicy } from "./cross-family.js";
 import { listProtectedDualLaneTaskIds } from "./dual-lane-state.js";
-import type { LiveRunContinuationRecord } from "./live-run.js";
+import type { LiveRunContinuationRecord, LiveRunMode, LiveRunTaskPayload } from "./live-run.js";
 import { PersistentMatrixScheduler } from "./persistent-scheduler.js";
 import { queueTaskKey } from "./scheduler.js";
 import { filterWorkersWithHeadroom, type HeadroomFilterResult } from "./routing-headroom.js";
@@ -240,10 +240,43 @@ export class OrchestrationRuntime {
     if (record.task.cwd && record.task.enqueueHeadSha === undefined) {
       record.task.enqueueHeadSha = resolveGitHeadSha(record.task.cwd);
     }
+    // CONC-002: `record.runId`, when set, is already part of this INSERT/
+    // UPDATE (upsertLiveContinuationInDb writes the `run_id` column as part
+    // of the same statement) — a separate follow-up `stampContinuationRunId`
+    // call used to run here, writing the identical value again outside the
+    // upsert's own atomicity for no benefit, and leaving a window where a
+    // crash between the two writes could be mistaken for a real
+    // inconsistency. The upsert alone is sufficient.
     this.store.upsertLiveContinuation(record);
-    if (record.runId) {
-      this.store.stampContinuationRunId(record.taskId, record.coordinatorId, record.runId);
-    }
+  }
+
+  /**
+   * CONC-001: a task that gets an allocation immediately (no blocked/queued
+   * detour) previously ran with no durable continuation record at all —
+   * only tasks that first went through queueLiveContinuation got
+   * "dispatching"-state tracking via resumeQueuedAllocation below. A crash
+   * between allocation and completion was silently unrecoverable: nothing
+   * for recoverStaleDispatchingContinuations() to find at the next boot, and
+   * nothing to retry. Seed the same "dispatching" row immediately-allocated
+   * tasks now get too, so callers (run-mode.ts, dual-lane.ts) can mark it
+   * completed/failed once the run resolves, and a crash mid-run leaves a
+   * "dispatching" row that boot-time recovery flips to "failed" —
+   * discoverable and retryable via retryFailedLiveContinuation, the same
+   * guarantee queued/resumed tasks already have.
+   */
+  beginDispatchingLiveContinuation(mode: LiveRunMode, task: LiveRunTaskPayload): void {
+    const now = new Date().toISOString();
+    this.store.upsertLiveContinuation({
+      taskId: task.taskId,
+      coordinatorId: task.coordinatorId,
+      mode,
+      state: "dispatching",
+      task,
+      enqueuedAt: now,
+      updatedAt: now,
+      retryCount: 0,
+      lastDispatchedAt: now,
+    });
   }
 
   getLiveContinuation(taskId: string, coordinatorId: string): LiveRunContinuationRecord | undefined {
@@ -698,6 +731,16 @@ export class OrchestrationRuntime {
       this.expireLeases();
       this.reapWorktrees();
       this.pruneRetainedFiles();
+      // CONC-006: recoverStaleDispatchingContinuations() previously only ran
+      // once, in the constructor at process boot. A task that hangs mid-run
+      // without the process itself crashing (a wedged dispatch, a worker
+      // that never resolves) was never caught until the next restart — no
+      // process boundary meant no "boot" for the next-boot recovery pass to
+      // run at. Re-running it on the existing reaper tick catches
+      // same-process staleness too; it is idempotent (recomputes the
+      // wall-clock cutoff and only acts on continuations past it or from an
+      // older boot generation) so calling it repeatedly is safe.
+      this.recoverStaleDispatchingContinuations();
     }, this.reaperIntervalMs);
     this.reaper.unref?.();
   }
