@@ -1,56 +1,17 @@
 import { get, post } from "./api-core"
 import type { Employee } from "./api-org"
+import type {
+  OrgChangeRequest,
+  OrgChangeRiskLevel,
+  OrgChangeStatus,
+  OrgChangeType,
+} from "@cuttlefish/contracts"
 
-// Mirror of the backend source of truth in
-// packages/cuttlefish/src/shared/types/org-change.ts (OrgChangeType /
-// OrgChangeStatus). Keep these in sync — `change_execution` and the `error`
-// status had drifted out of this copy, so the web under-handled real backend
-// change types/states.
-export type OrgChangeType =
-  | "create_agent"
-  | "modify_instructions"
-  | "change_model"
-  | "change_engine"
-  | "change_budget"
-  | "change_execution"
-  | "promote"
-  | "demote"
-  | "reassign_manager"
-  | "change_department"
-  | "disable_agent"
-  | "retire_agent"
-
-export type OrgChangeStatus =
-  | "draft"
-  | "pending_critique"
-  | "pending_approval"
-  | "approved"
-  | "rejected"
-  | "error"
-  | "applied"
-  | "rolled_back"
-
-export type OrgChangeRiskLevel = "low" | "medium" | "high"
-
-export interface OrgChangeRequest {
-  id: string
-  changeType: OrgChangeType
-  status: OrgChangeStatus
-  employeeName: string
-  proposedBy: string
-  proposed: Record<string, unknown>
-  rationale: string
-  evidenceRefs: string[]
-  beforeYaml?: string | null
-  afterYaml?: string | null
-  riskLevel: OrgChangeRiskLevel
-  requiresHumanApproval: boolean
-  hrCritique?: string | null
-  approvalId?: string | null
-  createdAt: string
-  updatedAt: string
-  appliedAt?: string | null
-}
+// Single source of truth (@cuttlefish/contracts) — see ARC-002. This used to
+// hand-mirror the backend's org-change.ts and already drifted once
+// (RDC-006, closed 2026-06-30: `change_execution` and the `error` status
+// were missing from this copy).
+export type { OrgChangeRequest, OrgChangeRiskLevel, OrgChangeStatus, OrgChangeType }
 
 export interface CreateChangeRequestInput {
   changeType: OrgChangeType

@@ -50,6 +50,13 @@ export type {
   WorkspaceProfile,
   WorkspaceProfilesResponse,
 } from "./workspace.js";
+export type {
+  OrgChangeRequest,
+  OrgChangeRiskLevel,
+  OrgChangeStatus,
+  OrgChangeType,
+} from "./org.js";
+export { ORG_CHANGE_TYPES } from "./org.js";
 export {
   blockFallbackContent,
   blockFallbackText,
