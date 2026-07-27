@@ -1,4 +1,4 @@
-import type { JsonObject, Session } from "../shared/types.js";
+import type { Session } from "../shared/types.js";
 import {
   buildResolvedRunAttachments,
   listRunAttachments,
@@ -8,7 +8,7 @@ import {
   setRunAttachmentsOnTransportMeta,
 } from "./run-attachments.js";
 import { fileIdsToMedia, rehomeAttachmentsToSession } from "./files.js";
-import { updateSession } from "../sessions/registry.js";
+import { patchSessionTransportMeta } from "../sessions/registry.js";
 import type { ApiContext } from "./api/context.js";
 
 function combinedResourceSpecs(body: Record<string, unknown>): unknown[] {
@@ -64,9 +64,13 @@ export async function attachResourcesToSession(
         ? body.message
         : session.promptExcerpt ?? session.title ?? null,
   );
-  const updated = updateSession(session.id, {
-    transportMeta: setRunAttachmentsOnTransportMeta(session.transportMeta, screened) as JsonObject,
-  }) ?? session;
+  // Read-merge-write inside one transaction (not a pre-`await` snapshot of
+  // session.transportMeta) so a concurrent transport_meta writer between the
+  // resolve/screen awaits above and this write can't be blind-overwritten —
+  // see DFI-007.
+  const updated = patchSessionTransportMeta(session.id, (current) =>
+    setRunAttachmentsOnTransportMeta(current, screened),
+  ) ?? session;
   return { session: updated, ...buildResolvedRunAttachments(screened) };
 }
 

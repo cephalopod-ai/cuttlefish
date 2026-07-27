@@ -107,6 +107,42 @@ describe("registry archive helper", () => {
     expect(snapshot.lastError).toBe(session.lastError);
   });
 
+  it("preserves structured message blocks through the archive-and-delete round trip (DFI-006)", () => {
+    const session = reg.createSession({
+      engine: "claude",
+      source: "web",
+      sourceRef: "web:blocks-archive",
+      title: "Blocks archive",
+    });
+    reg.insertMessage(session.id, "assistant", "Here's the plan", undefined, [{
+      id: "plan",
+      type: "task-list",
+      version: 1,
+      title: "Plan",
+      payload: { items: [{ id: "a", text: "Read code" }] },
+    }]);
+
+    // Snapshot must carry the block BEFORE the source row is deleted — this is
+    // the only other copy of the data once createArchiveAndDeleteSessionsRecord
+    // runs, so a missing block here is unrecoverable data loss.
+    const [snapshot] = snapshotSessionsForArchive([session.id], deps);
+    expect(snapshot.messages[0].blocks).toEqual([
+      expect.objectContaining({ id: "plan", type: "task-list", title: "Plan" }),
+    ]);
+
+    const archive = createArchiveAndDeleteSessionsRecord({
+      kind: "chat",
+      sessionIds: [session.id],
+      label: "Blocks archive",
+    }, deps);
+
+    expect(reg.getSession(session.id)).toBeUndefined();
+    const reloaded = getArchiveRecord(archive!.id, deps);
+    expect(reloaded?.sessions[0]?.messages[0]?.blocks).toEqual([
+      expect.objectContaining({ id: "plan", type: "task-list", title: "Plan" }),
+    ]);
+  });
+
   it("unlinks (does not delete) cached emails when archiving-and-deleting their session (DAT-SESS-006)", () => {
     const session = reg.createSession({
       engine: "claude",

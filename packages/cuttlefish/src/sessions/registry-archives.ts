@@ -82,6 +82,10 @@ export function snapshotSessionsForArchive(ids: string[], deps: ArchiveRegistryD
         timestamp: message.timestamp,
         ...(message.toolCall ? { toolCall: message.toolCall } : {}),
         ...(message.media ? { media: message.media } : {}),
+        // Carried through so the archive is byte-for-byte equivalent to the
+        // live message before createArchiveAndDeleteSessionsRecord deletes
+        // the only other copy of this data — see DFI-006.
+        ...(message.blocks ? { blocks: message.blocks } : {}),
       })),
     });
   }

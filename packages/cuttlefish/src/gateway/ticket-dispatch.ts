@@ -1,4 +1,4 @@
-import { createSession, getSession, getSessionBySessionKey, updateSession } from "../sessions/registry.js";
+import { createSession, getSession, getSessionBySessionKey, patchSessionTransportMeta, updateSession } from "../sessions/registry.js";
 import type { CuttlefishConfig, Employee, JsonObject, Session } from "../shared/types.js";
 import { isCwdInAutonomousProject, resolveAutonomousProject } from "./autonomous-mode.js";
 import { logger } from "../shared/logger.js";
@@ -425,14 +425,27 @@ export async function dispatchTicket(
     dispatchTicket.updatedAt = iso;
     writeBoardTicketsWithinLock(deps.orgDir, department, lockedTickets);
 
+    // Read-merge-write transport_meta inside its own transaction instead of
+    // blind-overwriting with `dispatchTransportMeta` (a snapshot captured
+    // before the resolveTicketResources/refresh awaits above) — see DFI-007.
+    // status/lastActivity/lastError are unaffected by any of those awaits, so
+    // they stay a plain updateSession call; only the transport_meta portion
+    // needed the atomic merge.
+    patchSessionTransportMeta(session.id, {
+      ...(resolvedResources.attachments.length > 0
+        ? setRunAttachmentsOnTransportMeta(undefined, resolvedResources.attachments)
+        : {}),
+      ...(leaseGuard?.transportMeta ?? {}),
+      boardDepartment: department,
+      boardTicketId: ticketId,
+      dispatchSource: opts.source,
+      routedToManager: opts.routeToManager,
+      boardDispatchState: "board_linked",
+    });
     const runningSession = updateSession(session.id, {
       status: "running",
       lastActivity: iso,
       lastError: null,
-      transportMeta: {
-        ...dispatchTransportMeta,
-        boardDispatchState: "board_linked",
-      } as JsonObject,
     }) ?? {
       ...session,
       status: "running" as const,
