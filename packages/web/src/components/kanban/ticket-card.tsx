@@ -125,8 +125,11 @@ export function TicketCard({ ticket, assigneeName, onClick, onDelete }: TicketCa
           </span>
         )}
 
+        {/* DESIGN-003: real content (a timestamp), not decoration — text-quaternary
+            fails WCAG AA contrast by design (it's the decorative/hint tier);
+            text-tertiary is the lowest tier that's actually contrast-checked. */}
         <span
-          className="text-[length:var(--text-caption2)] text-[var(--text-quaternary)] ml-auto"
+          className="text-[length:var(--text-caption2)] text-[var(--text-tertiary)] ml-auto"
           title={new Date(ticket.createdAt).toLocaleString()}
         >
           {relativeTime(ticket.createdAt)}

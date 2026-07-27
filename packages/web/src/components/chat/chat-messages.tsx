@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { Message } from '@/lib/conversations'
 import { useStickToBottom } from '@/hooks/use-stick-to-bottom'
@@ -58,9 +58,39 @@ export function ChatMessages({ messages, loading, streamingText, onRetry }: Chat
   // Stop any in-progress read-aloud when the chat view unmounts (navigation away).
   useEffect(() => () => stopMessageTts(), [])
 
+  // DESIGN-002: screen-reader announcements for the primary chat surface —
+  // the secondary Collaboration view already has an equivalent aria-live
+  // region (collaboration-pane.tsx), but this main surface had none. Only a
+  // few coarse milestones are announced (not the token stream itself, which
+  // would spam every character) so a screen-reader user learns a message was
+  // sent, the assistant started responding, and when it finished.
+  const [announcement, setAnnouncement] = useState('')
+  const wasStreamingRef = useRef(false)
+  const prevMessageCountRef = useRef(messages.length)
+  useEffect(() => {
+    const isStreaming = Boolean(streamingText)
+    if (isStreaming && !wasStreamingRef.current) {
+      setAnnouncement('Assistant is responding')
+    } else if (!isStreaming && wasStreamingRef.current) {
+      setAnnouncement('Response complete')
+    }
+    wasStreamingRef.current = isStreaming
+  }, [streamingText])
+  useEffect(() => {
+    if (messages.length > prevMessageCountRef.current) {
+      const last = messages[messages.length - 1]
+      if (last?.role === 'user') setAnnouncement('Message sent')
+    }
+    prevMessageCountRef.current = messages.length
+  }, [messages])
+
   if (messages.length === 0 && !loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
+        {/* Kept mounted continuously (not just in the message-list branch below)
+            so a screen reader has one stable live region to observe across the
+            empty -> first-message transition, per aria-live best practice. */}
+        <div className="sr-only" role="status" aria-live="polite">{announcement}</div>
         <div className="text-center">
           <div className="text-[length:var(--text-title3)] font-[var(--weight-semibold)] text-[var(--text-tertiary)]">
             Start a conversation
@@ -75,6 +105,7 @@ export function ChatMessages({ messages, loading, streamingText, onRetry }: Chat
 
   return (
     <div ref={setContainerRef} style={{ overflowAnchor: 'auto' }} className="chat-messages-scroll relative flex-1 overflow-y-auto overflow-x-hidden bg-[var(--bg)] min-h-0">
+      <div className="sr-only" role="status" aria-live="polite">{announcement}</div>
       <div
         className="mx-auto w-full max-w-[var(--chat-measure)] pt-[72px] pb-[var(--space-6)] lg:pt-[88px]"
         style={shouldVirtualize ? { height: `${rowVirtualizer.getTotalSize()}px`, position: 'relative' } : undefined}
