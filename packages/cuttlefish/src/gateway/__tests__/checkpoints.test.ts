@@ -381,6 +381,52 @@ describe("checkpoint routes", () => {
     expect(enqueue).toHaveBeenCalledTimes(1);
   });
 
+  it("rolls back the approval when the session-status flip fails, instead of leaving it approved with the session stuck (REL-003)", async () => {
+    const session = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:cp3-atomic", prompt: "x" });
+    const checkpoint = store.createApproval({
+      sessionId: session.id,
+      type: "checkpoint",
+      payload: {
+        decisionNeeded: "Approve revision pass",
+        why: "Human edits should be incorporated before continuing.",
+        resumePrompt: "Continue by incorporating the operator's comments.",
+      },
+    });
+
+    const originalUpdateSession = reg.updateSession;
+    const updateSpy = vi.spyOn(reg, "updateSession").mockImplementation((id, updates) => {
+      if (id === session.id && updates.status === "running") {
+        throw new Error("simulated crash mid-transaction");
+      }
+      return originalUpdateSession(id, updates);
+    });
+
+    const checkpoints = await import("../checkpoints.js");
+    try {
+      await expect(
+        checkpoints.applyCheckpointDecision(
+          checkpoint.id,
+          { decision: "approved", actor: null, notes: null, resultingAction: null, resumePrompt: null },
+          makeCtx({
+            sessionManager: {
+              getEngine: () => ({ run: vi.fn(async () => ({ sessionId: "eng-1", result: "ok" })) }),
+              getQueue: () => ({ enqueue: vi.fn(), getPendingCount: () => 0, getTransportState: (_key: string, status: string) => status }),
+            },
+          }) as unknown as import("../api/context.js").ApiContext,
+        ),
+      ).rejects.toThrow("simulated crash mid-transaction");
+    } finally {
+      updateSpy.mockRestore();
+    }
+
+    // The approval commit and the session-status flip are one atomic unit —
+    // a failure in the second half must roll back the first, not leave the
+    // checkpoint durably "approved" while the session sits at "waiting"
+    // forever (the exact defect REL-003 describes).
+    expect(store.getApproval(checkpoint.id)?.state).toBe("pending");
+    expect(reg.getSession(session.id)?.status).not.toBe("running");
+  });
+
   it("exports checkpoint decisions to the external outbox", async () => {
     const session = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:cp4", prompt: "x" });
     const checkpoint = store.createApproval({

@@ -166,6 +166,7 @@ export class OrchestrationStore {
       updatedAt?: string;
       allocationId?: string | null;
       lastError?: string | null;
+      expectedCurrentState?: LiveRunContinuationState;
     } = {},
   ): LiveRunContinuationRecord | undefined {
     return markLiveContinuationStateInDb(this.db, taskId, coordinatorId, state, opts);

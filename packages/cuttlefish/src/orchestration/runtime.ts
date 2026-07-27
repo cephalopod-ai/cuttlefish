@@ -254,14 +254,22 @@ export class OrchestrationRuntime {
     this.store.deleteLiveContinuation(taskId, coordinatorId);
   }
 
+  /** Both callers of this and markLiveContinuationFailed only ever resolve a
+   *  continuation OUT of "dispatching" — the CAS guard (REL-004) makes
+   *  whichever of the normal-completion path and the shutdown forced-failure
+   *  sweep runs second a no-op instead of overwriting the first's outcome. */
   markLiveContinuationCompleted(taskId: string, coordinatorId: string, allocationId?: string): void {
-    this.store.markLiveContinuationState(taskId, coordinatorId, "completed", { allocationId: allocationId ?? null });
+    this.store.markLiveContinuationState(taskId, coordinatorId, "completed", {
+      allocationId: allocationId ?? null,
+      expectedCurrentState: "dispatching",
+    });
   }
 
   markLiveContinuationFailed(taskId: string, coordinatorId: string, error: string, allocationId?: string): void {
     this.store.markLiveContinuationState(taskId, coordinatorId, "failed", {
       allocationId: allocationId ?? null,
       lastError: error,
+      expectedCurrentState: "dispatching",
     });
   }
 

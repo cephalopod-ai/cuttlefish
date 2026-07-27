@@ -208,22 +208,36 @@ export function markLiveContinuationStateInDb(
     updatedAt?: string;
     allocationId?: string | null;
     lastError?: string | null;
+    /** Only apply the write if the row's CURRENT state matches this value —
+     *  the same compare-and-swap guard claimQueuedLiveContinuationInDb already
+     *  uses for queued->dispatching. Without it, a normal-completion writer and
+     *  a forced-shutdown-failure writer racing to resolve the same dispatching
+     *  continuation can have whichever runs second silently overwrite the
+     *  other's outcome (REL-004). Omit to keep the prior unconditional
+     *  overwrite (used by the manual-retry failed->queued transition, which is
+     *  already gated by an explicit state check upstream). Returns undefined
+     *  when the precondition doesn't hold, same as a not-found row. */
+    expectedCurrentState?: LiveRunContinuationState;
   } = {},
 ): LiveRunContinuationRecord | undefined {
   const updatedAt = opts.updatedAt ?? new Date().toISOString();
   return transactionImmediate(db, () => {
-    db.prepare(`
-      UPDATE live_run_continuations
-      SET state = ?, updated_at = ?, allocation_id = ?, last_error = ?
-      WHERE task_id = ? AND coordinator_id = ?
-    `).run(
+    const bindings: Array<string | null> = [
       state,
       updatedAt,
       opts.allocationId ?? null,
       opts.lastError ?? null,
       taskId,
       coordinatorId,
-    );
+    ];
+    if (opts.expectedCurrentState !== undefined) bindings.push(opts.expectedCurrentState);
+    const result = db.prepare(`
+      UPDATE live_run_continuations
+      SET state = ?, updated_at = ?, allocation_id = ?, last_error = ?
+      WHERE task_id = ? AND coordinator_id = ?
+      ${opts.expectedCurrentState !== undefined ? "AND state = ?" : ""}
+    `).run(...bindings);
+    if (opts.expectedCurrentState !== undefined && result.changes === 0) return undefined;
     const row = db.prepare(`
       SELECT * FROM live_run_continuations
       WHERE task_id = ? AND coordinator_id = ?
