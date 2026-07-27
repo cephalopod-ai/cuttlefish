@@ -67,6 +67,22 @@ describe("validateConfigShape", () => {
     })).toEqual([]);
   });
 
+  it("rejects an unknown engines.default value instead of only type-checking it as a string (DFI-005)", () => {
+    expect(validateConfigShape({
+      gateway: { port: 8888, host: "127.0.0.1" },
+      engines: { default: "not-a-real-engine", claude: { bin: "claude", model: "opus" } },
+      logging: { file: true, stdout: true, level: "info" },
+    })).toEqual([expect.stringContaining('engines.default must be one of')]);
+  });
+
+  it("accepts a known engines.default value", () => {
+    expect(validateConfigShape({
+      gateway: { port: 8888, host: "127.0.0.1" },
+      engines: { default: "codex", claude: { bin: "claude", model: "opus" }, codex: { bin: "codex", model: "gpt-5.5" } },
+      logging: { file: true, stdout: true, level: "info" },
+    })).toEqual([]);
+  });
+
   it("rejects removed no-op mcp.gateway config", () => {
     expect(validateConfigShape({
       gateway: { port: 8888, host: "127.0.0.1" },

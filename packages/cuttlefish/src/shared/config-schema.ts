@@ -1,5 +1,10 @@
 import type { EngineFailureReason } from "./types.js";
 import { validateKnowledge } from "./config-schema-knowledge.js";
+// NOTE: this file already keeps its own ENGINE_NAMES Set (below) as the
+// display/membership list for per-engine config keys; isKnownEngine is
+// imported (not the models.js ENGINE_NAMES array) to avoid a second,
+// differently-shaped copy of the same list in this file.
+import { isKnownEngine } from "./models.js";
 
 const TIME_OF_DAY_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const ENGINE_NAMES = new Set(["claude", "codex", "antigravity", "grok", "pi", "kiro", "hermes", "ollama", "kilo", "aider"]);
@@ -225,7 +230,15 @@ function validateEngines(
     return;
   }
   pushUnknownKeys(problems, value, ["default", "claude", "codex", "antigravity", "grok", "pi", "kiro", "hermes", "ollama", "kilo", "aider"], "engines");
-  if (value.default !== undefined) validateString(problems, "engines.default", value.default);
+  if (value.default !== undefined) {
+    validateString(problems, "engines.default", value.default);
+    // DFI-005: this used to only type-check engines.default as a string, so
+    // an unknown engine value would pass shape validation and only fail (or
+    // silently misbehave) much later at dispatch time.
+    if (typeof value.default === "string" && !isKnownEngine(value.default)) {
+      problems.push(`engines.default must be one of: ${[...ENGINE_NAMES].join(", ")} (got "${value.default}")`);
+    }
+  }
   if (value.claude === undefined) {
     problems.push("engines.claude must be a mapping");
   }

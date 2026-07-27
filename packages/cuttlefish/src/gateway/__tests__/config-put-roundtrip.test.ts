@@ -227,3 +227,54 @@ describe("PUT /api/config", () => {
     });
   });
 });
+
+describe("POST /api/onboarding — engine validation (DFI-005)", () => {
+  it("rejects an unknown engine instead of writing it into engines.default unvalidated", async () => {
+    let currentConfig = configModule.loadConfig();
+    const ctx = {
+      getConfig: () => currentConfig,
+      reloadConfig: () => {
+        currentConfig = configModule.loadConfig();
+      },
+      emit: vi.fn(),
+      sessionManager: { getEngine: () => undefined },
+    } as unknown as ApiContext;
+
+    const cap = makeRes();
+    await api.handleApiRequest(
+      makeReq("POST", "/api/onboarding", { engine: "not-a-real-engine", model: "opus" }),
+      cap.res,
+      ctx,
+    );
+
+    expect(cap.status).toBe(400);
+    expect(cap.body).toMatchObject({ error: expect.stringContaining("Unknown engine") });
+    const saved = yaml.load(fs.readFileSync(path.join(tmpHome, "config.yaml"), "utf-8")) as Record<string, unknown>;
+    expect((saved.engines as Record<string, unknown>).default).toBe("claude");
+    expect((saved.portal as Record<string, unknown> | undefined)?.onboarded).not.toBe(true);
+  });
+
+  it("accepts a known engine and persists it", async () => {
+    let currentConfig = configModule.loadConfig();
+    const ctx = {
+      getConfig: () => currentConfig,
+      reloadConfig: () => {
+        currentConfig = configModule.loadConfig();
+      },
+      emit: vi.fn(),
+      sessionManager: { getEngine: () => undefined },
+    } as unknown as ApiContext;
+
+    const cap = makeRes();
+    await api.handleApiRequest(
+      makeReq("POST", "/api/onboarding", { engine: "codex", model: "gpt-5.5" }),
+      cap.res,
+      ctx,
+    );
+
+    expect(cap.status).toBe(200);
+    const saved = yaml.load(fs.readFileSync(path.join(tmpHome, "config.yaml"), "utf-8")) as Record<string, unknown>;
+    expect((saved.engines as Record<string, unknown>).default).toBe("codex");
+    expect((saved.portal as Record<string, unknown>).onboarded).toBe(true);
+  });
+});
