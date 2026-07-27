@@ -58,6 +58,16 @@ function ToastCard({
   const remainingRef = useRef(durationMs)
   const startedAtRef = useRef(Date.now())
   const timeoutRef = useRef<number | undefined>(undefined)
+  // Hover and focus are tracked independently so that hovering the card
+  // while its dismiss button also has focus (or vice versa) doesn't resume
+  // the timer the moment just one of the two ends — the pause must last
+  // until BOTH have ended. This also guards pause()/resume() against being
+  // invoked twice in a row for two interactions that start/end together
+  // (e.g. mouseenter immediately followed by the button's bubbled focus),
+  // which previously double-subtracted the elapsed time from the remaining
+  // duration and left two overlapping setTimeout calls racing to dismiss.
+  const hoveredRef = useRef(false)
+  const focusedRef = useRef(false)
 
   const scheduleDismiss = useCallback(() => {
     startedAtRef.current = Date.now()
@@ -80,16 +90,38 @@ function ToastCard({
     scheduleDismiss()
   }, [scheduleDismiss])
 
+  const handleMouseEnter = useCallback(() => {
+    const wasActive = hoveredRef.current || focusedRef.current
+    hoveredRef.current = true
+    if (!wasActive) pause()
+  }, [pause])
+
+  const handleMouseLeave = useCallback(() => {
+    hoveredRef.current = false
+    if (!focusedRef.current) resume()
+  }, [resume])
+
+  const handleFocus = useCallback(() => {
+    const wasActive = hoveredRef.current || focusedRef.current
+    focusedRef.current = true
+    if (!wasActive) pause()
+  }, [pause])
+
+  const handleBlur = useCallback(() => {
+    focusedRef.current = false
+    if (!hoveredRef.current) resume()
+  }, [resume])
+
   const tone = toast.tone ?? "info"
 
   return (
     <div
       role={tone === "error" ? "alert" : "status"}
       aria-live="polite"
-      onMouseEnter={pause}
-      onMouseLeave={resume}
-      onFocus={pause}
-      onBlur={resume}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
       className={`pointer-events-auto min-w-[280px] max-w-[420px] rounded-[var(--radius-lg)] border px-[var(--space-4)] py-[var(--space-3)] shadow-[var(--shadow-overlay)] backdrop-blur-xl ${toastToneClass(tone)}`}
     >
       <div className="flex items-start gap-[var(--space-3)]">

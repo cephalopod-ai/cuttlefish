@@ -654,8 +654,21 @@ export class OrchestrationRuntime {
     const currentBootGeneration = this.store.getBootGeneration();
     const liveAllocationIds = new Set(this.scheduler.listAllocations().map((a) => a.allocationId));
     for (const continuation of this.store.listLiveContinuationsWithGeneration(["dispatching"])) {
+      // CONC-006 follow-up: this recovery pass now also runs on the reaper's
+      // periodic tick, not just at boot, so it can observe a continuation
+      // that's been "dispatching" for longer than the stale threshold while
+      // genuinely still in progress in THIS process — no heartbeat refreshes
+      // `updatedAt` while a run is executing. Nothing but the wall clock
+      // distinguishes that from a real orphan there, so gate the clock-based
+      // check on the allocation no longer being live; a continuation whose
+      // allocation is still held cannot be a same-process orphan regardless
+      // of how long it's been running. The boot-generation check needs no
+      // such guard — a strictly older boot generation is only possible for a
+      // continuation left behind by a process that no longer exists, so
+      // nothing in the current process could still be completing it.
       const updatedAt = Date.parse(continuation.updatedAt);
-      const staleByClock = !(Number.isFinite(updatedAt) && updatedAt > cutoff);
+      const allocationIsLive = continuation.allocationId !== undefined && liveAllocationIds.has(continuation.allocationId);
+      const staleByClock = !allocationIsLive && !(Number.isFinite(updatedAt) && updatedAt > cutoff);
       const staleByGeneration = typeof continuation.bootGeneration === "number"
         && continuation.bootGeneration < currentBootGeneration;
       if (!staleByClock && !staleByGeneration) continue;

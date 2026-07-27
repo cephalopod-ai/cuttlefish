@@ -86,4 +86,48 @@ describe('Toast auto-dismiss pause/resume', () => {
     })
     expect(screen.queryByText('Saved')).toBeNull()
   })
+
+  // Review finding: hover and focus were tracked with shared pause()/resume()
+  // calls with no "is anything still active" guard, so overlapping
+  // hover+focus (e.g. hovering the card while its dismiss button also has
+  // focus) let whichever interaction ended first resume the timer while the
+  // other was still active, and let pause()/resume() fire twice for two
+  // interactions starting/ending together — double-subtracting elapsed time
+  // and scheduling duplicate timers.
+  it('stays paused until both hover and focus end, not just whichever ends first', () => {
+    render(
+      <ToastProvider>
+        <TriggerButton />
+      </ToastProvider>,
+    )
+    fireEvent.click(screen.getByText('push'))
+    const toast = screen.getByText('Saved').closest('[role="status"]') as HTMLElement
+    const dismissButton = screen.getByRole('button', { name: 'Dismiss notification' })
+
+    act(() => {
+      vi.advanceTimersByTime(200)
+    })
+    fireEvent.mouseEnter(toast)
+    fireEvent.focus(dismissButton)
+
+    // Hover ends but focus remains — must still be paused.
+    fireEvent.mouseLeave(toast)
+    act(() => {
+      vi.advanceTimersByTime(5000)
+    })
+    expect(screen.getByText('Saved')).toBeTruthy()
+
+    // Focus ends too — now it should resume with the ~800ms remaining from
+    // before the pause, not a double-decremented (or re-doubled) duration.
+    fireEvent.blur(dismissButton)
+    act(() => {
+      vi.advanceTimersByTime(700)
+    })
+    expect(screen.getByText('Saved')).toBeTruthy()
+
+    act(() => {
+      vi.advanceTimersByTime(150)
+    })
+    expect(screen.queryByText('Saved')).toBeNull()
+  })
 })

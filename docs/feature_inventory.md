@@ -53,8 +53,9 @@
   - `/settings` for gateway, engine, connector, and feature configuration.
   - `/skills` for local skill browsing/management.
   - `/file` for file viewing.
-- A catch-all client route redirects unknown paths, including stale `/redesign`
-  links, to `/` rather than leaving an empty dashboard shell.
+- A catch-all client route renders a dedicated not-found page (with a link
+  back to `/`) for unknown paths, including stale `/redesign` links, instead
+  of either an empty dashboard shell or a silent redirect to `/`.
 
 ### Project/session collaboration
 
@@ -314,6 +315,17 @@
   `cuttlefish start` are emitted as concise CLI errors.
 - The skills CLI reads the seeded object-shaped `skills.json` manifest and
   remains compatible with legacy flat-array manifests.
+
+### Startup (systemd) integration
+- `packages/cuttlefish/src/cli/startup.ts`
+- `packages/cuttlefish/bin/cuttlefish.ts`
+- `cuttlefish startup enable` installs and enables a systemd user service
+  (`~/.config/systemd/user/cuttlefish.service`) that runs `cuttlefish start`
+  on login; `cuttlefish startup disable` disables and stops it;
+  `cuttlefish startup status` reports whether the unit is installed and its
+  `systemctl --user` enabled/active state.
+- Linux-only: all three subcommands require `systemctl --user` to be
+  available and exit with an error message on other platforms.
 
 ### Provider-neutral matrix orchestration dry-runs and observe surfaces
 - `packages/cuttlefish/src/orchestration/*`

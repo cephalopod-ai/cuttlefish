@@ -435,6 +435,50 @@ describe("OrchestrationRuntime continuation dispatch", () => {
     runtime2.close();
   });
 
+  // CONC-006 follow-up (review finding): stale-dispatching recovery now also
+  // runs on the reaper's periodic tick, not just at boot. A genuinely
+  // long-running task never gets its continuation's updatedAt refreshed
+  // while executing, so a naive periodic clock check would incorrectly
+  // reap it once it's been running longer than the stale threshold — even
+  // though its allocation/lease is still live in this same process. Recovery
+  // must only apply the clock check when the allocation is no longer live.
+  it("does not reap a still-live continuation on a periodic reaper tick, even past the stale threshold", () => {
+    vi.useFakeTimers();
+    try {
+      const runtime = new OrchestrationRuntime({
+        config: config(),
+        dbPath,
+        startReaper: true,
+        reaperIntervalMs: 1000,
+        staleDispatchingContinuationMs: 5000,
+      });
+      const allocation = runtime.requestAllocation(request("long-task", "long-coord"));
+      expect(allocation.ok).toBe(true);
+      if (!allocation.ok) return;
+
+      // Seed a "dispatching" continuation already older than the stale
+      // threshold — mirroring what a real long-running task's continuation
+      // looks like, since nothing refreshes updatedAt while it executes.
+      runtime.queueLiveContinuation(continuation("long-task", "long-coord", {
+        state: "dispatching",
+        allocationId: allocation.allocation.allocationId,
+        updatedAt: new Date(Date.now() - 10_000).toISOString(),
+      }));
+
+      // Advance past several reaper ticks without ever releasing the lease.
+      vi.advanceTimersByTime(5000);
+
+      expect(runtime.listLiveContinuations()).toMatchObject([{
+        taskId: "long-task",
+        state: "dispatching",
+      }]);
+      expect(runtime.listLeases()).toMatchObject([{ state: "running" }]);
+      runtime.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("recovers dispatching continuations left by an older boot generation even when updated_at is recent (TMP-CUT-013)", () => {
     const runtime1 = new OrchestrationRuntime({ config: config(), dbPath, startReaper: false });
     const allocation = runtime1.requestAllocation(request("gen-stale-task", "gen-stale-coord"));
