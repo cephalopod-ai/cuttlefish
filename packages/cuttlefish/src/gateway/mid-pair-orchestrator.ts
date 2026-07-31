@@ -83,6 +83,7 @@ export interface DispatchEmployeeSessionRunOpts {
 // session-dispatch.ts, so there is no circular module-graph edge in either
 // direction for a bundler/test-transform to trip over.
 let cachedDispatchWebSessionRun: typeof DispatchWebSessionRunFn | undefined;
+const REVIEW_PARENT_HEARTBEAT_MS = 10_000;
 async function getDispatchWebSessionRun(): Promise<typeof DispatchWebSessionRunFn> {
   if (!cachedDispatchWebSessionRun) {
     ({ dispatchWebSessionRun: cachedDispatchWebSessionRun } = await import("./api/session-dispatch.js"));
@@ -162,6 +163,7 @@ async function dispatchEmployeeSessionRunInner(
   } as JsonObject) ?? session;
 
   const dispatchWebSessionRun = await getDispatchWebSessionRun();
+  const delegationBefore = managerDelegationMarker(tagged);
   await dispatchWebSessionRun(tagged, prompt, engine, config, context, opts);
 
   const settled = getSession(tagged.id);
@@ -173,7 +175,44 @@ async function dispatchEmployeeSessionRunInner(
     return;
   }
 
-  await runReviewLoop({ topSession: settled, employee: employee!, exec, task: prompt, employeeRunId, config, context });
+  // Enforced manager fan-out parks behind an expected-child barrier. Its
+  // immediate "delegated to ..." announcement is not implementation output;
+  // reviewing it races the real children and produces meaningless feedback.
+  // The eventual callback dispatches a separate synthesis turn, which may then
+  // enter mid_pair normally after all reports have arrived.
+  const delegationAfter = managerDelegationMarker(settled);
+  if (delegationAfter && delegationAfter !== delegationBefore) {
+    updateExecutionState(settled.id, context, { executionPhase: "delegating", status: "idle" });
+    return;
+  }
+
+  await withReviewParentHeartbeat(settled.id, () =>
+    runReviewLoop({ topSession: settled, employee: employee!, exec, task: prompt, employeeRunId, config, context }));
+}
+
+function managerDelegationMarker(session: Session): string | undefined {
+  const enforcement = (session.transportMeta as Record<string, unknown> | null)?.managerDelegationEnforcement;
+  if (!enforcement || typeof enforcement !== "object" || Array.isArray(enforcement)) return undefined;
+  const value = enforcement as Record<string, unknown>;
+  if (value.synthesisDispatched === true) return undefined;
+  const promptHash = typeof value.promptHash === "string" ? value.promptHash : "";
+  const occurredAt = typeof value.occurredAt === "string" ? value.occurredAt : "";
+  const children = Array.isArray(value.childSessionIds) ? value.childSessionIds.filter((id) => typeof id === "string") : [];
+  return children.length > 0 ? `${promptHash}:${occurredAt}:${children.join(",")}` : undefined;
+}
+
+async function withReviewParentHeartbeat<T>(sessionId: string, run: () => Promise<T>): Promise<T> {
+  const heartbeat = () => {
+    const session = getSession(sessionId);
+    if (session?.status === "running") updateSession(sessionId, { lastActivity: new Date().toISOString() });
+  };
+  const timer = setInterval(heartbeat, REVIEW_PARENT_HEARTBEAT_MS);
+  timer.unref?.();
+  try {
+    return await run();
+  } finally {
+    clearInterval(timer);
+  }
 }
 
 // ---------------------------------------------------------------------------

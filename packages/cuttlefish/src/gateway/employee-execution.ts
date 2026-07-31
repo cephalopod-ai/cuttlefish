@@ -106,7 +106,7 @@ export function buildRoleTransportMeta(
 // Dynamic execution run state (attached to session/API responses)
 // ---------------------------------------------------------------------------
 
-export type ExecutionPhase = "pending" | "implementing" | "reviewing" | "revising" | "done" | "degraded" | "failed";
+export type ExecutionPhase = "pending" | "implementing" | "delegating" | "reviewing" | "revising" | "done" | "degraded" | "failed";
 
 export interface ExecutionRunState {
   employeeRunId: string;
