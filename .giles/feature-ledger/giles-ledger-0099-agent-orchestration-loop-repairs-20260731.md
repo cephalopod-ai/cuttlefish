@@ -280,3 +280,70 @@ Additionally, both CI red checks on PR #65 (`e2e` scroll test, `Run Gitleaks
 Scan`) were confirmed to fail identically on the base commit `5d7e6a2` and are
 reported in the PR thread rather than fixed here — fixing an unrelated UI test
 inside this PR would be undisclosed scope widening.
+
+## PR #65 second review round (2026-07-31)
+
+**action summary:** Codex re-reviewed commit `05fa5f0` and found two further
+defects, both introduced by the *previous* round's fixes rather than by the
+original campaign. Both accepted and fixed; a third latent crash was found by
+the test suite while fixing them.
+
+**status:** complete (`completed_verified`); PR #65 updated and pushed.
+
+**provenance:** direct — review comments received via PR webhook on commit
+`05fa5f0`, each verified against source before acting.
+
+**touched files:**
+- `packages/cuttlefish/src/gateway/ticket-session-resolver.ts`
+- `packages/cuttlefish/src/gateway/stuck-ticket-watchdog.ts`
+- `packages/cuttlefish/src/gateway/department-rename.ts`
+- tests: `__tests__/stuck-ticket-watchdog.test.ts`,
+  `__tests__/org-department-rename-route.test.ts`
+
+**findings addressed:**
+
+1. **P1 — department scoping discarded exactly-linked sessions**
+   (`ticket-session-resolver.ts`). The previous round added
+   `sessionsForDepartment`, which treated any key with three or more
+   colon-segments as a board key and read segment 1 as the department. The
+   cross-request route (added earlier in this same PR) creates
+   `cross-request:<timestamp>:<provider>` — the same shape, but segment 1 is a
+   timestamp. Such a session was therefore filtered out of its real department
+   *before* `resolveBestSessionForTicket` ever reached the exact
+   `ticket.sessionId` match, so a live cross-request waiting on a fallback
+   approval could have its ticket quarantined `manualOnly` and a manager told to
+   start duplicate work — reintroducing, by a different route, the exact false
+   positive the watchdog fix existed to remove.
+
+   Fixed by deleting the pre-filter heuristic entirely and pushing the department
+   into `sessionMatchesTicket` as an optional argument that narrows **only** the
+   weak composite-key fallback. Strong signals (`boardTicketId`, exact
+   `sessionId`/`engineSessionId`) are never gated on a department guess; the
+   `boardTicketId` branch additionally rejects a session that explicitly records
+   a *different* `boardDepartment`. This is a better design than the original
+   scoping: it fixes the cross-department id collision at the only place that was
+   actually ambiguous, and cannot discard a definitive link.
+
+2. **P2 — case-insensitive rename rewrote a case-distinct sibling department**
+   (`department-rename.ts`). The original campaign's fix matched departments
+   case-insensitively so that `department: Platform` inside `platform/` would be
+   renamed. But on a case-sensitive filesystem `org/platform/` and
+   `org/Platform/` can both exist as unrelated departments, and nothing rejects
+   that layout — so renaming one rewrote *both* departments' YAML while moving
+   only one directory, silently stranding the sibling's members. Now a
+   case-variant only counts when the employee's file physically lives under the
+   directory being renamed (exact matches are unchanged), which satisfies both
+   cases at once.
+
+3. **Latent crash found while fixing (1)** — `transport?.boardTicketId ===
+   ticket.id` is true when both sides are `undefined`, and the new department
+   check then dereferenced the null `transport`. Three orphaned-ticket-reconciler
+   tests caught it. Guarded on `transport` being present.
+
+**validation run:**
+- `pnpm test`: **312 files, 2594 passed, 1 skipped, 0 failed** (up from 2592).
+- `pnpm typecheck`: clean. `pnpm lint`: clean (`--max-warnings=0`).
+- Both new regression tests were explicitly verified to fail with their fix
+  reverted.
+
+**remaining open items:** unchanged from the entries above.

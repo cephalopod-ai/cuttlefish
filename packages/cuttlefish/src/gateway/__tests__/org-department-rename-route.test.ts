@@ -205,6 +205,34 @@ describe("PATCH /api/org/departments/:name", () => {
     expect(readEmployee("product", "cased").department).toBe("product");
   });
 
+  it("leaves a case-distinct sibling department untouched", async () => {
+    // On a case-sensitive filesystem `org/platform/` and `org/Platform/` are two
+    // unrelated departments. Renaming one must not rewrite the other's members:
+    // only the lowercase directory moves, so rewriting both would strand the
+    // uppercase department's employees pointing at a directory they don't live in.
+    writeEmployee("platform", "dev");
+    const upperDir = path.join(tmpHome, "org", "Platform");
+    fs.mkdirSync(upperDir, { recursive: true });
+    fs.writeFileSync(path.join(upperDir, "upper.yaml"), [
+      "name: upper",
+      "displayName: upper",
+      "department: Platform",
+      "rank: employee",
+      "engine: claude",
+      "model: opus",
+      "persona: upper",
+    ].join("\n"));
+    const { renameDepartment } = await import("../department-rename.js");
+
+    const result = renameDepartment("platform", "product");
+
+    expect(result.ok).toBe(true);
+    expect(readEmployee("product", "dev").department).toBe("product");
+    // The sibling department keeps both its directory and its member.
+    expect(fs.existsSync(upperDir)).toBe(true);
+    expect((yaml.load(fs.readFileSync(path.join(upperDir, "upper.yaml"), "utf-8")) as Record<string, unknown>).department).toBe("Platform");
+  });
+
   it("clears the intent marker on a successful rename (DFI-002)", async () => {
     writeEmployee("platform", "dev");
     const { renameDepartment } = await import("../department-rename.js");

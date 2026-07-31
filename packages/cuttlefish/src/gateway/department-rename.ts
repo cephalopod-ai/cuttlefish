@@ -6,6 +6,13 @@ import { logger } from "../shared/logger.js";
 import { safeWriteJson, safeWriteText } from "../shared/safe-write.js";
 import { findEmployeeYamlPath, scanOrg, updateEmployeeYaml } from "./org.js";
 
+/** Whether `file` sits inside `dir` (used to test physical department membership). */
+function isFileWithin(file: string | undefined, dir: string): boolean {
+  if (!file) return false;
+  const rel = path.relative(dir, file);
+  return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+}
+
 export type RenameDepartmentResult =
   | { ok: true; department: string; previousDepartment: string; employees: string[]; movedDirectory: boolean }
   | { ok: false; status: 400 | 404 | 409; error: string };
@@ -180,19 +187,29 @@ export function renameDepartment(
   }
 
   const registry = scanOrg();
-  // Match case-insensitively: `department` is taken verbatim from employee YAML
-  // (or from the directory name when the field is absent), so `department:
-  // Platform` inside `platform/` is a normal, unprevented shape. An exact-match
-  // filter moves the directory and its board while leaving that employee
-  // pointing at the old name — a ghost department with no directory, whose
-  // members are then rejected from their own board as foreign-department
-  // assignees.
+  const oldDir = path.join(orgDir, previousDepartment);
+
+  // `department` is taken verbatim from employee YAML (or from the directory
+  // name when the field is absent), so `department: Platform` inside
+  // `platform/` is a normal, unprevented shape — an exact-match filter would
+  // move the directory and its board while leaving that employee pointing at
+  // the old name, a ghost department with no directory whose members are then
+  // rejected from their own board as foreign-department assignees.
+  //
+  // A case-insensitive filter alone is wrong in the other direction: on a
+  // case-sensitive filesystem `org/platform/` and `org/Platform/` can BOTH
+  // exist as unrelated departments, and renaming one would rewrite the other's
+  // members while moving only one directory. So a case-variant only counts when
+  // the employee's file physically lives under the directory being renamed.
   const employees = [...registry.values()]
-    .filter((employee) => employee.department.localeCompare(previousDepartment, undefined, { sensitivity: "accent" }) === 0)
+    .filter((employee) => {
+      if (employee.department === previousDepartment) return true;
+      if (employee.department.localeCompare(previousDepartment, undefined, { sensitivity: "accent" }) !== 0) return false;
+      return isFileWithin(findEmployeeYamlPath(employee.name), oldDir);
+    })
     .map((employee) => employee.name)
     .sort((a, b) => a.localeCompare(b));
 
-  const oldDir = path.join(orgDir, previousDepartment);
   const newDir = path.join(orgDir, department);
   const oldDirExists = fs.existsSync(oldDir);
   if (employees.length === 0 && !oldDirExists) {

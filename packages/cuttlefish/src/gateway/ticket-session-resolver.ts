@@ -75,9 +75,33 @@ function sessionChannelCandidates(session: Session): string[] {
   return [...values];
 }
 
-export function sessionMatchesTicket(ticket: Pick<BoardTicket, "id" | "sessionId">, session: Session): boolean {
+/**
+ * Whether `session` is the session behind `ticket`.
+ *
+ * Matching runs strongest-signal-first: an explicit `boardTicketId`, then an
+ * exact persisted `sessionId`/`engineSessionId` link, and only then the weak
+ * fallback of finding the id inside a composite channel key.
+ *
+ * `department` narrows ONLY that weak fallback. Ticket ids are unique just
+ * within a board, so `<source>:<department>:<ticketId>` keys from two
+ * departments are otherwise indistinguishable — but the strong links above are
+ * already unambiguous, and gating them on a department heuristic would discard
+ * real matches (a session key like `cross-request:<timestamp>:<provider>` has
+ * the same shape as a board key without being one).
+ */
+export function sessionMatchesTicket(
+  ticket: Pick<BoardTicket, "id" | "sessionId">,
+  session: Session,
+  department?: string,
+): boolean {
   const transport = boardMeta(session);
-  if (transport?.boardTicketId === ticket.id) return true;
+  if (transport && transport.boardTicketId === ticket.id) {
+    // A session that names a different board is another department's ticket of
+    // the same id; anything else (including no recorded board) still matches.
+    const recorded = transport.boardDepartment;
+    if (department && typeof recorded === "string" && recorded && recorded !== department) return false;
+    return true;
+  }
 
   const persistedSessionId = typeof ticket.sessionId === "string" ? ticket.sessionId.trim() : "";
   if (persistedSessionId) {
@@ -85,7 +109,11 @@ export function sessionMatchesTicket(ticket: Pick<BoardTicket, "id" | "sessionId
     if (session.engineSessionId === persistedSessionId) return true;
   }
 
-  return sessionChannelCandidates(session).some((candidate) => containsTicketIdSegment(candidate, ticket.id));
+  // Weak fallback. With a department in hand, require the key to carry that
+  // department segment immediately before the ticket id, which is exactly the
+  // shape board keys have.
+  const needle = department ? `${department}:${ticket.id}` : ticket.id;
+  return sessionChannelCandidates(session).some((candidate) => containsTicketIdSegment(candidate, needle));
 }
 
 /**
@@ -123,35 +151,11 @@ function isTicketIdBodyChar(char: string): boolean {
 export function resolveBestSessionForTicket<T extends Pick<BoardTicket, "id" | "sessionId">>(
   ticket: T,
   sessions: Session[],
+  department?: string,
 ): Session | undefined {
   return sessions
-    .filter((session) => sessionMatchesTicket(ticket, session))
+    .filter((session) => sessionMatchesTicket(ticket, session, department))
     .sort((a, b) => Date.parse(b.lastActivity || "") - Date.parse(a.lastActivity || ""))[0];
-}
-
-/**
- * Sessions that could belong to a ticket on THIS department's board.
- *
- * Ticket ids are only unique within a board — two departments can both hold a
- * `t-1` — while the channel keys `sessionMatchesTicket` falls back on embed the
- * department (`<source>:<department>:<ticketId>`). Matching on the ticket alone
- * therefore lets one department's session answer for another's identically-named
- * ticket. Callers that know the department should narrow the candidate set with
- * this first; a session carrying no board provenance at all stays eligible, so
- * non-board sessions (direct chats, manual runs) are not filtered out.
- */
-export function sessionsForDepartment(sessions: Session[], department: string): Session[] {
-  return sessions.filter((session) => {
-    const persisted = boardMeta(session)?.boardDepartment;
-    if (typeof persisted === "string" && persisted.trim()) return persisted === department;
-    const keys = sessionChannelCandidates(session);
-    if (keys.length === 0) return true;
-    // Composite board keys name their department; keep sessions whose keys name
-    // this one, and sessions whose keys are not board keys at all.
-    const boardKeys = keys.filter((key) => key.split(":").length >= 3);
-    if (boardKeys.length === 0) return true;
-    return boardKeys.some((key) => key.split(":")[1] === department);
-  });
 }
 
 export function shouldExposeSessionForTicket(

@@ -5,7 +5,7 @@ import type { ApiContext } from "./api/context.js";
 import { dispatchTicket, findDepartmentManager } from "./ticket-dispatch.js";
 import { scanOrg } from "./org.js";
 import { listSessions } from "../sessions/registry.js";
-import { resolveBestSessionForTicket, sessionsForDepartment } from "./ticket-session-resolver.js";
+import { resolveBestSessionForTicket } from "./ticket-session-resolver.js";
 import type { Session } from "../shared/types.js";
 
 const STUCK_THRESHOLD_MS = 60 * 60 * 1000;
@@ -29,22 +29,23 @@ export interface StuckTicketWatchdogDeps {
  * which blocks a ticket while its session sits waiting on a human — human
  * approvals routinely outlast the one-hour threshold.
  *
- * `sessions` must already be narrowed to this ticket's department: ticket ids
- * are unique only within a board, so an unscoped lookup would let a live session
- * in one department mask a genuinely dead ticket of the same id in another.
+ * The department is passed through so the resolver's weak composite-key fallback
+ * cannot let a live session in one department mask a genuinely dead ticket of
+ * the same id in another — ticket ids are unique only within a board. Exact
+ * session links are still honoured regardless of department.
  */
-function hasLiveSession(ticket: BoardTicket, sessions: Session[]): boolean {
-  const session = resolveBestSessionForTicket(ticket, sessions);
+function hasLiveSession(ticket: BoardTicket, sessions: Session[], department: string): boolean {
+  const session = resolveBestSessionForTicket(ticket, sessions, department);
   return session?.status === "running" || session?.status === "waiting";
 }
 
-function isStuck(ticket: BoardTicket, now: number, thresholdMs: number, sessions: Session[]): boolean {
+function isStuck(ticket: BoardTicket, now: number, thresholdMs: number, sessions: Session[], department: string): boolean {
   if (ticket.status !== "blocked") return false;
   if (ticket.manualOnly === true) return false;
   const updated = Date.parse(typeof ticket.updatedAt === "string" ? ticket.updatedAt : ticket.createdAt);
   if (!Number.isFinite(updated)) return false;
   if (now - updated < thresholdMs) return false;
-  return !hasLiveSession(ticket, sessions);
+  return !hasLiveSession(ticket, sessions, department);
 }
 
 function watchdogTicketId(department: string, now: number): string {
@@ -77,8 +78,7 @@ async function runWatchdog(deps: StuckTicketWatchdogDeps, now: number): Promise<
     }
     if (!tickets) continue;
 
-    const departmentSessions = sessionsForDepartment(sessions, department);
-    const stuck = tickets.filter((t) => isStuck(t, now, threshold, departmentSessions));
+    const stuck = tickets.filter((t) => isStuck(t, now, threshold, sessions, department));
     if (stuck.length === 0) continue;
 
     logger.info(`[watchdog] ${department}: ${stuck.length} stuck ticket(s)`);

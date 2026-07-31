@@ -194,6 +194,36 @@ describe("stuck ticket watchdog", () => {
     expect(hoisted.dispatchTicketMock).toHaveBeenCalledOnce();
   });
 
+  it("keeps an exactly-linked session even when its key is not a board key", async () => {
+    // A cross-request session's key is `cross-request:<timestamp>:<provider>` —
+    // three colon-segments, exactly the shape of a board key, but the middle
+    // segment is a timestamp rather than a department. Department scoping must
+    // not use that shape to discard a session the ticket links to by id, or a
+    // live cross-request waiting on approval gets its ticket quarantined and the
+    // manager is told to start duplicate work.
+    writeManager("delivery");
+    writeBoard("delivery", [{
+      id: "t-cross",
+      title: "Cross-request work",
+      status: "blocked",
+      sessionId: "s-cross",
+      createdAt: iso(TWO_HOURS),
+      updatedAt: iso(TWO_HOURS),
+    }]);
+    hoisted.sessions = [session({
+      id: "s-cross",
+      status: "waiting",
+      sourceRef: "cross-request:1750000000000:blair",
+      sessionKey: "cross-request:1750000000000:blair",
+    })];
+
+    await runOneTick();
+
+    const board = readBoard("delivery");
+    expect(board.find((t) => t.id === "t-cross")?.manualOnly).toBeUndefined();
+    expect(hoisted.dispatchTicketMock).not.toHaveBeenCalled();
+  });
+
   it("ignores tickets already flagged manualOnly and recently-blocked tickets", async () => {
     writeManager("delivery");
     writeBoard("delivery", [
