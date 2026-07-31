@@ -347,3 +347,50 @@ the test suite while fixing them.
   reverted.
 
 **remaining open items:** unchanged from the entries above.
+
+## Regression and drift pass (2026-07-31)
+
+**action summary:** Re-read the prior orchestration repair and its regression
+coverage, replayed the focused inter-agent, cross-department, leader-ack, HR
+feedback, and mid-pair suites, and repaired two high-impact residual mid-pair
+loop defects recorded by the prior pass.
+
+**status:** implementation complete; focused validation, typecheck, lint, and
+build passed. The full monorepo test run was stopped after 59/114 web files (571
+tests) passed because of its runtime; the focused orchestration play test is
+complete.
+
+**provenance:** direct — source and tests inspected at `f9e926d`; repairs and
+new regression cases produced in this working tree.
+
+**touched files:**
+- `packages/cuttlefish/src/gateway/employee-execution.ts`
+- `packages/cuttlefish/src/gateway/mid-pair-orchestrator.ts`
+- `packages/cuttlefish/src/gateway/__tests__/mid-pair-orchestrator.test.ts`
+- `docs/feature_inventory.md`
+- this ledger entry
+
+**findings repaired:**
+1. The top-level mid-pair parent now emits a 10-second heartbeat while its
+   reviewer/revision loop is awaiting an internal child. This prevents the
+   45-second status reconciler from falsely resetting a healthy long review to
+   `idle`, emitting a stalled completion, and waking downstream automation.
+2. A newly enforced manager fan-out now parks the mid-pair state in the explicit
+   `delegating` phase. The orchestrator does not treat the manager's immediate
+   delegation announcement as implementation output or spawn a reviewer against
+   it; the later barrier-controlled synthesis turn remains eligible for review.
+
+**validation run:**
+- `pnpm --filter @cuttlefish/contracts build`: passed.
+- Focused Vitest play test across mid-pair, status reconciliation,
+  cross-department routing, leader acknowledgement, and HR feedback: 5 files,
+  70 tests passed.
+- `pnpm typecheck`, `pnpm lint`, and `pnpm build`: passed.
+- `pnpm test`: interrupted after contracts passed (1 file / 6 tests) and the
+  first 59 of 114 web test files passed (571 tests); no failure was observed
+  before interruption. The CLI-focused 70-test play test above completed.
+
+**remaining open items:** The tokenless-loopback identity posture, board lock
+scope, and duplicate preliminary/final `session:completed` emissions remain as
+previously documented. They require separate authentication and event-contract
+changes rather than being bundled into this focused loop repair.

@@ -376,6 +376,67 @@ describe("dispatchEmployeeSessionRun — review loop", () => {
     expect((settled.transportMeta as any).executionPhase).toBe("done");
   });
 
+  it("heartbeats the parent while a long reviewer pass is in flight", async () => {
+    vi.useFakeTimers();
+    try {
+      const top = hoisted.seedTopSession({ lastActivity: "2026-01-01T00:00:00.000Z" });
+      let reviewerStarted!: () => void;
+      const started = new Promise<void>((resolve) => { reviewerStarted = resolve; });
+      let releaseReviewer!: () => void;
+      const release = new Promise<void>((resolve) => { releaseReviewer = resolve; });
+      hoisted.dispatchWebSessionRunMock
+        .mockImplementationOnce(async (session: FakeSession) => {
+          hoisted.sessionsById.set(session.id, { ...session, status: "idle" });
+          hoisted.messagesById.set(session.id, [{ role: "assistant", content: "implemented" }]);
+        })
+        .mockImplementationOnce(async (session: FakeSession) => {
+          reviewerStarted();
+          await release;
+          hoisted.sessionsById.set(session.id, { ...session, status: "idle" });
+          hoisted.messagesById.set(session.id, [{ role: "assistant", content: approvedVerdict }]);
+        });
+
+      const run = dispatchEmployeeSessionRun(top as any, "task", fakeEngine(), baseConfig(), makeContext([]), midPairEmployee());
+      await started;
+      const before = hoisted.sessionsById.get(top.id)!.lastActivity;
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(hoisted.sessionsById.get(top.id)!.lastActivity).not.toBe(before);
+
+      releaseReviewer();
+      await run;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not review an enforced manager fan-out announcement", async () => {
+    const top = hoisted.seedTopSession();
+    hoisted.dispatchWebSessionRunMock.mockImplementationOnce(async (session: FakeSession) => {
+      const current = hoisted.sessionsById.get(session.id)!;
+      hoisted.sessionsById.set(session.id, {
+        ...current,
+        status: "idle",
+        transportMeta: {
+          ...(current.transportMeta ?? {}),
+          managerDelegationEnforcement: {
+            promptHash: "prompt-1",
+            occurredAt: "2026-07-31T00:00:00.000Z",
+            childSessionIds: ["delegated-child"],
+            synthesisDispatched: false,
+          },
+        },
+      });
+      hoisted.messagesById.set(session.id, [{ role: "assistant", content: "Delegated to a specialist." }]);
+    });
+
+    await dispatchEmployeeSessionRun(top as any, "task", fakeEngine(), baseConfig(), makeContext([]), midPairEmployee());
+
+    expect(hoisted.createSessionMock).not.toHaveBeenCalled();
+    const parked = hoisted.sessionsById.get(top.id)!;
+    expect(parked.status).toBe("idle");
+    expect((parked.transportMeta as any).executionPhase).toBe("delegating");
+  });
+
   it("loops a revision pass on changes_requested, then approves — two children spawned beyond the implementer", async () => {
     const top = hoisted.seedTopSession();
     hoisted.script.push({ status: "idle", assistantText: "v1" }); // implementer
