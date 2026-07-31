@@ -17,6 +17,7 @@ import { logger } from "../shared/logger.js";
 import {
   createSession,
   getMessages,
+  getSession,
   insertMessage,
   updateSession,
 } from "../sessions/registry.js";
@@ -60,8 +61,26 @@ export async function defaultRunCritique(request: OrgChangeRequest, context: Api
     portalName: config.portal?.portalName,
   });
   insertMessage(session.id, "user", prompt);
+  // The HR session is a reused singleton and `dispatchWebSessionRun` never
+  // rejects — it catches every engine error, marks the session `error`, and
+  // resolves. Reading "the last assistant message" unconditionally would
+  // therefore return the PREVIOUS change request's critique whenever this turn
+  // fails, attributing a stale verdict to a change it never reviewed (and
+  // feeding it to the approval card and the autonomous verdict prompt). Anchor
+  // on the message count taken before dispatch so only a message this turn
+  // actually produced can be accepted.
+  const assistantCountBefore = countAssistantMessages(session.id);
   await dispatchWebSessionRun(session, prompt, engine, config, context);
-  return { critique: readLastAssistantMessage(session.id), sessionId: session.id };
+  const settled = getSession(session.id);
+  if (settled?.status === "error") {
+    logger.warn(`HR critique turn for "${request.employeeName}" ended in error: ${settled.lastError ?? "unknown error"}`);
+    return { critique: null, sessionId: session.id };
+  }
+  const critique = readNewAssistantMessage(session.id, assistantCountBefore);
+  if (critique === null) {
+    logger.warn(`HR critique for "${request.employeeName}" produced no new assistant message; recording no critique`);
+  }
+  return { critique, sessionId: session.id };
 }
 
 async function getOrCreateHrSession(input: {
@@ -102,10 +121,15 @@ async function getOrCreateHrSession(input: {
   return hrSessionPromise;
 }
 
-function readLastAssistantMessage(sessionId: string): string | null {
+function countAssistantMessages(sessionId: string): number {
+  return getMessages(sessionId).filter((m) => m.role === "assistant" && !m.partial).length;
+}
+
+/** The last assistant message, but only if this turn actually appended one. */
+function readNewAssistantMessage(sessionId: string, countBefore: number): string | null {
   const assistant = getMessages(sessionId).filter((m) => m.role === "assistant" && !m.partial);
-  const last = assistant[assistant.length - 1];
-  return last ? last.content : null;
+  if (assistant.length <= countBefore) return null;
+  return assistant[assistant.length - 1].content;
 }
 
 function buildCritiquePrompt(request: OrgChangeRequest, registry: Map<string, Employee>): string {

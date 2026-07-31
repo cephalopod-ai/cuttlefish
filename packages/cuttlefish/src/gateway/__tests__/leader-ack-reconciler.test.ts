@@ -413,3 +413,109 @@ describe("leader acknowledgement reconciler", () => {
     });
   });
 });
+
+describe("manager delegation barrier interaction", () => {
+  const getConfig = () => ({
+    gateway: { port: 8888, host: "127.0.0.1", leaderAckTimeoutMs: 60_000 },
+    engines: { default: "claude", claude: { bin: "claude", model: "opus" } },
+    connectors: {},
+    logging: { file: true, stdout: true, level: "info" },
+  } as any);
+
+  function buildBatch(label: string) {
+    const parent = reg.createSession({
+      engine: "claude",
+      source: "web",
+      sourceRef: `web:parent-${label}`,
+      prompt: "split this",
+      employee: "engineering-manager",
+    });
+    const fast = reg.createSession({
+      engine: "claude",
+      source: "web",
+      sourceRef: `web:fast-${label}`,
+      prompt: "slice one",
+      employee: "riley",
+      parentSessionId: parent.id,
+    });
+    const slow = reg.createSession({
+      engine: "claude",
+      source: "web",
+      sourceRef: `web:slow-${label}`,
+      prompt: "slice two",
+      employee: "quinn",
+      parentSessionId: parent.id,
+    });
+    reg.updateSession(parent.id, {
+      transportMeta: {
+        managerDelegationEnforcement: {
+          promptHash: `hash-${label}`,
+          delegatedTo: ["riley", "quinn"],
+          childSessionIds: [fast.id, slow.id],
+          completedChildSessionIds: [fast.id],
+          synthesisDispatched: false,
+        },
+      },
+    });
+    // The slow sibling is still working, so the batch barrier is holding.
+    reg.updateSession(slow.id, { status: "running", transportMeta: { activeRunId: "run-slow" } });
+    reg.updateSession(fast.id, { status: "idle", transportMeta: { latestRunId: "run-fast" } });
+    ack.markLeaderAckPending(reg.getSession(fast.id)!, {
+      leaderSessionId: parent.id,
+      leaderName: "engineering-manager",
+      reportKind: "result",
+      now: new Date(0).toISOString(),
+    });
+    return { parent, fast, slow };
+  }
+
+  it("does not wake the manager while an enforced delegation batch is still pending", () => {
+    const { fast } = buildBatch("hold");
+    const dispatchParentReminder = vi.fn(async () => {});
+    const dispatchEscalation = vi.fn(async () => {});
+
+    const escalated = rec.sweepLeaderAcknowledgements({
+      emit: vi.fn(),
+      getConfig,
+      now: () => 600_000,
+      dispatchParentReminder,
+      dispatchEscalation,
+    });
+
+    // The barrier — not an unresponsive leader — is withholding the ack, so the
+    // timeout must not fire: waking the manager here would synthesize on partial
+    // results and then synthesize a second time when the slow sibling lands.
+    expect(escalated).toBe(0);
+    expect(dispatchParentReminder).not.toHaveBeenCalled();
+    expect(dispatchEscalation).not.toHaveBeenCalled();
+    expect(ack.readLeaderAckMeta(reg.getSession(fast.id))).toMatchObject({
+      state: "pending",
+      contactAttemptCount: 1,
+    });
+  });
+
+  it("resumes normal ack timeouts once the batch has settled", () => {
+    const { parent, fast, slow } = buildBatch("settled");
+    reg.updateSession(slow.id, { status: "idle" });
+    reg.updateSession(parent.id, {
+      transportMeta: {
+        managerDelegationEnforcement: {
+          promptHash: "hash-settled",
+          delegatedTo: ["riley", "quinn"],
+          childSessionIds: [fast.id, slow.id],
+          completedChildSessionIds: [fast.id, slow.id],
+          synthesisDispatched: false,
+        },
+      },
+    });
+    const dispatchParentReminder = vi.fn(async () => {});
+
+    expect(rec.sweepLeaderAcknowledgements({
+      emit: vi.fn(),
+      getConfig,
+      now: () => 600_000,
+      dispatchParentReminder,
+    })).toBe(0);
+    expect(dispatchParentReminder).toHaveBeenCalledOnce();
+  });
+});

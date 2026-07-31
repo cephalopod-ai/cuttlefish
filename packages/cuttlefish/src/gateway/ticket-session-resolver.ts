@@ -85,7 +85,39 @@ export function sessionMatchesTicket(ticket: Pick<BoardTicket, "id" | "sessionId
     if (session.engineSessionId === persistedSessionId) return true;
   }
 
-  return sessionChannelCandidates(session).some((candidate) => candidate.includes(ticket.id));
+  return sessionChannelCandidates(session).some((candidate) => containsTicketIdSegment(candidate, ticket.id));
+}
+
+/**
+ * Ticket ids appear inside composite keys like `board:<dept>:<ticketId>`, so the
+ * match has to be substring-based — but a raw `includes` also makes `ticket-1`
+ * match `ticket-10`'s sessions, which silently binds one ticket's feedback to
+ * another's session (and can leave the shorter-id ticket wedged `in_progress`
+ * forever behind its neighbour's live session). Require the id to occupy whole
+ * delimiter-bounded segments instead.
+ */
+function containsTicketIdSegment(candidate: string, ticketId: string): boolean {
+  if (!ticketId) return false;
+  let from = 0;
+  for (;;) {
+    const at = candidate.indexOf(ticketId, from);
+    if (at < 0) return false;
+    const before = at === 0 ? "" : candidate[at - 1];
+    const afterIndex = at + ticketId.length;
+    const after = afterIndex >= candidate.length ? "" : candidate[afterIndex];
+    if (!isTicketIdBodyChar(before) && !isTicketIdBodyChar(after)) return true;
+    from = at + 1;
+  }
+}
+
+/**
+ * Characters that would make an adjacent position part of a longer id. Board
+ * keys are colon-delimited (`<source>:<department>:<ticketId>[:<ts>]`), so
+ * treating `-`/`_` as id body — not as a boundary — is what makes `ticket-1`
+ * stop matching both `ticket-10` and `ticket-1-retry`.
+ */
+function isTicketIdBodyChar(char: string): boolean {
+  return char !== "" && /[A-Za-z0-9_-]/.test(char);
 }
 
 export function resolveBestSessionForTicket<T extends Pick<BoardTicket, "id" | "sessionId">>(

@@ -36,7 +36,8 @@ export type DispatchTicketFailureReason =
   | "resource-blocked"
   | "orchestration-unavailable"
   | "orchestration-worker-unmapped"
-  | "orchestration-busy";
+  | "orchestration-busy"
+  | "engine-unavailable";
 
 export type DispatchTicketResult =
   | { ok: true; sessionId: string }
@@ -341,7 +342,13 @@ export async function dispatchTicket(
   }
   const engine = deps.context.sessionManager.getEngine(employee.engine);
   if (!engine) {
-    throw new Error(`Engine "${employee.engine}" not available for ${employee.name}`);
+    // Every other dispatch failure is a typed result that callers skip past. A
+    // throw here escapes the board-worker's per-candidate loop and the
+    // watchdog's per-department loop, aborting the whole tick — so one employee
+    // pointing at a disabled engine would stop dispatching for every other
+    // department, forever, with only a generic "tick failed" log.
+    logger.warn(`[ticket-dispatch] skipped ${department}/${ticketId}: engine "${employee.engine}" not available for ${employee.name}`);
+    return { ok: false, reason: "engine-unavailable" };
   }
   const leaseGuard = await allocateBoardDispatchLease(department, ticket, employee, opts, deps, sessionKey);
   if (leaseGuard && "reason" in leaseGuard) {

@@ -51,7 +51,6 @@ import { findHrSessionProfileConflict, getReusableHrSession } from "../../hr-ses
 import { isHrHumanOnlyBlocked } from "../../manager-auth.js";
 import type { GatewayPrincipal } from "../../auth.js";
 import { acknowledgeLeaderAck } from "../../../sessions/leader-ack.js";
-import { claimManagerDelegationSynthesis, markManagerDelegationSynthesisDispatched } from "../../../sessions/manager-delegation.js";
 import { dispatchEmployeeSessionRun } from "../../mid-pair-orchestrator.js";
 import { buildWorkspaceProfilePrompt, resolveWorkspaceProfile, type ResolvedWorkspaceProfile } from "../../workspace-profiles.js";
 import { archiveSessionBoardTickets } from "../../board-service.js";

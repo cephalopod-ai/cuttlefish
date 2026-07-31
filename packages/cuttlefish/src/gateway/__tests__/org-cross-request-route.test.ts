@@ -212,3 +212,125 @@ describe("POST /api/org/cross-request", () => {
     expect(hoisted.dispatchEmployeeSessionRun).not.toHaveBeenCalled();
   });
 });
+
+describe("POST /api/org/cross-request — caller identity and chain bounds", () => {
+  /** Attach a session-scoped principal, the way the auth gate does. */
+  function withSessionPrincipal(req: any, sessionId: string) {
+    req.cuttlefishPrincipal = { kind: "session", sessionId };
+    return req;
+  }
+
+  it("binds a session-scoped caller to its own employee and its own session", async () => {
+    const { api, reg } = await setup();
+    const caller = reg.createSession({
+      engine: "claude",
+      source: "web",
+      sourceRef: "web:content-writer",
+      prompt: "write something",
+      employee: "content-writer",
+    });
+    const cap = makeRes();
+
+    await api.handleApiRequest(
+      withSessionPrincipal(makeJsonReq("POST", "/api/org/cross-request", {
+        fromEmployee: "content-writer",
+        service: "code-review",
+        prompt: "Review the new blog template component",
+      }), caller.id),
+      cap.res,
+      makeCtx(),
+    );
+
+    expect(cap.status).toBe(201);
+    const session = reg.getSession(cap.body.sessionId);
+    // The chain parent is forced onto the caller's own session, and the
+    // originating session is recorded so the request is traceable from the
+    // requester's side too.
+    expect(session?.parentSessionId).toBe(caller.id);
+    expect((session?.transportMeta as any).crossRequest).toMatchObject({
+      fromEmployee: "content-writer",
+      provider: "platform-dev",
+      requesterSessionId: caller.id,
+    });
+  });
+
+  it("refuses a session-scoped caller that claims a different employee", async () => {
+    const { api, reg } = await setup();
+    const caller = reg.createSession({
+      engine: "claude",
+      source: "web",
+      sourceRef: "web:content-writer-impersonation",
+      prompt: "write something",
+      employee: "content-writer",
+    });
+    const cap = makeRes();
+
+    await api.handleApiRequest(
+      withSessionPrincipal(makeJsonReq("POST", "/api/org/cross-request", {
+        fromEmployee: "platform-dev",
+        service: "code-review",
+        prompt: "Do this as somebody else",
+      }), caller.id),
+      cap.res,
+      makeCtx(),
+    );
+
+    expect(cap.status).toBe(403);
+    expect(cap.body).toMatchObject({ code: "cross_request_identity_mismatch" });
+    expect(hoisted.dispatchEmployeeSessionRun).not.toHaveBeenCalled();
+  });
+
+  it("refuses a cross-request that closes a loop already on the chain", async () => {
+    const { api, reg } = await setup();
+    writeEmployee("content", "content-writer", `
+name: content-writer
+displayName: Content Writer
+department: content
+rank: employee
+engine: claude
+model: sonnet
+persona: Write content.
+provides:
+  - name: copy-edit
+    description: Edit copy for tone
+`);
+    const origin = reg.createSession({
+      engine: "claude",
+      source: "web",
+      sourceRef: "web:origin",
+      prompt: "start",
+      employee: "content-writer",
+    });
+    const first = makeRes();
+    await api.handleApiRequest(makeJsonReq("POST", "/api/org/cross-request", {
+      fromEmployee: "content-writer",
+      service: "code-review",
+      prompt: "Review this",
+      parentSessionId: origin.id,
+    }), first.res, makeCtx());
+    expect(first.status).toBe(201);
+
+    // platform-dev now asks content-writer back for copy-edit — fine, new pair.
+    const second = makeRes();
+    await api.handleApiRequest(makeJsonReq("POST", "/api/org/cross-request", {
+      fromEmployee: "platform-dev",
+      service: "copy-edit",
+      prompt: "Copy-edit my review",
+      parentSessionId: first.body.sessionId,
+    }), second.res, makeCtx());
+    expect(second.status).toBe(201);
+
+    // content-writer asking platform-dev for code-review AGAIN closes the loop.
+    const third = makeRes();
+    await api.handleApiRequest(makeJsonReq("POST", "/api/org/cross-request", {
+      fromEmployee: "content-writer",
+      service: "code-review",
+      prompt: "Review the edit of the review",
+      parentSessionId: second.body.sessionId,
+    }), third.res, makeCtx());
+
+    expect(third.status).toBe(409);
+    expect(third.body).toMatchObject({ code: "cross_request_cycle" });
+    expect(third.body.chain).toContain("content-writer→platform-dev");
+  });
+});

@@ -49,6 +49,7 @@ const hoisted = vi.hoisted(() => {
       sessionsById.set(id, session);
       return session;
     }),
+    getSessionMock: vi.fn((id: string) => sessionsById.get(id)),
     getSessionBySessionKeyMock: vi.fn((sessionKey: string) => sessionsByKey.get(sessionKey)),
     listSessionsMock: vi.fn(() => [...sessionsById.values()]),
     getMessagesMock: vi.fn(() => []),
@@ -80,6 +81,7 @@ const updateSessionMock = hoisted.updateSessionMock;
 
 vi.mock("../../sessions/registry.js", () => ({
   createSession: hoisted.createSessionMock,
+  getSession: hoisted.getSessionMock,
   getSessionBySessionKey: hoisted.getSessionBySessionKeyMock,
   listSessions: hoisted.listSessionsMock,
   getMessages: hoisted.getMessagesMock,
@@ -210,6 +212,36 @@ describe("submitOrgChange — critique pipeline", () => {
       2,
       expect.objectContaining({ sessionId: "s1" }),
     );
+  });
+
+  it("does not attribute a previous critique to a change whose HR turn failed", async () => {
+    // The HR session is a reused singleton and dispatchWebSessionRun never
+    // rejects — it marks the session `error` and resolves. Reading "the last
+    // assistant message" unconditionally would hand change B the verdict written
+    // for change A, and that stale text feeds the approval card and the
+    // autonomous verdict prompt.
+    writeEmployee("general", "hr-manager", "name: hr-manager\ndisplayName: HR Manager\ndepartment: general\nrank: manager\nengine: claude\nmodel: sonnet\npersona: Review org changes.\n");
+    const ctx = {
+      ...(fakeContext() as Record<string, unknown>),
+      sessionManager: { getEngine: () => ({}) },
+    } as never;
+
+    getMessagesMock.mockImplementation((() => [
+      { id: "m1", role: "assistant", content: "Verdict: recommend — the earlier change looks fine.", partial: false },
+    ]) as never);
+    dispatchWebSessionRunMock.mockImplementationOnce(async () => {
+      const hr = [...hoisted.sessionsById.values()].find((s: any) => s.employee === "hr-manager");
+      if (hr) hoisted.updateSessionMock(hr.id, { status: "error", lastError: "engine died" });
+    });
+
+    const failed = await submitOrgChange(
+      { changeType: "create_agent", employeeName: "risky-hire", proposed: VALID_HIRE, proposedBy: "user" },
+      ctx,
+    );
+    await waitForStatus(failed.request.id, "pending_approval");
+
+    expect(getChangeRequest(failed.request.id)?.hrCritique ?? null).toBeNull();
+    getMessagesMock.mockImplementation(() => []);
   });
 
   it("attaches the critique and opens an approval gate for a high-risk hire", async () => {

@@ -180,8 +180,15 @@ export function renameDepartment(
   }
 
   const registry = scanOrg();
+  // Match case-insensitively: `department` is taken verbatim from employee YAML
+  // (or from the directory name when the field is absent), so `department:
+  // Platform` inside `platform/` is a normal, unprevented shape. An exact-match
+  // filter moves the directory and its board while leaving that employee
+  // pointing at the old name — a ghost department with no directory, whose
+  // members are then rejected from their own board as foreign-department
+  // assignees.
   const employees = [...registry.values()]
-    .filter((employee) => employee.department === previousDepartment)
+    .filter((employee) => employee.department.localeCompare(previousDepartment, undefined, { sensitivity: "accent" }) === 0)
     .map((employee) => employee.name)
     .sort((a, b) => a.localeCompare(b));
 

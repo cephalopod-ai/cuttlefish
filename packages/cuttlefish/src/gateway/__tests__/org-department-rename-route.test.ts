@@ -180,6 +180,31 @@ describe("PATCH /api/org/departments/:name", () => {
     expect(readEmployee("platform", "beta").department).toBe("platform");
   });
 
+  it("also renames employees whose YAML department differs only by case", async () => {
+    // `department` is taken verbatim from YAML, so `department: Platform` inside
+    // `platform/` is a normal shape. An exact-match filter moved the directory
+    // and board while leaving that employee on the old name — a ghost department
+    // with no directory, whose members are then rejected from their own board.
+    writeEmployee("platform", "dev");
+    const casedPath = path.join(tmpHome, "org", "platform", "cased.yaml");
+    fs.writeFileSync(casedPath, [
+      "name: cased",
+      "displayName: cased",
+      "department: Platform",
+      "rank: employee",
+      "engine: claude",
+      "model: opus",
+      "persona: cased",
+    ].join("\n"));
+    const { renameDepartment } = await import("../department-rename.js");
+
+    const result = renameDepartment("platform", "product");
+
+    expect(result.ok).toBe(true);
+    expect(readEmployee("product", "dev").department).toBe("product");
+    expect(readEmployee("product", "cased").department).toBe("product");
+  });
+
   it("clears the intent marker on a successful rename (DFI-002)", async () => {
     writeEmployee("platform", "dev");
     const { renameDepartment } = await import("../department-rename.js");

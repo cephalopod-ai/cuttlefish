@@ -35,6 +35,20 @@ export function notifyParentSession(
   // confirms background work has drained.
   if (hasSessionBackgroundActivity(childSession.id)) {
     deferredParentNotifications.set(childSession.id, { result, options });
+    // Arm the leader-ack record BEFORE parking the callback. The deferral map is
+    // process-local and its only flush trigger is the engine's drain event, so a
+    // crashed engine or a gateway restart drops the callback with no trace. Every
+    // other lost-callback case is recovered by the leader-ack reconciler's
+    // timeout/reminder/escalation path — arming here buys the parked callback
+    // that same safety net instead of a silent, permanent wait.
+    if (childSession.parentSessionId && options?.alwaysNotify !== false) {
+      const parent = getSession(childSession.parentSessionId);
+      markLeaderAckPending(childSession, {
+        leaderSessionId: childSession.parentSessionId,
+        leaderName: parent?.employee ?? parent?.title ?? null,
+        reportKind: result.error ? "error" : "result",
+      });
+    }
     logger.info(`[callbacks] deferring parent notification for ${childSession.id} while background work is active`);
     return;
   }
@@ -262,7 +276,11 @@ async function _sendNotification(
     await sink.sendSessionNotification(childSession.parentSessionId!, message, displayMessage, childSession.id);
     return;
   }
-  await _sendRaw(childSession.parentSessionId!, message, displayMessage);
+  // Carry the reporting child's id over the HTTP hop too. The sink path passes it
+  // as an argument; without it here, `resolveManagerDelegationSynthesis` cannot
+  // tell an out-of-batch or late child from a stale duplicate and answers
+  // `already_dispatched` for both, silently swallowing the report.
+  await _sendRaw(childSession.parentSessionId!, message, displayMessage, undefined, childSession.id);
 }
 
 /** Trim to a word boundary for a tidy human-facing preview. */
@@ -320,9 +338,10 @@ async function _sendRaw(
   message: string,
   displayMessage?: string,
   sink?: SessionNotificationSink,
+  sourceChildSessionId?: string,
 ): Promise<void> {
   if (sink) {
-    await sink.sendSessionNotification(parentSessionId, message, displayMessage);
+    await sink.sendSessionNotification(parentSessionId, message, displayMessage, sourceChildSessionId);
     return;
   }
   const gateway = internalGatewayConnection();
@@ -334,6 +353,7 @@ async function _sendRaw(
       message,
       role: "notification",
       ...(displayMessage ? { displayMessage } : {}),
+      ...(sourceChildSessionId ? { sourceChildSessionId } : {}),
     }),
   });
   await assertFetchOk(response, "parent notification");

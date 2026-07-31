@@ -700,6 +700,88 @@ describe("session notification aggregation", () => {
     expect(hoisted.dispatchEmployeeSessionRun).toHaveBeenCalledTimes(1);
   });
 
+  it("wakes the manager for a late child report delivered over HTTP after synthesis ran", async () => {
+    // The sink path passes the reporting child as an argument; the HTTP path
+    // carries it in the body. Without it, a post-synthesis callback is
+    // indistinguishable from a stale duplicate and is swallowed forever — the
+    // child's result never reaches the manager.
+    const { api, reg } = await setup();
+    const ctx = makeCtx(api);
+    ctx.getConfig = () => ({ gateway: {}, engines: { default: "claude", claude: { bin: "node", model: "sonnet" } }, portal: {} }) as any;
+    ctx.sessionManager.getEngine = () => ({ name: "claude" }) as any;
+
+    const parent = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:parent-late", prompt: "parent" });
+    const batchChild = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:child-batch", parentSessionId: parent.id, prompt: "child a" });
+    const lateChild = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:child-late", parentSessionId: parent.id, prompt: "later work" });
+    reg.updateSession(parent.id, {
+      transportMeta: {
+        managerDelegationEnforcement: {
+          childSessionIds: [batchChild.id],
+          completedChildSessionIds: [batchChild.id],
+          synthesisDispatched: true,
+          synthesisDispatchedAt: new Date(Date.now() - 60_000).toISOString(),
+        },
+      } as any,
+    });
+
+    const withoutSource = makeRes();
+    await api.handleApiRequest(
+      makeJsonReq("POST", `/api/sessions/${parent.id}/message`, { message: "late report", role: "notification" }),
+      withoutSource.res,
+      ctx,
+    );
+    expect(withoutSource.body).toMatchObject({ status: "notification_recorded" });
+    expect(hoisted.dispatchEmployeeSessionRun).not.toHaveBeenCalled();
+
+    const withSource = makeRes();
+    await api.handleApiRequest(
+      makeJsonReq("POST", `/api/sessions/${parent.id}/message`, {
+        message: "late report",
+        role: "notification",
+        sourceChildSessionId: lateChild.id,
+      }),
+      withSource.res,
+      ctx,
+    );
+    expect(withSource.status).toBe(200);
+    expect(hoisted.dispatchEmployeeSessionRun).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a claimed source child that is not a child of the target session", async () => {
+    const { api, reg } = await setup();
+    const ctx = makeCtx(api);
+    ctx.getConfig = () => ({ gateway: {}, engines: { default: "claude", claude: { bin: "node", model: "sonnet" } }, portal: {} }) as any;
+    ctx.sessionManager.getEngine = () => ({ name: "claude" }) as any;
+
+    const parent = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:parent-forge", prompt: "parent" });
+    const batchChild = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:child-forge", parentSessionId: parent.id, prompt: "child a" });
+    const stranger = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:stranger", prompt: "unrelated" });
+    reg.updateSession(parent.id, {
+      transportMeta: {
+        managerDelegationEnforcement: {
+          childSessionIds: [batchChild.id],
+          completedChildSessionIds: [batchChild.id],
+          synthesisDispatched: true,
+          synthesisDispatchedAt: new Date(Date.now() - 60_000).toISOString(),
+        },
+      } as any,
+    });
+
+    const cap = makeRes();
+    await api.handleApiRequest(
+      makeJsonReq("POST", `/api/sessions/${parent.id}/message`, {
+        message: "forged report",
+        role: "notification",
+        sourceChildSessionId: stranger.id,
+      }),
+      cap.res,
+      ctx,
+    );
+
+    expect(cap.body).toMatchObject({ status: "notification_recorded" });
+    expect(hoisted.dispatchEmployeeSessionRun).not.toHaveBeenCalled();
+  });
+
   it("claims a fully completed manager synthesis once when notification requests overlap", async () => {
     const { api, reg } = await setup();
     const ctx = makeCtx(api);

@@ -135,10 +135,21 @@ export async function continueSession(input: ContinueSessionInput): Promise<Cont
   if (isNotification) {
     input.context.emit("session:notification", { sessionId: session.id, message: displayMessage });
     const currentSession = getSession(session.id) ?? session;
+    // Only honour a claimed source child that really is a child of this session,
+    // so a forged body field can't reopen someone else's synthesis barrier. An
+    // unverifiable claim degrades to the previous behaviour rather than failing.
+    const claimedSourceChildId = typeof body.sourceChildSessionId === "string" ? body.sourceChildSessionId.trim() : "";
+    const sourceChildSession = claimedSourceChildId
+      ? (() => {
+          const child = getSession(claimedSourceChildId);
+          return child?.parentSessionId === currentSession.id ? child : undefined;
+        })()
+      : undefined;
     const synthesis = claimManagerDelegationSynthesis(
       currentSession.id,
       currentSession.transportMeta,
       listChildSessions(currentSession.id),
+      sourceChildSession,
     );
     if (!synthesis.shouldDispatch) {
       return {

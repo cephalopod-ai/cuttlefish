@@ -43,6 +43,12 @@ describe("scopedTokenForbidden — operator control plane", () => {
     expect(scopedTokenForbidden("GET", "/api/org")).toBe(false);
     expect(scopedTokenForbidden("POST", "/api/org/change-requests")).toBe(false);
     expect(scopedTokenForbidden("POST", "/api/org/change-requests/change-1/approve")).toBe(true);
+    // Cross-department service requests are the documented agent path (every
+    // employee's injected API reference points at it); the route binds
+    // fromEmployee to the token's own session. Other org mutations stay closed.
+    expect(scopedTokenForbidden("POST", "/api/org/cross-request")).toBe(false);
+    expect(scopedTokenForbidden("POST", "/api/org/employees")).toBe(true);
+    expect(scopedTokenForbidden("DELETE", "/api/org/employees/riley")).toBe(true);
     expect(scopedTokenForbidden("GET", "/api/status")).toBe(true);
     expect(scopedTokenForbidden("POST", "/api/sessions")).toBe(false);
     expect(scopedTokenForbidden("POST", "/api/sessions/s-1/message")).toBe(false);
