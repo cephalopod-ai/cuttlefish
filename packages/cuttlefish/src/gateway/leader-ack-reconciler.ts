@@ -1,6 +1,9 @@
-import { getMessages, getSession, insertMessage, listSessions } from "../sessions/registry.js";
+import { getMessages, getSession, insertMessage, listChildSessions, listSessions } from "../sessions/registry.js";
 import { resolveOrgHierarchy, withPortalExecutive } from "./org-hierarchy.js";
 import { scanOrg } from "./org.js";
+import { resolveManagerDelegationSynthesis } from "../sessions/manager-delegation.js";
+import { notifyConnectorNotification } from "../sessions/callbacks.js";
+import { hasSessionBackgroundActivity } from "../sessions/background-activity-state.js";
 import { logger } from "../shared/logger.js";
 import { DEFAULT_MODEL_LADDER } from "../shared/model-escalation.js";
 import { getModelRegistry, isKnownEngine } from "../shared/models.js";
@@ -112,6 +115,33 @@ function buildChildEscalationMessage(child: Session, timeoutMs: number, recipien
  *  - A human/HR closes it out with a boilerplate no-op user message (e.g.
  *    "acknowledged", "task remains done").
  */
+/**
+ * Whether this report is one member of an enforced manager fan-out whose batch
+ * has not finished yet.
+ *
+ * The delegation barrier deliberately withholds every child callback from the
+ * manager until the whole batch settles — only a `notification` row is written,
+ * never an assistant turn. `hasParentNoOpAcknowledgement` counts assistant/user
+ * messages, so while the barrier holds, the leader is *structurally unable* to
+ * acknowledge: the timeout would fire on every early-finishing sibling, and the
+ * reminder is dispatched with `bypassManagerDelegationBarrier`, running a full
+ * manager turn on partial results and defeating the one-synthesis guarantee.
+ *
+ * What is holding the ack here is the batch, not an unresponsive leader, so the
+ * ack clock does not apply. Once the last sibling settles the synthesis turn
+ * runs and its assistant message acknowledges every member of the batch.
+ */
+function isHeldByManagerDelegationBarrier(ack: LeaderAckMeta, childSessionId: string): boolean {
+  const parent = getSession(ack.parentSessionId);
+  if (!parent) return false;
+  const decision = resolveManagerDelegationSynthesis(
+    parent,
+    listChildSessions(parent.id),
+    { id: childSessionId, lastActivity: ack.reportedAt },
+  );
+  return decision.tracked && !decision.shouldDispatch && decision.reason === "waiting_for_children";
+}
+
 function hasParentNoOpAcknowledgement(ack: LeaderAckMeta): boolean {
   const parent = getSession(ack.parentSessionId);
   if (!parent) return false;
@@ -164,6 +194,25 @@ export function sweepLeaderAcknowledgements(deps: LeaderAckReconcilerDeps): numb
     }
     const lastContactAt = Date.parse(ack.lastContactAttemptAt ?? ack.reportedAt);
     if (!Number.isFinite(lastContactAt) || now - lastContactAt < timeoutMs) continue;
+    // The ack is armed when a callback is PARKED behind background activity, not
+    // only when one is delivered — that is what gives a parked callback a
+    // recovery path. But a leader cannot acknowledge a report it has not been
+    // sent, so the clock must not run while the child is genuinely still
+    // working: that would send a second notice, and eventually escalate, against
+    // live work. Background activity is process-local and never persisted, so a
+    // crash or restart leaves it empty and the parked callback still becomes
+    // eligible here — which is precisely the case the arming exists to recover.
+    if (hasSessionBackgroundActivity(session.id)) {
+      logger.debug(`[leader-ack] session ${session.id} still has live background activity; deferring ack timeout`);
+      continue;
+    }
+    // The batch barrier — not an unresponsive leader — is what is withholding
+    // the acknowledgement. Waking the manager here would run a synthesis turn on
+    // partial results (and a second one when the last sibling lands).
+    if (isHeldByManagerDelegationBarrier(ack, session.id)) {
+      logger.debug(`[leader-ack] session ${session.id} still inside an unfinished manager delegation batch; deferring ack timeout`);
+      continue;
+    }
 
     // The completion/error callback is the first direct-supervisor contact.
     // Give that same supervisor one explicit reminder and a fresh timeout
@@ -237,6 +286,18 @@ export function sweepLeaderAcknowledgements(deps: LeaderAckReconcilerDeps): numb
       }).catch((err) => {
         logger.warn(`[leader-ack] failed to dispatch escalation for ${session.id}: ${err instanceof Error ? err.message : String(err)}`);
       });
+    } else if (!recipient) {
+      // No executive to route to (no org root, or the unresponsive leader IS the
+      // executive). Both notifications above land in session transcripts — the
+      // child's, and the parent's that already ignored two contact attempts — so
+      // without this the "escalated to manual human review" claim would be true
+      // of nothing: no operator-facing surface would ever show it. Push it to the
+      // notifications connector so a human actually sees the stalled handoff.
+      notifyConnectorNotification(
+        `🧭 Leader acknowledgement timeout with no escalation target: ${session.employee || "a delegated worker"}'s report ` +
+        `(session ${session.id}) went unacknowledged by ${ack.leaderName || "the assigned leader"} for ` +
+        `${formatDurationMinutes(timeoutMs)} minutes and needs manual human review.`,
+      );
     }
 
     logger.warn(

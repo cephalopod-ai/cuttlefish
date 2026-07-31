@@ -13,6 +13,7 @@ import { dispatchTicket } from "../../ticket-dispatch.js";
 import { isActiveEmployee, scanOrg } from "../../org.js";
 import { HR_EMPLOYEE_NAME } from "../../org-policy.js";
 import { buildCrossRequestBrief, buildOrgServices, computeExecutionProfileSummary, findServiceProvider, listOrgDepartments } from "../../org-services.js";
+import { evaluateCrossRequestChain, resolveCrossRequestIdentity } from "../../cross-request-guards.js";
 import { parseChangeInput } from "../../org-validation.js";
 import { resolveUserHeader } from "../../connector-reply.js";
 import type { ApiContext } from "../context.js";
@@ -100,9 +101,20 @@ export async function handleOrgRoutes(
     const fromEmployee = typeof body.fromEmployee === "string" ? body.fromEmployee.trim() : "";
     const serviceName = typeof body.service === "string" ? body.service.trim() : "";
     const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
-    const parentSessionId = typeof body.parentSessionId === "string" && body.parentSessionId.trim()
+    let parentSessionId = typeof body.parentSessionId === "string" && body.parentSessionId.trim()
       ? body.parentSessionId.trim()
       : undefined;
+    const identity = resolveCrossRequestIdentity({
+      principal: (req as HttpRequest & { cuttlefishPrincipal?: GatewayPrincipal }).cuttlefishPrincipal,
+      fromEmployee,
+      parentSessionId,
+      lookup: { getSession },
+    });
+    if (!identity.ok) {
+      json(res, { error: identity.error, code: identity.code }, 403);
+      return true;
+    }
+    parentSessionId = identity.parentSessionId;
     if (!fromEmployee) {
       badRequest(res, "fromEmployee must be a non-empty string");
       return true;
@@ -149,6 +161,21 @@ export async function handleOrgRoutes(
       serverError(res, `Provider engine "${provider.employee.engine}" is not available`);
       return true;
     }
+    const chainGuard = evaluateCrossRequestChain({
+      parentSessionId,
+      fromEmployee: requester.name,
+      provider: provider.employee.name,
+      lookup: { getSession },
+    });
+    if (!chainGuard.ok) {
+      json(res, {
+        error: chainGuard.error,
+        code: chainGuard.code,
+        requestedService: serviceName,
+        chain: chainGuard.chain,
+      }, 409);
+      return true;
+    }
 
     const { resolveOrgHierarchy, resolveCrossRequestRoute, withPortalExecutive } = await import("../../org-hierarchy.js");
     const hierarchy = resolveOrgHierarchy(withPortalExecutive(registry, context.getConfig().portal?.portalName));
@@ -177,6 +204,11 @@ export async function handleOrgRoutes(
           provider: provider.employee.name,
           route: routed.route,
           managers: routed.managers,
+          // The originating session, so the request is traceable from the
+          // requester's side too — `fromEmployee` alone is an employee name,
+          // ambiguous across all of that employee's sessions — and so the
+          // chain walk above has a durable edge to follow.
+          ...(parentSessionId ? { requesterSessionId: parentSessionId } : {}),
         },
       },
     });

@@ -112,6 +112,15 @@ export function scopedTokenForbidden(method: string | undefined, rawPathname: st
   // authenticated identity and the route binds the resulting approval to it.
   // All other org mutations remain operator-only.
   if (pathname === "/api/org/change-requests" && m === "POST") return false;
+  // Requesting a service from another department is the cross-department
+  // feature's whole point, and it is what every employee's injected API
+  // reference tells the agent to do. Denying it here made the documented agent
+  // path a guaranteed 403 while leaving the same call open to any tokenless
+  // loopback caller. The route binds `fromEmployee` to the token's own session
+  // employee and forces the chain parent onto it, so this creates no authority
+  // the agent did not already have. It creates no org state either — only a
+  // provider-side session. All other org mutations stay operator-only.
+  if (pathname === "/api/org/cross-request" && m === "POST") return false;
   // Org roster is readable; mutations (create/rename/rank/cliFlags/delete) are not.
   if ((pathname === "/api/org" || pathname.startsWith("/api/org/")) && m !== "GET") return true;
   // A scoped chat may create a durable checkpoint for itself. The transport

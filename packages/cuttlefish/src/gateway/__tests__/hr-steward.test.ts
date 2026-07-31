@@ -49,6 +49,7 @@ const hoisted = vi.hoisted(() => {
       sessionsById.set(id, session);
       return session;
     }),
+    getSessionMock: vi.fn((id: string) => sessionsById.get(id)),
     getSessionBySessionKeyMock: vi.fn((sessionKey: string) => sessionsByKey.get(sessionKey)),
     listSessionsMock: vi.fn(() => [...sessionsById.values()]),
     getMessagesMock: vi.fn(() => []),
@@ -80,6 +81,7 @@ const updateSessionMock = hoisted.updateSessionMock;
 
 vi.mock("../../sessions/registry.js", () => ({
   createSession: hoisted.createSessionMock,
+  getSession: hoisted.getSessionMock,
   getSessionBySessionKey: hoisted.getSessionBySessionKeyMock,
   listSessions: hoisted.listSessionsMock,
   getMessages: hoisted.getMessagesMock,
@@ -210,6 +212,84 @@ describe("submitOrgChange — critique pipeline", () => {
       2,
       expect.objectContaining({ sessionId: "s1" }),
     );
+  });
+
+  it("does not attribute a previous critique to a change whose HR turn failed", async () => {
+    // The HR session is a reused singleton and dispatchWebSessionRun never
+    // rejects — it marks the session `error` and resolves. Reading "the last
+    // assistant message" unconditionally would hand change B the verdict written
+    // for change A, and that stale text feeds the approval card and the
+    // autonomous verdict prompt.
+    writeEmployee("general", "hr-manager", "name: hr-manager\ndisplayName: HR Manager\ndepartment: general\nrank: manager\nengine: claude\nmodel: sonnet\npersona: Review org changes.\n");
+    const ctx = {
+      ...(fakeContext() as Record<string, unknown>),
+      sessionManager: { getEngine: () => ({}) },
+    } as never;
+
+    getMessagesMock.mockImplementation((() => [
+      { id: "m1", role: "assistant", content: "Verdict: recommend — the earlier change looks fine.", partial: false },
+    ]) as never);
+    dispatchWebSessionRunMock.mockImplementationOnce(async () => {
+      const hr = [...hoisted.sessionsById.values()].find((s: any) => s.employee === "hr-manager");
+      if (hr) hoisted.updateSessionMock(hr.id, { status: "error", lastError: "engine died" });
+    });
+
+    const failed = await submitOrgChange(
+      { changeType: "create_agent", employeeName: "risky-hire", proposed: VALID_HIRE, proposedBy: "user" },
+      ctx,
+    );
+    await waitForStatus(failed.request.id, "pending_approval");
+
+    expect(getChangeRequest(failed.request.id)?.hrCritique ?? null).toBeNull();
+    getMessagesMock.mockImplementation(() => []);
+  });
+
+  it("keeps concurrent critiques from reading each other's session state", async () => {
+    // Both critiques reuse the same HR singleton, and submitOrgChange runs them
+    // in the background. The anchor for "did MY turn produce a critique" is the
+    // session's assistant-message count — shared state. If a turn that produced
+    // nothing is still in flight when a sibling turn appends its verdict, the
+    // barren turn sees the count rise and claims the sibling's text as its own.
+    writeEmployee("general", "hr-manager", "name: hr-manager\ndisplayName: HR Manager\ndepartment: general\nrank: manager\nengine: claude\nmodel: sonnet\npersona: Review org changes.\n");
+    const ctx = {
+      ...(fakeContext() as Record<string, unknown>),
+      sessionManager: { getEngine: () => ({}) },
+    } as never;
+
+    const appended: string[] = [];
+    getMessagesMock.mockImplementation((() =>
+      appended.map((content, i) => ({ id: `m${i}`, role: "assistant", content, partial: false }))) as never);
+
+    let turn = 0;
+    dispatchWebSessionRunMock.mockImplementation(async () => {
+      const mine = ++turn;
+      if (mine === 1) {
+        // Produces no verdict at all and leaves the session healthy — the engine
+        // returned without writing an assistant message.
+        await new Promise((r) => setTimeout(r, 30));
+        return;
+      }
+      appended.push("Verdict: recommend — second change is sound.");
+    });
+
+    const first = await submitOrgChange(
+      { changeType: "create_agent", employeeName: "hire-one", proposed: VALID_HIRE, proposedBy: "user" },
+      ctx,
+    );
+    const second = await submitOrgChange(
+      { changeType: "create_agent", employeeName: "hire-two", proposed: { ...VALID_HIRE, displayName: "Hire Two" }, proposedBy: "user" },
+      ctx,
+    );
+    await waitForStatus(first.request.id, "pending_approval");
+    await waitForStatus(second.request.id, "pending_approval");
+
+    // The barren turn must record no critique rather than borrowing the other's,
+    // and the healthy turn must keep its own verdict.
+    expect(getChangeRequest(first.request.id)?.hrCritique ?? null).toBeNull();
+    expect(getChangeRequest(second.request.id)?.hrCritique).toMatch(/second change is sound/);
+
+    getMessagesMock.mockImplementation((() => []) as never);
+    dispatchWebSessionRunMock.mockImplementation(async () => {});
   });
 
   it("attaches the critique and opens an approval gate for a high-risk hire", async () => {

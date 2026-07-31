@@ -277,6 +277,39 @@ describe("resolveBestSessionForTicket", () => {
     const ticket = { id: "ticket-miss", sessionId: undefined } as any;
     expect(resolveBestSessionForTicket(ticket, [makeSession({ id: "s-other" })])).toBeUndefined();
   });
+
+  it("does not treat a longer ticket id as a match for a shorter prefix", () => {
+    // `ticket-1` must not claim `ticket-10`'s session: that binds one ticket's
+    // feedback to another's run and can wedge the shorter id in_progress behind
+    // its neighbour's live session.
+    const ticket = { id: "ticket-1", sessionId: undefined } as any;
+    const neighbour = makeSession({
+      id: "s-ticket-10",
+      lastActivity: "2026-06-21T12:00:10.000Z",
+      replyContext: { channel: "kanban:software-delivery:ticket-10" } as any,
+    });
+    expect(resolveBestSessionForTicket(ticket, [neighbour])).toBeUndefined();
+  });
+
+  it("still matches the exact id inside a composite board key", () => {
+    const ticket = { id: "ticket-1", sessionId: undefined } as any;
+    const own = makeSession({
+      id: "s-ticket-1",
+      lastActivity: "2026-06-21T12:00:10.000Z",
+      sourceRef: "kanban:software-delivery:ticket-1:1750000000000",
+    });
+    expect(resolveBestSessionForTicket(ticket, [own])?.id).toBe("s-ticket-1");
+  });
+
+  it("does not match a suffixed variant of the ticket id", () => {
+    const ticket = { id: "ticket-1", sessionId: undefined } as any;
+    const variant = makeSession({
+      id: "s-retry",
+      lastActivity: "2026-06-21T12:00:10.000Z",
+      replyContext: { channel: "kanban:software-delivery:ticket-1-retry" } as any,
+    });
+    expect(resolveBestSessionForTicket(ticket, [variant])).toBeUndefined();
+  });
 });
 
 describe("shouldExposeSessionForTicket", () => {
