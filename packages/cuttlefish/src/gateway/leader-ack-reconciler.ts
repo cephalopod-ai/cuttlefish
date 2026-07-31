@@ -3,6 +3,7 @@ import { resolveOrgHierarchy, withPortalExecutive } from "./org-hierarchy.js";
 import { scanOrg } from "./org.js";
 import { resolveManagerDelegationSynthesis } from "../sessions/manager-delegation.js";
 import { notifyConnectorNotification } from "../sessions/callbacks.js";
+import { hasSessionBackgroundActivity } from "../sessions/background-activity-state.js";
 import { logger } from "../shared/logger.js";
 import { DEFAULT_MODEL_LADDER } from "../shared/model-escalation.js";
 import { getModelRegistry, isKnownEngine } from "../shared/models.js";
@@ -193,6 +194,18 @@ export function sweepLeaderAcknowledgements(deps: LeaderAckReconcilerDeps): numb
     }
     const lastContactAt = Date.parse(ack.lastContactAttemptAt ?? ack.reportedAt);
     if (!Number.isFinite(lastContactAt) || now - lastContactAt < timeoutMs) continue;
+    // The ack is armed when a callback is PARKED behind background activity, not
+    // only when one is delivered — that is what gives a parked callback a
+    // recovery path. But a leader cannot acknowledge a report it has not been
+    // sent, so the clock must not run while the child is genuinely still
+    // working: that would send a second notice, and eventually escalate, against
+    // live work. Background activity is process-local and never persisted, so a
+    // crash or restart leaves it empty and the parked callback still becomes
+    // eligible here — which is precisely the case the arming exists to recover.
+    if (hasSessionBackgroundActivity(session.id)) {
+      logger.debug(`[leader-ack] session ${session.id} still has live background activity; deferring ack timeout`);
+      continue;
+    }
     // The batch barrier — not an unresponsive leader — is what is withholding
     // the acknowledgement. Waking the manager here would run a synthesis turn on
     // partial results (and a second one when the last sibling lands).

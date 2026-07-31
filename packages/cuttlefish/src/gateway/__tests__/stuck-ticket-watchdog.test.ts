@@ -163,6 +163,37 @@ describe("stuck ticket watchdog", () => {
     expect(hoisted.dispatchTicketMock).not.toHaveBeenCalled();
   });
 
+  it("does not let another department's live session mask a dead ticket of the same id", async () => {
+    // Ticket ids are unique only within a board, and the resolver's fallback
+    // matches composite keys like `kanban:<department>:<ticketId>`. Without
+    // department scoping, marketing's running `t-blocked` session would keep
+    // delivery's genuinely dead `t-blocked` from ever being flagged.
+    writeManager("delivery");
+    writeBoard("delivery", [{
+      id: "t-blocked",
+      title: "Dead work in delivery",
+      status: "blocked",
+      createdAt: iso(TWO_HOURS),
+      updatedAt: iso(TWO_HOURS),
+    }]);
+    hoisted.sessions = [
+      session({
+        id: "s-marketing",
+        status: "running",
+        sourceRef: "kanban:marketing:t-blocked",
+        sessionKey: "kanban:marketing:t-blocked",
+        transportMeta: { boardDepartment: "marketing" } as never,
+      }),
+      session({ id: "s-delivery", status: "error" }),
+    ];
+
+    await runOneTick();
+
+    const board = readBoard("delivery");
+    expect(board.find((t) => t.id === "t-blocked")?.manualOnly).toBe(true);
+    expect(hoisted.dispatchTicketMock).toHaveBeenCalledOnce();
+  });
+
   it("ignores tickets already flagged manualOnly and recently-blocked tickets", async () => {
     writeManager("delivery");
     writeBoard("delivery", [

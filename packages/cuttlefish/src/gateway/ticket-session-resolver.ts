@@ -129,6 +129,31 @@ export function resolveBestSessionForTicket<T extends Pick<BoardTicket, "id" | "
     .sort((a, b) => Date.parse(b.lastActivity || "") - Date.parse(a.lastActivity || ""))[0];
 }
 
+/**
+ * Sessions that could belong to a ticket on THIS department's board.
+ *
+ * Ticket ids are only unique within a board — two departments can both hold a
+ * `t-1` — while the channel keys `sessionMatchesTicket` falls back on embed the
+ * department (`<source>:<department>:<ticketId>`). Matching on the ticket alone
+ * therefore lets one department's session answer for another's identically-named
+ * ticket. Callers that know the department should narrow the candidate set with
+ * this first; a session carrying no board provenance at all stays eligible, so
+ * non-board sessions (direct chats, manual runs) are not filtered out.
+ */
+export function sessionsForDepartment(sessions: Session[], department: string): Session[] {
+  return sessions.filter((session) => {
+    const persisted = boardMeta(session)?.boardDepartment;
+    if (typeof persisted === "string" && persisted.trim()) return persisted === department;
+    const keys = sessionChannelCandidates(session);
+    if (keys.length === 0) return true;
+    // Composite board keys name their department; keep sessions whose keys name
+    // this one, and sessions whose keys are not board keys at all.
+    const boardKeys = keys.filter((key) => key.split(":").length >= 3);
+    if (boardKeys.length === 0) return true;
+    return boardKeys.some((key) => key.split(":")[1] === department);
+  });
+}
+
 export function shouldExposeSessionForTicket(
   ticket: Pick<BoardTicket, "status">,
   session: Pick<Session, "status" | "transportMeta" | "lastError">,

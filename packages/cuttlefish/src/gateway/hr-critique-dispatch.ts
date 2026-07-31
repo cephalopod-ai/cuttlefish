@@ -35,6 +35,27 @@ export interface CritiqueResult {
 
 let hrSessionPromise: Promise<ReturnType<typeof createSession> | NonNullable<ReturnType<typeof updateSession>>> | null = null;
 
+/**
+ * Serializes critique turns on the reused HR singleton.
+ *
+ * `submitOrgChange` runs critiques in the background, so two org changes landing
+ * close together would otherwise dispatch concurrently against the same session.
+ * Both the settled `status` and the assistant-message count are properties of
+ * that one shared session, so under overlap neither correlates with the request
+ * that read them: one run's failure can null out the other's good critique, and
+ * a run can pick up the sibling's newly appended message as its own verdict —
+ * feeding the wrong text into the approval gate. Only session *creation* was
+ * guarded before; the turns themselves need the same treatment.
+ */
+let hrCritiqueTurnChain: Promise<unknown> = Promise.resolve();
+
+function runExclusively<T>(task: () => Promise<T>): Promise<T> {
+  const result = hrCritiqueTurnChain.then(task, task);
+  // Keep the chain alive regardless of this turn's outcome.
+  hrCritiqueTurnChain = result.then(() => undefined, () => undefined);
+  return result;
+}
+
 /** Default critique runner: spawn the hr-manager employee in-process and read its reply. */
 export async function defaultRunCritique(request: OrgChangeRequest, context: ApiContext): Promise<CritiqueResult> {
   const config = context.getConfig();
@@ -53,34 +74,40 @@ export async function defaultRunCritique(request: OrgChangeRequest, context: Api
 
   const prompt = buildCritiquePrompt(request, registry);
   const now = new Date().toISOString();
-  const session = await getOrCreateHrSession({
-    engineName,
-    hr,
-    now,
-    prompt,
-    portalName: config.portal?.portalName,
+
+  // One turn at a time on the singleton: the count anchor and the status check
+  // below are both readings of shared session state, and they only describe THIS
+  // request while no sibling turn is in flight against the same session.
+  return runExclusively(async () => {
+    const session = await getOrCreateHrSession({
+      engineName,
+      hr,
+      now,
+      prompt,
+      portalName: config.portal?.portalName,
+    });
+    insertMessage(session.id, "user", prompt);
+    // The HR session is reused and `dispatchWebSessionRun` never rejects — it
+    // catches every engine error, marks the session `error`, and resolves.
+    // Reading "the last assistant message" unconditionally would therefore
+    // return the PREVIOUS change request's critique whenever this turn fails,
+    // attributing a stale verdict to a change it never reviewed (and feeding it
+    // to the approval card and the autonomous verdict prompt). Anchor on the
+    // message count taken before dispatch so only a message this turn actually
+    // produced can be accepted.
+    const assistantCountBefore = countAssistantMessages(session.id);
+    await dispatchWebSessionRun(session, prompt, engine, config, context);
+    const settled = getSession(session.id);
+    if (settled?.status === "error") {
+      logger.warn(`HR critique turn for "${request.employeeName}" ended in error: ${settled.lastError ?? "unknown error"}`);
+      return { critique: null, sessionId: session.id };
+    }
+    const critique = readNewAssistantMessage(session.id, assistantCountBefore);
+    if (critique === null) {
+      logger.warn(`HR critique for "${request.employeeName}" produced no new assistant message; recording no critique`);
+    }
+    return { critique, sessionId: session.id };
   });
-  insertMessage(session.id, "user", prompt);
-  // The HR session is a reused singleton and `dispatchWebSessionRun` never
-  // rejects — it catches every engine error, marks the session `error`, and
-  // resolves. Reading "the last assistant message" unconditionally would
-  // therefore return the PREVIOUS change request's critique whenever this turn
-  // fails, attributing a stale verdict to a change it never reviewed (and
-  // feeding it to the approval card and the autonomous verdict prompt). Anchor
-  // on the message count taken before dispatch so only a message this turn
-  // actually produced can be accepted.
-  const assistantCountBefore = countAssistantMessages(session.id);
-  await dispatchWebSessionRun(session, prompt, engine, config, context);
-  const settled = getSession(session.id);
-  if (settled?.status === "error") {
-    logger.warn(`HR critique turn for "${request.employeeName}" ended in error: ${settled.lastError ?? "unknown error"}`);
-    return { critique: null, sessionId: session.id };
-  }
-  const critique = readNewAssistantMessage(session.id, assistantCountBefore);
-  if (critique === null) {
-    logger.warn(`HR critique for "${request.employeeName}" produced no new assistant message; recording no critique`);
-  }
-  return { critique, sessionId: session.id };
 }
 
 async function getOrCreateHrSession(input: {

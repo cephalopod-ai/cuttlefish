@@ -519,3 +519,71 @@ describe("manager delegation barrier interaction", () => {
     expect(dispatchParentReminder).toHaveBeenCalledOnce();
   });
 });
+
+describe("deferred callback interaction", () => {
+  const getConfig = () => ({
+    gateway: { port: 8888, host: "127.0.0.1", leaderAckTimeoutMs: 60_000 },
+    engines: { default: "claude", claude: { bin: "claude", model: "opus" } },
+    connectors: {},
+    logging: { file: true, stdout: true, level: "info" },
+  } as any);
+
+  function armedChild(label: string) {
+    const parent = reg.createSession({
+      engine: "claude",
+      source: "web",
+      sourceRef: `web:parent-${label}`,
+      prompt: "parent",
+      employee: "lead",
+    });
+    const child = reg.createSession({
+      engine: "claude",
+      source: "web",
+      sourceRef: `web:child-${label}`,
+      prompt: "child",
+      employee: "worker",
+      parentSessionId: parent.id,
+    });
+    ack.markLeaderAckPending(child, {
+      leaderSessionId: parent.id,
+      leaderName: "lead",
+      reportKind: "result",
+      now: new Date(0).toISOString(),
+    });
+    return { parent, child };
+  }
+
+  it("does not chase a leader for a callback still parked behind live background work", async () => {
+    // A parked callback arms the ack so it has a recovery path, but the leader
+    // has not been sent anything yet — chasing it here would escalate against
+    // work that is still running.
+    const bg = await import("../../sessions/background-activity-state.js");
+    const { parent, child } = armedChild("bg-live");
+    bg.setSessionBackgroundActivity(child.id, { activeStreams: 1, lastActivityAt: 0 });
+    const dispatchParentReminder = vi.fn(async () => {});
+
+    rec.sweepLeaderAcknowledgements({
+      emit: vi.fn(),
+      getConfig,
+      now: () => 600_000,
+      dispatchParentReminder,
+    });
+
+    // This session must be untouched. (The sweep's return count covers every
+    // session in the shared test DB, so assert on THIS child's state and on the
+    // reminders actually sent for it rather than on the aggregate.)
+    expect(dispatchParentReminder).not.toHaveBeenCalledWith(parent.id, expect.anything(), expect.anything());
+    expect(ack.readLeaderAckMeta(reg.getSession(child.id))).toMatchObject({ state: "pending", contactAttemptCount: 1 });
+
+    // Background work drains (or the gateway restarted, which empties the
+    // process-local map) — the parked callback is now recoverable.
+    bg.clearSessionBackgroundActivityForTest();
+    rec.sweepLeaderAcknowledgements({
+      emit: vi.fn(),
+      getConfig,
+      now: () => 700_000,
+      dispatchParentReminder,
+    });
+    expect(dispatchParentReminder).toHaveBeenCalledWith(parent.id, expect.anything(), expect.anything());
+  });
+});

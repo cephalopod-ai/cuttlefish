@@ -5,7 +5,7 @@ import type { ApiContext } from "./api/context.js";
 import { dispatchTicket, findDepartmentManager } from "./ticket-dispatch.js";
 import { scanOrg } from "./org.js";
 import { listSessions } from "../sessions/registry.js";
-import { resolveBestSessionForTicket } from "./ticket-session-resolver.js";
+import { resolveBestSessionForTicket, sessionsForDepartment } from "./ticket-session-resolver.js";
 import type { Session } from "../shared/types.js";
 
 const STUCK_THRESHOLD_MS = 60 * 60 * 1000;
@@ -28,6 +28,10 @@ export interface StuckTicketWatchdogDeps {
  * live work. The common false positive is the model-fallback approval path,
  * which blocks a ticket while its session sits waiting on a human — human
  * approvals routinely outlast the one-hour threshold.
+ *
+ * `sessions` must already be narrowed to this ticket's department: ticket ids
+ * are unique only within a board, so an unscoped lookup would let a live session
+ * in one department mask a genuinely dead ticket of the same id in another.
  */
 function hasLiveSession(ticket: BoardTicket, sessions: Session[]): boolean {
   const session = resolveBestSessionForTicket(ticket, sessions);
@@ -73,7 +77,8 @@ async function runWatchdog(deps: StuckTicketWatchdogDeps, now: number): Promise<
     }
     if (!tickets) continue;
 
-    const stuck = tickets.filter((t) => isStuck(t, now, threshold, sessions));
+    const departmentSessions = sessionsForDepartment(sessions, department);
+    const stuck = tickets.filter((t) => isStuck(t, now, threshold, departmentSessions));
     if (stuck.length === 0) continue;
 
     logger.info(`[watchdog] ${department}: ${stuck.length} stuck ticket(s)`);

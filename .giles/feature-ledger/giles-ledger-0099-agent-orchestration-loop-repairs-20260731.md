@@ -195,3 +195,88 @@ Tests:
 - **Docs drift:** the design doc's promised per-employee "available services" menu
   is unimplemented while `template/CLAUDE.md` claims it ships; the design doc's
   404-for-unknown-service contradicts the implemented (and tested) 422.
+
+## PR #65 automated review response (2026-07-31)
+
+**action summary:** Addressed all four findings from the automated Codex review
+of PR #65. Three were genuine correctness or contract defects (two of them in
+code this PR itself introduced); one was a real repo-contract violation. All
+four accepted and fixed — none were disputed.
+
+**status:** complete (`completed_verified`); PR #65 updated and pushed.
+
+**provenance:** direct — review comments received via PR webhook on commit
+`75bbdda`, each verified against source before acting.
+
+**touched files:**
+- `packages/cuttlefish/src/gateway/leader-ack-reconciler.ts`
+- `packages/cuttlefish/src/gateway/hr-critique-dispatch.ts`
+- `packages/cuttlefish/src/gateway/cross-request-guards.ts` (new module)
+- `packages/cuttlefish/src/gateway/api/routes/org.ts`
+- `packages/cuttlefish/src/gateway/ticket-session-resolver.ts`
+- `packages/cuttlefish/src/gateway/stuck-ticket-watchdog.ts`
+- tests: `__tests__/leader-ack-reconciler.test.ts`,
+  `__tests__/hr-steward.test.ts`, `__tests__/stuck-ticket-watchdog.test.ts`
+
+**findings addressed:**
+
+1. **P1 — deferred callback arming started an ack clock the leader could not
+   answer** (`callbacks.ts` / `leader-ack-reconciler.ts`). This was a regression
+   introduced by finding 3 of the original campaign: arming `leaderAckPending`
+   before parking a callback gave it a recovery path, but also started the
+   10-minute ack clock for a report the parent had never been sent. Background
+   activity legitimately outlasting that window would draw a "second notice" and
+   eventually an escalation against live work. Fixed in the reconciler rather
+   than by unwinding the arming: the sweep now skips a pending ack while the
+   child still has live background activity. Because that state is process-local
+   and never persisted, a crash or restart leaves it empty and the parked
+   callback still becomes eligible — which is exactly the case the arming was
+   added to recover. Regression test verified to fail without the guard.
+
+2. **P1 — concurrent HR critiques read each other's session state**
+   (`hr-critique-dispatch.ts`). The original campaign's fix (finding 9) anchored
+   the critique read on an assistant-message count taken before dispatch, which
+   is correct sequentially but not under overlap: `submitOrgChange` runs
+   critiques in the background against one reused singleton session, so a turn
+   that produced no verdict could see a sibling's newly appended message and
+   claim it as its own. Only session *creation* had been guarded. Critique turns
+   are now serialized on the singleton. The regression test reproduces the steal
+   (barren turn returning the sibling's verdict) and was verified to fail without
+   the serialization.
+
+3. **P1 — cross-request guards violated the router boundary contract**
+   (`api/routes/org.ts` → new `cross-request-guards.ts`). `AGENTS.md` states
+   router files "must not host business rules, persistence mutation, validation
+   algorithms..." — the chain traversal, cycle detection, and depth limit added
+   in the original campaign did exactly that. Extracted to a focused domain
+   module exposing `resolveCrossRequestIdentity` and `evaluateCrossRequestChain`,
+   both returning typed decisions; the route now only parses input, calls them,
+   and translates the decision to an HTTP status. Behavior unchanged (existing
+   route tests pass untouched).
+
+4. **P2 — watchdog liveness check was not scoped to the ticket's department**
+   (`ticket-session-resolver.ts`, `stuck-ticket-watchdog.ts`). Ticket ids are
+   unique only within a board, and the resolver's fallback matches composite keys
+   of the form `<source>:<department>:<ticketId>`, so a running session in one
+   department could mask a genuinely dead ticket of the same id in another —
+   leaving it un-flagged forever. Added `sessionsForDepartment`, which prefers
+   the persisted `boardDepartment` and otherwise reads the department out of the
+   composite key, while keeping sessions with no board provenance eligible.
+   Regression test verified to fail without the scoping.
+
+**validation run:**
+- `pnpm test`: **312 files, 2592 passed, 1 skipped, 0 failed** (up from 2589;
+  three new regression tests).
+- `pnpm typecheck`: clean. `pnpm lint`: clean (`--max-warnings=0`).
+- Three of the four fixes carry a regression test that was explicitly verified to
+  fail with the fix reverted; the fourth (router extraction) is behavior-
+  preserving and covered by the existing cross-request route tests.
+
+**remaining open items:** unchanged from the entry above — the tokenless-loopback
+identity gap, the status-reconciler's false stalling of mid_pair parents, the
+`boardLock`-across-I/O window, duplicate `session:completed` per mid_pair run,
+the mid_pair × enforced-delegation collision, and the two documentation drifts.
+Additionally, both CI red checks on PR #65 (`e2e` scroll test, `Run Gitleaks
+Scan`) were confirmed to fail identically on the base commit `5d7e6a2` and are
+reported in the PR thread rather than fixed here — fixing an unrelated UI test
+inside this PR would be undisclosed scope widening.

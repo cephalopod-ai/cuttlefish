@@ -13,6 +13,7 @@ import { dispatchTicket } from "../../ticket-dispatch.js";
 import { isActiveEmployee, scanOrg } from "../../org.js";
 import { HR_EMPLOYEE_NAME } from "../../org-policy.js";
 import { buildCrossRequestBrief, buildOrgServices, computeExecutionProfileSummary, findServiceProvider, listOrgDepartments } from "../../org-services.js";
+import { evaluateCrossRequestChain, resolveCrossRequestIdentity } from "../../cross-request-guards.js";
 import { parseChangeInput } from "../../org-validation.js";
 import { resolveUserHeader } from "../../connector-reply.js";
 import type { ApiContext } from "../context.js";
@@ -22,78 +23,6 @@ import { loadSessionMessagesForApi } from "../session-query-routes.js";
 import type { OrgWarning } from "../../../shared/types.js";
 
 const TICKET_SESSION_TAIL_LIMIT = 8;
-
-/** Hard ceiling on how deep a chain of cross-department requests may nest. */
-const MAX_CROSS_REQUEST_CHAIN_DEPTH = 4;
-
-interface CrossRequestChainHop {
-  fromEmployee: string;
-  provider: string;
-}
-
-type CrossRequestChainGuard =
-  | { ok: true }
-  | { ok: false; error: string; code: string; chain: string[] };
-
-function readCrossRequestHop(session: { transportMeta?: unknown } | undefined): CrossRequestChainHop | null {
-  const meta = session?.transportMeta;
-  if (!meta || typeof meta !== "object" || Array.isArray(meta)) return null;
-  const raw = (meta as Record<string, unknown>).crossRequest;
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
-  const hop = raw as Record<string, unknown>;
-  const fromEmployee = typeof hop.fromEmployee === "string" ? hop.fromEmployee : "";
-  const provider = typeof hop.provider === "string" ? hop.provider : "";
-  if (!fromEmployee || !provider) return null;
-  return { fromEmployee, provider };
-}
-
-/**
- * Reject a cross-request that would close a loop or nest too deep.
- *
- * A provider session may raise its own cross-request, so these chain. Walking
- * the parent-session links gives the hops already on this branch; a repeated
- * `(requester → provider)` pair means the work has come back around to a pair
- * that already ran, which never terminates on its own.
- */
-function evaluateCrossRequestChain(
-  parentSessionId: string | undefined,
-  fromEmployee: string,
-  provider: string,
-): CrossRequestChainGuard {
-  const hops: CrossRequestChainHop[] = [];
-  const seenSessions = new Set<string>();
-  let cursor = parentSessionId;
-  while (cursor && !seenSessions.has(cursor)) {
-    seenSessions.add(cursor);
-    const session = getSession(cursor);
-    if (!session) break;
-    const hop = readCrossRequestHop(session);
-    if (hop) hops.push(hop);
-    cursor = session.parentSessionId ?? undefined;
-  }
-
-  const describe = (hop: CrossRequestChainHop): string => `${hop.fromEmployee}→${hop.provider}`;
-  const chain = [...hops].reverse().map(describe);
-  const pending = describe({ fromEmployee, provider });
-
-  if (hops.some((hop) => hop.fromEmployee === fromEmployee && hop.provider === provider)) {
-    return {
-      ok: false,
-      code: "cross_request_cycle",
-      error: `Cross-request cycle detected: ${pending} already appears in this request chain`,
-      chain: [...chain, pending],
-    };
-  }
-  if (hops.length >= MAX_CROSS_REQUEST_CHAIN_DEPTH) {
-    return {
-      ok: false,
-      code: "cross_request_depth_exceeded",
-      error: `Cross-request chain exceeded the maximum depth of ${MAX_CROSS_REQUEST_CHAIN_DEPTH}`,
-      chain: [...chain, pending],
-    };
-  }
-  return { ok: true };
-}
 
 async function reconcileDepartmentBoardView(department: string, context: ApiContext): Promise<void> {
   const { reconcileDepartmentOrphanedTickets } = await import("../../orphaned-ticket-reconciler.js");
@@ -175,24 +104,17 @@ export async function handleOrgRoutes(
     let parentSessionId = typeof body.parentSessionId === "string" && body.parentSessionId.trim()
       ? body.parentSessionId.trim()
       : undefined;
-    // A session-scoped caller speaks only for itself. Without this, `fromEmployee`
-    // and `parentSessionId` are body-claimed: an agent could attribute a request
-    // to any colleague (the provider's brief names the requester as a trusted
-    // peer) and could graft its work under an unrelated session, including
-    // someone else's talk thread. Bind both to the token's own session, which
-    // also gives the chain guard below the real edge to walk.
-    const crossRequestPrincipal = (req as HttpRequest & { cuttlefishPrincipal?: GatewayPrincipal }).cuttlefishPrincipal;
-    if (crossRequestPrincipal?.kind === "session") {
-      const callerSession = getSession(crossRequestPrincipal.sessionId);
-      if (!callerSession?.employee || callerSession.employee !== fromEmployee) {
-        json(res, {
-          error: "A session-scoped caller may only submit cross-requests as its own employee",
-          code: "cross_request_identity_mismatch",
-        }, 403);
-        return true;
-      }
-      parentSessionId = callerSession.id;
+    const identity = resolveCrossRequestIdentity({
+      principal: (req as HttpRequest & { cuttlefishPrincipal?: GatewayPrincipal }).cuttlefishPrincipal,
+      fromEmployee,
+      parentSessionId,
+      lookup: { getSession },
+    });
+    if (!identity.ok) {
+      json(res, { error: identity.error, code: identity.code }, 403);
+      return true;
     }
+    parentSessionId = identity.parentSessionId;
     if (!fromEmployee) {
       badRequest(res, "fromEmployee must be a non-empty string");
       return true;
@@ -239,13 +161,12 @@ export async function handleOrgRoutes(
       serverError(res, `Provider engine "${provider.employee.engine}" is not available`);
       return true;
     }
-    // Cross-requests chain: the provider's own turn can raise another one, and
-    // its brief ("a priority request from a colleague") actively encourages
-    // responsiveness. Nothing else bounds that — every request mints a brand-new
-    // session — so A→B→A would recur until it exhausted the budget. Walk the
-    // parent chain and refuse a hop that repeats a pair already on it, or that
-    // exceeds the depth cap.
-    const chainGuard = evaluateCrossRequestChain(parentSessionId, requester.name, provider.employee.name);
+    const chainGuard = evaluateCrossRequestChain({
+      parentSessionId,
+      fromEmployee: requester.name,
+      provider: provider.employee.name,
+      lookup: { getSession },
+    });
     if (!chainGuard.ok) {
       json(res, {
         error: chainGuard.error,
