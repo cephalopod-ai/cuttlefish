@@ -1,0 +1,11 @@
+# Giles scan exclusions for cuttlefish.
+# Vendored JS dependencies and build/test output: not authored here, gitignored,
+# and not governed content. Giles now prunes these by default (see
+# giles/src/giles/scan.py::DEFAULT_SKIP_DIR_NAMES); this file states the intent
+# repo-locally and covers the pnpm/playwright paths specific to this workspace.
+node_modules
+*/node_modules
+packages/*/node_modules
+.pnpm-store
+test-results
+playwright-report

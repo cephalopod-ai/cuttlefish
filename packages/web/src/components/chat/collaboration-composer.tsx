@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react"
-import { Check, Send, ShieldCheck, Users, X } from "lucide-react"
+import { Check, ChevronDown, Send, ShieldCheck, Users, X } from "lucide-react"
 import type { CollaborationSendRequest, ManagementRecipient, OperatorDelegationScope } from "@cuttlefish/contracts"
 import { Button } from "@/components/ui/button"
 import {
@@ -10,6 +10,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 
 interface RecipientOption {
@@ -43,35 +52,19 @@ export function CollaborationComposer({
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [allDialogOpen, setAllDialogOpen] = useState(false)
-  const [activeSuggestion, setActiveSuggestion] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const activeRecipients = useMemo(() => recipients.filter((recipient) => recipient.active !== false), [recipients])
-  const mentionMatch = /@([\w-]*)$/.exec(message)
-  const mentionQuery = mentionMatch?.[1]?.toLowerCase() ?? null
-  const suggestions = mentionQuery === null ? [] : [
-    { id: "@all", displayName: "All active recipients" },
-    ...activeRecipients,
-  ].filter((recipient) => recipient.id.toLowerCase().includes(mentionQuery) || recipient.displayName.toLowerCase().includes(mentionQuery))
   const authorityEligible = lane === "management"
     && recipientMode !== "all"
     && selectedIds.length === 1
     && (selectedIds[0] === "cuttlefish" || selectedIds[0] === "program-manager")
 
-  function replaceMention(label: string) {
-    if (!mentionMatch) return
-    setMessage(`${message.slice(0, mentionMatch.index)}@${label} `)
-  }
-
-  function selectRecipient(recipient: RecipientOption) {
-    if (recipient.id === "@all") {
-      setAllDialogOpen(true)
-      return
-    }
+  function setRecipientSelected(recipientId: string, selected: boolean) {
     setRecipientMode(null)
     setConfirmedAll([])
-    setSelectedIds((current) => current.includes(recipient.id) ? current : [...current, recipient.id])
-    replaceMention(recipient.id)
-    setActiveSuggestion(0)
+    setSelectedIds((current) => selected
+      ? current.includes(recipientId) ? current : [...current, recipientId]
+      : current.filter((value) => value !== recipientId))
     requestAnimationFrame(() => textareaRef.current?.focus())
   }
 
@@ -122,13 +115,33 @@ export function CollaborationComposer({
               Default: {activeRecipients.find((recipient) => recipient.id === defaultRecipientId)?.displayName ?? "Program Manager → Cuttlefish"}
             </span>
           ) : null}
-          <button
-            type="button"
-            onClick={() => { setMessage((current) => `${current}${current && !current.endsWith(" ") ? " " : ""}@`); textareaRef.current?.focus() }}
-            className="rounded-full px-2 py-1 text-xs text-[var(--accent)] hover:bg-[var(--fill-secondary)]"
-          >
-            Add recipient
-          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="outline" size="sm" disabled={disabled || sending} aria-label="Select recipients" className="h-7 rounded-full px-2 text-xs">
+                <Users className="size-3.5" />
+                Select recipients
+                <ChevronDown className="size-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="max-h-72 min-w-64 overflow-auto">
+              <DropdownMenuLabel>{lane === "team" ? "Project participants" : "Management recipients"}</DropdownMenuLabel>
+              <DropdownMenuItem onSelect={() => setAllDialogOpen(true)}>
+                <Users className="size-4" />
+                Message all active recipients
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {activeRecipients.map((recipient) => (
+                <DropdownMenuCheckboxItem
+                  key={recipient.id}
+                  checked={recipientMode !== "all" && selectedIds.includes(recipient.id)}
+                  onCheckedChange={(selected) => setRecipientSelected(recipient.id, selected)}
+                >
+                  <span className="min-w-0 flex-1 truncate">{recipient.displayName}</span>
+                  <span className="text-xs text-[var(--text-tertiary)]">{recipient.id}</span>
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         <div className="relative">
@@ -136,49 +149,19 @@ export function CollaborationComposer({
             id="collaboration-textarea"
             ref={textareaRef}
             value={message}
-            onChange={(event) => { setMessage(event.target.value); setActiveSuggestion(0); setError(null) }}
+            onChange={(event) => { setMessage(event.target.value); setError(null) }}
             onKeyDown={(event) => {
-              if (suggestions.length > 0 && event.key === "ArrowDown") {
-                event.preventDefault()
-                setActiveSuggestion((current) => (current + 1) % suggestions.length)
-              } else if (suggestions.length > 0 && event.key === "ArrowUp") {
-                event.preventDefault()
-                setActiveSuggestion((current) => (current - 1 + suggestions.length) % suggestions.length)
-              } else if (suggestions.length > 0 && (event.key === "Enter" || event.key === "Tab") && !event.shiftKey) {
-                event.preventDefault()
-                selectRecipient(suggestions[activeSuggestion])
-              } else if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault()
                 void submit()
               }
             }}
             rows={2}
             disabled={disabled || sending}
-            placeholder={lane === "team" ? "Message project participants… Use @ to choose recipients" : "Message management… Leave unaddressed for default routing"}
+            placeholder={lane === "team" ? "Message project participants…" : "Message management… Leave unaddressed for default routing"}
             aria-label={lane === "team" ? "Team message" : "Management message"}
-            aria-controls={suggestions.length > 0 ? "collaboration-recipient-options" : undefined}
-            aria-activedescendant={suggestions.length > 0 ? `collaboration-recipient-${activeSuggestion}` : undefined}
             className="min-h-[54px] w-full resize-none bg-transparent pr-12 text-sm leading-6 text-foreground outline-none placeholder:text-[var(--text-tertiary)]"
           />
-          {suggestions.length > 0 ? (
-            <div id="collaboration-recipient-options" role="listbox" className="absolute bottom-full left-0 z-30 mb-2 max-h-64 w-full max-w-sm overflow-auto rounded-xl border border-[var(--separator)] bg-[var(--material-thick)] p-1 shadow-[var(--shadow-overlay)]">
-              {suggestions.map((recipient, index) => (
-                <button
-                  key={recipient.id}
-                  id={`collaboration-recipient-${index}`}
-                  role="option"
-                  aria-selected={index === activeSuggestion}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => selectRecipient(recipient)}
-                  className={cn("flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm", index === activeSuggestion ? "bg-[var(--fill-secondary)]" : "hover:bg-[var(--fill-tertiary)]")}
-                >
-                  {recipient.id === "@all" ? <Users className="size-4" /> : <span className="size-2 rounded-full bg-[var(--accent)]" />}
-                  <span className="min-w-0 flex-1 truncate">{recipient.displayName}</span>
-                  <span className="text-xs text-[var(--text-tertiary)]">{recipient.id}</span>
-                </button>
-              ))}
-            </div>
-          ) : null}
           <Button
             type="button"
             size="icon"
@@ -230,7 +213,6 @@ export function CollaborationComposer({
               setConfirmedAll(snapshot)
               setSelectedIds([])
               setScopes([])
-              replaceMention("all")
               setAllDialogOpen(false)
             }}>Confirm {activeRecipients.length} recipients</Button>
           </DialogFooter>

@@ -5,15 +5,50 @@ agents:
   - agent_id: "codexImplementer"
     path: "docs/orchestration/agent-instructions/codex-implementer.md"
     purpose: "Frontier implementer worker; fills the seniorImplementer role and edits the repo in an isolated worktree."
+    schema_id: "agent.delegate.v1"
+    required: false
+    owner: "human_operator"
+    logs_to: "docs/logs/session/"
+    observes:
+      - "AGENTS.md"
+      - "README.md"
   - agent_id: "codexArchitect"
     path: "docs/orchestration/agent-instructions/codex-architect.md"
     purpose: "Read-only frontier architect worker; fills the architect role for architectureChange tasks."
+    schema_id: "agent.delegate.v1"
+    required: false
+    owner: "human_operator"
+    logs_to: "docs/logs/session/"
+    observes:
+      - "AGENTS.md"
+      - "README.md"
   - agent_id: "claudeReviewer"
     path: "docs/orchestration/agent-instructions/claude-reviewer.md"
     purpose: "Cheap cross-family independent reviewer worker; fills the independentReviewer role."
+    schema_id: "agent.delegate.v1"
+    required: false
+    owner: "human_operator"
+    logs_to: "docs/logs/session/"
+    observes:
+      - "AGENTS.md"
+      - "README.md"
   - agent_id: "antigravityReviewer"
     path: "docs/orchestration/agent-instructions/antigravity-reviewer.md"
     purpose: "Third-family adversarial reviewer / bug-hunter worker; fills the adversarialReviewer role."
+    schema_id: "agent.delegate.v1"
+    required: false
+    owner: "human_operator"
+    logs_to: "docs/logs/session/"
+    observes:
+      - "AGENTS.md"
+      - "README.md"
   - agent_id: "localWorker"
     path: "docs/orchestration/agent-instructions/local-worker.md"
     purpose: "Near-zero-cost local worker; fills the qaGate and localTriage roles."
+    schema_id: "agent.delegate.v1"
+    required: false
+    owner: "human_operator"
+    logs_to: "docs/logs/session/"
+    observes:
+      - "AGENTS.md"
+      - "README.md"
