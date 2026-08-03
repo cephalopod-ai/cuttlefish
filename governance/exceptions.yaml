@@ -1,2 +1,32 @@
 schema_version: "3.3"
-exceptions: []
+exceptions:
+  - exception_id: "CUTTLEFISH-NO-CONTROL-LAYER-SURFACE"
+    description: >-
+      giles scan-repo classifies cuttlefish as control-layer-profile and
+      requires a top-level `control/` surface. Cuttlefish is a pnpm workspace
+      application (packages/, e2e/, schemas/, docs/) with no control-plane
+      role in the fleet; Giles' own repo_config declares repo_type "service".
+      There is no control-layer contract for this repo to host.
+    owner: "human_operator"
+    approved_by: "eric"
+    mitigations:
+      - "repo_type: service declared in governance/repo_config.yaml"
+      - "Governance posture carried by governance/ and .giles/ artifacts"
+    created_at: "2026-08-03T00:00:00Z"
+    review_by: "2027-02-03T00:00:00Z"
+    expires_at: "2027-08-03T00:00:00Z"
+    status: "active"
+    suppressed_codes:
+      - "GILES-STRUCTURE-CONTROL"
+      - "GILES-CTRL-PROFILE-MISSING-control"
+    suppressed_finding_keys: []
+    divergence_class: "permanent"
+    justification: >-
+      Creating an empty `control/` directory would assert a control-layer role
+      cuttlefish does not have. The classification looks like a scan-repo
+      heuristic over-match rather than a real deviation; recorded here so it
+      stays reviewable rather than silently suppressed.
+    linked_migration: null
+    linked_investigation: null
+    review_history: []
+

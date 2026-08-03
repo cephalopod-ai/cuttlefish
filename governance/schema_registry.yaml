@@ -3,3 +3,9 @@ schemas:
   - id: "agent_spec.v1"
     path: "schemas/config/agent_spec.v1.yaml"
     ownership_mode: "repo_local"
+  - id: "agent.delegate.v1"
+    path: "docs/orchestration/agent-instructions/"
+    ownership_mode: "repo_local"
+    description: >-
+      Agent delegate surface: the per-worker instruction documents referenced
+      by governance/agent_registry.yaml, each of which defers to AGENTS.md.

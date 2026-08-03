@@ -722,8 +722,9 @@
   `status: "waiting"`), regardless of view mode, scroll position, or which
   agent group is expanded. Clicking it opens the first such session.
 - The prior department Rooms projection remains in source for compatibility but
-  is no longer offered by the sidebar lane control. Ordinary visible `@text`
-  remains non-authoritative; only selected structured recipient IDs drive routing.
+  is no longer offered by the sidebar lane control. Team and Management
+  composers expose active recipients in a pulldown (including a guarded
+  message-all action); only selected structured recipient IDs drive routing.
 - Informational agent-to-human communication does not require a Kanban ticket.
   Approvals/checkpoints remain the durable surface when the agent is blocked on
   a human action or decision; Kanban remains optional work tracking rather than
