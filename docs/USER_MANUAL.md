@@ -179,7 +179,7 @@ to configure credentials, an SMS-capable sender, and the signed inbound webhook.
 
 | Symptom | Likely Cause | Next Step |
 |---|---|---|
-| Engine not available | CLI missing or not signed in | Run the engine binary directly and authenticate. |
+| Engine not available | CLI missing, broken, or not signed in | Run the engine binary directly and authenticate. Cuttlefish advertises a CLI only when it can complete a bounded `--version` probe; this does not verify account access or quota. |
 | Dashboard unreachable | Gateway not running or different port | Run `cuttlefish status`; check `gateway.port`. |
 | Claude sessions cannot reach models | Claude CLI not logged in | Run `claude`, use `/login`, then restart Cuttlefish. |
 | Hermes hidden or failing | `hermes` not on `PATH` or provider credentials missing | See `docs/engines-hermes.md`. |

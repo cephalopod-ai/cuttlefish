@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
-import { execFile, execSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
 import * as yaml from "js-yaml";
 import { isInstalled, resolveBin } from "../shared/resolve-bin.js";
@@ -27,6 +27,7 @@ import { initDb } from "../sessions/registry.js";
 import { getPackageVersion } from "../shared/version.js";
 import { assertSafeDestructiveHome } from "./instances.js";
 import { SKILLS_NPX_SPEC } from "./skills.js";
+import { selectSetupEngine, type SetupEngine } from "./setup-engine.js";
 
 const execFileAsync = promisify(execFile);
 const GREEN = "\x1b[32m";
@@ -83,7 +84,7 @@ function whichBin(name: string): string | null {
 
 function runVersion(bin: string): string | null {
   try {
-    return execSync(`${bin} --version`, { encoding: "utf-8", timeout: 10000 }).trim();
+    return execFileSync(bin, ["--version"], { encoding: "utf-8", timeout: 10_000, windowsHide: true }).trim();
   } catch {
     return null;
   }
@@ -408,7 +409,7 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
   if (claudePath) {
     ok(`claude found at ${claudePath}`);
   } else {
-    fail("claude not found");
+    fail("claude unavailable (missing or broken)");
     info("Install with: npm install -g @anthropic-ai/claude-code");
   }
 
@@ -417,7 +418,7 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
   if (codexPath) {
     ok(`codex found at ${codexPath}`);
   } else {
-    fail("codex not found");
+    fail("codex unavailable (missing or broken)");
     info("Install with: npm install -g @openai/codex");
   }
 
@@ -426,7 +427,7 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
   if (grokPath) {
     ok(`grok found at ${grokPath}`);
   } else {
-    fail("grok not found");
+    fail("grok unavailable (missing or broken)");
     info("Install with: curl -fsSL https://x.ai/cli/install.sh | bash (or npm install -g @xai-official/grok)");
   }
 
@@ -435,7 +436,7 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
   if (hermesPath) {
     ok(`hermes found at ${hermesPath}`);
   } else {
-    fail("hermes not found");
+    fail("hermes unavailable (missing or broken)");
     info("Install the Hermes CLI: curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash");
   }
 
@@ -444,7 +445,7 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
   if (ollamaPath) {
     ok(`ollama found at ${ollamaPath}`);
   } else {
-    fail("ollama not found");
+    fail("ollama unavailable (missing or broken)");
     info("Install from: https://ollama.com/download");
   }
 
@@ -453,7 +454,7 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
   if (kiloPath) {
     ok(`kilo found at ${kiloPath}`);
   } else {
-    fail("kilo not found");
+    fail("kilo unavailable (missing or broken)");
     info("Install with: npm install -g @kilocode/cli");
   }
 
@@ -462,7 +463,7 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
   if (aiderPath) {
     ok(`aider found at ${aiderPath}`);
   } else {
-    fail("aider not found");
+    fail("aider unavailable (missing or broken)");
     info("Install with: python -m pip install aider-install && aider-install (or: pipx install aider-chat)");
   }
 
@@ -477,37 +478,37 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
   // 6. Check auth / versions
   console.log("");
   if (claudePath) {
-    const ver = runVersion("claude");
+    const ver = runVersion(claudePath);
     if (ver) ok(`claude --version: ${ver}`);
     else warn("claude --version failed");
   }
   if (codexPath) {
-    const ver = runVersion("codex");
+    const ver = runVersion(codexPath);
     if (ver) ok(`codex --version: ${ver}`);
     else warn("codex --version failed");
   }
   if (grokPath) {
-    const ver = runVersion("grok");
+    const ver = runVersion(grokPath);
     if (ver) ok(`grok --version: ${ver}`);
     else warn("grok --version failed");
   }
   if (hermesPath) {
-    const ver = runVersion("hermes");
+    const ver = runVersion(hermesPath);
     if (ver) ok(`hermes --version: ${ver}`);
     else warn("hermes --version failed");
   }
   if (ollamaPath) {
-    const ver = runVersion("ollama");
+    const ver = runVersion(ollamaPath);
     if (ver) ok(`ollama --version: ${ver}`);
     else warn("ollama --version failed");
   }
   if (kiloPath) {
-    const ver = runVersion("kilo");
+    const ver = runVersion(kiloPath);
     if (ver) ok(`kilo --version: ${ver}`);
     else warn("kilo --version failed");
   }
   if (aiderPath) {
-    const ver = runVersion("aider");
+    const ver = runVersion(aiderPath);
     if (ver) ok(`aider --version: ${ver}`);
     else warn("aider --version failed");
   }
@@ -550,29 +551,26 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
   const defaultName = "Cuttlefish";
 
   let chosenName = defaultName;
-  type SetupEngine = "claude" | "codex" | "grok" | "hermes" | "ollama" | "kilo" | "aider";
-  let chosenEngine: SetupEngine = "claude";
+  const installedEngines: SetupEngine[] = [
+    claudePath ? "claude" : undefined,
+    codexPath ? "codex" : undefined,
+    grokPath ? "grok" : undefined,
+    hermesPath ? "hermes" : undefined,
+    ollamaPath ? "ollama" : undefined,
+    kiloPath ? "kilo" : undefined,
+    aiderPath ? "aider" : undefined,
+  ].filter((engine): engine is SetupEngine => Boolean(engine));
+  let chosenEngine = selectSetupEngine(installedEngines);
 
   if (isInteractive) {
     console.log("");
     chosenName = await prompt("What should your AI assistant be called?", defaultName);
 
-    // Determine available engines
-    const engines: string[] = [];
-    if (claudePath) engines.push("claude");
-    if (codexPath) engines.push("codex");
-    if (grokPath) engines.push("grok");
-    if (hermesPath) engines.push("hermes");
-    if (ollamaPath) engines.push("ollama");
-    if (kiloPath) engines.push("kilo");
-    if (aiderPath) engines.push("aider");
-
-    if (engines.length > 1) {
-      const defaultEngine = ["claude", "codex", "grok", "hermes"].find((engine) => engines.includes(engine)) ?? engines[0];
-      const engineAnswer = await prompt(`Preferred engine? (${engines.join("/")})`, defaultEngine);
-      chosenEngine = engines.includes(engineAnswer) ? engineAnswer as SetupEngine : defaultEngine as SetupEngine;
-    } else if (engines.length === 1) {
-      chosenEngine = engines[0] as SetupEngine;
+    if (installedEngines.length > 1) {
+      const defaultEngine = selectSetupEngine(installedEngines);
+      const engineAnswer = await prompt(`Preferred engine? (${installedEngines.join("/")})`, defaultEngine);
+      chosenEngine = installedEngines.includes(engineAnswer as SetupEngine) ? engineAnswer as SetupEngine : defaultEngine;
+    } else if (installedEngines.length === 1) {
       ok(`Using ${chosenEngine} as default engine (only engine installed)`);
     }
   }

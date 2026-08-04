@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { execFileSync } from "node:child_process";
 
 /**
  * Dynamic engine-binary resolution.
@@ -75,20 +76,40 @@ export function resolveBin(name: string, override?: string): string {
 }
 
 /**
- * Whether an engine binary is actually installed (resolvable to an executable).
+ * Whether an engine CLI is available for Cuttlefish to invoke.
  *
  * Unlike {@link resolveBin} — which returns the bare name as a fallback so a
  * spawn surfaces a clear error — this returns a boolean, so the registry can gate
- * an engine's visibility on real presence. An explicit-path override must point
- * at an existing executable to count as installed.
+ * an engine's visibility on a usable CLI. An explicit-path override must point
+ * at an existing executable, and the resolved binary must complete a bounded
+ * `--version` probe. This rejects stale launchers that still have an executable
+ * bit but can no longer start their underlying CLI.
+ *
+ * A successful probe deliberately does not assert account authentication or
+ * available quota; those are provider-side checks that happen when the engine
+ * is used.
  */
 export function isInstalled(name: string, override?: string): boolean {
+  let bin: string | null = null;
   if (override && override.trim()) {
     const o = override.trim();
     if (o.includes("/") || o.includes(path.sep)) {
-      return isExecutableFile(o);
+      bin = isExecutableFile(o) ? o : null;
+    } else {
+      name = o;
     }
-    name = o;
   }
-  return findOnPath(name) !== null;
+  bin ??= findOnPath(name);
+  if (!bin) return false;
+
+  try {
+    execFileSync(bin, ["--version"], {
+      stdio: "ignore",
+      timeout: 2_000,
+      windowsHide: true,
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }

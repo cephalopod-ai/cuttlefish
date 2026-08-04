@@ -39,7 +39,7 @@ export interface ResolveTalkEngineInput {
   defaultEngine: string;
   /** Engines to consider, in priority order (e.g. the known/configured engines). */
   candidates: readonly string[];
-  /** Whether an engine's binary is installed/resolvable. Injected for testability. */
+  /** Whether an engine's CLI is usable. Injected for testability. */
   isAvailable: (engine: string) => boolean;
 }
 

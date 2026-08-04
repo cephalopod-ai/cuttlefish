@@ -19,6 +19,16 @@ export function engineList(reg: EnginesResponse | undefined): EngineRegistryEntr
   return Object.values(reg.engines).filter((e) => e.available)
 }
 
+/**
+ * The configured default when it is available, otherwise the first available
+ * engine. This keeps new surfaces from selecting a stale configured engine.
+ */
+export function defaultAvailableEngine(reg: EnginesResponse | undefined): EngineRegistryEntry | undefined {
+  if (!reg?.engines) return undefined
+  const configured = reg.engines[reg.default]
+  return configured?.available ? configured : engineList(reg)[0]
+}
+
 /** The model entry for a given engine+modelId (falls back to the engine's default). */
 export function findModel(
   reg: EnginesResponse | undefined,

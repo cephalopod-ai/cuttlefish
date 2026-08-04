@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { resolveBin } from "../resolve-bin.js";
+import { isInstalled, resolveBin } from "../resolve-bin.js";
 
 describe("resolveBin", () => {
   let tmpDir: string;
@@ -69,5 +69,14 @@ describe("resolveBin", () => {
     } finally {
       process.env.PATH = prev;
     }
+  });
+
+  it("requires a resolved executable to complete the bounded version probe", () => {
+    const broken = path.join(tmpDir, "cuttlefish-broken-engine-xyz");
+    fs.writeFileSync(broken, "#!/bin/sh\nexit 1\n");
+    fs.chmodSync(broken, 0o755);
+
+    expect(isInstalled("agy", exePath)).toBe(true);
+    expect(isInstalled("agy", broken)).toBe(false);
   });
 });

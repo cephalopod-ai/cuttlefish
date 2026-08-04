@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   engineList,
+  defaultAvailableEngine,
   findModel,
   effortLevelsFor,
   defaultEffort,
@@ -35,6 +36,25 @@ describe('engineList', () => {
   })
   it('handles undefined registry', () => {
     expect(engineList(undefined)).toEqual([])
+  })
+})
+
+describe('defaultAvailableEngine', () => {
+  it('uses the configured default when it is available', () => {
+    expect(defaultAvailableEngine(REG)?.name).toBe('claude')
+  })
+
+  it('falls back to the only available engine when the configured default is unavailable', () => {
+    const onlyCodex: EnginesResponse = {
+      ...REG,
+      engines: {
+        ...REG.engines,
+        claude: { ...REG.engines.claude, available: false },
+        codex: { ...REG.engines.codex, available: true },
+        antigravity: { ...REG.engines.antigravity, available: false },
+      },
+    }
+    expect(defaultAvailableEngine(onlyCodex)?.name).toBe('codex')
   })
 })
 

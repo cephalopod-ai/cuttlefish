@@ -83,11 +83,11 @@ function resolveActiveTalkEngine(config: CuttlefishConfig): TalkEngineResolution
   });
 }
 
-/** Actionable message when no engine binary is installed for the orchestrator. */
+/** Actionable message when no engine CLI is usable for the orchestrator. */
 function noEngineMessage(): string {
   return (
-    "No engine is available for the voice orchestrator — no engine CLI was found " +
-    "on your PATH. Install one (e.g. npm install -g @anthropic-ai/claude-code) or " +
+    "No engine is available for the voice orchestrator — no engine CLI could be found or started. " +
+    "Install or repair one (e.g. npm install -g @anthropic-ai/claude-code) or " +
     "set engines.<name>.bin in config.yaml, then retry."
   );
 }

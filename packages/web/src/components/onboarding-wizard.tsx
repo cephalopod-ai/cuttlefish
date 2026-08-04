@@ -17,6 +17,7 @@ import { useTheme } from "@/routes/providers"
 import { THEMES } from "@/lib/themes"
 import { api, type ModelInfo, type EnginesResponse } from "@/lib/api"
 import { buildNewSessionParams } from "@/components/chat/new-chat-helpers"
+import { defaultAvailableEngine } from "@/hooks/use-model-registry"
 
 // ---------------------------------------------------------------------------
 // Accent color presets
@@ -161,13 +162,13 @@ export function OnboardingWizard({ forceOpen, onClose }: OnboardingWizardProps) 
     api.getEngines().then((data) => {
       setEnginesData(data)
       setEnginesLoading(false)
-      // Pre-select the default engine + its default model.
-      const defaultEng = data.default
-      const defaultEntry = data.engines?.[defaultEng]
+      // Pre-select the configured default only when it is available; otherwise
+      // select the sole/first usable CLI rather than assigning a stale default.
+      const defaultEntry = defaultAvailableEngine(data)
       const models: ModelInfo[] = defaultEntry?.models ?? []
       if (models.length > 0) {
         const defaultModel = defaultEntry?.defaultModel ?? models[0]?.id
-        setEngineChoice({ engine: defaultEng, model: defaultModel, effortLevel: "medium" })
+        setEngineChoice({ engine: defaultEntry?.name, model: defaultModel, effortLevel: "medium" })
       }
       // If no models available, leave engineChoice.engine undefined so
       // applyEngineChoice will no-op and the server default is preserved.
@@ -548,7 +549,7 @@ export function OnboardingWizard({ forceOpen, onClose }: OnboardingWizardProps) 
                     </p>
                     <div className="flex flex-col gap-[var(--space-2)]">
                       {Object.entries(enginesData!.engines)
-                        .filter(([, entry]) => entry.models?.length > 0)
+                        .filter(([, entry]) => entry.available && entry.models?.length > 0)
                         .map(([key]) => {
                           const isActive = engineChoice.engine === key
                           return (

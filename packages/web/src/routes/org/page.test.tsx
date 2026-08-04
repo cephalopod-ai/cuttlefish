@@ -33,6 +33,11 @@ vi.mock("@/routes/settings-provider", () => ({
   }),
 }));
 
+vi.mock("@/hooks/use-model-registry", () => ({
+  useModelRegistry: () => ({ data: undefined }),
+  defaultAvailableEngine: () => undefined,
+}));
+
 vi.mock("@/context/breadcrumb-context", () => ({
   useBreadcrumbs: () => undefined,
 }));

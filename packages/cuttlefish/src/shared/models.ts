@@ -35,8 +35,8 @@ import { discoverCodexModels, type CodexModelDiscovery } from "./codex-models.js
  *   2. The optional `models:` block in config.yaml.
  *   3. Synthesis from `engines.<name>.model` (back-compat default).
  *
- * `available` reflects whether the engine's binary is actually installed, so the
- * UI can hide engines you don't have.
+ * `available` reflects whether the engine CLI resolves and can complete a
+ * bounded version probe, so the UI can hide missing or broken engines.
  */
 
 /** Engines registered in this build (mirrors server.ts engine map). */
@@ -95,7 +95,7 @@ function engineBinOverride(config: CuttlefishConfig, name: EngineName): string |
   return (config.engines as unknown as Record<string, { bin?: string } | undefined>)[name]?.bin;
 }
 
-/** Whether an engine's binary is installed (gates UI visibility). */
+/** Whether an engine's CLI is usable enough to advertise (gates UI visibility). */
 export function engineAvailable(config: CuttlefishConfig, name: EngineName): boolean {
   const bin = ENGINE_BIN[name];
   // Unknown engine name (e.g. a typo in config.sessions.fallbackEngine) → not available.
@@ -122,10 +122,10 @@ const ENGINE_INSTALL_HINT: Record<EngineName, string> = {
   aider: "install Aider (`python -m pip install aider-install && aider-install`, or `pipx install aider-chat`), then set an API key (e.g. ANTHROPIC_API_KEY or OPENAI_API_KEY)",
 };
 
-/** Actionable error message for a session blocked by a missing engine binary. */
+/** Actionable error message for a session blocked by a missing or broken engine CLI. */
 export function engineUnavailableMessage(config: CuttlefishConfig, name: EngineName): string {
   const bin = engineBinOverride(config, name) || ENGINE_BIN[name];
-  return `Engine "${name}" is not available — the "${bin}" CLI was not found on your PATH. Install it (${ENGINE_INSTALL_HINT[name]}) or set engines.${name}.bin in config.yaml to its full path, then retry.`;
+  return `Engine "${name}" is not available — the "${bin}" CLI was not found or could not start. Install or repair it (${ENGINE_INSTALL_HINT[name]}) or set engines.${name}.bin in config.yaml to its full path, then retry.`;
 }
 
 /** Snapshot of dynamically-discovered Pi models (null until first discovery). */

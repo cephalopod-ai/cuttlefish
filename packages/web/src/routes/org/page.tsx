@@ -13,6 +13,7 @@ import { ErrorState } from "@/components/ui/error-state";
 import { useSettings } from "@/routes/settings-provider";
 import { useBreadcrumbs } from "@/context/breadcrumb-context";
 import { portalEmployeeSlug } from "@/lib/portal-slug";
+import { defaultAvailableEngine, useModelRegistry } from "@/hooks/use-model-registry";
 
 const OrgMap = lazy(() =>
   import("@/components/org/org-map").then((m) => ({ default: m.OrgMap })),
@@ -86,6 +87,8 @@ export default function OrgPage() {
   const [renameDepartmentError, setRenameDepartmentError] = useState<string | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const { settings } = useSettings();
+  const { data: modelRegistry } = useModelRegistry();
+  const defaultEngine = defaultAvailableEngine(modelRegistry);
 
   const loadData = useCallback(() => {
     setLoading(true);
@@ -98,8 +101,8 @@ export default function OrgPage() {
           displayName: settings.portalName ?? "Jinn",
           department: "",
           rank: "executive",
-          engine: "claude",
-          model: "opus",
+          engine: defaultEngine?.name ?? "claude",
+          model: defaultEngine?.defaultModel ?? "opus",
           persona: "COO and AI gateway daemon",
         };
         const employees = data.employees.some((employee) => employee.name === coo.name)
@@ -111,7 +114,7 @@ export default function OrgPage() {
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, [settings.portalName]);
+  }, [settings.portalName, defaultEngine?.defaultModel, defaultEngine?.name]);
 
   useEffect(() => {
     loadData();
