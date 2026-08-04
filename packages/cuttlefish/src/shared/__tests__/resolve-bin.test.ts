@@ -126,6 +126,22 @@ describe("resolveBin on Windows", () => {
     }
   });
 
+  it("resolves a .cmd shim for spawning but does not classify it as installed", () => {
+    fs.writeFileSync(path.join(tmpDir, "win-shim-only-engine.cmd"), "@echo off\r\n");
+    asWindows();
+    const prev = process.env.PATH;
+    process.env.PATH = tmpDir;
+    try {
+      // resolveBin still surfaces the shim (PTY spawns and error messages can
+      // use it), but the registry must not advertise the engine: the non-PTY
+      // runners spawn shell-less and Node rejects .cmd/.bat with EINVAL.
+      expect(resolveBin("win-shim-only-engine")).toBe(path.join(tmpDir, "win-shim-only-engine.cmd"));
+      expect(isInstalled("win-shim-only-engine")).toBe(false);
+    } finally {
+      process.env.PATH = prev;
+    }
+  });
+
   it("uses a name that already carries an executable extension verbatim", () => {
     asWindows();
     expect(executableCandidates("claude.exe", undefined)).toEqual(["claude.exe"]);

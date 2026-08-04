@@ -156,6 +156,9 @@ export function runNpxSkills(args: string[], stdio: "inherit" | "pipe" = "inheri
     // preserving the no-shell-injection guarantee of the POSIX branch.
     const unsafe = args.find((a) => !WINDOWS_NPX_SAFE_ARG.test(a));
     if (unsafe !== undefined) {
+      // Callers only propagate result.status to the exit code, so report the
+      // refusal here — otherwise the command exits non-zero with no output.
+      console.error(`${RED}Refusing to pass argument with shell metacharacters to npx on Windows: ${JSON.stringify(unsafe)}${RESET}`);
       return {
         pid: 0,
         output: [null, null, null],

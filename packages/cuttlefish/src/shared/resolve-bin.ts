@@ -135,16 +135,19 @@ export function isInstalled(name: string, override?: string): boolean {
   bin ??= findOnPath(name);
   if (!bin) return false;
 
+  // A Windows install that only provides a .cmd/.bat shim (npm's default) is
+  // not usable by the non-PTY engine runners: they launch the binary with a
+  // shell-less child_process.spawn, which Node rejects for .cmd/.bat with
+  // EINVAL. Advertising such an engine as installed would produce sessions
+  // that can never spawn, so classify it as unavailable — engines that ship a
+  // native .exe (preferred by executableCandidates) still register normally.
+  if (process.platform === "win32" && /\.(cmd|bat)$/i.test(bin)) return false;
+
   try {
-    // Windows .cmd/.bat launchers cannot be spawned directly (Node rejects
-    // them with EINVAL); route the probe through cmd.exe with the path quoted
-    // so spaces in the install dir survive.
-    const viaShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(bin);
-    execFileSync(viaShell ? `"${bin}"` : bin, ["--version"], {
+    execFileSync(bin, ["--version"], {
       stdio: "ignore",
       timeout: 2_000,
       windowsHide: true,
-      ...(viaShell ? { shell: true } : {}),
     });
     return true;
   } catch {

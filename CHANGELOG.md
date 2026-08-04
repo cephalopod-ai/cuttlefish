@@ -5,8 +5,10 @@
 ### Bug Fixes
 - Windows compatibility: engine-binary resolution now probes PATHEXT
   extensions (`claude.exe`/`codex.cmd` for a bare `claude`/`codex`) and the
-  npm/pnpm global shim directories, and the `isInstalled` version probe can
-  run `.cmd`/`.bat` launchers (Node refuses to spawn those without a shell).
+  npm/pnpm global shim directories, preferring native `.exe` binaries. A
+  `.cmd`/`.bat`-shim-only install is still not advertised as installed —
+  the shell-less engine runners cannot spawn those (Node rejects them with
+  EINVAL).
 - Windows compatibility: `cuttlefish skills`/`setup` invoke the `npx.cmd`
   shim through the shell on Windows, with skill args allowlist-validated so
   cmd.exe metacharacters are refused (POSIX keeps the shell-less spawn).
