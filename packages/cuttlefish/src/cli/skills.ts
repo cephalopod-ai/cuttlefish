@@ -143,7 +143,34 @@ export function findExistingSkill(name: string): { name: string; dir: string } |
   return null;
 }
 
+/** Characters allowed in args when the Windows path routes through cmd.exe.
+ *  Skill package specs (`owner/repo@name`) and installer flags never
+ *  legitimately contain cmd metacharacters. */
+const WINDOWS_NPX_SAFE_ARG = /^[A-Za-z0-9@._/:=-]+$/;
+
 export function runNpxSkills(args: string[], stdio: "inherit" | "pipe" = "inherit"): ReturnType<typeof spawnSync> {
+  if (process.platform === "win32") {
+    // npx is a .cmd shim on Windows and Node refuses to spawn .cmd/.bat
+    // without a shell (EINVAL). Going through cmd.exe means cmd gets a chance
+    // to interpret metacharacters, so every arg is allowlist-validated first —
+    // preserving the no-shell-injection guarantee of the POSIX branch.
+    const unsafe = args.find((a) => !WINDOWS_NPX_SAFE_ARG.test(a));
+    if (unsafe !== undefined) {
+      // Callers only propagate result.status to the exit code, so report the
+      // refusal here — otherwise the command exits non-zero with no output.
+      console.error(`${RED}Refusing to pass argument with shell metacharacters to npx on Windows: ${JSON.stringify(unsafe)}${RESET}`);
+      return {
+        pid: 0,
+        output: [null, null, null],
+        stdout: null,
+        stderr: null,
+        status: 1,
+        signal: null,
+        error: new Error(`Refusing to pass argument with shell metacharacters to npx on Windows: ${JSON.stringify(unsafe)}`),
+      } as unknown as ReturnType<typeof spawnSync>;
+    }
+    return spawnSync("npx.cmd", ["skills", ...args], { stdio, shell: true });
+  }
   return spawnSync("npx", ["skills", ...args], {
     stdio,
     shell: false,

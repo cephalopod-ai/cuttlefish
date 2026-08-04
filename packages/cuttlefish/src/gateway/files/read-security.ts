@@ -27,7 +27,9 @@ function isBinaryMime(mime: string): boolean {
 export function readPathCandidates(requestedPath: string): string[] {
   const p = String(requestedPath ?? "").trim();
   if (!p) return [];
-  if (p.startsWith("/") || p.startsWith("~")) {
+  // path.isAbsolute (not startsWith("/")) so Windows absolute paths (C:\…,
+  // UNC) take the absolute branch instead of being joined onto the roots.
+  if (path.isAbsolute(p) || p.startsWith("~")) {
     return [path.resolve(expandPath(p))];
   }
   return [

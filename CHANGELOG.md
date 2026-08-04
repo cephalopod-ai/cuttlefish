@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Bug Fixes
+- Windows compatibility: engine-binary resolution now probes PATHEXT
+  extensions (`claude.exe`/`codex.cmd` for a bare `claude`/`codex`) and the
+  npm/pnpm global shim directories, preferring native `.exe` binaries. A
+  `.cmd`/`.bat`-shim-only install is still not advertised as installed —
+  the shell-less engine runners cannot spawn those (Node rejects them with
+  EINVAL).
+- Windows compatibility: `cuttlefish skills`/`setup` invoke the `npx.cmd`
+  shim through the shell on Windows, with skill args allowlist-validated so
+  cmd.exe metacharacters are refused (POSIX keeps the shell-less spawn).
+- Windows compatibility: gateway file reads recognize `C:\`/UNC absolute
+  paths (`path.isAbsolute` instead of a leading-slash check), and the Kokoro
+  TTS sidecar uses the `venv\Scripts\python.exe` layout plus `python`/`py`
+  interpreter discovery on Windows.
+
 ## [0.23.6] - 2026-07-25
 
 ### Bug Fixes
