@@ -46,10 +46,14 @@ function warn(msg: string) {
 
 async function preCacheSkillsCli(): Promise<void> {
   try {
-    await execFileAsync("npx", ["--yes", SKILLS_NPX_SPEC, "--version"], {
+    // npx is a .cmd shim on Windows; Node refuses to spawn .cmd/.bat without a
+    // shell (EINVAL). All args here are fixed literals, so the shell is safe.
+    const isWin = process.platform === "win32";
+    await execFileAsync(isWin ? "npx.cmd" : "npx", ["--yes", SKILLS_NPX_SPEC, "--version"], {
       env: buildEngineEnv({}),
       timeout: 15_000,
       windowsHide: true,
+      ...(isWin ? { shell: true } : {}),
     });
   } catch {
     warn("Skills CLI pre-cache failed (non-fatal)");

@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { isInstalled, resolveBin } from "../resolve-bin.js";
+import { executableCandidates, isInstalled, resolveBin } from "../resolve-bin.js";
 
 describe("resolveBin", () => {
   let tmpDir: string;
@@ -78,5 +78,66 @@ describe("resolveBin", () => {
 
     expect(isInstalled("agy", exePath)).toBe(true);
     expect(isInstalled("agy", broken)).toBe(false);
+  });
+});
+
+describe("resolveBin on Windows", () => {
+  const REAL_PLATFORM = Object.getOwnPropertyDescriptor(process, "platform")!;
+  let tmpDir: string;
+
+  beforeAll(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "resolvebin-win-"));
+  });
+
+  afterAll(() => {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process, "platform", REAL_PLATFORM);
+  });
+
+  function asWindows(): void {
+    Object.defineProperty(process, "platform", { value: "win32" });
+  }
+
+  it("probes PATHEXT extensions for a bare name (npm CLIs are .cmd shims)", () => {
+    fs.writeFileSync(path.join(tmpDir, "win-fake-engine.cmd"), "@echo off\r\n");
+    asWindows();
+    const prev = process.env.PATH;
+    process.env.PATH = tmpDir;
+    try {
+      expect(resolveBin("win-fake-engine")).toBe(path.join(tmpDir, "win-fake-engine.cmd"));
+    } finally {
+      process.env.PATH = prev;
+    }
+  });
+
+  it("prefers .exe over .cmd, matching PATHEXT order", () => {
+    fs.writeFileSync(path.join(tmpDir, "win-dual-engine.cmd"), "@echo off\r\n");
+    fs.writeFileSync(path.join(tmpDir, "win-dual-engine.exe"), "MZ");
+    asWindows();
+    const prev = process.env.PATH;
+    process.env.PATH = tmpDir;
+    try {
+      expect(resolveBin("win-dual-engine")).toBe(path.join(tmpDir, "win-dual-engine.exe"));
+    } finally {
+      process.env.PATH = prev;
+    }
+  });
+
+  it("uses a name that already carries an executable extension verbatim", () => {
+    asWindows();
+    expect(executableCandidates("claude.exe", undefined)).toEqual(["claude.exe"]);
+    expect(executableCandidates("claude", undefined)).toEqual([
+      "claude.com",
+      "claude.exe",
+      "claude.bat",
+      "claude.cmd",
+    ]);
+  });
+
+  it("keeps POSIX candidates untouched off Windows", () => {
+    expect(executableCandidates("claude", undefined)).toEqual(["claude"]);
   });
 });

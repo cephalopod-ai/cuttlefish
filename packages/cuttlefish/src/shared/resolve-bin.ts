@@ -13,20 +13,51 @@ import { execFileSync } from "node:child_process";
  * drops `agy`). An optional config override (`engines.<name>.bin`) wins.
  */
 
+const DEFAULT_PATHEXT = ".COM;.EXE;.BAT;.CMD";
+
 function isExecutableFile(p: string): boolean {
   try {
     const st = fs.statSync(p);
     if (!st.isFile()) return false;
-    fs.accessSync(p, fs.constants.X_OK);
+    // X_OK is meaningless on Windows (access() treats it as "exists");
+    // executability there is conveyed by the extension instead — see
+    // executableCandidates().
+    if (process.platform !== "win32") fs.accessSync(p, fs.constants.X_OK);
     return true;
   } catch {
     return false;
   }
 }
 
+/**
+ * Filenames to probe for `name` inside one directory. POSIX: the name itself.
+ * Windows: the PATHEXT extensions, in PATHEXT order (so `codex.exe` wins over
+ * `codex.cmd`, matching cmd.exe's own resolution) — npm installs CLIs there as
+ * extension-less shims plus `.cmd`/`.ps1` wrappers, and only the extension
+ * variants are spawnable.
+ */
+export function executableCandidates(name: string, pathext: string | undefined = process.env.PATHEXT): string[] {
+  if (process.platform !== "win32") return [name];
+  const exts = (pathext || DEFAULT_PATHEXT).split(";").map((e) => e.trim().toLowerCase()).filter(Boolean);
+  if (exts.some((ext) => name.toLowerCase().endsWith(ext))) return [name];
+  // Lowercased: Windows filesystems are case-insensitive and npm writes
+  // lowercase shims (claude.cmd), so this stays correct there and exact for
+  // the case-sensitive filesystems the tests run on.
+  return exts.map((ext) => name + ext);
+}
+
 /** Common install locations not guaranteed to be on a daemon's PATH. */
 export function commonBinDirs(): string[] {
   const home = os.homedir();
+  if (process.platform === "win32") {
+    const env = process.env;
+    return [
+      ...(env.APPDATA ? [path.join(env.APPDATA, "npm")] : []), // npm global shims
+      ...(env.LOCALAPPDATA ? [path.join(env.LOCALAPPDATA, "pnpm")] : []), // pnpm global shims
+      path.join(home, ".local", "bin"),
+      path.join(home, "bin"),
+    ];
+  }
   return [
     path.join(home, ".local", "bin"),
     "/opt/homebrew/bin",
@@ -57,8 +88,10 @@ function findOnPath(name: string): string | null {
   for (const dir of [...pathDirs, ...commonBinDirs()]) {
     if (seen.has(dir)) continue;
     seen.add(dir);
-    const candidate = path.join(dir, name);
-    if (isExecutableFile(candidate)) return candidate;
+    for (const filename of executableCandidates(name)) {
+      const candidate = path.join(dir, filename);
+      if (isExecutableFile(candidate)) return candidate;
+    }
   }
   return null;
 }
@@ -103,10 +136,15 @@ export function isInstalled(name: string, override?: string): boolean {
   if (!bin) return false;
 
   try {
-    execFileSync(bin, ["--version"], {
+    // Windows .cmd/.bat launchers cannot be spawned directly (Node rejects
+    // them with EINVAL); route the probe through cmd.exe with the path quoted
+    // so spaces in the install dir survive.
+    const viaShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(bin);
+    execFileSync(viaShell ? `"${bin}"` : bin, ["--version"], {
       stdio: "ignore",
       timeout: 2_000,
       windowsHide: true,
+      ...(viaShell ? { shell: true } : {}),
     });
     return true;
   } catch {

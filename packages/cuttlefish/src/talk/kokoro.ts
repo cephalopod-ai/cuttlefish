@@ -26,7 +26,15 @@ import { TALK_EVENTS, type Emit, type Tts } from "./protocol.js"
 
 /** Model / venv layout under CUTTLEFISH_HOME. */
 const KOKORO_DIR = path.join(CUTTLEFISH_HOME, "models", "kokoro")
-const VENV_PYTHON = path.join(KOKORO_DIR, "venv", "bin", "python")
+
+/** Windows venvs put the interpreter under Scripts\python.exe, POSIX under bin/python. */
+function venvPythonPath(modelDir: string): string {
+  return process.platform === "win32"
+    ? path.join(modelDir, "venv", "Scripts", "python.exe")
+    : path.join(modelDir, "venv", "bin", "python")
+}
+
+const VENV_PYTHON = venvPythonPath(KOKORO_DIR)
 const ONNX_FILE = path.join(KOKORO_DIR, "kokoro-v1.0.onnx")
 const VOICES_FILE = path.join(KOKORO_DIR, "voices-v1.0.bin")
 
@@ -91,8 +99,7 @@ export function createKokoroTts(opts?: {
   const modelDir = opts?.modelDir || KOKORO_DIR
   const onnxFile = modelDir === KOKORO_DIR ? ONNX_FILE : path.join(modelDir, "kokoro-v1.0.onnx")
   const voicesFile = modelDir === KOKORO_DIR ? VOICES_FILE : path.join(modelDir, "voices-v1.0.bin")
-  const pythonBin =
-    modelDir === KOKORO_DIR ? VENV_PYTHON : path.join(modelDir, "venv", "bin", "python")
+  const pythonBin = modelDir === KOKORO_DIR ? VENV_PYTHON : venvPythonPath(modelDir)
 
   let child: ChildProcess | null = null
   let port = 0
@@ -450,17 +457,23 @@ export function createKokoroTts(opts?: {
  * This is what makes a rebuild survive a Homebrew python churn (e.g. 3.13 removed).
  */
 function pickVenvPython(): string {
-  for (const c of ["python3.12", "python3.11", "python3.13", "python3.10", "python3"]) {
+  // Windows installs rarely expose python3.x names — probe `python`, then the
+  // `py` launcher. (The Microsoft Store `python`/`python3` aliases exit
+  // non-zero on --version, so the probe skips them.)
+  const candidates = process.platform === "win32"
+    ? ["python", "py", "python3"]
+    : ["python3.12", "python3.11", "python3.13", "python3.10", "python3"]
+  for (const c of candidates) {
     const r = spawnSync(c, ["--version"], { stdio: "ignore" })
     if (r.status === 0) return c
   }
-  return "python3"
+  return candidates[candidates.length - 1]
 }
 
 /** Create the venv and install the Python deps for the sidecar. */
 function ensureVenv(modelDir: string): Promise<void> {
   const venvDir = path.join(modelDir, "venv")
-  const py = path.join(venvDir, "bin", "python")
+  const py = venvPythonPath(modelDir)
   // Always rebuild from scratch: `python3 -m venv` does NOT reliably repair a
   // venv whose base interpreter was removed (dangling bin/python symlink), so a
   // stale dir would otherwise wedge us on the fallback voice forever.
