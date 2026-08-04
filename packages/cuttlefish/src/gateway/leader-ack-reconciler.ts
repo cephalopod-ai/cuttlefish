@@ -86,7 +86,7 @@ function formatDurationMinutes(ms: number): number {
 }
 
 function escalationRecipientFor(child: Session, config: CuttlefishConfig): Employee | null {
-  const registry = withPortalExecutive(scanOrg(), config.portal?.portalName);
+  const registry = withPortalExecutive(scanOrg(), config.portal?.portalName, config);
   const hierarchy = resolveOrgHierarchy(registry);
   const currentLeader = child.parentSessionId ? getSession(child.parentSessionId)?.employee ?? null : null;
   if (!hierarchy.root) return null;

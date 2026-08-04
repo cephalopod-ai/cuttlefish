@@ -154,7 +154,7 @@ export async function runWebSession(
 
   const { scanOrg: scanOrgForHierarchy } = await import("./org.js");
   const { resolveOrgHierarchy, withPortalExecutive } = await import("./org-hierarchy.js");
-  const orgHierarchy = resolveOrgHierarchy(withPortalExecutive(scanOrgForHierarchy(), config.portal?.portalName));
+  const orgHierarchy = resolveOrgHierarchy(withPortalExecutive(scanOrgForHierarchy(), config.portal?.portalName, config));
   const managerDelegationSupervisedNodes = employee
     ? resolveSupervisedNodes(employee.name, orgHierarchy, orgHierarchy.nodes[employee.name])
     : [];

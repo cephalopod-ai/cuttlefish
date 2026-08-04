@@ -147,7 +147,8 @@ async function buildCommandCenterPayload(context: ApiContext) {
   const now = Date.now();
   const { withPortalExecutive } = await import("../../org-hierarchy.js");
   const { scanOrg } = await import("../../org.js");
-  const registry = withPortalExecutive(scanOrg(), context.getConfig().portal?.portalName);
+  const config = context.getConfig();
+  const registry = withPortalExecutive(scanOrg(), config.portal?.portalName, config);
   const employees = Array.from(registry.values());
   const runningEmployees = new Set(
     sessions

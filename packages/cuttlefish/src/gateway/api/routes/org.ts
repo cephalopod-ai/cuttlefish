@@ -52,7 +52,8 @@ export async function handleOrgRoutes(
     }
     const { resolveOrgHierarchy, withPortalExecutive } = await import("../../org-hierarchy.js");
     const scanWarnings: OrgWarning[] = [];
-    const orgRegistry = withPortalExecutive(scanOrg(scanWarnings), context.getConfig().portal?.portalName);
+    const config = context.getConfig();
+    const orgRegistry = withPortalExecutive(scanOrg(scanWarnings), config.portal?.portalName, config);
     const { directoryDepartments, departments } = listOrgDepartments(ORG_DIR, orgRegistry);
     const hierarchy = resolveOrgHierarchy(orgRegistry);
     const employees = hierarchy.sorted.map((name) => {
@@ -178,7 +179,8 @@ export async function handleOrgRoutes(
     }
 
     const { resolveOrgHierarchy, resolveCrossRequestRoute, withPortalExecutive } = await import("../../org-hierarchy.js");
-    const hierarchy = resolveOrgHierarchy(withPortalExecutive(registry, context.getConfig().portal?.portalName));
+    const config = context.getConfig();
+    const hierarchy = resolveOrgHierarchy(withPortalExecutive(registry, config.portal?.portalName, config));
     const routed = resolveCrossRequestRoute(requester.name, provider.employee.name, hierarchy);
     const brief = buildCrossRequestBrief({ requester, service: provider.service, prompt });
     const now = Date.now();
@@ -239,7 +241,8 @@ export async function handleOrgRoutes(
   if (method === "GET" && params) {
     const orgRegistry = scanOrg();
     const { resolveOrgHierarchy, withPortalExecutive } = await import("../../org-hierarchy.js");
-    const hierarchyRegistry = withPortalExecutive(orgRegistry, context.getConfig().portal?.portalName);
+    const config = context.getConfig();
+    const hierarchyRegistry = withPortalExecutive(orgRegistry, config.portal?.portalName, config);
     const emp = orgRegistry.get(params.name) ?? hierarchyRegistry.get(params.name);
     if (!emp) {
       notFound(res);
@@ -308,7 +311,8 @@ export async function handleOrgRoutes(
         json(res, { error: "Session-scoped callers may only act as their own bound manager identity" }, 403);
         return true;
       }
-      const auth = authorizeManagerScope(registry, managerName, [params.name], context.getConfig().portal?.portalName);
+      const config = context.getConfig();
+      const auth = authorizeManagerScope(registry, managerName, [params.name], config.portal?.portalName, config);
       if (!auth.ok) {
         json(res, { error: auth.error }, 403);
         return true;

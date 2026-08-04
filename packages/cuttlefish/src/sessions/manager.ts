@@ -222,7 +222,7 @@ export class SessionManager {
     try {
       const { scanOrg } = await import("../gateway/org.js");
       const { resolveOrgHierarchy, withPortalExecutive } = await import("../gateway/org-hierarchy.js");
-      hierarchy = resolveOrgHierarchy(withPortalExecutive(scanOrg(), this.config.portal?.portalName));
+      hierarchy = resolveOrgHierarchy(withPortalExecutive(scanOrg(), this.config.portal?.portalName, this.config));
     } catch { /* fallback to filesystem scan in context builder */ }
 
     try {

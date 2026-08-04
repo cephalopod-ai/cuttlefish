@@ -317,7 +317,8 @@ export async function handleOrchestrationRoutes(
       json(res, { error: "manifestPath, taskId, coordinatorId, and managerName are required" }, 400);
       return true;
     }
-    const auth = authorizeManagerScope(scanOrg(), body.managerName, [], context.getConfig().portal?.portalName);
+    const config = context.getConfig();
+    const auth = authorizeManagerScope(scanOrg(), body.managerName, [], config.portal?.portalName, config);
     if (!auth.ok) {
       json(res, { error: auth.error }, 403);
       return true;
@@ -667,7 +668,8 @@ function parseArtifactKind(value: string): ArtifactKind | null {
 function authorizeHoldManager(managerName: string, workerIds: string[], context: ApiContext): { ok: true } | { ok: false; error: string } {
   const registry = scanOrg();
   const mapped = employeeNamesForOrgWorkerIds(registry, workerIds);
-  const auth = authorizeManagerScope(registry, managerName, mapped.employeeNames, context.getConfig().portal?.portalName);
+  const config = context.getConfig();
+  const auth = authorizeManagerScope(registry, managerName, mapped.employeeNames, config.portal?.portalName, config);
   if (!auth.ok) return auth;
   if (mapped.unknownWorkerIds.length > 0 && auth.manager.rank !== "executive") {
     return {

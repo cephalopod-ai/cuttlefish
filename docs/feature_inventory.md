@@ -28,10 +28,12 @@
 
 ### Default COO execution profile
 
-- The virtual portal COO uses Claude Fable 5 at Medium effort.
-- The default model-fallback chain continues on Claude Opus 5 at Max effort
-  when Fable 5 cannot continue. An employee's own fallback policy remains the
-  first choice for that employee.
+- The virtual portal COO mirrors the saved default engine, model, and effort
+  selection. Fresh installations seed Claude Fable 5 at Medium effort, while
+  onboarding and Settings let the operator select another engine or model and
+  retain that choice.
+- Fallback policy is configured separately from the selected primary model;
+  an employee's own fallback policy remains the first choice for that employee.
 
 ### Dashboard route shell
 - `packages/web/src/main.tsx`

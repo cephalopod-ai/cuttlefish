@@ -68,7 +68,7 @@ function createApiState(context: ApiContext) {
   let roster: ReturnType<typeof managementRoster> | undefined;
 
   const getGraph = () => (graph ??= buildProjectGraph(sessions));
-  const getEmployees = () => (employees ??= withPortalExecutive(scanOrg(), config.portal?.portalName));
+  const getEmployees = () => (employees ??= withPortalExecutive(scanOrg(), config.portal?.portalName, config));
   const getHierarchy = () => (hierarchy ??= resolveOrgHierarchy(getEmployees()));
   const getRoster = () => (roster ??= managementRoster(getEmployees(), config.portal?.portalName ?? "Cuttlefish"));
   const getPublicSessions = () => (publicSessions ??= sessions.map((session) => {

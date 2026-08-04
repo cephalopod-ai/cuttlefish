@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Employee } from "../../shared/types.js";
+import type { CuttlefishConfig, Employee } from "../../shared/types.js";
 import { authorizeManagerScope, isAuthorizedHumanDelegatePrincipal, isCooSession, isDirectChildSession, isHrHumanOnlyBlocked, isHumanDelegationSessionEligible, isManagerNameAuthorizedForPrincipal } from "../manager-auth.js";
 import { buildOperatorDelegationGrant, operatorDelegationPromptHash } from "../../sessions/operator-delegation.js";
 import { HR_EMPLOYEE_NAME } from "../org-policy.js";
@@ -17,15 +17,23 @@ function employee(overrides: Partial<Employee>): Employee {
   };
 }
 
+const config: Pick<CuttlefishConfig, "engines" | "models"> = {
+  engines: {
+    default: "claude",
+    claude: { bin: "claude", model: "opus" },
+    codex: { bin: "codex", model: "gpt-5.6-sol" },
+  },
+};
+
 describe("authorizeManagerScope", () => {
   it("rejects a managerName that does not resolve to an employee", () => {
     const registry = new Map<string, Employee>();
-    expect(authorizeManagerScope(registry, "ghost", []).ok).toBe(false);
+    expect(authorizeManagerScope(registry, "ghost", [], undefined, config).ok).toBe(false);
   });
 
   it("rejects a non-manager/executive employee", () => {
     const registry = new Map<string, Employee>([["worker", employee({ name: "worker" })]]);
-    const result = authorizeManagerScope(registry, "worker", []);
+    const result = authorizeManagerScope(registry, "worker", [], undefined, config);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/manager or executive rank is required/);
   });
@@ -35,7 +43,7 @@ describe("authorizeManagerScope", () => {
       ["ceo", employee({ name: "ceo", rank: "executive" })],
       ["worker", employee({ name: "worker", department: "engineering" })],
     ]);
-    expect(authorizeManagerScope(registry, "ceo", ["worker"]).ok).toBe(true);
+    expect(authorizeManagerScope(registry, "ceo", ["worker"], undefined, config).ok).toBe(true);
   });
 
   it("allows a manager to act on their own direct report", () => {
@@ -43,7 +51,7 @@ describe("authorizeManagerScope", () => {
       ["manager-a", employee({ name: "manager-a", rank: "manager" })],
       ["worker", employee({ name: "worker", reportsTo: "manager-a" })],
     ]);
-    expect(authorizeManagerScope(registry, "manager-a", ["worker"]).ok).toBe(true);
+    expect(authorizeManagerScope(registry, "manager-a", ["worker"], undefined, config).ok).toBe(true);
   });
 
   it("rejects a manager acting on an employee outside their hierarchy", () => {
@@ -52,7 +60,7 @@ describe("authorizeManagerScope", () => {
       ["manager-b", employee({ name: "manager-b", rank: "manager", department: "sales" })],
       ["worker", employee({ name: "worker", department: "sales", reportsTo: "manager-b" })],
     ]);
-    const result = authorizeManagerScope(registry, "manager-a", ["worker"]);
+    const result = authorizeManagerScope(registry, "manager-a", ["worker"], undefined, config);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/outside manager-a's hierarchy/);
   });

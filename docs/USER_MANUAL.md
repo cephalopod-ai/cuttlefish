@@ -140,9 +140,11 @@ queued turn, including when continuing the reusable HR / Org Steward chat.
 That HR singleton retains its engine and working directory; start a non-HR chat
 when either of those needs to change.
 
-The default COO lane uses Claude Fable 5 at Medium effort. On a configured
-automatic fallback, it continues with Claude Opus 5 at Max effort; an
-employee-specific fallback policy takes precedence for that employee.
+The virtual COO uses the saved default engine, model, and effort selection.
+Fresh installations start with Claude Fable 5 at Medium effort, but the
+onboarding picker and Settings let you choose another engine or model; that
+choice remains the COO profile. Configure any fallback policy
+separately from the selected primary model.
 
 ### Email inboxes
 

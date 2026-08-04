@@ -1,4 +1,4 @@
-import type { Employee } from "../shared/types.js";
+import type { CuttlefishConfig, Employee } from "../shared/types.js";
 import { getSession } from "../sessions/registry.js";
 import { orgWorkerIdForName } from "./org-worker-bridge.js";
 import { resolveOrgHierarchy, withPortalExecutive } from "./org-hierarchy.js";
@@ -141,9 +141,10 @@ export function authorizeManagerScope(
   registry: Map<string, Employee>,
   managerName: string,
   affectedEmployeeNames: string[],
-  portalName?: string | null,
+  portalName: string | null | undefined,
+  config: Pick<CuttlefishConfig, "engines" | "models">,
 ): ManagerAuthorizationResult {
-  const effectiveRegistry = withPortalExecutive(registry, portalName);
+  const effectiveRegistry = withPortalExecutive(registry, portalName, config);
   const manager = effectiveRegistry.get(managerName);
   if (!manager) return { ok: false, error: `managerName does not resolve to an employee: ${managerName}` };
   if (manager.rank !== "manager" && manager.rank !== "executive") {

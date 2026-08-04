@@ -1,4 +1,4 @@
-import type { Employee, OrgNode, OrgWarning, OrgHierarchy } from "../shared/types.js";
+import type { CuttlefishConfig, Employee, OrgNode, OrgWarning, OrgHierarchy } from "../shared/types.js";
 import { portalEmployeeSlug } from "../shared/portal-slug.js";
 
 const RANK_PRIORITY: Record<string, number> = {
@@ -24,19 +24,30 @@ export function getAllParents(
   return [...reportsTo];
 }
 
-export function portalExecutiveEmployee(portalName: string | null | undefined): Employee {
+/**
+ * The portal executive is a view of the operator's default execution profile,
+ * not a second set of model defaults. This keeps every surface that materializes
+ * the virtual COO aligned with the engine and model the operator selected.
+ */
+export function portalExecutiveEmployee(
+  portalName: string | null | undefined,
+  config: Pick<CuttlefishConfig, "engines" | "models">,
+): Employee {
   const displayName = portalName?.trim() || "Cuttlefish";
+  const engine = config.engines.default;
+  const engineConfig = config.engines[engine];
+  const model = engineConfig?.model ?? config.models?.[engine]?.default ?? "default";
+  const effortLevel = engineConfig && "effortLevel" in engineConfig && typeof engineConfig.effortLevel === "string"
+    ? engineConfig.effortLevel
+    : undefined;
   return {
     name: portalEmployeeSlug(displayName),
     displayName,
     department: "",
     rank: "executive",
-    engine: "claude",
-    model: "claude-fable-5",
-    effortLevel: "medium",
-    modelPolicy: {
-      fallback_chain: [{ engine: "claude", model: "claude-opus-5", effortLevel: "max" }],
-    },
+    engine,
+    model,
+    ...(effortLevel ? { effortLevel } : {}),
     persona: "COO and AI gateway daemon",
     reportsTo: [],
   };
@@ -45,11 +56,12 @@ export function portalExecutiveEmployee(portalName: string | null | undefined): 
 export function withPortalExecutive(
   registry: Map<string, Employee>,
   portalName: string | null | undefined,
+  config: Pick<CuttlefishConfig, "engines" | "models">,
 ): Map<string, Employee> {
   if ([...registry.values()].some((employee) => employee.rank === "executive")) {
     return registry;
   }
-  const executive = portalExecutiveEmployee(portalName);
+  const executive = portalExecutiveEmployee(portalName, config);
   if (registry.has(executive.name)) return registry;
   return new Map([[executive.name, executive], ...registry]);
 }

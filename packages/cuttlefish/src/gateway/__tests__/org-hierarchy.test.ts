@@ -1,6 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { resolveOrgHierarchy, getPrimaryParent, getAllParents, portalExecutiveEmployee, withPortalExecutive } from "../org-hierarchy.js";
-import type { Employee } from "../../shared/types.js";
+import type { CuttlefishConfig, Employee } from "../../shared/types.js";
+
+const DEFAULT_PORTAL_CONFIG: Pick<CuttlefishConfig, "engines" | "models"> = {
+  engines: {
+    default: "claude",
+    claude: { bin: "claude", model: "claude-fable-5", effortLevel: "medium" },
+    codex: { bin: "codex", model: "gpt-5.6-sol" },
+  },
+};
 
 function emp(name: string, opts: Partial<Employee> = {}): Employee {
   return {
@@ -167,16 +175,18 @@ describe("resolveOrgHierarchy", () => {
   });
 
   it("creates an immutable virtual portal COO when no executive YAML exists", () => {
-    const registryWithCoo = withPortalExecutive(registry(emp("eng-lead", { rank: "manager", department: "eng" })), "Cuttlefish");
+    const registryWithCoo = withPortalExecutive(
+      registry(emp("eng-lead", { rank: "manager", department: "eng" })),
+      "Cuttlefish",
+      DEFAULT_PORTAL_CONFIG,
+    );
     const coo = registryWithCoo.get("cuttlefish");
 
-    expect(portalExecutiveEmployee("Cuttlefish")).toMatchObject({
+    expect(portalExecutiveEmployee("Cuttlefish", DEFAULT_PORTAL_CONFIG)).toMatchObject({
       model: "claude-fable-5",
       effortLevel: "medium",
-      modelPolicy: {
-        fallback_chain: [{ engine: "claude", model: "claude-opus-5", effortLevel: "max" }],
-      },
     });
+    expect(portalExecutiveEmployee("Cuttlefish", DEFAULT_PORTAL_CONFIG)).not.toHaveProperty("modelPolicy");
     expect(coo).toMatchObject({
       name: "cuttlefish",
       displayName: "Cuttlefish",
@@ -189,9 +199,36 @@ describe("resolveOrgHierarchy", () => {
     });
   });
 
+  it("uses the saved default engine and model instead of imposing a Claude profile", () => {
+    const grokConfig: Pick<CuttlefishConfig, "engines" | "models"> = {
+      engines: {
+        ...DEFAULT_PORTAL_CONFIG.engines,
+        default: "grok",
+        grok: { bin: "grok", model: "grok-4.5-fast", effortLevel: "high" },
+      },
+    };
+    const selectedClaudeConfig: Pick<CuttlefishConfig, "engines" | "models"> = {
+      engines: {
+        ...DEFAULT_PORTAL_CONFIG.engines,
+        claude: { bin: "claude", model: "claude-sonnet-5", effortLevel: "low" },
+      },
+    };
+
+    expect(portalExecutiveEmployee("Cuttlefish", grokConfig)).toMatchObject({
+      engine: "grok",
+      model: "grok-4.5-fast",
+      effortLevel: "high",
+    });
+    expect(portalExecutiveEmployee("Cuttlefish", selectedClaudeConfig)).toMatchObject({
+      engine: "claude",
+      model: "claude-sonnet-5",
+      effortLevel: "low",
+    });
+  });
+
   it("does not replace a real executive YAML with the virtual portal COO", () => {
     const real = emp("real-coo", { rank: "executive", department: "exec", model: "custom" });
-    const registryWithCoo = withPortalExecutive(registry(real), "Cuttlefish");
+    const registryWithCoo = withPortalExecutive(registry(real), "Cuttlefish", DEFAULT_PORTAL_CONFIG);
 
     expect(registryWithCoo.get("real-coo")).toBe(real);
     expect(registryWithCoo.has("cuttlefish")).toBe(false);
@@ -205,6 +242,7 @@ describe("resolveOrgHierarchy", () => {
           emp("dev", { rank: "employee", department: "eng", reportsTo: "eng-lead" }),
         ),
         "Cuttlefish",
+        DEFAULT_PORTAL_CONFIG,
       ),
     );
 
@@ -220,6 +258,7 @@ describe("resolveOrgHierarchy", () => {
       withPortalExecutive(
         registry(emp("security", { rank: "senior", department: "", reportsTo: [] })),
         "Cuttlefish",
+        DEFAULT_PORTAL_CONFIG,
       ),
     );
 
@@ -232,6 +271,7 @@ describe("resolveOrgHierarchy", () => {
       withPortalExecutive(
         registry(emp("specialist", { rank: "senior", department: "eng", reportsTo: [] })),
         "Cuttlefish",
+        DEFAULT_PORTAL_CONFIG,
       ),
     );
 
