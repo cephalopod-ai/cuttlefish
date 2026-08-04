@@ -70,8 +70,9 @@
 - `GET /api/management/feed` is global with optional project context.
   `GET /api/management/recipients` exposes the resolved management roster and
   default target for composer preview.
-- `DELETE /api/projects/:root` requires the exact displayed project title and
-  session count, rejects active trees, and deletes the durable tree and owned
+- Project deletion uses an explicit Yes/No operator confirmation. The client
+  sends the current displayed title and session count as stale-project checks;
+  the API rejects active or changed trees and deletes the durable tree and owned
   projection state in one transaction.
 - Operator authority scopes are structured, limited to one turn, and available
   only for an explicitly selected eligible Program Manager or COO target.

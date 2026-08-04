@@ -210,13 +210,15 @@ export function CollaborationPane({
           open={deleteOpen}
           deleting={deleting}
           onOpenChange={setDeleteOpen}
-          onConfirm={async (confirmation) => {
+          onConfirm={async () => {
             setDeleting(true)
             try {
               const result = await api.deleteProject(project.rootSessionId, {
                 expectedTitle: project.title,
                 expectedSessionCount: project.sessionCount,
-                confirmation,
+                // The dialog's explicit Yes action is the operator confirmation;
+                // retain the server's title check as a stale-project safeguard.
+                confirmation: project.title,
               })
               setDeleteOpen(false)
               onProjectDeleted(result.deletedIds)
