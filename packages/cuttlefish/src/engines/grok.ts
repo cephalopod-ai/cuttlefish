@@ -1,4 +1,5 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess } from "node:child_process";
+import { killProcessTree, spawnCompat } from "../shared/windows-exec.js";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -531,7 +532,7 @@ export class GrokEngine implements InterruptibleEngine {
     const transcriptBaseline = listTranscriptStats();
 
     return new Promise((resolve, reject) => {
-      const proc = spawn(bin, args, {
+      const proc = spawnCompat(bin, args, {
         cwd: opts.cwd,
         env: this.buildCleanEnv(),
         stdio: ["pipe", "pipe", "pipe"],
@@ -760,7 +761,7 @@ export class GrokEngine implements InterruptibleEngine {
   private signalProcess(proc: ChildProcess, signal: NodeJS.Signals): void {
     if (proc.exitCode !== null) return;
     try {
-      if (process.platform !== "win32" && proc.pid) process.kill(-proc.pid, signal);
+      if (proc.pid) killProcessTree(proc.pid, signal); // group kill on POSIX, taskkill /T on Windows
       else proc.kill(signal);
     } catch (err) {
       logger.debug(`Failed to send ${signal} to Grok process: ${err instanceof Error ? err.message : err}`);

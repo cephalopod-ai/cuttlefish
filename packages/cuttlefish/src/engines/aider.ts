@@ -1,4 +1,5 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess } from "node:child_process";
+import { killProcessTree, spawnCompat } from "../shared/windows-exec.js";
 import fs from "node:fs";
 import type { InterruptibleEngine, EngineRunOpts, EngineResult } from "../shared/types.js";
 import { logger } from "../shared/logger.js";
@@ -96,7 +97,7 @@ export class AiderEngine implements InterruptibleEngine {
     );
 
     return new Promise((resolve, reject) => {
-      const proc = spawn(bin, args, {
+      const proc = spawnCompat(bin, args, {
         cwd: opts.cwd,
         env: this.buildCleanEnv(),
         stdio: ["ignore", "pipe", "pipe"],
@@ -206,8 +207,8 @@ export class AiderEngine implements InterruptibleEngine {
   private signalProcess(proc: ChildProcess, signal: NodeJS.Signals): void {
     if (proc.exitCode !== null) return;
     try {
-      if (process.platform !== "win32" && proc.pid) {
-        process.kill(-proc.pid, signal);
+      if (proc.pid) {
+        killProcessTree(proc.pid, signal); // group kill on POSIX, taskkill /T on Windows
       } else {
         proc.kill(signal);
       }

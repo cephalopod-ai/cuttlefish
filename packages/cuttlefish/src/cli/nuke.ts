@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 import readline from "node:readline";
 import { assertSafeManagedInstanceHome, loadInstances, saveInstances } from "./instances.js";
 import { probeProcess } from "../shared/pid.js";
@@ -87,7 +88,7 @@ export async function runNuke(name?: string): Promise<void> {
   const homeDisplay = instance.home.replace(process.env.HOME || process.env.USERPROFILE || "", "~");
 
   // Check if running and stop it
-  const pidFile = `${instance.home}/gateway.pid`;
+  const pidFile = path.join(instance.home, "gateway.pid");
   if (fs.existsSync(pidFile)) {
     const pid = parseInt(fs.readFileSync(pidFile, "utf-8").trim(), 10);
     const liveness = probeProcess(pid);

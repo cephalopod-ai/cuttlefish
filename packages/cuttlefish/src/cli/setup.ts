@@ -2,7 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
-import { execFile, execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { execFileSyncCompat } from "../shared/windows-exec.js";
 import { promisify } from "node:util";
 import * as yaml from "js-yaml";
 import { isInstalled, resolveBin } from "../shared/resolve-bin.js";
@@ -88,7 +89,7 @@ function whichBin(name: string): string | null {
 
 function runVersion(bin: string): string | null {
   try {
-    return execFileSync(bin, ["--version"], { encoding: "utf-8", timeout: 10_000, windowsHide: true }).trim();
+    return execFileSyncCompat(bin, ["--version"], { encoding: "utf-8", timeout: 10_000, windowsHide: true }).trim();
   } catch {
     return null;
   }

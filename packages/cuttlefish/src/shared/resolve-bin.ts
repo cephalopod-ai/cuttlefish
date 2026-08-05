@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { execFileSync } from "node:child_process";
+import { execFileSyncCompat } from "./windows-exec.js";
 
 /**
  * Dynamic engine-binary resolution.
@@ -135,16 +135,13 @@ export function isInstalled(name: string, override?: string): boolean {
   bin ??= findOnPath(name);
   if (!bin) return false;
 
-  // A Windows install that only provides a .cmd/.bat shim (npm's default) is
-  // not usable by the non-PTY engine runners: they launch the binary with a
-  // shell-less child_process.spawn, which Node rejects for .cmd/.bat with
-  // EINVAL. Advertising such an engine as installed would produce sessions
-  // that can never spawn, so classify it as unavailable — engines that ship a
-  // native .exe (preferred by executableCandidates) still register normally.
-  if (process.platform === "win32" && /\.(cmd|bat)$/i.test(bin)) return false;
-
+  // A Windows install that only provides a .cmd/.bat shim (npm's default —
+  // `npm i -g` writes no .exe) is still a usable engine: the probe and every
+  // non-PTY runner route shims through cmd.exe via windows-exec, and PTY
+  // spawns launch them natively through ConPTY. execFileSyncCompat is a plain
+  // execFileSync for everything else, POSIX included.
   try {
-    execFileSync(bin, ["--version"], {
+    execFileSyncCompat(bin, ["--version"], {
       stdio: "ignore",
       timeout: 2_000,
       windowsHide: true,

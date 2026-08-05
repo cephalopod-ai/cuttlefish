@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawnCompat } from "./windows-exec.js";
 import type { CuttlefishConfig } from "./types.js";
 import { resolveBin } from "./resolve-bin.js";
 
@@ -30,7 +30,7 @@ export async function readCodexAppServerResult(
   };
 
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, ["app-server", "--stdio"], { stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawnCompat(bin, ["app-server", "--stdio"], { stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     let settled = false;

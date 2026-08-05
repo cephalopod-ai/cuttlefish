@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess } from "node:child_process";
+import { killProcessTree, spawnCompat } from "../shared/windows-exec.js";
 import type { InterruptibleEngine, EngineRunOpts, EngineResult, StreamDelta } from "../shared/types.js";
 import { logger } from "../shared/logger.js";
 import { resolveBin } from "../shared/resolve-bin.js";
@@ -181,7 +182,7 @@ export class CodexEngine implements InterruptibleEngine {
     const cleanEnv = this.buildCleanEnv();
 
     return new Promise((resolve, reject) => {
-      const proc = spawn(bin, args, {
+      const proc = spawnCompat(bin, args, {
         cwd: opts.cwd,
         env: cleanEnv,
         stdio: ["pipe", "pipe", "pipe"],
@@ -612,8 +613,8 @@ export class CodexEngine implements InterruptibleEngine {
   private signalProcess(proc: ChildProcess, signal: NodeJS.Signals): void {
     if (proc.exitCode !== null) return;
     try {
-      if (process.platform !== "win32" && proc.pid) {
-        process.kill(-proc.pid, signal);
+      if (proc.pid) {
+        killProcessTree(proc.pid, signal); // group kill on POSIX, taskkill /T on Windows
       } else {
         proc.kill(signal);
       }

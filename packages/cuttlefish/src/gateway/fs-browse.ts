@@ -34,7 +34,10 @@ export interface FsListResult {
 
 function expandTilde(p: string): string {
   if (p === "~") return os.homedir();
-  if (p.startsWith("~/")) return path.join(os.homedir(), p.slice(2));
+  // Accept the platform's own separator after ~ — Windows users type ~\Projects.
+  if (p.startsWith("~/") || (process.platform === "win32" && p.startsWith("~\\"))) {
+    return path.join(os.homedir(), p.slice(2));
+  }
   return p;
 }
 

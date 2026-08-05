@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawnCompat } from "./windows-exec.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -106,7 +106,7 @@ export async function discoverPiModels(bin: string): Promise<ModelInfo[]> {
       resolve(s);
     };
     try {
-      const proc = spawn(bin, ["--list-models"], { stdio: ["ignore", "pipe", "pipe"] });
+      const proc = spawnCompat(bin, ["--list-models"], { stdio: ["ignore", "pipe", "pipe"] });
       // Pi prints the model table to stderr; capture both streams to be safe.
       proc.stdout.on("data", (d: Buffer) => (out += d.toString()));
       proc.stderr.on("data", (d: Buffer) => (out += d.toString()));

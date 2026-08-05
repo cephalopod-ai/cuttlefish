@@ -49,7 +49,8 @@ export function isServablePath(absPath: string): boolean {
 }
 
 export function expandPath(p: string): string {
-  if (p.startsWith("~/") || p === "~") {
+  // Accept the platform's own separator after ~ — Windows users type ~\Documents.
+  if (p.startsWith("~/") || p === "~" || (process.platform === "win32" && p.startsWith("~\\"))) {
     return path.join(os.homedir(), p.slice(2));
   }
   return p;

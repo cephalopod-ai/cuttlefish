@@ -1,5 +1,6 @@
 // packages/cuttlefish/src/engines/hermes-acp.ts
-import { spawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess } from "node:child_process";
+import { killProcessTree, spawnCompat } from "../shared/windows-exec.js";
 import type { InterruptibleEngine, EngineRunOpts, EngineResult } from "../shared/types.js";
 import { logger } from "../shared/logger.js";
 import { resolveBin } from "../shared/resolve-bin.js";
@@ -40,7 +41,7 @@ export class HermesAcpEngine implements InterruptibleEngine {
 
   /** Test seam — overridden in unit tests to inject a fake server. */
   protected spawnProc(bin: string, cwd: string): ProcHandle {
-    const child: ChildProcess = spawn(bin, ["acp"], {
+    const child: ChildProcess = spawnCompat(bin, ["acp"], {
       stdio: ["pipe", "pipe", "ignore"],
       cwd,
       detached: process.platform !== "win32",
@@ -50,12 +51,12 @@ export class HermesAcpEngine implements InterruptibleEngine {
     return {
       rpc,
       killProc: () => {
-        try { process.kill(-child.pid!, "SIGTERM"); } catch { try { child.kill("SIGTERM"); } catch { /* ignore */ } }
+        try { killProcessTree(child.pid!, "SIGTERM"); } catch { try { child.kill("SIGTERM"); } catch { /* ignore */ } }
         // Escalate like the other engines: a child that ignores SIGTERM must
         // not survive killAll()/shutdown as an orphan.
         const force = setTimeout(() => {
           if (child.exitCode !== null) return;
-          try { process.kill(-child.pid!, "SIGKILL"); } catch { try { child.kill("SIGKILL"); } catch { /* ignore */ } }
+          try { killProcessTree(child.pid!, "SIGKILL"); } catch { try { child.kill("SIGKILL"); } catch { /* ignore */ } }
         }, 2_000);
         force.unref?.();
       },

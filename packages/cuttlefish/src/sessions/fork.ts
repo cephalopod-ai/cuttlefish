@@ -5,7 +5,7 @@
  * - Codex: copies the JSONL session file with a new UUID
  */
 
-import { execFileSync } from "node:child_process";
+import { execFileSyncCompat } from "../shared/windows-exec.js";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -68,7 +68,7 @@ export async function forkClaudeSession(opts: ForkClaudeOpts): Promise<ForkResul
 
   logger.info(`Forking Claude session ${engineSessionId} in ${cwd} (headless)`);
 
-  const result = execFileSync(resolveBin("claude"), [
+  const result = execFileSyncCompat(resolveBin("claude"), [
     "--resume", engineSessionId,
     "--fork-session",
     "--print",
