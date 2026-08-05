@@ -83,7 +83,13 @@ pi/grok/hermes model-discovery timers) would kill only the cmd.exe wrapper
 of a shimmed spawn — swept all four through a new `killChildTree` helper
 (tree kill by PID; on POSIX a non-detached child is not a group leader, so
 `kill(-pid)` ESRCHes into the same single-process kill as before — POSIX
-behavior unchanged).
+behavior unchanged). (5) Codex finding, confirmed valid: the headless
+Claude fork was the one long-running (60s, billable) caller of
+`execFileSyncCompat`, whose sync-timeout residual could orphan the real
+Claude child on Windows — switched to the async `execFileCompat`
+tree-aware path (the surrounding function was already async; this also
+stops blocking the gateway event loop during forks). Remaining sync users
+are short `--version` probes only.
 
 **validation run:** from repo root on Linux (Node 22 host; engines field
 targets 24 — warning only): `pnpm typecheck` (4/4 tasks pass), `pnpm lint`

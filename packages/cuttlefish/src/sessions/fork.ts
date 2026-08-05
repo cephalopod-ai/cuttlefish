@@ -5,7 +5,7 @@
  * - Codex: copies the JSONL session file with a new UUID
  */
 
-import { execFileSyncCompat } from "../shared/windows-exec.js";
+import { execFileCompat } from "../shared/windows-exec.js";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -68,17 +68,23 @@ export async function forkClaudeSession(opts: ForkClaudeOpts): Promise<ForkResul
 
   logger.info(`Forking Claude session ${engineSessionId} in ${cwd} (headless)`);
 
-  const result = execFileSyncCompat(resolveBin("claude"), [
-    "--resume", engineSessionId,
-    "--fork-session",
-    "--print",
-    "--output-format", "json",
-    "-p", "Session duplicated — this is a snapshot of the original conversation.",
-  ], {
-    cwd,
-    encoding: "utf-8",
-    timeout: 60_000,
-    env: buildClaudeForkEnv(),
+  // Async compat path (not execFileSyncCompat): on a Windows .cmd shim the
+  // sync helper can only apply Node's single-process timeout, which would kill
+  // the cmd.exe wrapper and leave the real (billing) Claude child running.
+  // execFileCompat tree-kills the whole shim on timeout — and not blocking the
+  // gateway event loop for up to 60s is a bonus.
+  const result = await new Promise<string>((resolve, reject) => {
+    execFileCompat(resolveBin("claude"), [
+      "--resume", engineSessionId,
+      "--fork-session",
+      "--print",
+      "--output-format", "json",
+      "-p", "Session duplicated — this is a snapshot of the original conversation.",
+    ], {
+      cwd,
+      timeout: 60_000,
+      env: buildClaudeForkEnv(),
+    }, (error, stdout) => (error ? reject(error) : resolve(stdout)));
   });
 
   const lastLine = result.trim().split("\n").pop();
