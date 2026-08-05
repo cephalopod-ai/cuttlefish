@@ -1,4 +1,4 @@
-import { spawnCompat } from "./windows-exec.js";
+import { killChildTree, spawnCompat } from "./windows-exec.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -116,13 +116,13 @@ export async function discoverPiModels(bin: string): Promise<ModelInfo[]> {
       let killTimer: NodeJS.Timeout | undefined;
       const timer = setTimeout(() => {
         try {
-          proc.kill("SIGTERM");
+          killChildTree(proc, "SIGTERM");
         } catch {
           /* ignore */
         }
         killTimer = setTimeout(() => {
           try {
-            proc.kill("SIGKILL");
+            killChildTree(proc, "SIGKILL");
           } catch {
             /* ignore */
           }

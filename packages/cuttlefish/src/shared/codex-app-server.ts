@@ -1,4 +1,4 @@
-import { spawnCompat } from "./windows-exec.js";
+import { killChildTree, spawnCompat } from "./windows-exec.js";
 import type { CuttlefishConfig } from "./types.js";
 import { resolveBin } from "./resolve-bin.js";
 
@@ -36,10 +36,10 @@ export async function readCodexAppServerResult(
     let settled = false;
 
     function killChild(): void {
-      try { child.kill("SIGTERM"); } catch { /* already gone */ }
+      killChildTree(child, "SIGTERM"); // tree-aware: a shimmed spawn's cmd.exe wrapper is not the real server
       const force = setTimeout(() => {
         if (child.exitCode === null) {
-          try { child.kill("SIGKILL"); } catch { /* already gone */ }
+          killChildTree(child, "SIGKILL");
         }
       }, 2_000);
       force.unref?.();

@@ -76,7 +76,14 @@ calls, Node's `timeout` killed only the cmd.exe wrapper and `taskkill /T`
 cannot walk a dead parent — `execFileCompat` now takes over the timeout and
 tree-kills while the wrapper is alive, with a Windows-runner-only regression
 test; the sync variant's equivalent residual (bounded `--version` probes
-only) is documented in-code.
+only) is documented in-code. (4) Codex follow-up finding, confirmed valid
+and generalized: timeout/cleanup paths that called single-process
+`child.kill()` on spawnCompat children (codex-app-server killChild,
+pi/grok/hermes model-discovery timers) would kill only the cmd.exe wrapper
+of a shimmed spawn — swept all four through a new `killChildTree` helper
+(tree kill by PID; on POSIX a non-detached child is not a group leader, so
+`kill(-pid)` ESRCHes into the same single-process kill as before — POSIX
+behavior unchanged).
 
 **validation run:** from repo root on Linux (Node 22 host; engines field
 targets 24 — warning only): `pnpm typecheck` (4/4 tasks pass), `pnpm lint`

@@ -202,3 +202,23 @@ export function killProcessTree(pid: number, signal: NodeJS.Signals = "SIGTERM")
     process.kill(pid, signal); // no group (ESRCH on -pid) — at least kill the child
   }
 }
+
+/**
+ * Best-effort tree kill for a spawned child. `child.kill()` reaches only the
+ * immediate process — for a shimmed spawn on Windows that is the cmd.exe
+ * wrapper, orphaning the CLI it launched. On POSIX a non-detached child is
+ * not a group leader, so killProcessTree's `kill(-pid)` ESRCHes into the
+ * same single-process kill as before — behavior there is unchanged. Never
+ * throws.
+ */
+export function killChildTree(
+  child: { pid?: number | undefined; kill: (signal?: NodeJS.Signals) => unknown },
+  signal: NodeJS.Signals = "SIGTERM",
+): void {
+  try {
+    if (child.pid) killProcessTree(child.pid, signal);
+    else child.kill(signal);
+  } catch {
+    /* already gone */
+  }
+}
