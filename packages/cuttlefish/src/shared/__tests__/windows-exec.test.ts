@@ -1,9 +1,12 @@
 import { describe, it, expect, afterEach } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import {
   escapeCmdArgument,
   escapeCmdCommand,
+  execFileCompat,
   isWindowsShim,
   killProcessTree,
   wrapCommand,
@@ -94,6 +97,25 @@ describe("wrapCommand", () => {
     expect(line).not.toMatch(/[^^]&/);
     expect(line).toContain("^^^ ^^^&^^^ ");
   });
+});
+
+describe("execFileCompat shim timeout (Windows)", () => {
+  // Runs only on the windows CI job: exercises the taken-over timeout that
+  // tree-kills a hung shim while the cmd.exe wrapper is still alive.
+  it.skipIf(process.platform !== "win32")("kills the whole shim tree when the timeout fires", async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "winexec-timeout-"));
+    const shim = path.join(tmp, "hang.cmd");
+    fs.writeFileSync(shim, "@echo off\r\nping -n 30 127.0.0.1 >nul\r\n");
+    const start = Date.now();
+    try {
+      await new Promise<void>((resolve) => {
+        execFileCompat(shim, [], { timeout: 500 }, () => resolve());
+      });
+      expect(Date.now() - start).toBeLessThan(15_000);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 20_000);
 });
 
 describe("killProcessTree (POSIX)", () => {

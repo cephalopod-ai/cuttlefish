@@ -119,7 +119,12 @@ export function spawnCompat(file: string, args: readonly string[], options: Spaw
   return spawn(cmd.file, cmd.args, withVerbatim(cmd, options) ?? options);
 }
 
-/** Callback-style `child_process.execFile` that can launch Windows shims. */
+/** Callback-style `child_process.execFile` that can launch Windows shims.
+ *
+ *  For a shimmed call, `timeout` is taken over from Node: execFile's own
+ *  timeout would kill only the cmd.exe wrapper, orphaning the CLI child the
+ *  shim launched — and `taskkill /T` cannot enumerate the children of an
+ *  already-dead parent, so the tree kill must fire while cmd.exe is alive. */
 export function execFileCompat(
   file: string,
   args: readonly string[],
@@ -127,17 +132,40 @@ export function execFileCompat(
   callback: (error: ExecFileException | null, stdout: string, stderr: string) => void,
 ): ChildProcess {
   const cmd = wrapCommand(file, args);
-  const merged = cmd.windowsVerbatimArguments ? { ...options, windowsVerbatimArguments: true } : options;
-  return execFile(cmd.file, cmd.args, merged, (error, stdout, stderr) => {
+  const relay = (error: ExecFileException | null, stdout: string | Buffer, stderr: string | Buffer) => {
     callback(
       error,
       typeof stdout === "string" ? stdout : stdout.toString("utf8"),
       typeof stderr === "string" ? stderr : stderr.toString("utf8"),
     );
-  });
+  };
+  if (!cmd.windowsVerbatimArguments) {
+    return execFile(cmd.file, cmd.args, options, relay);
+  }
+  const { timeout, ...rest } = options;
+  const child = execFile(cmd.file, cmd.args, { ...rest, windowsVerbatimArguments: true }, relay);
+  if (typeof timeout === "number" && timeout > 0 && child.pid) {
+    const pid = child.pid;
+    const timer = setTimeout(() => {
+      try {
+        killProcessTree(pid, "SIGKILL");
+      } catch {
+        /* already gone */
+      }
+    }, timeout);
+    timer.unref?.();
+    child.once("exit", () => clearTimeout(timer));
+  }
+  return child;
 }
 
-/** `child_process.execFileSync` that can launch Windows shims. */
+/** `child_process.execFileSync` that can launch Windows shims.
+ *
+ *  Known residual for shimmed calls: a `timeout` here is Node's own, which
+ *  kills only the cmd.exe wrapper — a hung CLI child of the shim can outlive
+ *  it (no timer can run while the caller is blocked). Callers use this for
+ *  short bounded probes (`--version`); prefer execFileCompat for anything
+ *  that may hang. */
 export function execFileSyncCompat(
   file: string,
   args: readonly string[],
