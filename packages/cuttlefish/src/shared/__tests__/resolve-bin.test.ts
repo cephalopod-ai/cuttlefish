@@ -183,7 +183,10 @@ describe("resolveBin on Windows", () => {
   it("uses a name that already carries an executable extension verbatim", () => {
     asWindows();
     expect(executableCandidates("claude.exe", undefined)).toEqual(["claude.exe"]);
-    expect(executableCandidates("claude", undefined)).toEqual([
+    // Pin PATHEXT explicitly: on a real Windows host, `undefined` falls back to
+    // the machine's own PATHEXT (which includes .VBS/.MSC/… on CI runners) and
+    // the fallback-default expectation below would not hold.
+    expect(executableCandidates("claude", ".COM;.EXE;.BAT;.CMD")).toEqual([
       "claude.com",
       "claude.exe",
       "claude.bat",
