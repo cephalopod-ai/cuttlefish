@@ -106,6 +106,42 @@ Dashboard: [http://localhost:8888](http://localhost:8888)
 > install “Desktop development with C++” (VS Build Tools) and re-run
 > `pnpm install`.
 
+### Windows support status
+
+**Supported: Windows 11 x86_64** — the platform CI builds (`windows-2022`),
+tests, and publishes archives for. Windows 11 ARM64 has no native build; the
+x64 zip may run under Windows' x64 emulation but this is untested and not a
+support claim. macOS (Apple Silicon, optimized) and Ubuntu/Linux remain the
+primary platforms; Windows is supported at parity for install, engine
+sessions, and the dashboard, with the differences below.
+
+Engine CLIs installed with `npm install -g` (which writes `.cmd` shims, no
+`.exe`) are detected and spawned normally — non-PTY runs are routed through
+an escaped `cmd.exe` invocation and interactive sessions through ConPTY.
+
+Known Windows differences and limitations:
+
+- **`cuttlefish stop` is a hard stop.** Windows has no cooperative SIGTERM
+  delivery to a detached process, so stopping the daemon terminates it
+  without running the graceful-shutdown path (PTY teardown, connector
+  shutdown). SQLite state stays consistent via WAL journaling, but prefer
+  quiescing active sessions before stopping.
+- **`cuttlefish startup` (login autostart) is Linux/systemd-only** and exits
+  with a clear error on Windows. Use Task Scheduler manually if you need
+  autostart.
+- **POSIX file-permission hardening does not apply.** On macOS/Linux,
+  `~/.cuttlefish` and its secrets/DBs are chmod'd `0o600`/`0o700`; Windows
+  has no chmod-equivalent bits, so protection comes from your
+  `%USERPROFILE%` NTFS ACLs. Don't relocate `CUTTLEFISH_HOME` to a
+  world-readable directory.
+- **Voice (TTS/STT) model downloads use `curl`**, which ships with Windows
+  10 1803+ as `curl.exe`; ensure it is on `PATH` if voice features fail to
+  fetch models.
+- **WSL2 alternative.** If you prefer full POSIX behavior (graceful
+  shutdown, chmod hardening), running Cuttlefish inside WSL2 with the Linux
+  instructions below is a supported alternative — engines and the dashboard
+  work from the WSL network endpoint.
+
 ---
 
 ## macOS / Linux

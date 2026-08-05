@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { killChildTree, spawnCompat } from "./windows-exec.js";
 import type { ModelInfo } from "./types.js";
 import { logger } from "./logger.js";
 
@@ -93,20 +93,20 @@ export async function discoverGrokModels(bin: string): Promise<GrokModelDiscover
     };
 
     try {
-      const proc = spawn(bin, ["models"], { stdio: ["ignore", "pipe", "pipe"] });
+      const proc = spawnCompat(bin, ["models"], { stdio: ["ignore", "pipe", "pipe"] });
       proc.stdout.on("data", (d: Buffer) => (out += d.toString()));
       proc.stderr.on("data", (d: Buffer) => (out += d.toString()));
 
       let killTimer: NodeJS.Timeout | undefined;
       const timer = setTimeout(() => {
         try {
-          proc.kill("SIGTERM");
+          killChildTree(proc, "SIGTERM");
         } catch {
           /* ignore */
         }
         killTimer = setTimeout(() => {
           try {
-            proc.kill("SIGKILL");
+            killChildTree(proc, "SIGKILL");
           } catch {
             /* ignore */
           }

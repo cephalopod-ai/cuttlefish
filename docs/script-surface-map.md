@@ -240,23 +240,23 @@ vitest run --coverage
 ### `build` — Compile TypeScript
 
 ```
-rm -rf dist && tsc -p tsconfig.build.json && ...
+node -e "require('fs').rmSync('dist',{recursive:true,force:true})" && tsc -p tsconfig.build.json && node scripts/build-postprocess.mjs
 ```
 
-| posix_only | **true** — uses `rm -rf` |
-| automated_probe_default | **conditional** — safe in POSIX/CI; not portable to bare Windows shell |
+| posix_only | false — `node -e` fs.rmSync; `&&` is understood by cmd.exe |
+| automated_probe_default | **conditional** — compiles and rewrites `dist/` |
 
 ### `clean` — Remove compiled output
 
 ```
-rm -rf dist
+node -e "require('fs').rmSync('dist',{recursive:true,force:true})"
 ```
 
 | Field | Value |
 | --- | --- |
 | destructive | false (removes generated artifacts only) |
 | mutates_state | true |
-| posix_only | **true** |
+| posix_only | false — `node -e` fs.rmSync |
 | automated_probe_default | **exclude** unless cleanup is the explicit probe target |
 
 ---
@@ -390,10 +390,9 @@ commands safe for unattended automated sweeps.
 
 ## Residual Risks and Open Items
 
-- The `build` script at both root and `packages/cuttlefish` still uses POSIX `rm -rf`;
-  if Windows becomes a supported execution environment these should also be replaced
-  with cross-platform Node.js equivalents.
-- `packages/cuttlefish` `clean` also uses `rm -rf dist`; same portability caveat applies.
-- Root `build` uses `rm -rf` and `cp -r` in the Turbo postbuild step.
+- `build`/`clean` at the root and in `packages/cuttlefish` were migrated from
+  POSIX `rm -rf`/`cp -r` to `node -e` fs equivalents, and `dev` from POSIX
+  `( … &)` backgrounding to `scripts/dev.mjs`; the script surface no longer has
+  known POSIX-only entries.
 - `test:e2e` (`playwright test`) has not been fully classified; it is bounded but
   may have network/filesystem side-effects depending on the test suite.

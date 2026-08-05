@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFileCompat } from "./windows-exec.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -99,7 +99,7 @@ function claudeSnapshotFile(dir: string): string | null {
 async function claudeAuthPlan(config: CuttlefishConfig): Promise<string | undefined> {
   const bin = resolveBin("claude", config.engines.claude?.bin);
   return new Promise((resolve) => {
-    execFile(bin, ["auth", "status"], { timeout: 3000 }, (err, stdout) => {
+    execFileCompat(bin, ["auth", "status"], { timeout: 3000 }, (err, stdout) => {
       if (err) return resolve(undefined);
       try {
         const parsed = JSON.parse(stdout);
@@ -417,7 +417,7 @@ function collectUnsupported(config: CuttlefishConfig, engine: string, reason: st
 /** Run a CLI and return its stdout (stripped), or null on failure/timeout. Never throws. */
 function runCliText(bin: string, args: string[], timeoutMs = 8000): Promise<string | null> {
   return new Promise((resolve) => {
-    execFile(bin, args, { timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024, windowsHide: true }, (err, stdout) => {
+    execFileCompat(bin, args, { timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024, windowsHide: true }, (err, stdout) => {
       if (err && !stdout) {
         resolve(null);
         return;

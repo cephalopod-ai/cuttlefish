@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 import { assertSafeManagedInstanceHome, loadInstances, saveInstances } from "./instances.js";
 import { probeProcess } from "../shared/pid.js";
 
@@ -36,7 +37,7 @@ export async function runRemove(name: string, opts: { force?: boolean }): Promis
   // Check if running. Only a definitive ESRCH ("not-running") permits cleanup;
   // EPERM or a garbage PID is treated as "still running / can't verify" so we
   // never delete the home out from under a live gateway.
-  const pidFile = `${instance.home}/gateway.pid`;
+  const pidFile = path.join(instance.home, "gateway.pid");
   if (fs.existsSync(pidFile)) {
     const pid = parseInt(fs.readFileSync(pidFile, "utf-8").trim(), 10);
     const liveness = probeProcess(pid);

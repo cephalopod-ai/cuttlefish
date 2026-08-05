@@ -4,7 +4,10 @@ import path from "node:path";
 import os from "node:os";
 import { executableCandidates, isInstalled, resolveBin } from "../resolve-bin.js";
 
-describe("resolveBin", () => {
+// POSIX-host resolution semantics (extension-less executables, chmod bits) —
+// meaningless on a real Windows host, where the Windows describe below runs
+// against the genuine platform instead of a mock.
+describe.skipIf(process.platform === "win32")("resolveBin", () => {
   let tmpDir: string;
   let exePath: string;
   const NAME = "cuttlefish-fake-engine-xyz";
@@ -126,26 +129,64 @@ describe("resolveBin on Windows", () => {
     }
   });
 
-  it("resolves a .cmd shim for spawning but does not classify it as installed", () => {
-    fs.writeFileSync(path.join(tmpDir, "win-shim-only-engine.cmd"), "@echo off\r\n");
+  const onRealWindows = (REAL_PLATFORM.value as string) === "win32";
+
+  /** On a POSIX host the cmd.exe-wrapped probe needs a stand-in comspec (a sh
+   *  script with the given exit code); a real Windows host runs actual cmd.exe
+   *  against the .cmd fixture, so comspec is left alone there. Returns a
+   *  restore fn. */
+  function comspecForProbe(exitCode: number): () => void {
+    if (onRealWindows) return () => {};
+    const fake = path.join(tmpDir, `fake-comspec-${exitCode}`);
+    fs.writeFileSync(fake, `#!/bin/sh\nexit ${exitCode}\n`);
+    fs.chmodSync(fake, 0o755);
+    const prev = process.env.comspec;
+    process.env.comspec = fake;
+    return () => {
+      if (prev === undefined) delete process.env.comspec;
+      else process.env.comspec = prev;
+    };
+  }
+
+  it("classifies a .cmd-shim-only install as installed when the cmd.exe probe succeeds", () => {
+    fs.writeFileSync(path.join(tmpDir, "win-shim-only-engine.cmd"), "@echo off\r\nexit /b 0\r\n");
+    const restoreComspec = comspecForProbe(0);
     asWindows();
     const prev = process.env.PATH;
     process.env.PATH = tmpDir;
     try {
-      // resolveBin still surfaces the shim (PTY spawns and error messages can
-      // use it), but the registry must not advertise the engine: the non-PTY
-      // runners spawn shell-less and Node rejects .cmd/.bat with EINVAL.
+      // npm i -g writes only shims (no .exe): the shim resolves AND counts as
+      // installed — the probe and non-PTY runners route it through cmd.exe
+      // (windows-exec), and PTY spawns launch it natively via ConPTY.
       expect(resolveBin("win-shim-only-engine")).toBe(path.join(tmpDir, "win-shim-only-engine.cmd"));
-      expect(isInstalled("win-shim-only-engine")).toBe(false);
+      expect(isInstalled("win-shim-only-engine")).toBe(true);
     } finally {
       process.env.PATH = prev;
+      restoreComspec();
+    }
+  });
+
+  it("keeps a shim-only install unavailable when the probe fails", () => {
+    fs.writeFileSync(path.join(tmpDir, "win-broken-shim-engine.cmd"), "@echo off\r\nexit /b 1\r\n");
+    const restoreComspec = comspecForProbe(1);
+    asWindows();
+    const prev = process.env.PATH;
+    process.env.PATH = tmpDir;
+    try {
+      expect(isInstalled("win-broken-shim-engine")).toBe(false);
+    } finally {
+      process.env.PATH = prev;
+      restoreComspec();
     }
   });
 
   it("uses a name that already carries an executable extension verbatim", () => {
     asWindows();
     expect(executableCandidates("claude.exe", undefined)).toEqual(["claude.exe"]);
-    expect(executableCandidates("claude", undefined)).toEqual([
+    // Pin PATHEXT explicitly: on a real Windows host, `undefined` falls back to
+    // the machine's own PATHEXT (which includes .VBS/.MSC/… on CI runners) and
+    // the fallback-default expectation below would not hold.
+    expect(executableCandidates("claude", ".COM;.EXE;.BAT;.CMD")).toEqual([
       "claude.com",
       "claude.exe",
       "claude.bat",
@@ -153,7 +194,7 @@ describe("resolveBin on Windows", () => {
     ]);
   });
 
-  it("keeps POSIX candidates untouched off Windows", () => {
+  it.skipIf(process.platform === "win32")("keeps POSIX candidates untouched off Windows", () => {
     expect(executableCandidates("claude", undefined)).toEqual(["claude"]);
   });
 });

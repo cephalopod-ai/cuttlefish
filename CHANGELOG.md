@@ -6,9 +6,34 @@
 - Windows compatibility: engine-binary resolution now probes PATHEXT
   extensions (`claude.exe`/`codex.cmd` for a bare `claude`/`codex`) and the
   npm/pnpm global shim directories, preferring native `.exe` binaries. A
-  `.cmd`/`.bat`-shim-only install is still not advertised as installed —
-  the shell-less engine runners cannot spawn those (Node rejects them with
-  EINVAL).
+  `.cmd`/`.bat`-shim-only install (npm's default — `npm i -g` writes no
+  `.exe`) now counts as installed: the version probe and all non-PTY engine
+  runners route shims through a caret-escaped `cmd.exe /d /s /c` invocation
+  (`shared/windows-exec.ts`, cross-spawn-style escaping so prompt text
+  cannot inject into the shell line), and PTY engines launch shims natively
+  via ConPTY. Previously a stock Windows install reported zero engines.
+- Windows compatibility: engine termination now kills the whole process
+  tree on Windows (`taskkill /pid <pid> /T /F`) instead of only the direct
+  child, so engine CLIs that fork helpers no longer leave orphaned
+  grandchildren; POSIX keeps the existing process-group kill.
+- Windows compatibility: the dashboard file browser and file-storage paths
+  accept `~\` (backslash) tilde paths on Windows, and `cuttlefish
+  remove`/`nuke` build the PID-file path with `path.join`.
+- The `dev` script no longer uses POSIX-only `( … &)` backgrounding —
+  `scripts/dev.mjs` runs the tsc watcher and the daemon cross-platform, so
+  `pnpm dev` works from cmd.exe/PowerShell.
+- Windows compatibility: `cuttlefish skills`/`setup` invoke the `npx.cmd`
+  shim through the shell on Windows, with skill args allowlist-validated so
+  cmd.exe metacharacters are refused (POSIX keeps the shell-less spawn).
+- Windows compatibility: gateway file reads recognize `C:\`/UNC absolute
+  paths (`path.isAbsolute` instead of a leading-slash check), and the Kokoro
+  TTS sidecar uses the `venv\Scripts\python.exe` layout plus `python`/`py`
+  interpreter discovery on Windows.
+
+### CI
+- CI now runs a `windows-2022` job on every PR (typecheck, full build,
+  Windows-focused unit tests, CLI smoke check) under the native shells, so
+  win32 regressions are caught before the release-packaging lane.
 - Windows compatibility: `cuttlefish skills`/`setup` invoke the `npx.cmd`
   shim through the shell on Windows, with skill args allowlist-validated so
   cmd.exe metacharacters are refused (POSIX keeps the shell-less spawn).

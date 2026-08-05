@@ -1,4 +1,5 @@
-import { execFile, spawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess } from "node:child_process";
+import { execFileCompat, killProcessTree, spawnCompat } from "../shared/windows-exec.js";
 import type { EngineRunOpts, EngineResult, InterruptibleEngine, CuttlefishConfig } from "../shared/types.js";
 import { logger } from "../shared/logger.js";
 import { resolveBin } from "../shared/resolve-bin.js";
@@ -180,7 +181,7 @@ export class KiroEngine implements InterruptibleEngine {
     );
 
     return new Promise((resolve, reject) => {
-      const proc = spawn(bin, args, {
+      const proc = spawnCompat(bin, args, {
         cwd: opts.cwd,
         env: this.buildCleanEnv(),
         stdio: ["pipe", "pipe", "pipe"],
@@ -319,7 +320,7 @@ export class KiroEngine implements InterruptibleEngine {
     const id = this.opts.listSessions
       ? await this.opts.listSessions(bin, cwd)
       : await new Promise<string | undefined>((resolve) => {
-          execFile(bin, ["chat", "--list-sessions", "--format", "json"], { cwd, timeout: 5000 }, (err, stdout) => {
+          execFileCompat(bin, ["chat", "--list-sessions", "--format", "json"], { cwd, timeout: 5000 }, (err, stdout) => {
             if (err) return resolve(undefined);
             resolve(parseKiroSessionList(stdout, { cwd }));
           });
@@ -341,7 +342,7 @@ export class KiroEngine implements InterruptibleEngine {
     if (process.env.KIRO_API_KEY) return Promise.resolve({ ok: true });
     if (this.opts.authProbe) return this.opts.authProbe(bin, cwd);
     return new Promise((resolve) => {
-      execFile(bin, ["chat", "--list-sessions", "--format", "json"], { cwd, timeout: 5000 }, (err, stdout, stderr) => {
+      execFileCompat(bin, ["chat", "--list-sessions", "--format", "json"], { cwd, timeout: 5000 }, (err, stdout, stderr) => {
         if (!err) {
           resolve({ ok: true });
           return;
@@ -371,7 +372,7 @@ export class KiroEngine implements InterruptibleEngine {
   private signalProcess(proc: ChildProcess, signal: NodeJS.Signals): void {
     if (proc.exitCode !== null) return;
     try {
-      if (process.platform !== "win32" && proc.pid) process.kill(-proc.pid, signal);
+      if (proc.pid) killProcessTree(proc.pid, signal); // group kill on POSIX, taskkill /T on Windows
       else proc.kill(signal);
     } catch (err) {
       logger.debug(`Failed to send ${signal} to Kiro process: ${err instanceof Error ? err.message : err}`);

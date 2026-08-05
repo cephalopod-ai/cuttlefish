@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { killChildTree, spawnCompat } from "./windows-exec.js";
 import type { ModelInfo } from "./types.js";
 import { logger } from "./logger.js";
 
@@ -40,11 +40,11 @@ export function knownHermesModels(pinned?: string): HermesModelDiscovery {
 export async function discoverHermesModels(bin: string): Promise<HermesModelDiscovery> {
   return new Promise<HermesModelDiscovery>((resolve) => {
     let done = false;
-    const finish = (d: HermesModelDiscovery) => { if (!done) { done = true; try { proc.kill("SIGTERM"); } catch {} resolve(d); } };
+    const finish = (d: HermesModelDiscovery) => { if (!done) { done = true; killChildTree(proc, "SIGTERM"); resolve(d); } };
     let buf = "";
-    let proc: ReturnType<typeof spawn>;
+    let proc: ReturnType<typeof spawnCompat>;
     try {
-      proc = spawn(bin, ["acp"], {
+      proc = spawnCompat(bin, ["acp"], {
         stdio: ["pipe", "pipe", "ignore"],
         env: { ...process.env, HERMES_YOLO_MODE: "1", HERMES_ACCEPT_HOOKS: "1" },
       });
