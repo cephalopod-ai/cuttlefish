@@ -59,9 +59,21 @@ export function loadSettings(): CuttlefishSettings {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return { ...DEFAULTS }
     const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { ...DEFAULTS }
     // Per-employee icon overrides are now inert — the canonical icon is the org's
     // persisted avatar/emoji. Prune any stale entries so they don't linger.
-    return { ...DEFAULTS, ...parsed, employeeOverrides: {} }
+    return {
+      ...DEFAULTS,
+      ...parsed,
+      employeeOverrides: {},
+      navOrder: Array.isArray(parsed.navOrder) ? parsed.navOrder : [],
+      notificationPreferences: {
+        approvals: { ...DEFAULT_NOTIFICATION_PREFERENCES.approvals, ...parsed.notificationPreferences?.approvals },
+        ticketsBlocked: { ...DEFAULT_NOTIFICATION_PREFERENCES.ticketsBlocked, ...parsed.notificationPreferences?.ticketsBlocked },
+        cronFailures: { ...DEFAULT_NOTIFICATION_PREFERENCES.cronFailures, ...parsed.notificationPreferences?.cronFailures },
+        limitsAtRisk: { ...DEFAULT_NOTIFICATION_PREFERENCES.limitsAtRisk, ...parsed.notificationPreferences?.limitsAtRisk },
+      },
+    }
   } catch {
     return { ...DEFAULTS }
   }
