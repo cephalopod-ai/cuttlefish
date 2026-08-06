@@ -63,13 +63,18 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     api.getOnboarding()
       .then((data) => {
         if (data.portalName || data.operatorName) {
-          const merged = {
-            ...local,
-            ...(data.portalName && { portalName: data.portalName }),
-            ...(data.operatorName && { operatorName: data.operatorName }),
-          }
-          setSettings(merged)
-          saveSettings(merged)
+          // Merge into the latest state rather than the mount-time snapshot. A
+          // slow onboarding response must not roll back preferences changed
+          // while the request was in flight.
+          setSettings((current) => {
+            const merged = {
+              ...current,
+              ...(data.portalName && { portalName: data.portalName }),
+              ...(data.operatorName && { operatorName: data.operatorName }),
+            }
+            saveSettings(merged)
+            return merged
+          })
         }
       })
       .catch(() => {
