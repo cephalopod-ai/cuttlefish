@@ -35,7 +35,7 @@
     "@cuttlefish/contracts": "0.1.0",
     "@qdrant/js-client-rest": "^1.9.0",
     "@slack/bolt": "^4.3.0",
-    "@whiskeysockets/baileys": "7.0.0-rc13",
+    "@whiskeysockets/baileys": "7.0.0-rc14",
     "better-sqlite3": "^13.0.1",
     "busboy": "^1.6.0",
     "chokidar": "^5.0.0",
