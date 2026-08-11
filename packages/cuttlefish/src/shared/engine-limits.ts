@@ -76,21 +76,40 @@ function windowFromClaude(name: string, value: unknown, durationMins: number): E
   };
 }
 
-function claudeSnapshotFile(dir: string): string | null {
+interface ClaudeSnapshot {
+  file: string;
+  parsed: unknown;
+  mtimeMs: number;
+  parseError?: unknown;
+}
+
+function claudeSnapshot(dir: string): ClaudeSnapshot | null {
   try {
     const files = fs.readdirSync(dir)
       .filter((name) => name.endsWith(".json"))
       .map((name) => path.join(dir, name))
-      .map((file) => {
-        let hasRateLimits = false;
-        try {
-          const parsed = JSON.parse(fs.readFileSync(file, "utf-8"));
-          hasRateLimits = !!parsed?.rate_limits?.five_hour || !!parsed?.rate_limits?.seven_day;
-        } catch { /* ignore corrupt snapshots here; collector handles selected file */ }
-        return { file, hasRateLimits, mtimeMs: fs.statSync(file).mtimeMs };
-      })
+      .map((file) => ({ file, mtimeMs: fs.statSync(file).mtimeMs }))
       .sort((a, b) => b.mtimeMs - a.mtimeMs);
-    return files.find((f) => f.hasRateLimits)?.file ?? files[0]?.file ?? null;
+
+    let newestSnapshot: ClaudeSnapshot | null = null;
+    // Statusline directories can contain many historical snapshots. Inspect
+    // newest-first and stop at the first useful one rather than parsing every
+    // file and then parsing the selected file a second time.
+    for (const candidate of files) {
+      try {
+        const parsed: unknown = JSON.parse(fs.readFileSync(candidate.file, "utf-8"));
+        const snapshot = { ...candidate, parsed };
+        newestSnapshot ??= snapshot;
+        if (isRecord(parsed)) {
+          const limits = isRecord(parsed.rate_limits) ? parsed.rate_limits : undefined;
+          if (limits && (limits.five_hour || limits.seven_day)) return snapshot;
+        }
+      } catch (parseError) {
+        newestSnapshot ??= { ...candidate, parsed: undefined, parseError };
+        // Ignore corrupt snapshots and continue to the next newest candidate.
+      }
+    }
+    return newestSnapshot;
   } catch {
     return null;
   }
@@ -117,7 +136,7 @@ async function collectClaudeLimits(config: CuttlefishConfig): Promise<EngineLimi
     return { ...snap, status: "unsupported", unsupportedReason: "Claude CLI is not installed." };
   }
 
-  const latest = claudeSnapshotFile(CLAUDE_LIMITS_DIR);
+  const latest = claudeSnapshot(CLAUDE_LIMITS_DIR);
   const accountPlan = await claudeAuthPlan(config);
   if (!latest) {
     return {
@@ -130,7 +149,8 @@ async function collectClaudeLimits(config: CuttlefishConfig): Promise<EngineLimi
   }
 
   try {
-    const parsed = JSON.parse(fs.readFileSync(latest, "utf-8")) as unknown;
+    if (latest.parseError) throw latest.parseError;
+    const parsed = latest.parsed;
     if (!isRecord(parsed)) throw new Error("Snapshot is not a JSON object");
     const rateLimits = isRecord(parsed.rate_limits) ? parsed.rate_limits : {};
     const windows = [
@@ -139,13 +159,12 @@ async function collectClaudeLimits(config: CuttlefishConfig): Promise<EngineLimi
     ].filter(Boolean) as EngineLimitWindow[];
     const ctx = isRecord(parsed.context_window) ? parsed.context_window : undefined;
     const cost = isRecord(parsed.cost) ? num(parsed.cost.total_cost_usd) : undefined;
-    const stat = fs.statSync(latest);
-    const stale = Date.now() - stat.mtimeMs > 30 * 60_000;
+    const stale = Date.now() - latest.mtimeMs > 30 * 60_000;
     return {
       ...snap,
       status: windows.length > 0 ? "snapshot" : "static",
       source: "claude-statusline",
-      refreshedAt: str(parsed.captured_at) ?? new Date(stat.mtimeMs).toISOString(),
+      refreshedAt: str(parsed.captured_at) ?? new Date(latest.mtimeMs).toISOString(),
       accountPlan,
       windows,
       context: ctx

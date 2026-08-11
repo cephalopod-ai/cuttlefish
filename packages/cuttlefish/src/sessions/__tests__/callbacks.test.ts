@@ -138,6 +138,8 @@ describe("notifyParentSession", () => {
     vi.mocked(getSession).mockImplementation((id) => id === child.id ? child : parent);
     vi.mocked(getMessages).mockReturnValue([
       { role: "assistant", content: "Final verified result after background agents finished", partial: 0 } as any,
+      { role: "user", content: "A later user follow-up", partial: 0 } as any,
+      { role: "assistant", content: "Incomplete streaming result", partial: 1 } as any,
     ]);
     setSessionBackgroundActivity(child.id, { activeStreams: 2, lastActivityAt: Date.now() });
 

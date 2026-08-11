@@ -61,9 +61,12 @@ function resolveProject(
 
     const cycleStart = positions.get(current.id)
     if (cycleStart !== undefined) {
-      const cycleIds = path.slice(cycleStart).map((session) => session.id)
+      let rootSessionId = current.id
+      for (let index = cycleStart + 1; index < path.length; index += 1) {
+        if (path[index].id < rootSessionId) rootSessionId = path[index].id
+      }
       const resolution: ProjectResolution = {
-        rootSessionId: [...cycleIds].sort()[0] ?? current.id,
+        rootSessionId,
         integrity: "cycle",
       }
       for (const session of path) memo.set(session.id, resolution)
@@ -98,11 +101,11 @@ function resolveProject(
 
 function buildProjectNodes(
   rootSessionId: string,
-  projectSessions: Session[],
+  sortedProjectSessions: Session[],
 ): ProjectSessionNode[] {
-  const projectIds = new Set(projectSessions.map((session) => session.id))
+  const projectIds = new Set(sortedProjectSessions.map((session) => session.id))
   const children = new Map<string, Session[]>()
-  for (const session of projectSessions) {
+  for (const session of sortedProjectSessions) {
     const parentId = session.parentSessionId?.trim()
     if (!parentId || !projectIds.has(parentId)) continue
     const siblings = children.get(parentId) ?? []
@@ -122,9 +125,11 @@ function buildProjectNodes(
     for (const child of children.get(session.id) ?? []) visit(child, depth + 1)
   }
 
-  const root = projectSessions.find((session) => session.id === rootSessionId)
+  const root = sortedProjectSessions.find((session) => session.id === rootSessionId)
   if (root) visit(root, 0)
-  for (const session of [...projectSessions].sort((a, b) => sessionActivity(b).localeCompare(sessionActivity(a)))) {
+  // The caller already paid to order this project for its public `sessions`
+  // field. Reuse that order instead of sorting the same group a second time.
+  for (const session of sortedProjectSessions) {
     if (!seen.has(session.id)) visit(session, 0)
   }
   return nodes
@@ -174,7 +179,7 @@ export function groupSessionsByProject(sessions: Session[]): SessionProject[] {
       title: sessionTitle(rootSession),
       lastActivity: sessionActivity(sortedSessions[0] ?? rootSession),
       sessions: sortedSessions,
-      nodes: buildProjectNodes(rootSessionId, group.sessions),
+      nodes: buildProjectNodes(rootSessionId, sortedSessions),
       participantIds: [...participants].sort(),
       runningCount,
       needsAttentionCount,
