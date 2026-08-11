@@ -94,9 +94,20 @@ export function flushDeferredParentNotification(sessionId: string): boolean {
   deferredParentNotifications.delete(sessionId);
   const child = getSession(sessionId);
   if (!child) return false;
-  const latestAssistant = deferred.result.error
-    ? null
-    : [...getMessages(sessionId)].reverse().find((message) => message.role === "assistant" && !message.partial)?.content;
+  let latestAssistant: string | null | undefined = null;
+  if (!deferred.result.error) {
+    const messages = getMessages(sessionId);
+    // Avoid cloning and reversing the complete transcript on every deferred
+    // callback. Transcripts can be large; a reverse index scan is allocation-
+    // free and stops as soon as the latest complete assistant turn is found.
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message.role === "assistant" && !message.partial) {
+        latestAssistant = message.content;
+        break;
+      }
+    }
+  }
   notifyParentSession(
     child,
     latestAssistant ? { ...deferred.result, result: latestAssistant } : deferred.result,
