@@ -32,8 +32,8 @@ export function emailSenderAllowed(allowFrom: string[] | undefined, fromAddress:
 /**
  * Whether a message carries trustworthy, aligned authentication that may
  * auto-trigger an agent run (AR-02). Fail-closed: auto-ingest of untrusted
- * external mail requires the receiving MTA's `Authentication-Results` header to
- * report an explicit DMARC, DKIM, or SPF *pass*. Everything else is untrusted and
+ * external mail requires the trusted receiving MTA's `Authentication-Results`
+ * header to report an aligned DMARC *pass*. Everything else is untrusted and
  * leaves the message cached for manual review rather than auto-run:
  *   - a missing header (spoofable `From` with no verification at all);
  *   - a duplicate / array-valued header (dropped to `null` upstream in
@@ -43,11 +43,20 @@ export function emailSenderAllowed(allowFrom: string[] | undefined, fromAddress:
  *   - an outright `fail` on any mechanism, even if another reports pass (e.g. a
  *     forwarded/spoofed message with `spf=pass` but `dkim=fail`).
  */
-export function emailAuthTrusted(authResults: string | null): boolean {
-  if (!authResults) return false;
+export function emailAuthTrusted(
+  authResults: string | null,
+  fromAddress: string | null,
+  trustedAuthservIds: string[] | undefined,
+): boolean {
+  if (!authResults || !fromAddress || !trustedAuthservIds?.length) return false;
   const normalized = authResults.toLowerCase();
   if (/\b(?:dmarc|dkim|spf)=(?:fail|softfail|temperror|permerror)\b/.test(normalized)) return false;
-  return /\b(?:dmarc|dkim|spf)=pass\b/.test(normalized);
+  const separator = normalized.indexOf(";");
+  const authservId = normalized.slice(0, separator >= 0 ? separator : normalized.length).trim();
+  if (!trustedAuthservIds.some((entry) => entry.trim().toLowerCase() === authservId)) return false;
+  const fromDomain = fromAddress.trim().toLowerCase().split("@").pop();
+  const headerFrom = /\bheader\.from\s*=\s*([^\s;]+)/.exec(normalized)?.[1]?.replace(/^<|>$/g, "");
+  return Boolean(fromDomain && headerFrom === fromDomain && /\bdmarc=pass\b/.test(normalized));
 }
 import type { EmailMailboxClient } from "./client.js";
 import { normalizeEmail, MAX_RAW_MESSAGE_BYTES } from "./normalize.js";
@@ -228,9 +237,9 @@ export class EmailService {
         // Fail-closed authentication gate: an allowlisted sender is necessary but
         // not sufficient — the message must also carry trustworthy aligned
         // authentication, or a forged `From` could auto-start an agent (AR-02).
-        const authTrusted = emailAuthTrusted(persisted.authResults);
+        const authTrusted = emailAuthTrusted(persisted.authResults, persisted.fromAddress, inbox.trustedAuthservIds);
         if (inbox.autoIngest === true && !alreadyHandled && senderAllowed && !authTrusted) {
-          logger.warn(`[email] Skipping auto-ingest for inbox "${inbox.id}" because Authentication-Results did not report a trusted SPF/DKIM/DMARC pass`);
+          logger.warn(`[email] Skipping auto-ingest for inbox "${inbox.id}" because a configured trusted authserv-id did not report an aligned DMARC pass`);
         }
         if (inbox.autoIngest === true && !alreadyHandled && senderAllowed && authTrusted && this.onAutoIngest) {
           // Durable claim written BEFORE dispatch so a replay after a mid-dispatch

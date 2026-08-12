@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { authFetch, createPairingCode, getAuthState, listPairedDevices, logoutBrowser, pairBrowser, unpairDevice } from "../auth"
+import { authFetch, bootstrapLocalAuth, createPairingCode, getAuthState, hasBrowserBootstrapCapability, listPairedDevices, logoutBrowser, pairBrowser, unpairDevice } from "../auth"
 
 function jsonResponse(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -12,6 +12,7 @@ describe("web auth helpers", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn())
     localStorage.clear()
+    window.history.replaceState({}, "", "/#bootstrap=test-launch-token")
   })
 
   it("uses cookies and silently bootstraps local auth once before retrying", async () => {
@@ -40,10 +41,15 @@ describe("web auth helpers", () => {
     for (const [, init] of fetchMock.mock.calls) {
       expect((init as RequestInit | undefined)?.credentials).toBe("include")
     }
+    expect(fetchMock.mock.calls[2][1]).toMatchObject({
+      method: "POST",
+      body: JSON.stringify({ token: "test-launch-token" }),
+    })
+    expect(window.location.hash).toBe("")
     expect(localStorage.length).toBe(0)
   })
 
-  it("bootstraps operator auth for a protected action on an otherwise auth-optional loopback gateway", async () => {
+  it("bootstraps operator auth for a protected local action", async () => {
     const fetchMock = vi.mocked(fetch)
     fetchMock
       .mockResolvedValueOnce(jsonResponse(401, { error: "Missing or invalid gateway auth token" }))
@@ -82,6 +88,26 @@ describe("web auth helpers", () => {
 
     expect(res.status).toBe(401)
     expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it("serializes concurrent bootstrap attempts and consumes a rejected capability", async () => {
+    const fetchMock = vi.mocked(fetch)
+    let resolveRequest: ((response: Response) => void) | undefined
+    fetchMock.mockImplementationOnce(() => new Promise<Response>((resolve) => {
+      resolveRequest = resolve
+    }))
+
+    const first = bootstrapLocalAuth()
+    const second = bootstrapLocalAuth()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(hasBrowserBootstrapCapability()).toBe(true)
+
+    resolveRequest?.(jsonResponse(401, { error: "Launch capability expired" }))
+    await expect(first).rejects.toThrow("Launch capability expired")
+    await expect(second).rejects.toThrow("Launch capability expired")
+    expect(hasBrowserBootstrapCapability()).toBe(false)
+    await expect(bootstrapLocalAuth()).rejects.toThrow(/pair this browser/i)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it("wraps auth state, pairing, pairing-code creation, device list, unpair, and logout endpoints", async () => {

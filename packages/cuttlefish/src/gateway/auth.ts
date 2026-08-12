@@ -200,8 +200,12 @@ export function shouldRequireGatewayAuth(config: Pick<CuttlefishConfig, "gateway
     authDisabled?: boolean;
   };
   if (gateway.authDisabled === true) return false;
-  if (gateway.authRequired === true) return true;
-  return isNetworkHost(gateway.host);
+  // Authentication is the default on every bind address, including loopback.
+  // The browser silently bootstraps an HttpOnly operator cookie for a genuine
+  // loopback request, so local UX stays passwordless without treating every
+  // local process as an administrator. `authDisabled` remains the explicit
+  // opt-out for deliberately unauthenticated single-user installations.
+  return true;
 }
 
 export function validateGatewayExposure(config: Pick<CuttlefishConfig, "gateway">): { ok: true } | { ok: false; error: string } {
@@ -255,11 +259,8 @@ export function createAuthState(
   networkExposed: boolean;
 } {
   const authRequired = shouldRequireGatewayAuth(config);
-  // Report whether this request actually carries an operator credential. The
-  // default loopback deployment permits ordinary reads without auth, but
-  // sensitive approval decisions still require an admin principal. Treating
-  // "auth not globally required" as "authenticated" prevents the web client
-  // from bootstrapping the operator cookie those decisions need.
+  // Report whether this request actually carries an operator credential. A
+  // local browser receives one through the loopback-only bootstrap flow.
   const authenticated = verifyGatewayAuth(req.headers, expectedToken, cuttlefishHome);
   return {
     authRequired,

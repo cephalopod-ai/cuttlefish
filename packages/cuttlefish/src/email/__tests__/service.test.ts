@@ -35,9 +35,16 @@ function withAuthResults(auth: string): Buffer {
   ));
 }
 
+function withDuplicateAuthResults(first: string, second: string): Buffer {
+  return Buffer.from(RAW_EMAIL.toString("utf-8").replace(
+    "MIME-Version: 1.0",
+    `MIME-Version: 1.0\r\nAuthentication-Results: ${first}\r\nAuthentication-Results: ${second}`,
+  ));
+}
+
 /** A message that passes the fail-closed auth gate (AR-02) and may auto-ingest. */
 const RAW_EMAIL_AUTHED = withAuthResults(
-  "mx.example; spf=pass smtp.mailfrom=support@example.com; dkim=pass header.d=example.com; dmarc=pass",
+  "mx.example; spf=pass smtp.mailfrom=support@example.com; dkim=pass header.d=example.com; dmarc=pass header.from=example.com",
 );
 
 describe("EmailService", () => {
@@ -65,6 +72,7 @@ describe("EmailService", () => {
         imapHost: "imap.example.com",
         autoIngest: true,
         allowFrom: ["support@example.com"],
+        trustedAuthservIds: ["mx.example"],
       }],
     }, { client, onAutoIngest });
 
@@ -107,6 +115,7 @@ describe("EmailService", () => {
         imapHost: "imap.example.com",
         autoIngest: true,
         allowFrom: ["support@example.com"],
+        trustedAuthservIds: ["mx.example"],
       }],
     }, { client, onAutoIngest });
 
@@ -176,6 +185,7 @@ describe("EmailService", () => {
         imapHost: "imap.example.com",
         autoIngest: true,
         allowFrom: ["support@example.com"],
+        trustedAuthservIds: ["mx.example"],
       }],
     }, { client, onAutoIngest });
 
@@ -325,6 +335,7 @@ describe("EmailService", () => {
         imapHost: "imap.example.com",
         autoIngest: true,
         allowFrom: ["support@example.com"],
+        trustedAuthservIds: ["mx.example"],
       }],
     }, { client, onAutoIngest });
 
@@ -342,7 +353,7 @@ describe("EmailService", () => {
     const client = new FakeEmailMailboxClient();
     client.setMessages("ops", [{
       providerMessageId: "uid-dkim",
-      raw: withAuthResults("mx.example; dkim=pass header.d=example.com"),
+      raw: withAuthResults("mx.example; dmarc=pass header.from=example.com"),
     }]);
     const onAutoIngest = vi.fn(async () => "session-ok");
 
@@ -356,12 +367,68 @@ describe("EmailService", () => {
         imapHost: "imap.example.com",
         autoIngest: true,
         allowFrom: ["support@example.com"],
+        trustedAuthservIds: ["mx.example"],
       }],
     }, { client, onAutoIngest });
 
     const result = await service.checkInbox("ops");
     expect(onAutoIngest).toHaveBeenCalledTimes(1);
     expect(result.messages[0].status).toBe("ingested");
+  });
+
+  it("rejects forged authserv ids and unaligned DMARC passes", async () => {
+    const { emailAuthTrusted } = await import("../service.js");
+
+    expect(emailAuthTrusted(
+      "mx.attacker.invalid; dmarc=pass header.from=example.com",
+      "support@example.com",
+      ["mx.example"],
+    )).toBe(false);
+    expect(emailAuthTrusted(
+      "mx.example; dmarc=pass header.from=evil.invalid",
+      "support@example.com",
+      ["mx.example"],
+    )).toBe(false);
+    expect(emailAuthTrusted(
+      "mx.example; dmarc=pass header.from=example.com",
+      "support@example.com",
+      ["mx.example"],
+    )).toBe(true);
+  });
+
+  it("rejects ambiguous duplicate Authentication-Results headers", async () => {
+    const reg = await import("../../sessions/registry.js");
+    const { FakeEmailMailboxClient } = await import("../client.js");
+    const { EmailService } = await import("../service.js");
+    reg.initDb();
+
+    const client = new FakeEmailMailboxClient();
+    client.setMessages("ops", [{
+      providerMessageId: "uid-duplicate-auth",
+      raw: withDuplicateAuthResults(
+        "mx.example; dmarc=pass header.from=example.com",
+        "mx.attacker.invalid; dmarc=pass header.from=example.com",
+      ),
+    }]);
+    const onAutoIngest = vi.fn(async () => "session-should-not-run");
+    const service = new EmailService({
+      enabled: true,
+      inboxes: [{
+        id: "ops",
+        address: "ops@example.com",
+        username: "ops@example.com",
+        password: "secret",
+        imapHost: "imap.example.com",
+        autoIngest: true,
+        allowFrom: ["support@example.com"],
+        trustedAuthservIds: ["mx.example"],
+      }],
+    }, { client, onAutoIngest });
+
+    const result = await service.checkInbox("ops");
+    expect(onAutoIngest).not.toHaveBeenCalled();
+    expect(result.messages[0].authResults).toBeNull();
+    expect(result.messages[0].status).toBe("cached");
   });
 
   it("never returns the IMAP password in the inbox listing DTO (AR-10)", async () => {

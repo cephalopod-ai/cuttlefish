@@ -39,16 +39,16 @@ export type ManagerAuthorizationResult =
  * subprocess holds), require the claimed `managerName` to match that
  * session's own bound employee — a session cannot claim to act as a
  * *different* manager than the one it is actually running as. Admin
- * principals (the operator) and an absent principal (today's default
- * unauthenticated-loopback-human case) keep the existing trust-the-body
- * behavior; binding those callers to a real identity is out of scope here.
+ * principals (the operator) may make an explicit manager claim. Anonymous
+ * callers are never trusted as operators, even on loopback.
  */
 export function isManagerNameAuthorizedForPrincipal(
   managerName: string,
   principal: GatewayPrincipal | undefined,
   deps: { getSession: typeof getSession } = { getSession },
 ): boolean {
-  if (!principal || principal.kind === "admin") return true;
+  if (principal?.kind === "admin") return true;
+  if (!principal) return false;
   const callerSession = deps.getSession(principal.sessionId);
   return callerSession?.employee === managerName;
 }

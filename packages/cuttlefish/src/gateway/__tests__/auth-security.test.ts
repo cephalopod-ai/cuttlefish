@@ -58,15 +58,16 @@ describe("gateway auth", () => {
     expect(authRequiredForRequest("GET", "/api/status")).toBe(true);
   });
 
-  it("requires auth for remote/network exposure but not default loopback unless explicitly enabled", () => {
+  it("requires auth by default on loopback and network binds, with an explicit opt-out", () => {
     expect(isLoopbackHost("localhost:8888")).toBe(true);
     expect(isLoopbackHost("127.0.0.1:8888")).toBe(true);
     expect(isLoopbackHost("[::1]:8888")).toBe(true);
     expect(isLoopbackHost("100.95.1.62:8888")).toBe(false);
-    expect(shouldRequireGatewayAuth({ gateway: { host: "127.0.0.1" } } as any)).toBe(false);
+    expect(shouldRequireGatewayAuth({ gateway: { host: "127.0.0.1" } } as any)).toBe(true);
     expect(shouldRequireGatewayAuth({ gateway: { host: "0.0.0.0" } } as any)).toBe(true);
     expect(shouldRequireGatewayAuth({ gateway: { host: "192.168.1.10" } } as any)).toBe(true);
     expect(shouldRequireGatewayAuth({ gateway: { host: "127.0.0.1", authRequired: true } } as any)).toBe(true);
+    expect(shouldRequireGatewayAuth({ gateway: { host: "127.0.0.1", authDisabled: true } } as any)).toBe(false);
   });
 
   it("refuses unauthenticated network binds unless the explicit insecure escape hatch is set", () => {
@@ -81,7 +82,7 @@ describe("gateway auth", () => {
       req({ host: "127.0.0.1:8888" }, "127.0.0.1"),
       "tok",
     )).toMatchObject({
-      authRequired: false,
+      authRequired: true,
       authenticated: false,
       canBootstrapLocal: true,
       networkExposed: false,
@@ -123,7 +124,7 @@ describe("gateway auth", () => {
       "tok",
       home,
     )).toMatchObject({
-      authRequired: false,
+      authRequired: true,
       authenticated: true,
       canBootstrapLocal: true,
       networkExposed: false,

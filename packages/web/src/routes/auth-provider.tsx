@@ -4,6 +4,7 @@ import {
   bootstrapLocalAuth,
   createPairingCode,
   getAuthState,
+  hasBrowserBootstrapCapability,
   listPairedDevices as fetchPairedDevices,
   logoutBrowser,
   pairBrowser,
@@ -57,8 +58,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Even an auth-optional loopback gateway protects approval decisions as
       // operator-only actions. Establish the local operator session up front
       // so the first approve/reject click does not fail with a 401.
-      if (shouldBootstrapLocal && !state.authenticated && state.canBootstrapLocal) {
-        await bootstrapLocalAuth()
+      if (shouldBootstrapLocal && !state.authenticated && state.canBootstrapLocal && hasBrowserBootstrapCapability()) {
+        try {
+          await bootstrapLocalAuth()
+        } catch (err) {
+          // The capability is one-shot. Re-read server state because another
+          // concurrent refresh may have completed the bootstrap successfully.
+          state = await getAuthState()
+          if (!state.authenticated) {
+            setAuthState(state)
+            setDevices([])
+            setError(err instanceof Error ? err.message : "The launch link expired. Pair this browser to continue.")
+            setStatus("pairing-required")
+            return
+          }
+        }
         state = await getAuthState()
       }
       setAuthState(state)

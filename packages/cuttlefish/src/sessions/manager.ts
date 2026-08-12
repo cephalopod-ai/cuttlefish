@@ -24,7 +24,7 @@ import type { SessionNotificationSink } from "./notification-sink.js";
 import { buildContext } from "./context.js";
 import { buildContextPacket, contextManagerMode, logContextPacketMetadata } from "./context-manager/index.js";
 import { SessionQueue } from "./queue.js";
-import { CUTTLEFISH_HOME } from "../shared/paths.js";
+import { resolveSessionWorkspace } from "./session-workspace.js";
 import { logger } from "../shared/logger.js";
 import { redactText } from "../shared/redact.js";
 import { resolveEffort } from "../shared/effort.js";
@@ -234,7 +234,7 @@ export class SessionManager {
         channel: msg.channel,
         thread: msg.thread,
         user: msg.user,
-        cwd: session.cwd || CUTTLEFISH_HOME,
+        cwd: resolveSessionWorkspace(session),
         employee,
         connectors: this.connectorNames,
         config: this.config,
@@ -416,7 +416,7 @@ export class SessionManager {
         prompt: contextPacket?.prompt ?? promptToRun,
         resumeSessionId: session.engineSessionId ?? undefined,
         systemPrompt: contextPacket?.systemPrompt ?? systemPrompt,
-        cwd: session.cwd || CUTTLEFISH_HOME,
+        cwd: resolveSessionWorkspace(session),
         bin: engineConfig.bin,
         model: session.model ?? engineConfig.model,
         effortLevel: invocation.effortLevel,

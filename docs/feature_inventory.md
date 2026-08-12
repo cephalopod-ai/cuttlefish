@@ -205,6 +205,9 @@
 - Supported profile fields are `id`, `label`, `cwd`, `instructions`, and optional default `employee`.
 - `GET /api/workspace-profiles` returns sanitized profile summaries for the dashboard.
 - `POST /api/sessions` accepts `workspaceProfile`; the gateway validates the configured cwd against `workspaces.roots`, uses it as the session working directory unless an explicit `cwd` is supplied, injects the profile instructions into the first engine prompt, and records `transportMeta.workspaceProfile` for traceability.
+- Sessions without an explicit cwd or workspace profile run in a private
+  per-session sibling of `CUTTLEFISH_HOME`, never in the gateway control-plane
+  directory itself.
 - The chat composer shows a workspace profile picker for new chats when profiles are configured. Profile authoring remains config-backed in this version.
 
 ### Cross-department service requests
@@ -257,6 +260,12 @@
 ### Remote access pairing code panel
 - `packages/web/src/components/auth/remote-access-panel.tsx`
 - The settings remote-access panel controls pairing codes and shows paired browsers.
+- Gateway authentication is required by default on loopback and network binds.
+  A browser opened by interactive `cuttlefish start` receives a one-time,
+  60-second launch capability in the URL fragment and exchanges it for a
+  revocable HttpOnly operator session. A manually opened local browser must be
+  paired like a remote browser; loopback alone does not confer administrator
+  identity. `gateway.authDisabled` is the explicit opt-out.
 - The "Create pairing code" button is hidden when gateway authentication is disabled
   (`authRequired: false`), replaced by an explanatory note.
 - When authentication is enabled but the session is not on the local dashboard
@@ -400,7 +409,11 @@
   a COO-owned session keyed by inbox/thread identity.
 - Auto-ingest is **fail-closed**: an inbox drives an agent run only when it sets
   `autoIngest: true` explicitly (untrusted external mail must be opted in, not
-  defaulted on). A per-inbox `maxMessageBytes` caps raw message size. The message
+  defaulted on), allowlists the visible sender with `allowFrom`, and configures
+  the receiving MTA's exact `trustedAuthservIds`. The trusted MTA must strip
+  untrusted incoming Authentication-Results headers and stamp an aligned
+  `dmarc=pass header.from=<visible-from-domain>` result. A per-inbox
+  `maxMessageBytes` caps raw message size. The message
   lifecycle is `cached -> dispatching -> ingested | error`, where `dispatching` is a
   durable pre-dispatch claim so a crash/replay never re-runs the agent (at-most-once);
   a message stuck in `dispatching` surfaces as degraded inbox health.
@@ -513,10 +526,9 @@
   chat prose and scoped agent tokens cannot resolve their own changes. An
   explicitly authorized COO/Program Manager may resolve the linked approval
   record, but direct org approve, reject, and apply routes remain operator-only.
-  On an auth-optional loopback gateway, the dashboard establishes a revocable
-  local operator session before rendering these controls and retries a protected
-  request once after local bootstrap, so the stricter decision gate remains
-  usable without weakening it to anonymous access.
+  On the default authenticated loopback gateway, the dashboard establishes a
+  revocable local operator session before rendering these controls and retries
+  a protected request once after local bootstrap.
 - Human-delegated authority is fail-closed and turn-scoped. The directive must
   begin a direct human message (`/delegate-authority <scopes>` or the supported
   explicit “authorize/delegate/grant/give you … on my behalf” form), is bound to

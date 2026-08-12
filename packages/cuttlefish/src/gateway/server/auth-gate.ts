@@ -30,11 +30,10 @@ import { isCooSession, isDirectChildSession, isHumanDelegationSessionEligible } 
  * (CF2-112).
  *
  * This function separates the two concerns:
- *   1. "Is auth required to let this request in at all?" — unchanged from
- *      before: only reject with 401 when `authRequiredNow()` and the route
- *      requires it. An unauthenticated loopback human sees no behavior
- *      change (`authRequiredNow()` is false by default, so this branch never
- *      fires for them).
+ *   1. "Is auth required to let this request in at all?" — the secure default
+ *      is yes on loopback and network binds alike. Local browsers retain the
+ *      passwordless bootstrap-cookie flow; `gateway.authDisabled` is the only
+ *      explicit opt-out.
  *   2. "If this request identifies itself via a scoped session token,
  *      constrain what it can do" — now runs unconditionally whenever a
  *      scoped token is *presented and valid*, regardless of `authRequiredNow()`.

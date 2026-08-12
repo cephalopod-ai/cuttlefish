@@ -22,7 +22,6 @@
  */
 
 import type { Employee, Engine, EngineResult, CuttlefishConfig, JsonObject, Session, StreamDelta } from "../shared/types.js";
-import { CUTTLEFISH_HOME } from "../shared/paths.js";
 import { logger } from "../shared/logger.js";
 import { resolveEffort } from "../shared/effort.js";
 import { effortLevelsForModel, engineAvailable, isKnownEngine } from "../shared/models.js";
@@ -30,6 +29,7 @@ import { computeNextRetryDelayMs, computeRateLimitDeadlineMs, detectRateLimit } 
 import { recordEngineRateLimit } from "../shared/usage-status.js";
 import { runWithEngineEnvironment } from "../shared/engine-env.js";
 import { getSession, getMessages, updateSession, patchSessionTransportMeta } from "./registry.js";
+import { resolveSessionWorkspace } from "./session-workspace.js";
 
 const WAIT_CANCEL_POLL_MS = 5000;
 const ENGINE_LABELS: Record<string, string> = {
@@ -266,7 +266,7 @@ export async function handleRateLimit(opts: RateLimitHandlerOpts): Promise<RateL
             prompt: fallbackPrompt,
             resumeSessionId: fallbackResume,
             systemPrompt,
-            cwd: session.cwd || CUTTLEFISH_HOME,
+            cwd: resolveSessionWorkspace(session),
             bin: fallbackConfig.bin,
             model: fallbackConfig.model,
             effortLevel: fallbackEffort,
@@ -373,7 +373,7 @@ export async function handleRateLimit(opts: RateLimitHandlerOpts): Promise<RateL
         prompt,
         resumeSessionId: currentSession.engineSessionId ?? undefined,
         systemPrompt,
-        cwd: currentSession.cwd || CUTTLEFISH_HOME,
+        cwd: resolveSessionWorkspace(currentSession),
         bin: engineConfig.bin,
         model: currentSession.model ?? engineConfig.model,
         effortLevel,

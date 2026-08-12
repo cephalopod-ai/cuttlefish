@@ -67,8 +67,8 @@ describe("authorizeManagerScope", () => {
 });
 
 describe("isManagerNameAuthorizedForPrincipal (Ledger-0007 Finding 4 partial mitigation)", () => {
-  it("trusts the body when no principal is attached (default unauthenticated loopback)", () => {
-    expect(isManagerNameAuthorizedForPrincipal("manager-a", undefined)).toBe(true);
+  it("rejects a body-claimed manager when no principal is attached", () => {
+    expect(isManagerNameAuthorizedForPrincipal("manager-a", undefined)).toBe(false);
   });
 
   it("trusts the body for an admin principal", () => {

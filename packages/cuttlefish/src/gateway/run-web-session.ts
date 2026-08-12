@@ -12,7 +12,7 @@ import { buildContext } from "../sessions/context.js";
 import { buildContextPacket, contextManagerMode, logContextPacketMetadata } from "../sessions/context-manager/index.js";
 import { accumulateSessionCost, createSession, listChildSessions, getSession, updateSession, patchSessionTransportMeta, insertMessage, insertPartialMessage, updatePartialMessage, deletePartialMessages, finalizePartialMessages, getMessages } from "../sessions/registry.js";
 import { logger } from "../shared/logger.js";
-import { CUTTLEFISH_HOME } from "../shared/paths.js";
+import { resolveSessionWorkspace } from "../sessions/session-workspace.js";
 import { resolveEffort } from "../shared/effort.js";
 import { resolveEngineInvocation } from "../shared/engine-arg-resolver.js";
 import { runWithEngineEnvironment } from "../shared/engine-env.js";
@@ -207,7 +207,7 @@ export async function runWebSession(
       source: currentSession.source,
       channel: currentSession.sourceRef,
       user: currentSession.userId ?? "web-user",
-      cwd: currentSession.cwd || CUTTLEFISH_HOME,
+      cwd: resolveSessionWorkspace(currentSession),
       employee,
       connectors: Array.from(context.connectors.keys()),
       config,
@@ -572,7 +572,7 @@ export async function runWebSession(
               prompt: contextPacket?.prompt ?? promptToRun,
               resumeSessionId: currentSession.engineSessionId ?? undefined,
               systemPrompt: contextPacket?.systemPrompt ?? systemPrompt,
-              cwd: currentSession.cwd || CUTTLEFISH_HOME,
+              cwd: resolveSessionWorkspace(currentSession),
               bin: engineConfig.bin,
               model: currentSession.model ?? engineConfig.model,
               effortLevel: invocation.effortLevel,

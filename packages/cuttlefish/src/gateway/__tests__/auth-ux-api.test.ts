@@ -3,9 +3,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
+import crypto from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { handleApiRequest, type ApiContext } from "../api.js";
 import { createAuthSession } from "../auth.js";
+
+const BOOTSTRAP_TOKEN = "test-browser-bootstrap-token";
 
 function makeReq(
   method: string,
@@ -66,6 +69,11 @@ function makeRes() {
 function ctx(cuttlefishHome = fs.mkdtempSync(path.join(os.tmpdir(), "cuttlefish-auth-api-"))): ApiContext {
   return {
     gatewayAuthToken: "gateway-token",
+    browserBootstrap: {
+      tokenHash: crypto.createHash("sha256").update(BOOTSTRAP_TOKEN).digest("hex"),
+      expiresAt: Date.now() + 60_000,
+      consumed: false,
+    },
     cuttlefishHome,
     getConfig: () => ({ gateway: { host: "0.0.0.0" }, engines: { default: "claude" } }),
     connectors: new Map(),
@@ -104,7 +112,7 @@ describe("auth UX API routes", () => {
       makeReq("POST", "/api/auth/pairing-codes", {
         cookie: browserCookie((context as any).cuttlefishHome),
         remoteAddress: "127.0.0.1",
-        body: {},
+        body: { token: BOOTSTRAP_TOKEN },
       }),
       cap.res,
       context,
@@ -122,7 +130,7 @@ describe("auth UX API routes", () => {
       makeReq("POST", "/api/auth/bootstrap", {
         remoteAddress: "100.64.1.2",
         host: "100.64.1.10:8888",
-        body: {},
+        body: { token: BOOTSTRAP_TOKEN },
       }),
       remote.res,
       ctx(),
@@ -136,7 +144,7 @@ describe("auth UX API routes", () => {
       makeReq("POST", "/api/auth/bootstrap", {
         remoteAddress: "127.0.0.1",
         host: "tailnet.example.ts.net",
-        body: {},
+        body: { token: BOOTSTRAP_TOKEN },
       }),
       proxied.res,
       ctx(),
@@ -146,6 +154,32 @@ describe("auth UX API routes", () => {
     expect(proxied.header("set-cookie")).toBeUndefined();
   });
 
+  it("requires and atomically consumes the one-time local launch capability", async () => {
+    const context = ctx();
+    const missing = makeRes();
+    await handleApiRequest(makeReq("POST", "/api/auth/bootstrap", { body: {} }), missing.res, context);
+    expect(missing.status).toBe(401);
+    expect(missing.header("set-cookie")).toBeUndefined();
+
+    const accepted = makeRes();
+    await handleApiRequest(
+      makeReq("POST", "/api/auth/bootstrap", { body: { token: BOOTSTRAP_TOKEN } }),
+      accepted.res,
+      context,
+    );
+    expect(accepted.status).toBe(200);
+    expect(accepted.header("set-cookie")).toBeTruthy();
+
+    const replay = makeRes();
+    await handleApiRequest(
+      makeReq("POST", "/api/auth/bootstrap", { body: { token: BOOTSTRAP_TOKEN } }),
+      replay.res,
+      context,
+    );
+    expect(replay.status).toBe(401);
+    expect(replay.header("set-cookie")).toBeUndefined();
+  });
+
   it("rejects remote pairing-code creation", async () => {
     const context = ctx();
     const cap = makeRes();
@@ -153,7 +187,7 @@ describe("auth UX API routes", () => {
       makeReq("POST", "/api/auth/pairing-codes", {
         cookie: browserCookie((context as any).cuttlefishHome, "100.64.1.2"),
         remoteAddress: "100.64.1.2",
-        body: {},
+        body: { token: BOOTSTRAP_TOKEN },
       }),
       cap.res,
       context,
@@ -224,7 +258,7 @@ describe("auth UX API routes", () => {
         cookie: "cuttlefish_auth=gateway-token",
         remoteAddress: "127.0.0.1",
         userAgent: "Mozilla/5.0 Macintosh",
-        body: {},
+        body: { token: BOOTSTRAP_TOKEN },
       }),
       created.res,
       context,
@@ -257,7 +291,7 @@ describe("auth UX API routes", () => {
         cookie: "cuttlefish_auth=gateway-token",
         remoteAddress: "127.0.0.1",
         userAgent: "Mozilla/5.0 Macintosh",
-        body: {},
+        body: { token: BOOTSTRAP_TOKEN },
       }),
       local.res,
       context,

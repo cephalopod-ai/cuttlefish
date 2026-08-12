@@ -1,4 +1,5 @@
 import type { IncomingMessage as HttpRequest, ServerResponse } from "node:http";
+import crypto from "node:crypto";
 import {
   authenticateGatewayRequest,
   authCookieHeaders,
@@ -48,6 +49,28 @@ export async function handleAuthRoutes(
       json(res, { error: "Bootstrap is loopback-only" }, 403);
       return true;
     }
+    const parsed = await readJsonBody(req, res, { maxBytes: AUTH_BODY_MAX_BYTES });
+    if (!parsed.ok) return true;
+    const body = parsed.body && typeof parsed.body === "object" ? parsed.body as Record<string, unknown> : {};
+    const token = typeof body.token === "string" ? body.token : "";
+    const grant = context.browserBootstrap;
+    const candidateHash = crypto.createHash("sha256").update(token).digest("hex");
+    const expected = grant ? Buffer.from(grant.tokenHash, "hex") : Buffer.alloc(32);
+    const candidate = Buffer.from(candidateHash, "hex");
+    const authorized = Boolean(
+      grant
+        && !grant.consumed
+        && grant.expiresAt > Date.now()
+        && expected.length === candidate.length
+        && crypto.timingSafeEqual(expected, candidate),
+    );
+    if (!authorized) {
+      json(res, { error: "Invalid or expired local browser launch capability" }, 401);
+      return true;
+    }
+    // Consume before minting the durable browser session. No await/yield occurs
+    // between verification and this mutation, so concurrent replays cannot win.
+    grant!.consumed = true;
     const session = createAuthSession(cuttlefishHome, req, { kind: "local" });
     const secureBootstrap = !isLoopbackHost(Array.isArray(req.headers.host) ? req.headers.host[0] : req.headers.host);
     res.setHeader("Set-Cookie", authCookieHeaders(session.secret, session.device.id, secureBootstrap));

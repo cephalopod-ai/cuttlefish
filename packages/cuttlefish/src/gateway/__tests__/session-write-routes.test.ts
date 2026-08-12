@@ -236,6 +236,7 @@ describe("POST /api/sessions prompt validation (I-1)", () => {
     const req = makeJsonReq("POST", "/api/sessions", {
       prompt: "/delegate-authority approve,decide,plan,act\nResolve the release gate.",
     });
+    req.cuttlefishPrincipal = { kind: "admin" };
     req.headers["x-operator"] = "human@example.test";
     const cap = makeRes();
     await api.handleApiRequest(req, cap.res, ctx);
@@ -259,9 +260,11 @@ describe("POST /api/sessions prompt validation (I-1)", () => {
     ctx.sessionManager.getEngine = () => ({ name: "claude" }) as any;
 
     const disallowedModel = makeRes();
-    await api.handleApiRequest(makeJsonReq("POST", "/api/sessions", {
+    const disallowedModelReq = makeJsonReq("POST", "/api/sessions", {
       prompt: "/delegate-authority all\nResolve the release gate.",
-    }), disallowedModel.res, ctx);
+    });
+    disallowedModelReq.cuttlefishPrincipal = { kind: "admin" };
+    await api.handleApiRequest(disallowedModelReq, disallowedModel.res, ctx);
     expect(disallowedModel.status).toBe(403);
     expect(disallowedModel.body).toMatchObject({ code: "operator_delegation_model_forbidden" });
 
@@ -359,14 +362,16 @@ describe("POST /api/sessions prompt validation (I-1)", () => {
     reg.insertMessage(existing.id, "user", "existing HR work");
 
     const cap = makeRes();
+    const req = makeJsonReq("POST", "/api/sessions", {
+      employee: "hr-manager",
+      engine: "grok",
+      model: "grok-4.5",
+      effortLevel: "high",
+      prompt: "new isolated HR request",
+    });
+    req.cuttlefishPrincipal = { kind: "admin" };
     await api.handleApiRequest(
-      makeJsonReq("POST", "/api/sessions", {
-        employee: "hr-manager",
-        engine: "grok",
-        model: "grok-4.5",
-        effortLevel: "high",
-        prompt: "new isolated HR request",
-      }),
+      req,
       cap.res,
       ctx,
     );
@@ -413,12 +418,14 @@ describe("POST /api/sessions prompt validation (I-1)", () => {
     reg.insertMessage(existing.id, "user", "existing HR work");
 
     const sameModel = makeRes();
+    const sameModelReq = makeJsonReq("POST", "/api/sessions", {
+      employee: "hr-manager",
+      model: "claude-sonnet-5",
+      prompt: "continue the thread",
+    });
+    sameModelReq.cuttlefishPrincipal = { kind: "admin" };
     await api.handleApiRequest(
-      makeJsonReq("POST", "/api/sessions", {
-        employee: "hr-manager",
-        model: "claude-sonnet-5",
-        prompt: "continue the thread",
-      }),
+      sameModelReq,
       sameModel.res,
       ctx,
     );
@@ -426,13 +433,15 @@ describe("POST /api/sessions prompt validation (I-1)", () => {
     expect(sameModel.body.id).toBe(existing.id);
 
     const differentModel = makeRes();
+    const differentModelReq = makeJsonReq("POST", "/api/sessions", {
+      employee: "hr-manager",
+      model: "opus",
+      effortLevel: "medium",
+      prompt: "switch models",
+    });
+    differentModelReq.cuttlefishPrincipal = { kind: "admin" };
     await api.handleApiRequest(
-      makeJsonReq("POST", "/api/sessions", {
-        employee: "hr-manager",
-        model: "opus",
-        effortLevel: "medium",
-        prompt: "switch models",
-      }),
+      differentModelReq,
       differentModel.res,
       ctx,
     );
@@ -452,8 +461,10 @@ describe("POST /api/sessions prompt validation (I-1)", () => {
     ctx.sessionManager.getEngine = () => ({ name: "claude" }) as any;
 
     const direct = makeRes();
+    const directReq = makeJsonReq("POST", "/api/sessions", { employee: "hr-manager", prompt: "Direct operator request" });
+    directReq.cuttlefishPrincipal = { kind: "admin" };
     await api.handleApiRequest(
-      makeJsonReq("POST", "/api/sessions", { employee: "hr-manager", prompt: "Direct operator request" }),
+      directReq,
       direct.res,
       ctx,
     );

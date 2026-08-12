@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import type { Engine, CuttlefishConfig } from "../shared/types.js";
 import { loadConfig, normalizeClaudeEngineConfig } from "../shared/config.js";
@@ -103,6 +103,15 @@ function configuredConnectorNames(config: CuttlefishConfig): string[] {
 
 export async function startGateway(config: CuttlefishConfig): Promise<GatewayCleanup> {
   const bootId = randomUUID().slice(0, 8);
+  const browserBootstrapToken = process.env.CUTTLEFISH_BROWSER_BOOTSTRAP_TOKEN;
+  delete process.env.CUTTLEFISH_BROWSER_BOOTSTRAP_TOKEN;
+  const browserBootstrap = browserBootstrapToken
+    ? {
+        tokenHash: createHash("sha256").update(browserBootstrapToken).digest("hex"),
+        expiresAt: Date.now() + 60_000,
+        consumed: false,
+      }
+    : undefined;
 
   configureLogger({
     level: config.logging.level,
@@ -437,6 +446,7 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
     reloadOrg,
     backgroundActivity,
     gatewayAuthToken,
+    browserBootstrap,
     runSemaphore,
   };
   const emailService = new EmailService(currentConfig.email, {

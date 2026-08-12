@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { useEffect } from "react"
 
 const getAuthState = vi.fn()
 const bootstrapLocalAuth = vi.fn()
+const hasBrowserBootstrapCapability = vi.fn()
 const pairBrowser = vi.fn()
 const logoutBrowser = vi.fn()
 const createPairingCode = vi.fn()
@@ -12,6 +14,7 @@ const unpairDevice = vi.fn()
 vi.mock("@/lib/auth", () => ({
   getAuthState: (...args: unknown[]) => getAuthState(...args),
   bootstrapLocalAuth: (...args: unknown[]) => bootstrapLocalAuth(...args),
+  hasBrowserBootstrapCapability: (...args: unknown[]) => hasBrowserBootstrapCapability(...args),
   pairBrowser: (...args: unknown[]) => pairBrowser(...args),
   logoutBrowser: (...args: unknown[]) => logoutBrowser(...args),
   createPairingCode: (...args: unknown[]) => createPairingCode(...args),
@@ -24,6 +27,8 @@ import { AuthGate, AuthProvider, useAuth } from "./auth-provider"
 beforeEach(() => {
   getAuthState.mockReset()
   bootstrapLocalAuth.mockReset()
+  hasBrowserBootstrapCapability.mockReset()
+  hasBrowserBootstrapCapability.mockReturnValue(true)
   pairBrowser.mockReset()
   logoutBrowser.mockReset()
   createPairingCode.mockReset()
@@ -122,6 +127,88 @@ describe("AuthProvider/AuthGate", () => {
 
     expect(await screen.findByText(/Pair This Browser/i)).toBeTruthy()
     expect(screen.queryByText("Private App")).toBeNull()
+  })
+
+  it("shows pairing for a local browser that was not opened with a launch capability", async () => {
+    hasBrowserBootstrapCapability.mockReturnValue(false)
+    getAuthState.mockResolvedValue({
+      authRequired: true,
+      authenticated: false,
+      canBootstrapLocal: true,
+      networkExposed: false,
+    })
+
+    render(
+      <AuthProvider>
+        <AuthGate><div>Private App</div></AuthGate>
+      </AuthProvider>,
+    )
+
+    expect(await screen.findByText(/Pair This Browser/i)).toBeTruthy()
+    expect(bootstrapLocalAuth).not.toHaveBeenCalled()
+  })
+
+  it("falls back to pairing when a launch capability is rejected", async () => {
+    getAuthState
+      .mockResolvedValueOnce({
+        authRequired: true,
+        authenticated: false,
+        canBootstrapLocal: true,
+        networkExposed: false,
+      })
+      .mockResolvedValueOnce({
+        authRequired: true,
+        authenticated: false,
+        canBootstrapLocal: true,
+        networkExposed: false,
+      })
+    bootstrapLocalAuth.mockRejectedValue(new Error("Launch capability expired"))
+
+    render(
+      <AuthProvider>
+        <AuthGate><div>Private App</div></AuthGate>
+      </AuthProvider>,
+    )
+
+    expect(await screen.findByText(/Pair This Browser/i)).toBeTruthy()
+    expect(screen.getByText(/Launch capability expired/i)).toBeTruthy()
+    expect(screen.queryByText("Private App")).toBeNull()
+  })
+
+  it("keeps concurrent refreshes on the shared bootstrap result", async () => {
+    let authenticated = false
+    let finishBootstrap: (() => void) | undefined
+    const pendingBootstrap = new Promise<void>((resolve) => {
+      finishBootstrap = () => {
+        authenticated = true
+        resolve()
+      }
+    })
+    getAuthState.mockImplementation(async () => ({
+      authRequired: true,
+      authenticated,
+      canBootstrapLocal: true,
+      networkExposed: false,
+    }))
+    bootstrapLocalAuth.mockReturnValue(pendingBootstrap)
+
+    function ConcurrentRefresh() {
+      const auth = useAuth()
+      useEffect(() => {
+        void auth.refresh()
+      }, [auth.refresh])
+      return <div>Auth status: {auth.status}</div>
+    }
+
+    render(
+      <AuthProvider>
+        <ConcurrentRefresh />
+      </AuthProvider>,
+    )
+
+    await waitFor(() => expect(bootstrapLocalAuth).toHaveBeenCalledTimes(2))
+    finishBootstrap?.()
+    expect(await screen.findByText("Auth status: paired")).toBeTruthy()
   })
 
   it("exposes shared unpair behavior and refreshes the device list", async () => {

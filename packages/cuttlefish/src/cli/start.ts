@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { CUTTLEFISH_HOME } from "../shared/paths.js";
 import { loadConfig } from "../shared/config.js";
 import { startForeground, startDaemon, getStatus, restartDetached, waitForPortListening, readDaemonStartupLogTail } from "../gateway/lifecycle.js";
@@ -130,13 +131,17 @@ export async function runStart(opts: { daemon?: boolean; port?: number }): Promi
     // don't open a browser to a gateway that failed to bind.
     let openTimer: ReturnType<typeof setTimeout> | undefined;
     if (process.stdout.isTTY && !process.env.CUTTLEFISH_NO_OPEN) {
-      openTimer = setTimeout(() => openBrowser(url), 1200);
+      const browserBootstrapToken = randomBytes(32).toString("base64url");
+      process.env.CUTTLEFISH_BROWSER_BOOTSTRAP_TOKEN = browserBootstrapToken;
+      const browserUrl = `${url}/#bootstrap=${encodeURIComponent(browserBootstrapToken)}`;
+      openTimer = setTimeout(() => openBrowser(browserUrl), 1200);
       openTimer.unref?.();
     }
     try {
       await startForeground(config);
     } catch (err) {
       if (openTimer) clearTimeout(openTimer);
+      delete process.env.CUTTLEFISH_BROWSER_BOOTSTRAP_TOKEN;
       throw err;
     }
   }

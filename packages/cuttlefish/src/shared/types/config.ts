@@ -136,9 +136,9 @@ export interface CuttlefishConfig {
     allowFileCustomPaths?: boolean;
     /** Opt-in unsafe local convenience: allow POST /api/files {open:true} to open uploaded files. Default false. */
     allowFileOpen?: boolean;
-    /** Require token/cookie auth even on loopback. Network binds require auth by default. */
+    /** Legacy explicit enable; authentication is now required by default on every bind. */
     authRequired?: boolean;
-    /** Disable gateway auth. Refused on network binds unless insecureAllowUnauthenticatedNetwork is true. */
+    /** Explicitly disable gateway auth. Refused on network binds unless insecureAllowUnauthenticatedNetwork is true. */
     authDisabled?: boolean;
     /** Explicit escape hatch for unauthenticated 0.0.0.0/LAN/Tailscale binds. */
     insecureAllowUnauthenticatedNetwork?: boolean;

@@ -1,7 +1,7 @@
 import type { WebSocket } from "ws";
 import type { PtyViewEngine } from "../engines/pty-view-engine.js";
 import { getSession } from "../sessions/registry.js";
-import { CUTTLEFISH_HOME } from "../shared/paths.js";
+import { resolveSessionWorkspace } from "../sessions/session-workspace.js";
 import { logger } from "../shared/logger.js";
 
 const RAW_KEY_INPUTS = new Set(["\r", "\x1b", "\t", "\x03", "\x1b[A", "\x1b[B", "\x1b[C", "\x1b[D"]);
@@ -37,11 +37,15 @@ export function attachPtyWebSocket(ws: WebSocket, sessionId: string, engine: Pty
   const spawnIfNeeded = (cols: number, rows: number): boolean => {
     try {
       const session = getSession(sessionId);
+      if (!session) {
+        closeWithError("session not found");
+        return false;
+      }
       engine.ensureIdleSpawn(sessionId, {
-        engineSessionId: session?.engineSessionId ?? undefined,
-        model: session?.model ?? undefined,
-        effortLevel: session?.effortLevel ?? undefined,
-        cwd: CUTTLEFISH_HOME,
+        engineSessionId: session.engineSessionId ?? undefined,
+        model: session.model ?? undefined,
+        effortLevel: session.effortLevel ?? undefined,
+        cwd: resolveSessionWorkspace(session),
         cols,
         rows,
       });

@@ -149,6 +149,7 @@ describe("handleRateLimit — fallback guard (#40)", () => {
       model: "grok-build",
       bin: "grok",
       resumeSessionId: undefined,
+      cwd: expect.stringContaining(".cuttlefish-workspaces/sess-1"),
     }));
     expect(updateSessionMock).toHaveBeenCalledWith("sess-1", expect.objectContaining({
       engine: "grok",

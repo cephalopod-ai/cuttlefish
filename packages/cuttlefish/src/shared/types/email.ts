@@ -11,6 +11,10 @@ export interface EmailInboxConfig {
   autoIngest?: boolean;
   /** Sender allowlist for auto-ingest. Fail-closed: if omitted, no mail triggers an agent run. */
   allowFrom?: string[];
+  /** Receiving-MTA authserv-ids trusted to stamp aligned DMARC results. Setting
+   * this attests that the MTA strips untrusted inbound Authentication-Results
+   * headers before adding its own result. */
+  trustedAuthservIds?: string[];
   unreadOnly?: boolean;
   maxMessagesPerPoll?: number;
   /** Hard cap on a single raw message's size in bytes. Messages larger than this

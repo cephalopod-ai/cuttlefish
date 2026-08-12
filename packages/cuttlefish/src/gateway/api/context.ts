@@ -28,6 +28,9 @@ export interface ApiContext {
   apiToken?: string;
   /** Gateway auth token generated into gateway.json. Used by route-local high-risk mutation guards. */
   gatewayAuthToken?: string;
+  /** One-time, memory-only capability for the browser URL opened by a
+   * foreground `cuttlefish start`. Never written to gateway.json. */
+  browserBootstrap?: { tokenHash: string; expiresAt: number; consumed: boolean };
   /** Test-injectable Cuttlefish home for auth device storage. Defaults to shared CUTTLEFISH_HOME. */
   cuttlefishHome?: string;
   /** PTY-backed Claude engine used by CLI-mode message sends so the user sees the

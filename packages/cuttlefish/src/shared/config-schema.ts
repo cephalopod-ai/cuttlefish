@@ -180,6 +180,9 @@ function validateGateway(problems: string[], value: unknown): void {
     "turnStallRetries",
     "allowFileCustomPaths",
     "allowFileOpen",
+    "authRequired",
+    "authDisabled",
+    "insecureAllowUnauthenticatedNetwork",
     "fileReadRoots",
     "allowArbitraryFileRead",
     "exposeResolvedFilePaths",
@@ -196,6 +199,9 @@ function validateGateway(problems: string[], value: unknown): void {
   if (value.turnStallRetries !== undefined) validateNumber(problems, "gateway.turnStallRetries", value.turnStallRetries);
   if (value.allowFileCustomPaths !== undefined) validateBoolean(problems, "gateway.allowFileCustomPaths", value.allowFileCustomPaths);
   if (value.allowFileOpen !== undefined) validateBoolean(problems, "gateway.allowFileOpen", value.allowFileOpen);
+  if (value.authRequired !== undefined) validateBoolean(problems, "gateway.authRequired", value.authRequired);
+  if (value.authDisabled !== undefined) validateBoolean(problems, "gateway.authDisabled", value.authDisabled);
+  if (value.insecureAllowUnauthenticatedNetwork !== undefined) validateBoolean(problems, "gateway.insecureAllowUnauthenticatedNetwork", value.insecureAllowUnauthenticatedNetwork);
   if (value.fileReadRoots !== undefined) validateStringArray(problems, "gateway.fileReadRoots", value.fileReadRoots);
   if (value.allowArbitraryFileRead !== undefined) validateBoolean(problems, "gateway.allowArbitraryFileRead", value.allowArbitraryFileRead);
   if (value.exposeResolvedFilePaths !== undefined) validateBoolean(problems, "gateway.exposeResolvedFilePaths", value.exposeResolvedFilePaths);
@@ -433,6 +439,7 @@ function validateEmailInbox(problems: string[], path: string, value: unknown): v
     "folder",
     "autoIngest",
     "allowFrom",
+    "trustedAuthservIds",
     "unreadOnly",
     "maxMessagesPerPoll",
     "maxMessageBytes",
@@ -448,6 +455,7 @@ function validateEmailInbox(problems: string[], path: string, value: unknown): v
   if (value.folder !== undefined) validateString(problems, `${path}.folder`, value.folder);
   if (value.autoIngest !== undefined) validateBoolean(problems, `${path}.autoIngest`, value.autoIngest);
   if (value.allowFrom !== undefined) validateStringArray(problems, `${path}.allowFrom`, value.allowFrom);
+  if (value.trustedAuthservIds !== undefined) validateStringArray(problems, `${path}.trustedAuthservIds`, value.trustedAuthservIds);
   if (value.unreadOnly !== undefined) validateBoolean(problems, `${path}.unreadOnly`, value.unreadOnly);
   if (value.maxMessagesPerPoll !== undefined) validateNumber(problems, `${path}.maxMessagesPerPoll`, value.maxMessagesPerPoll);
   if (value.maxMessageBytes !== undefined) validateNumber(problems, `${path}.maxMessageBytes`, value.maxMessageBytes);

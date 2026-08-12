@@ -485,11 +485,18 @@ export async function handleSessionWriteRoutes(
     const employeeName = coercePortalEmployee(body.employee, config.portal?.portalName);
     const principal = (req as HttpRequest & { cuttlefishPrincipal?: GatewayPrincipal }).cuttlefishPrincipal;
     const isParentedRequest = typeof body.parentSessionId === "string" && body.parentSessionId.trim().length > 0;
+    if (principal?.kind === "session" && [body.cwd, body.workspaceProfile, body.engine, body.model, body.effortLevel].some((value) => value !== undefined && value !== null && value !== "")) {
+      json(res, {
+        error: "Session-scoped callers cannot override child workspace or engine selection",
+        code: "session_child_profile_forbidden",
+      }, 403);
+      return true;
+    }
     // HR is an operator-facing advisory lane. It is deliberately not a worker
     // that managers, agents, or orchestration flows can delegate to; otherwise
     // singleton reuse can cross-contaminate a human HR thread and lose a child
     // callback. Human operators retain direct, top-level HR access.
-    if (isHrHumanOnlyBlocked(employeeName, { isDirectTopLevelHumanRequest: !isParentedRequest && principal?.kind !== "session" })) {
+    if (isHrHumanOnlyBlocked(employeeName, { isDirectTopLevelHumanRequest: !isParentedRequest && principal?.kind === "admin" })) {
       json(res, {
         error: "HR / Org Steward accepts direct top-level requests from a human operator only",
         code: "hr_human_only",
@@ -530,7 +537,7 @@ export async function handleSessionWriteRoutes(
     const userId = resolveUserHeader(req.headers, config.gateway.userHeader);
     const requestedDelegationScopes = parseOperatorDelegationScopes(prompt);
     if (requestedDelegationScopes) {
-      if (principal?.kind === "session") {
+      if (principal?.kind !== "admin") {
         json(res, { error: "Only a direct human operator message can delegate operator authority", code: "operator_delegation_human_only" }, 403);
         return true;
       }
