@@ -4,7 +4,7 @@ import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { CUTTLEFISH_HOME } from "../shared/paths.js";
 import { loadConfig } from "../shared/config.js";
-import { startForeground, startDaemon, getStatus, restartDetached, waitForPortListening, readDaemonStartupLogTail } from "../gateway/lifecycle.js";
+import { startForeground, startDaemon, getStatus, waitForPortListening, readDaemonStartupLogTail } from "../gateway/lifecycle.js";
 import { compareSemver, getPackageVersion, getInstanceVersion } from "../shared/version.js";
 import { ensureDefaultInstance } from "./instances.js";
 
@@ -82,19 +82,15 @@ export async function runStart(opts: { daemon?: boolean; port?: number }): Promi
   }
   ensureDefaultInstance(config.gateway.port);
 
-  // If a gateway is already running, `start` becomes a clean restart instead of
-  // the old racy double-boot (new daemon SIGTERMs the old, then races its
-  // graceful shutdown into EADDRINUSE). Always hand off to the detached helper:
-  // an inline foreground stop from inside a gateway session kills the PTY that is
-  // running this command before it can start the replacement.
+  // `start` is idempotent. Restarts remain an explicit operator action through
+  // `cuttlefish restart`, avoiding an unexpected interruption of active runs.
   const status = getStatus(config.gateway.port);
   if (status.error) {
     console.error(`Error: ${status.error}`);
     process.exit(1);
   }
   if (status.running) {
-    if (restartDetached()) console.log("Gateway already running — restarting in background.");
-    else console.log("Gateway restart is already in progress.");
+    console.log("Gateway already running.");
     return;
   }
 

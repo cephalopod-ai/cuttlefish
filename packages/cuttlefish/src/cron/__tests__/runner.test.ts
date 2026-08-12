@@ -143,4 +143,20 @@ describe("runCronJob — latency alerting", () => {
     const alertMsg = (connector.sendMessage as any).mock.calls[0][1];
     expect(alertMsg).toContain("failed");
   });
+
+  it("does not append or alert a terminal result after a watchdog outcome", async () => {
+    const { appendRunLog } = await import("../jobs.js");
+    vi.mocked(appendRunLog).mockClear();
+    const connector = makeMockConnector();
+    const connectors = new Map<string, Connector>([["slack", connector]]);
+
+    await runCronJob(makeJob(), makeMockSessionManager(), makeConfig({ alertThresholdMs: 1 }), connectors, {
+      runId: "timed-out-run",
+      shouldRecordTerminal: () => false,
+    });
+
+    expect(appendRunLog).toHaveBeenCalledTimes(1);
+    expect(appendRunLog).toHaveBeenCalledWith("test-job", expect.objectContaining({ status: "running" }));
+    expect(connector.sendMessage).not.toHaveBeenCalled();
+  });
 });

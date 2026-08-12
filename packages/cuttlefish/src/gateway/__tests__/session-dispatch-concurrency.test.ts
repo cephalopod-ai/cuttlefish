@@ -68,6 +68,42 @@ describe("dispatchWebSessionRun concurrency cap (Ledger-0007 Finding 2)", () => 
     expect(runSemaphore.inFlightCount).toBe(0);
   });
 
+  it("does not let same-session followers starve an unrelated session", async () => {
+    const { dispatch, reg, SessionQueue, Semaphore } = await setup();
+    const runModule = await import("../run-web-session.js");
+    const started: string[] = [];
+    vi.mocked(runModule.runWebSession).mockImplementation(async (current) => {
+      started.push(current.id);
+      if (current.sessionKey === "web:hot") await gate;
+    });
+    const runSemaphore = new Semaphore(2);
+    const queue = new SessionQueue();
+    const ctx = {
+      getConfig: () => ({ gateway: {}, engines: { default: "claude" }, sessions: { maxConcurrentRuns: 2 } }),
+      connectors: new Map(),
+      startTime: Date.now(),
+      emit: vi.fn(),
+      sessionManager: { getEngine: () => ({} as any), getQueue: () => queue },
+      runSemaphore,
+    } as any;
+
+    const hotFirst = makeSession(reg, "web:hot");
+    const hotFollower = makeSession(reg, "web:hot");
+    const unrelated = makeSession(reg, "web:other");
+    const runs = [
+      dispatch.dispatchWebSessionRun(hotFirst, "first", {} as any, ctx.getConfig(), ctx),
+      dispatch.dispatchWebSessionRun(hotFollower, "second", {} as any, ctx.getConfig(), ctx),
+      dispatch.dispatchWebSessionRun(unrelated, "other", {} as any, ctx.getConfig(), ctx),
+    ];
+
+    await vi.waitFor(() => expect(started).toContain(unrelated.id));
+    expect(started).toContain(hotFirst.id);
+    expect(started).not.toContain(hotFollower.id);
+    releaseGate!();
+    await Promise.all(runs);
+    expect(runSemaphore.inFlightCount).toBe(0);
+  });
+
   it("is a no-op (unbounded) when no runSemaphore is configured on the context", async () => {
     const { dispatch, reg, SessionQueue } = await setup();
     const queue = new SessionQueue();

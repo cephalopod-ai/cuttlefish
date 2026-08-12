@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import net from "node:net";
-import { waitForPortListening, waitForPortFree } from "../lifecycle.js";
+import { buildDaemonEnvironment, waitForPortListening, waitForPortFree } from "../lifecycle.js";
 
 /**
  * Pick a free ephemeral port by briefly binding one and reading it back.
@@ -61,5 +61,37 @@ describe("waitForPortFree", () => {
     const port = await freePort();
     const free = await waitForPortFree(port, 3_000);
     expect(free).toBe(true);
+  });
+
+  it.skipIf(process.platform !== "darwin")("ignores established client sockets after the listener closes", async () => {
+    const port = await freePort();
+    let accepted: net.Socket | undefined;
+    const server = net.createServer((socket) => { accepted = socket; });
+    await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));
+    const client = net.createConnection({ port, host: "127.0.0.1" });
+    await new Promise<void>((resolve, reject) => {
+      client.once("connect", resolve);
+      client.once("error", reject);
+    });
+    server.close();
+
+    try {
+      expect(await waitForPortFree(port, 1_000)).toBe(true);
+    } finally {
+      client.destroy();
+      accepted?.destroy();
+    }
+  });
+});
+
+describe("buildDaemonEnvironment", () => {
+  it("forwards an in-memory CLI port override to the detached child", () => {
+    const env = buildDaemonEnvironment(
+      { gateway: { host: "127.0.0.1", port: 8891 } } as any,
+      { EXISTING: "kept" },
+    );
+
+    expect(env.EXISTING).toBe("kept");
+    expect(env.CUTTLEFISH_GATEWAY_PORT).toBe("8891");
   });
 });

@@ -381,11 +381,14 @@ export class OrchestrationRuntime {
   }
 
   listHolds(opts: { includeInactive?: boolean } = {}): HoldRecord[] {
-    this.store.expireHolds();
+    this.expireHoldsAndWakeQueue();
     return this.store.listHolds(opts);
   }
 
   createHold(input: HoldCreateInput): HoldRecord {
+    if (uniqueNonEmpty(input.roles ?? []).length > 0) {
+      throw new Error("role-based holds are not supported; specify explicit workerIds");
+    }
     const now = new Date();
     const ttlMs = Math.max(1, Math.floor(input.ttlMs));
     const record: HoldRecord = {
@@ -422,8 +425,12 @@ export class OrchestrationRuntime {
   }
 
   cancelHold(holdId: string): HoldRecord | undefined {
+    const wasActive = this.store.getHold(holdId)?.state === "active";
     const hold = this.store.cancelHold(holdId);
     appendOrchestrationAudit("orchestration.hold.cancel", { holdId, state: hold?.state ?? "not_found" }, this.dbPath);
+    if (wasActive && hold?.state === "cancelled" && !this.closing && !this.getControlState().queuePaused) {
+      void this.retryQueuedWithLiveHeadroom();
+    }
     return hold;
   }
 
@@ -739,9 +746,11 @@ export class OrchestrationRuntime {
   private startReaper(): void {
     if (this.reaper) return;
     this.expireLeases();
+    this.expireHoldsAndWakeQueue();
     this.reapWorktrees();
     this.reaper = setInterval(() => {
       this.expireLeases();
+      this.expireHoldsAndWakeQueue();
       this.reapWorktrees();
       this.pruneRetainedFiles();
       // CONC-006: recoverStaleDispatchingContinuations() previously only ran
@@ -756,6 +765,14 @@ export class OrchestrationRuntime {
       this.recoverStaleDispatchingContinuations();
     }, this.reaperIntervalMs);
     this.reaper.unref?.();
+  }
+
+  private expireHoldsAndWakeQueue(): number {
+    const expired = this.store.expireHolds();
+    if (expired > 0 && !this.closing && !this.getControlState().queuePaused) {
+      void this.retryQueuedWithLiveHeadroom();
+    }
+    return expired;
   }
 
   private pruneRetainedFiles(): void {

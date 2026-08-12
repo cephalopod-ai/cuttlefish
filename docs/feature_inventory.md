@@ -293,10 +293,16 @@
 
 ### Scheduled engine-exit status
 - `packages/cuttlefish/src/cron/runner.ts`
+- `packages/cuttlefish/src/cron/scheduler.ts`
 - `packages/cuttlefish/src/gateway/run-web-session.ts`
 - A cron session whose engine exits with an interrupted raw result is recorded as an
   error. Quiet preemption cleanup cannot erase that engine failure from the
   operator-visible cron outcome.
+- When `maxRunMs` expires, the scheduler records one `timed_out` outcome and
+  requests engine interruption. Its non-overlap guard remains active until the
+  original run promise actually settles, preventing a second run from racing a
+  child process whose termination has not been confirmed. Late success/error
+  settlement cannot replace the persisted timeout.
 
 ### Settings orchestration controls
 - `packages/web/src/routes/settings/page.tsx`
@@ -325,6 +331,9 @@
 - Detached restart helpers are serialized by a restart lock, so repeated
   `cuttlefish restart` requests coalesce. Configuration-load failures from
   `cuttlefish start` are emitted as concise CLI errors.
+- `cuttlefish start` is idempotent when the gateway is already running; only
+  the explicit `restart` command interrupts active sessions. Detached starts
+  preserve an in-memory `--port` override in the daemon child.
 - The skills CLI reads the seeded object-shaped `skills.json` manifest and
   remains compatible with legacy flat-array manifests.
 
@@ -358,7 +367,10 @@
 - `cuttlefish run --mode single_worker|single_worker_with_review|dual_lane|architecture|local_heavy --task <file> [--json]` posts a live task brief to the running gateway; the daemon must have `orchestration.enabled: true`.
 - `cuttlefish dual-lane select --task-id <id> --coordinator-id <id> --winner openai|anthropic [--json]` explicitly selects a completed dual-lane winner, archives the loser diff/metadata, and removes the loser worktree.
 - `cuttlefish dual-lane apply --task-id <id> --coordinator-id <id> --winner openai|anthropic [--json]` applies the selected or selection-required winner patch to the base repo as unstaged changes only.
-- `cuttlefish holds list|create|extend|cancel` manages TTL-bounded orchestration holds with manager-scoped authorization.
+- `cuttlefish holds list|create|extend|cancel` manages TTL-bounded,
+  manager-scoped holds for explicit worker IDs. Role-only holds are rejected
+  until the allocator can enforce them. Cancelling or expiring a hold wakes
+  queued continuations immediately.
 - `cuttlefish artifacts view --task-id <id> --coordinator-id <id> --kind diff|prompt|output [--json]` displays raw dual-lane artifacts for authenticated operators.
 - `cuttlefish continuations list [--json]` lists durable blocked/failed continuation records through the running gateway.
 - `cuttlefish continuations retry --task-id <id> --coordinator-id <id> [--json]` re-attempts a previously failed live continuation through the running gateway.
@@ -417,6 +429,9 @@
   lifecycle is `cached -> dispatching -> ingested | error`, where `dispatching` is a
   durable pre-dispatch claim so a crash/replay never re-runs the agent (at-most-once);
   a message stuck in `dispatching` surfaces as degraded inbox health.
+- A synchronous auto-ingest failure remains unread for the next IMAP poll.
+  Attachment persistence rolls back registry rows and files as a unit when any
+  attachment in the message fails.
 - `GET /api/email/inboxes` lists configured inboxes plus health.
 - `POST /api/email/inboxes/:id/check` performs an immediate authenticated poll
   for one inbox.

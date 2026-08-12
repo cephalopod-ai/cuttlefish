@@ -60,7 +60,7 @@ export function emailAuthTrusted(
 }
 import type { EmailMailboxClient } from "./client.js";
 import { normalizeEmail, MAX_RAW_MESSAGE_BYTES } from "./normalize.js";
-import { insertFile } from "../sessions/registry.js";
+import { deleteFile, insertFile } from "../sessions/registry.js";
 
 export interface EmailServiceDeps {
   client: EmailMailboxClient;
@@ -85,27 +85,50 @@ async function persistAttachment(messageId: string, attachment: {
   // Sanitize attachment names before persisting because inbound MIME filenames are untrusted.
   const filename = sanitizeUploadFilename(attachment.filename);
   const dir = path.join(FILES_DIR, artifactId);
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const filePath = path.join(dir, filename);
-  fs.writeFileSync(filePath, attachment.content, { mode: 0o600 });
-  insertFile({
-    id: artifactId,
-    filename,
-    size: attachment.size,
-    mimetype: attachment.contentType,
-    path: filePath,
-    sha256: crypto.createHash("sha256").update(attachment.content).digest("hex"),
-    artifactKind: "downloaded",
-    sourcePath: `email:${messageId}:${attachment.id}`,
-  });
-  return {
-    id: attachment.id,
-    filename,
-    contentType: attachment.contentType,
-    size: attachment.size,
-    artifactId,
-    contentId: attachment.contentId ?? null,
-  };
+  try {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const filePath = path.join(dir, filename);
+    fs.writeFileSync(filePath, attachment.content, { mode: 0o600 });
+    insertFile({
+      id: artifactId,
+      filename,
+      size: attachment.size,
+      mimetype: attachment.contentType,
+      path: filePath,
+      sha256: crypto.createHash("sha256").update(attachment.content).digest("hex"),
+      artifactKind: "downloaded",
+      sourcePath: `email:${messageId}:${attachment.id}`,
+    });
+    return {
+      id: attachment.id,
+      filename,
+      contentType: attachment.contentType,
+      size: attachment.size,
+      artifactId,
+      contentId: attachment.contentId ?? null,
+    };
+  } catch (err) {
+    deleteFile(artifactId);
+    fs.rmSync(dir, { recursive: true, force: true });
+    throw err;
+  }
+}
+
+function cleanupPersistedAttachment(attachment: EmailAttachmentRecord): void {
+  if (!attachment.artifactId) return;
+  deleteFile(attachment.artifactId);
+  fs.rmSync(path.join(FILES_DIR, attachment.artifactId), { recursive: true, force: true });
+}
+
+async function persistAttachments(messageId: string, attachments: Parameters<typeof persistAttachment>[1][]): Promise<EmailAttachmentRecord[]> {
+  const persisted: EmailAttachmentRecord[] = [];
+  try {
+    for (const attachment of attachments) persisted.push(await persistAttachment(messageId, attachment));
+    return persisted;
+  } catch (err) {
+    for (const attachment of persisted) cleanupPersistedAttachment(attachment);
+    throw err;
+  }
 }
 
 export class EmailService {
@@ -204,6 +227,7 @@ export class EmailService {
             sessionId: null,
             error: reason,
           }, { status: "error", sessionId: null, error: reason }));
+          await this.client.markSeen(inbox, message.providerMessageId).catch(() => {});
           continue;
         }
 
@@ -214,7 +238,7 @@ export class EmailService {
         const normalized = await normalizeEmail(inbox, message.providerMessageId, message.raw);
         const persistedAttachments: EmailAttachmentRecord[] = existingMessage?.attachments?.length
           ? existingMessage.attachments
-          : await Promise.all(normalized.attachments.map((attachment) => persistAttachment(normalized.record.id, attachment)));
+          : await persistAttachments(normalized.record.id, normalized.attachments);
         // Preserve the prior lifecycle status (never downgrade error -> cached) and
         // write the message + its ingest/dedup state atomically so the two tables
         // cannot diverge.
@@ -254,6 +278,7 @@ export class EmailService {
               { ...persisted, status: "ingested", sessionId, error: null },
               { status: "ingested", sessionId, error: null },
             ));
+            await this.client.markSeen(inbox, message.providerMessageId).catch(() => {});
           } catch (err) {
             const error = err instanceof Error ? err.message : String(err);
             results.push(persistEmailMessageWithState(
@@ -261,9 +286,8 @@ export class EmailService {
               { status: "error", sessionId: null, error },
             ));
           }
-          // Mark seen after recording (regardless of ingest outcome); errored
-          // messages are left unseen so they can be retried on the next poll.
-          await this.client.markSeen(inbox, message.providerMessageId).catch(() => {});
+          // Successful dispatches are marked seen. Synchronous failures remain
+          // unread so the real IMAP query and the test fake both retry them.
         } else {
           results.push(persisted);
           // Mark cached/already-handled messages seen so unread count stays accurate.

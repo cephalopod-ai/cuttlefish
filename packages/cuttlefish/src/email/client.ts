@@ -14,6 +14,7 @@ export interface EmailMailboxClient {
 export class FakeEmailMailboxClient implements EmailMailboxClient {
   private readonly messages = new Map<string, EmailFetchResult[]>();
   private readonly failures = new Set<string>();
+  private readonly seenByInbox = new Map<string, Set<string>>();
   readonly seenIds: string[] = [];
 
   setMessages(inboxId: string, messages: EmailFetchResult[]): void {
@@ -26,11 +27,17 @@ export class FakeEmailMailboxClient implements EmailMailboxClient {
 
   async fetchUnread(inbox: EmailInboxConfig): Promise<EmailFetchResult[]> {
     if (this.failures.has(inbox.id)) throw new Error(`simulated inbox failure for ${inbox.id}`);
-    return [...(this.messages.get(inbox.id) ?? [])];
+    const messages = this.messages.get(inbox.id) ?? [];
+    if (inbox.unreadOnly === false) return [...messages];
+    const seen = this.seenByInbox.get(inbox.id);
+    return messages.filter((message) => !seen?.has(message.providerMessageId));
   }
 
-  async markSeen(_inbox: EmailInboxConfig, providerMessageId: string): Promise<void> {
+  async markSeen(inbox: EmailInboxConfig, providerMessageId: string): Promise<void> {
     this.seenIds.push(providerMessageId);
+    const seen = this.seenByInbox.get(inbox.id) ?? new Set<string>();
+    seen.add(providerMessageId);
+    this.seenByInbox.set(inbox.id, seen);
   }
 }
 

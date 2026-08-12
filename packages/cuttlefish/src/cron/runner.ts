@@ -13,7 +13,13 @@ export async function runCronJob(
   sessionManager: SessionManager,
   config: CuttlefishConfig,
   connectors: Map<string, Connector>,
-  opts: { runId?: string; trigger?: CronRunEntry["trigger"]; sessionKey?: string } = {},
+  opts: {
+    runId?: string;
+    trigger?: CronRunEntry["trigger"];
+    sessionKey?: string;
+    /** False after an external watchdog has already persisted the terminal outcome. */
+    shouldRecordTerminal?: () => boolean;
+  } = {},
 ): Promise<CronRunEntry> {
   const startTime = Date.now();
   const runId = opts.runId ?? crypto.randomUUID();
@@ -110,6 +116,10 @@ export async function runCronJob(
       error: sessionFailed ? (finalSession?.lastError ?? "session ended in error") : null,
       resultPreview: null,
     };
+    if (opts.shouldRecordTerminal?.() === false) {
+      logger.warn(`Cron job "${job.name}" settled after its terminal outcome was already recorded; ignoring late ${finalEntry.status}`);
+      return finalEntry;
+    }
     appendRunLog(job.id, finalEntry);
     if (sessionFailed) {
       logger.error(`Cron job "${job.name}" failed (session error) in ${durationMs}ms: ${finalEntry.error}`);
@@ -164,6 +174,10 @@ export async function runCronJob(
       error: message,
       resultPreview: null,
     };
+    if (opts.shouldRecordTerminal?.() === false) {
+      logger.warn(`Cron job "${job.name}" failed after its terminal outcome was already recorded; ignoring late error`);
+      return finalEntry;
+    }
     appendRunLog(job.id, finalEntry);
     logger.error(`Cron job "${job.name}" failed: ${message}`);
 

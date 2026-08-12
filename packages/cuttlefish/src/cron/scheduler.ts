@@ -128,53 +128,58 @@ export function startCronJobRun(
   }
 
   const runId = crypto.randomUUID();
+  const runStartedAt = new Date().toISOString();
   // Minted here (not inside runCronJob) so the watchdog below can look up and
   // kill this run's session without waiting for the run to resolve.
   const sessionKey = `cron:${job.id}:${Date.now()}`;
   inFlight.add(job.id);
   activeRunId.set(job.id, runId);
 
-  // Audit E2: the overlap guard previously cleared ONLY when runCronJob settled.
-  // A hung PTY, a multi-hour rate-limit wait, or a stuck route therefore wedged
-  // the schedule permanently — every future fire logged "skipped: previous run
-  // still in flight" and never ran. A watchdog force-clears this run's guard
-  // after maxRunMs so the schedule recovers; the underlying promise may still
-  // settle later (its cleanup is a no-op once another run owns the guard).
+  // The overlap guard belongs to the actual run promise. A watchdog can record
+  // timeout and request interruption, but it cannot safely declare a same-user
+  // child process terminated; the guard remains until settlement confirms it.
   const releaseGuard = () => {
     if (activeRunId.get(job.id) !== runId) return; // a newer run owns the guard now
     activeRunId.delete(job.id);
     inFlight.delete(job.id);
   };
   const maxRunMs = config?.cron?.maxRunMs ?? DEFAULT_CRON_MAX_RUN_MS;
+  let timedOut = false;
   let watchdog: ReturnType<typeof setTimeout> | undefined;
   if (maxRunMs > 0) {
     watchdog = setTimeout(() => {
       if (activeRunId.get(job.id) !== runId) return;
+      timedOut = true;
       const killed = killStuckCronSession(
         sessionManager,
         sessionKey,
         `Interrupted: cron job "${job.name}" exceeded maxRunMs (${maxRunMs}ms)`,
       );
       logger.error(
-        `Cron job "${job.name}" exceeded maxRunMs (${maxRunMs}ms); clearing the overlap guard so the schedule is not wedged` +
-          (killed ? "; killed the stuck engine process" : "; no interruptible engine process found to kill"),
+        `Cron job "${job.name}" exceeded maxRunMs (${maxRunMs}ms); retaining the overlap guard until the run settles` +
+          (killed ? "; requested engine interruption" : "; no interruptible engine process found"),
       );
+      const finishedAt = new Date().toISOString();
       appendRunLog(job.id, {
         runId,
-        timestamp: new Date().toISOString(),
-        startedAt: new Date().toISOString(),
-        finishedAt: new Date().toISOString(),
+        timestamp: finishedAt,
+        startedAt: runStartedAt,
+        finishedAt,
         status: "timed_out",
         trigger,
-        error: `Run exceeded maxRunMs (${maxRunMs}ms); overlap guard force-cleared${killed ? " and engine process killed" : ""}`,
+        error: `Run exceeded maxRunMs (${maxRunMs}ms); overlap guard retained pending termination${killed ? " after requesting engine interruption" : ""}`,
         resultPreview: null,
       });
-      releaseGuard();
     }, maxRunMs);
     watchdog.unref?.();
   }
 
-  const promise = runCronJob(job, sessionManager, config, connectors, { runId, trigger, sessionKey })
+  const promise = runCronJob(job, sessionManager, config, connectors, {
+    runId,
+    trigger,
+    sessionKey,
+    shouldRecordTerminal: () => !timedOut,
+  })
     .finally(() => {
       if (watchdog) clearTimeout(watchdog);
       releaseGuard();

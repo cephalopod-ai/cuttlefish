@@ -60,7 +60,7 @@ describe("startCronJobRun", () => {
     vi.useRealTimers();
   });
 
-  it("kills the wedged run's engine process when the watchdog fires, not just the overlap guard", async () => {
+  it("requests interruption but retains overlap protection until a timed-out run settles", async () => {
     vi.useFakeTimers();
     const { startCronJobRun, isCronJobRunning } = await import("../scheduler.js");
 
@@ -83,10 +83,32 @@ describe("startCronJobRun", () => {
     expect(kill).toHaveBeenCalledWith("session-1", expect.stringContaining("exceeded maxRunMs"));
     expect(appendRunLog).toHaveBeenCalledWith("job-1", expect.objectContaining({
       status: "timed_out",
-      error: expect.stringContaining("engine process killed"),
+      error: expect.stringContaining("overlap guard retained"),
     }));
 
-    // The overlap guard is also cleared so the schedule is not wedged.
+    expect(isCronJobRunning("job-1")).toBe(true);
+    const overlapping = startCronJobRun(makeJob(), sessionManager as any, config, new Map(), "scheduled");
+    expect(overlapping.started).toBe(false);
+    if (!overlapping.started) expect(overlapping.run.status).toBe("skipped_overlap");
+  });
+
+  it("suppresses a late terminal write and releases overlap only after settlement", async () => {
+    vi.useFakeTimers();
+    const { startCronJobRun, isCronJobRunning } = await import("../scheduler.js");
+    let resolveRun!: (entry: CronRunEntry) => void;
+    const pending = new Promise<CronRunEntry>((resolve) => { resolveRun = resolve; });
+    runCronJob.mockReturnValueOnce(pending);
+    const config = { cron: { maxRunMs: 1000 } } as any;
+    const result = startCronJobRun(makeJob(), {} as any, config, new Map(), "scheduled");
+    expect(result.started).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(isCronJobRunning("job-1")).toBe(true);
+    const runnerOpts = runCronJob.mock.calls[0][4];
+    expect(runnerOpts.shouldRecordTerminal()).toBe(false);
+
+    resolveRun(makeRun("success"));
+    if (result.started) await result.promise;
     expect(isCronJobRunning("job-1")).toBe(false);
   });
 

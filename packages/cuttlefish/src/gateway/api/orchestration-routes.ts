@@ -132,13 +132,17 @@ export async function handleOrchestrationRoutes(
     }
     const workerIds = parseStringArray(body?.workerIds);
     const roles = parseStringArray(body?.roles);
+    if (roles.length > 0) {
+      json(res, { error: "role-based holds are not supported; specify explicit workerIds" }, 400);
+      return true;
+    }
     const auth = authorizeHoldManager(managerName, workerIds, context);
     if (!auth.ok) {
       json(res, { error: auth.error }, 403);
       return true;
     }
-    if (workerIds.length === 0 && roles.length === 0) {
-      json(res, { error: "at least one role or workerId is required" }, 400);
+    if (workerIds.length === 0) {
+      json(res, { error: "at least one workerId is required" }, 400);
       return true;
     }
     const ttlMs = typeof body?.ttlMs === "number" && Number.isFinite(body.ttlMs) ? body.ttlMs : 60 * 60 * 1000;

@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { withTempCuttlefishHome } from "../../test-utils/cuttlefish-home.js";
 
@@ -80,7 +81,7 @@ describe("EmailService", () => {
     const second = await service.checkInbox("ops");
 
     expect(first.checked).toBe(1);
-    expect(second.checked).toBe(1);
+    expect(second.checked).toBe(0);
     expect(onAutoIngest).toHaveBeenCalledTimes(1);
 
     const messages = service.listMessages("ops", 10);
@@ -136,6 +137,41 @@ describe("EmailService", () => {
     expect(onAutoIngest).toHaveBeenCalledTimes(2);
     expect(service.listMessages("ops", 10)[0].status).toBe("error");
     expect(store.getEmailIngestState("ops", "uid-err")?.status).toBe("error");
+    expect(client.seenIds).toEqual([]);
+  });
+
+  it("rolls back earlier attachment artifacts when a later attachment fails", async () => {
+    const reg = await import("../../sessions/registry.js");
+    const { FakeEmailMailboxClient } = await import("../client.js");
+    const { EmailService } = await import("../service.js");
+    reg.initDb();
+
+    const rawWithTwoAttachments = Buffer.from(RAW_EMAIL.toString("utf-8").replace(
+      "--b1--",
+      [
+        "--b1",
+        'Content-Type: text/plain; name="second.txt"',
+        'Content-Disposition: attachment; filename="second.txt"',
+        "Content-Transfer-Encoding: base64",
+        "",
+        "c2Vjb25k",
+        "--b1--",
+      ].join("\r\n"),
+    ));
+    const duplicateId = "00000000-0000-4000-8000-000000000001";
+    vi.spyOn(crypto, "randomUUID").mockReturnValue(duplicateId);
+    const client = new FakeEmailMailboxClient();
+    client.setMessages("ops", [{ providerMessageId: "uid-two-attachments", raw: rawWithTwoAttachments }]);
+    const service = new EmailService({
+      enabled: true,
+      inboxes: [{ id: "ops", address: "ops@example.com", username: "ops@example.com", password: "secret", imapHost: "imap.example.com" }],
+    }, { client });
+
+    const result = await service.checkInbox("ops");
+
+    expect(result.checked).toBe(0);
+    expect(reg.getFile(duplicateId)).toBeUndefined();
+    expect(reg.listFiles()).toEqual([]);
   });
 
   it("does not auto-ingest unless the inbox explicitly opts in (fail-closed)", async () => {

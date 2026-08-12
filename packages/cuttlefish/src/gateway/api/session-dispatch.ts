@@ -271,21 +271,21 @@ export function dispatchWebSessionRun(
 ): Promise<void> {
   const run = async () => {
     const sessionKey = session.sessionKey || session.sourceRef;
-    // Ledger-0007 Finding 2: bound concurrent turn dispatches gateway-wide.
-    // "A run" is one execution of this closure — the same try/finally already
-    // brackets every exit path (success, error, the queue's own skip-if-
-    // cancelled branch), so acquiring/releasing here covers all of them.
-    // Background callers (queue-replay, notifications, mid_pair's own review
-    // passes) block via `acquire()` rather than failing fast — there's no
-    // synchronous HTTP caller here to return a 429 to.
-    const release = context.runSemaphore
-      ? await context.runSemaphore.acquire(config.sessions?.maxConcurrentRuns)
-      : undefined;
     try {
       await context.sessionManager.getQueue().enqueue(sessionKey, async () => {
-        context.emit("session:started", { sessionId: session.id });
-        if (opts?.queueItemId) context.emit("queue:updated", { sessionId: session.id, sessionKey });
-        await runWebSession(session, prompt, engine, config, context, opts?.attachments, opts?.resourceContext);
+        // Acquire global capacity only after this session reaches the head of
+        // its serialization queue. Same-session followers must not consume
+        // permits while they are still ineligible to execute.
+        const release = context.runSemaphore
+          ? await context.runSemaphore.acquire(config.sessions?.maxConcurrentRuns)
+          : undefined;
+        try {
+          context.emit("session:started", { sessionId: session.id });
+          if (opts?.queueItemId) context.emit("queue:updated", { sessionId: session.id, sessionKey });
+          await runWebSession(session, prompt, engine, config, context, opts?.attachments, opts?.resourceContext);
+        } finally {
+          release?.();
+        }
       }, opts?.queueItemId);
     } finally {
       const latest = getSession(session.id);
@@ -294,7 +294,6 @@ export function dispatchWebSessionRun(
         patchSessionTransportMeta(session.id, { operatorDelegation: expiredGrant as any });
         context.emit("session:updated", { sessionId: session.id });
       }
-      release?.();
       if (opts?.queueItemId) context.emit("queue:updated", { sessionId: session.id, sessionKey });
       if (opts?.queueItemId) dispatchPendingWebQueueHeadForSessionKey(context, sessionKey);
     }

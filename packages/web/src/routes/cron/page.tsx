@@ -264,10 +264,14 @@ export default function CronPage() {
           }), 2500)
           return
         }
-        if (current.status === "error" || current.status === "skipped_overlap") {
+        if (current.status === "error" || current.status === "skipped_overlap" || current.status === "timed_out") {
           setTriggering((prev) => ({
             ...prev,
-            [job.id]: { label: current.status === "skipped_overlap" ? "Already running" : "Failed", tone: "error", error: current.error },
+            [job.id]: {
+              label: current.status === "skipped_overlap" ? "Already running" : current.status === "timed_out" ? "Timed out" : "Failed",
+              tone: "error",
+              error: current.error,
+            },
           }))
           refresh()
           return

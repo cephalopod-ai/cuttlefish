@@ -591,6 +591,26 @@ describe("GET /api/orchestration/*", () => {
     expect(runtime.listHolds({ includeInactive: true })).toEqual([]);
     runtime.close();
   });
+
+  it("rejects role holds instead of persisting an unenforced constraint", async () => {
+    const runtime = new OrchestrationRuntime({ config: config(), dbPath, startReaper: false });
+    const ctx = makeCtx(config());
+    ctx.orchestration = { runtime };
+    const cap = makeRes();
+
+    await handleOrchestrationRoutes(
+      "POST",
+      "/api/orchestration/holds",
+      cap.res,
+      ctx,
+      makeJsonReq({ managerName: "any-manager", roles: ["seniorImplementer"], ttlMs: 60_000 }, "/api/orchestration/holds"),
+    );
+
+    expect(cap.status).toBe(400);
+    expect(cap.body.error).toContain("role-based holds are not supported");
+    expect(runtime.listHolds({ includeInactive: true })).toEqual([]);
+    runtime.close();
+  });
 });
 
 async function get(pathname: string, ctx: ApiContext) {

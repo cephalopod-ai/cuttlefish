@@ -20,6 +20,11 @@ try {
   console.error(`\n[cuttlefish] ${err instanceof Error ? err.message : String(err)}\n`);
   process.exit(1);
 }
+const portOverride = Number(process.env.CUTTLEFISH_GATEWAY_PORT);
+delete process.env.CUTTLEFISH_GATEWAY_PORT;
+if (Number.isInteger(portOverride) && portOverride >= 1 && portOverride <= 65_535) {
+  config.gateway.port = portOverride;
+}
 
 try {
   loadPtyModule();

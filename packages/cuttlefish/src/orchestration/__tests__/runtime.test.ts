@@ -353,6 +353,52 @@ describe("OrchestrationRuntime continuation dispatch", () => {
     runtime.close();
   });
 
+  it("cancelling a hold wakes a queued continuation without another resource event", async () => {
+    const runtime = new OrchestrationRuntime({ config: twoWorkerConfig(), dbPath, startReaper: false });
+    const hold = runtime.createHold({
+      managerName: "exec",
+      workerIds: ["alphaImplementer"],
+      ttlMs: 60_000,
+      reason: "reserve alpha",
+    });
+    const occupied = runtime.requestAllocationWithLiveHeadroom(request("occupied", "occupied-coord"));
+    expect((await occupied).ok).toBe(true);
+    const blocked = await runtime.requestAllocationWithLiveHeadroom(request("queued-after-cancel", "queued-coord"));
+    expect(blocked.ok).toBe(false);
+    runtime.queueLiveContinuation(continuation("queued-after-cancel", "queued-coord"));
+    const resumed: string[] = [];
+    runtime.setResumeQueuedRunHandler(async ({ continuation: resumedContinuation }) => {
+      resumed.push(resumedContinuation.taskId);
+    });
+
+    runtime.cancelHold(hold.holdId);
+
+    await waitFor(() => resumed.includes("queued-after-cancel"));
+    runtime.close();
+  });
+
+  it("expiring a hold on the reaper wakes a queued continuation", async () => {
+    const runtime = new OrchestrationRuntime({ config: twoWorkerConfig(), dbPath, reaperIntervalMs: 5 });
+    runtime.createHold({
+      managerName: "exec",
+      workerIds: ["alphaImplementer"],
+      ttlMs: 20,
+      reason: "brief reserve",
+    });
+    const occupied = await runtime.requestAllocationWithLiveHeadroom(request("occupied-expiry", "occupied-expiry-coord"));
+    expect(occupied.ok).toBe(true);
+    const blocked = await runtime.requestAllocationWithLiveHeadroom(request("queued-after-expiry", "expiry-coord"));
+    expect(blocked.ok).toBe(false);
+    runtime.queueLiveContinuation(continuation("queued-after-expiry", "expiry-coord"));
+    const resumed: string[] = [];
+    runtime.setResumeQueuedRunHandler(async ({ continuation: resumedContinuation }) => {
+      resumed.push(resumedContinuation.taskId);
+    });
+
+    await waitFor(() => resumed.includes("queued-after-expiry"));
+    runtime.close();
+  });
+
   it("loads empirical routing scores while skipping corrupt telemetry lines", async () => {
     const prevHome = process.env.CUTTLEFISH_HOME;
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "cuttlefish-orch-runtime-telemetry-"));

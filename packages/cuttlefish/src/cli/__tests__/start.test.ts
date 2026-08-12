@@ -44,14 +44,17 @@ afterAll(() => {
 });
 
 describe("runStart", () => {
-  it("uses the detached restart helper when a gateway is already running, even without --daemon", async () => {
+  it("is idempotent when a gateway is already running", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
     await runStart({ daemon: false });
 
-    expect(lifecycle.restartDetached).toHaveBeenCalledTimes(1);
+    expect(lifecycle.restartDetached).not.toHaveBeenCalled();
     expect(lifecycle.getStatus).toHaveBeenCalledWith(8888);
     expect(instances.ensureDefaultInstance).toHaveBeenCalledWith(8888);
     expect(lifecycle.startForeground).not.toHaveBeenCalled();
     expect(lifecycle.startDaemon).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith("Gateway already running.");
+    log.mockRestore();
   });
 
   it("checks occupancy against the overridden port before starting", async () => {
@@ -62,6 +65,7 @@ describe("runStart", () => {
     expect(lifecycle.getStatus).toHaveBeenCalledWith(8891);
     expect(instances.ensureDefaultInstance).toHaveBeenCalledWith(8891);
     expect(lifecycle.startDaemon).toHaveBeenCalledTimes(1);
+    expect(lifecycle.startDaemon).toHaveBeenCalledWith(expect.objectContaining({ gateway: expect.objectContaining({ port: 8891 }) }));
     expect(lifecycle.restartDetached).not.toHaveBeenCalled();
   });
 

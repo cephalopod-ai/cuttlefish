@@ -527,6 +527,14 @@ export class InteractiveClaudeEngine implements InterruptibleEngine, PtyViewEngi
           cwd: opts.cwd || CUTTLEFISH_HOME,
           env,
         });
+        // Re-check after the PTY spawn itself yields. A real turn can claim and
+        // adopt this session while the idle spawn is in flight; the late idle
+        // process must never displace that turn's lifecycle entry.
+        if (this.lifecycle.getWarm(cuttlefishSessionId) || this.active.has(cuttlefishSessionId)) {
+          proc.kill();
+          proxy.stop();
+          return;
+        }
         const handle = this.wireProcToStream(cuttlefishSessionId, proc, port ? proxy : undefined);
         // Idle spawn carries no --append-system-prompt (the view-only PTY); mark it so
         // the first real turn through run() cold-respawns with the persona + sentinel.

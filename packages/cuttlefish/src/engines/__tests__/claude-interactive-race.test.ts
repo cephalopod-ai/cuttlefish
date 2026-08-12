@@ -56,6 +56,7 @@ vi.mock("../shared/claude-settings.js", () => ({
 
 import { InteractiveClaudeEngine } from "../claude-interactive.js";
 import { PtyLifecycleManager } from "../pty-lifecycle.js";
+import { spawnPty } from "../pty-stream.js";
 
 const flush = () => new Promise((r) => setTimeout(r, 15));
 
@@ -120,5 +121,31 @@ describe("InteractiveClaudeEngine — kill->respawn race (Item C)", () => {
     ptyC.fireExit(); // current PTY dies mid-turn with no Stop hook
     const r = await p;
     expect(r.error).toMatch(/claude process exited/);
+  });
+
+  it("a late idle spawn cannot replace a real turn that claimed the session", async () => {
+    const idlePty = makeFakePty();
+    const turnPty = makeFakePty();
+    let resolveIdleSpawn: ((pty: FakePty) => void) | undefined;
+    const idleSpawn = new Promise<FakePty>((resolve) => { resolveIdleSpawn = resolve; });
+    vi.mocked(spawnPty)
+      .mockImplementationOnce(() => idleSpawn as any)
+      .mockImplementationOnce(() => turnPty as any);
+
+    engine.ensureIdleSpawn("idle-run-race", { cwd: "/tmp" });
+    await flush();
+    const run = engine.run({ sessionId: "idle-run-race", prompt: "real turn", cwd: "/tmp" } as any);
+    await flush();
+    expect(lifecycle.getWarm("idle-run-race")?.pid).toBe(turnPty.pid);
+
+    resolveIdleSpawn?.(idlePty);
+    await flush();
+    expect(idlePty._killCalled).toBe(true);
+    expect(turnPty._killCalled).toBe(false);
+    expect(lifecycle.getWarm("idle-run-race")?.pid).toBe(turnPty.pid);
+
+    hookCb!({ hook_event_name: "SessionStart", session_id: "claude-real" });
+    hookCb!({ hook_event_name: "Stop", last_assistant_message: "done" });
+    await expect(run).resolves.toMatchObject({ result: "done" });
   });
 });

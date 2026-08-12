@@ -266,7 +266,7 @@ export function startDaemon(config: CuttlefishConfig): void {
     child = spawn(nodeExecutable, [entryScript], {
       detached: true,
       stdio: ["ignore", startupLogFd, startupLogFd],
-      env: { ...process.env, CUTTLEFISH_HOME },
+      env: buildDaemonEnvironment(config),
     });
   } finally {
     // spawn() dup's the fd for the child; the parent's copy must be closed
@@ -281,6 +281,17 @@ export function startDaemon(config: CuttlefishConfig): void {
   }
 
   child.unref();
+}
+
+export function buildDaemonEnvironment(
+  config: CuttlefishConfig,
+  base: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  return {
+    ...base,
+    CUTTLEFISH_HOME,
+    CUTTLEFISH_GATEWAY_PORT: String(config.gateway.port),
+  };
 }
 
 /**
@@ -475,8 +486,8 @@ function findPidOnPort(port: number): number | null {
     } else {
       const output = execSync(
         process.platform === "darwin"
-          ? `/usr/sbin/lsof -ti tcp:${port}`
-          : `lsof -ti tcp:${port}`,
+          ? `/usr/sbin/lsof -nP -tiTCP:${port} -sTCP:LISTEN`
+          : `lsof -nP -tiTCP:${port} -sTCP:LISTEN`,
         { encoding: "utf-8" },
       ).trim();
       if (!output) return null;
