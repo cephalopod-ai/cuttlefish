@@ -4,6 +4,7 @@
 |---|---|---|---|---|---|
 | `README.md` | public overview | canonical | maintainers | reconciled 2026-08-12: source setup uses `pnpm run setup`, version badge matches the package, and model discovery claims match implemented behavior | Keep current; link durable docs and diagrams. |
 | `CHANGELOG.md` | release/version history | canonical | maintainers | reconciled 2026-08-12: duplicate current-release heading removed while preserving the failed `v0.1.0` pre-release record | Keep every release cut recorded here and distinguish a published package release from a failed pre-release. |
+| `docs/changes/releases/v0.23.7.md` | release statement | current | maintainers | created 2026-08-12 from the validated repair campaign and release diff | Publish with `v0.23.7` and retain as the tagged release record. |
 | `docs/RELEASING.md` | release contract | canonical | maintainers | added 2026-07-21 | Use before publishing npm, GitHub archives, or the Homebrew formula. |
 | `docs/INSTALL.md` | operator install guide | canonical | operators | added 2026-07-21 | Windows/macOS/Linux install matrix; `install.ps1` / platform archives / source. |
 | `docs/INDEX.md` | docs index | canonical | `AGENTS.md` docs rules | reconciled 2026-08-12 with the current playtest and comprehensive audit/repair records | Keep aligned with tracked docs and local-record index entries. |

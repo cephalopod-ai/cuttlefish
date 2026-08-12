@@ -16,6 +16,9 @@ artifacts unless explicitly published.
 - `docs/RELEASING.md`: release contract for the npm package, GitHub platform
   archives, and Homebrew formula; documents the historical failed `v0.1.0`
   pre-release accurately.
+- `docs/changes/releases/v0.23.7.md`: v0.23.7 public release statement covering
+  trust-boundary hardening, runtime/data-integrity repairs, Windows readiness,
+  and operator-impacting upgrade notes.
 - `docs/USER_MANUAL.md`
 - `docs/QDRANT_SETUP.md`: maintained user manual for setup, workflows,
   persistence, recovery, and troubleshooting.

@@ -2,7 +2,83 @@
 
 ## [Unreleased]
 
-### Bug Fixes
+## [0.23.7] - 2026-08-12
+
+Cuttlefish 0.23.7 is a security and reliability maintenance release. It
+closes gateway trust-boundary gaps, isolates agent work from control-plane
+state, repairs lifecycle and scheduling races, makes destructive deletion
+atomic, improves CLI and dashboard behavior, and completes the Windows 11 x64
+runtime path accumulated since 0.23.6.
+
+### Security
+- Gateway authentication is now required by default on loopback and network
+  binds. Interactive `cuttlefish start` opens the dashboard with a short-lived,
+  single-use launch capability; loopback location alone can no longer mint an
+  administrator session. Manual browsers use normal pairing, and
+  `gateway.authDisabled` is the explicit opt-out.
+- Delegated operator authority and direct-human claims now require an
+  authenticated administrator principal. Scoped agents cannot grant
+  themselves approval authority or override their server-selected engine,
+  model, workspace profile, or working directory.
+- Implicit, fallback, and retry sessions use server-owned workspaces outside
+  the Cuttlefish control home, closing the audited gateway paths that exposed
+  configuration, tokens, and databases as an agent workspace.
+- Connector, email, and persisted-history content now uses random prompt
+  boundaries and neutralizes reserved markers so external text cannot close
+  its untrusted envelope early.
+- Email auto-ingest now requires an exact trusted receiver/authserv ID and an
+  aligned DMARC pass; duplicate or ambiguous authentication results fail
+  closed. Deployments must have the border MTA strip inbound
+  `Authentication-Results` and stamp its own trusted result.
+- Session-scoped project, management, and ticket-session reads were tightened;
+  static dashboard responses now include CSP, clickjacking, and MIME-sniffing
+  protections; the Homebrew workflow no longer interpolates an untrusted
+  branch value into shell source.
+
+### Reliability and Data Integrity
+- `cuttlefish start` is idempotent when a healthy gateway already owns the
+  configured port. Detached `--port` overrides survive daemon launch, startup
+  waits for readiness instead of reporting false success, and Unix ownership
+  detection considers listening sockets rather than unrelated clients.
+- Per-session dispatch ordering now precedes global capacity acquisition.
+  Orchestration holds require explicit workers, and hold cancellation or
+  expiry wakes queued work without another resource event.
+- Cron timeout state remains authoritative until engine settlement: overlap
+  protection stays engaged, one `timed_out` result is recorded, late
+  finalizers cannot overwrite it, and the dashboard renders the timeout.
+- Failed email ingest remains unread, and attachment persistence rolls back
+  registry rows and files as a unit after partial failure.
+- Fixed Claude idle-spawn ownership, continuation compare-and-swap, stale-run
+  recovery, checkpoint resume, cron-edit, transport-metadata, and archive
+  race/data-loss windows found by the audit campaigns.
+- Session and employee deletion now coordinates registry, board, queue,
+  engine, and org state through focused lifecycle services. Board changes are
+  restored on failure, bulk deletion is all-or-nothing, and irreversible
+  cleanup happens only after protected persistence succeeds.
+- Org retirement now protects managers with reports; duplicate employee names
+  are deterministic and visible; interrupted department renames recover from a
+  durable intent marker; persisted org writers enforce rank/lifecycle bounds.
+
+### CLI and Dashboard
+- Bare `cuttlefish` prints help and exits successfully; JSON-capable failures
+  return one structured error document on stdout; empty skill searches fail
+  before invoking an external registry client.
+- Source installation now uses `pnpm run setup` instead of pnpm's unrelated
+  shell-profile setup command.
+- Headless Codex places sandbox and approval options where current Codex
+  accepts them while retaining `workspace-write` and no-approval policy.
+- Rapid Send double-clicks no longer become an unintended Stop. The Whisper
+  model download dialog now has complete modal/focus behavior, and dual-lane
+  Apply requires explicit lane selection and confirmation.
+- Settings preferences remain usable after schema changes; unknown routes show
+  a real 404; single-key shortcuts can be disabled; toast timers pause across
+  hover and focus; chat announcements and mic controls are keyboard/screen-
+  reader accessible.
+- Fully implemented systemd startup commands are now registered in the CLI,
+  and missing interactive engines are rejected before PTY WebSocket upgrade
+  instead of leaving the terminal waiting indefinitely.
+
+### Windows Compatibility
 - Windows compatibility: engine-binary resolution now probes PATHEXT
   extensions (`claude.exe`/`codex.cmd` for a bare `claude`/`codex`) and the
   npm/pnpm global shim directories, preferring native `.exe` binaries. A
@@ -30,17 +106,16 @@
   TTS sidecar uses the `venv\Scripts\python.exe` layout plus `python`/`py`
   interpreter discovery on Windows.
 
-### CI
+### Performance, Dependencies, and CI
+- Reduced orchestration allocation and snapshot I/O, and stabilized manager
+  review, inter-agent, inter-department, and feedback loops.
+- Updated Baileys to `7.0.0-rc14` and refreshed the compatible runtime and
+  development dependency set; package metadata now matches the lockfile.
 - CI now runs a `windows-2022` job on every PR (typecheck, full build,
   Windows-focused unit tests, CLI smoke check) under the native shells, so
   win32 regressions are caught before the release-packaging lane.
-- Windows compatibility: `cuttlefish skills`/`setup` invoke the `npx.cmd`
-  shim through the shell on Windows, with skill args allowlist-validated so
-  cmd.exe metacharacters are refused (POSIX keeps the shell-less spawn).
-- Windows compatibility: gateway file reads recognize `C:\`/UNC absolute
-  paths (`path.isAbsolute` instead of a leading-slash check), and the Kokoro
-  TTS sidecar uses the `venv\Scripts\python.exe` layout plus `python`/`py`
-  interpreter discovery on Windows.
+- Added and stabilized focused regressions for the security, lifecycle,
+  concurrency, deletion, CLI, accessibility, Windows, and browser scenarios.
 
 ## [0.23.6] - 2026-07-25
 
