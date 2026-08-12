@@ -38,4 +38,7 @@ governance, validation, and operating rules.
 Cloud/remote agents or agents without local Giles/Dory access may ignore Giles
 and Dory requirements; those requirements are waived when the tools are
 unavailable.
+
+`.giles` artifacts are local advisory sidecar outputs that may be unavailable
+without Giles; canonical compliance data lives under `governance/logs/`.
 <!-- GILES:GEMINI-DOCS-GOVERNANCE:END -->

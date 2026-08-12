@@ -6,6 +6,7 @@ artifacts unless explicitly published.
 
 ## Current Operator Docs
 
+- [docs/AGENTS.md](AGENTS.md): documentation-subtree guidance (defers to root `AGENTS.md`).
 - `README.md`: public overview and install/use workflow.
 - `CHANGELOG.md`: release/version history, including the failed `v0.1.0`
   pre-release and its non-installable status.
@@ -69,6 +70,11 @@ artifacts unless explicitly published.
 
 ## Session and Audit Log Summaries
 
+- `docs/audits/082026/2026-08-12-cuttlefish-scenario-playtest.md` and
+  `docs/logs/session/082026/2026-08-12-cuttlefish-scenario-playtest.md`:
+  live Chrome/CLI pass over the 225-card Cuttlefish library; 43 cards were
+  exercised and five new setup, Codex, lifecycle, chat-send, and CLI-help
+  defects were confirmed without touching operator state.
 - `docs/audits/072026/2026-07-22-full-agent-skills-repo-audit.md`,
   `docs/audits/072026/2026-07-22-full-agent-skills-findings.json`,
   `docs/audits/072026/2026-07-22-full-agent-skills-vulnerability-details.md`,
