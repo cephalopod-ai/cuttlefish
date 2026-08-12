@@ -379,10 +379,10 @@ describe("OrchestrationRuntime continuation dispatch", () => {
 
   it("expiring a hold on the reaper wakes a queued continuation", async () => {
     const runtime = new OrchestrationRuntime({ config: twoWorkerConfig(), dbPath, reaperIntervalMs: 5 });
-    runtime.createHold({
+    const hold = runtime.createHold({
       managerName: "exec",
       workerIds: ["alphaImplementer"],
-      ttlMs: 20,
+      ttlMs: 60_000,
       reason: "brief reserve",
     });
     const occupied = await runtime.requestAllocationWithLiveHeadroom(request("occupied-expiry", "occupied-expiry-coord"));
@@ -394,6 +394,11 @@ describe("OrchestrationRuntime continuation dispatch", () => {
     runtime.setResumeQueuedRunHandler(async ({ continuation: resumedContinuation }) => {
       resumed.push(resumedContinuation.taskId);
     });
+
+    // Arm the short expiry only after the queue and resume handler are ready.
+    // A short TTL during async setup can elapse under full-suite CPU load and
+    // make the precondition assertion race the reaper.
+    runtime.extendHold(hold.holdId, 20);
 
     await waitFor(() => resumed.includes("queued-after-expiry"));
     runtime.close();
