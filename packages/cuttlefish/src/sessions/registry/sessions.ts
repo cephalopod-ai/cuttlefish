@@ -627,15 +627,18 @@ export function deleteSessions(ids: string[]): number {
   const db = initDb();
   const placeholders = ids.map(() => '?').join(',');
   const txn = db.transaction(() => {
-    const sessionKeys = db.prepare(
-      `SELECT session_key as sessionKey FROM sessions WHERE id IN (${placeholders})`,
-    ).all(...ids) as Array<{ sessionKey: string }>;
+    const sessionRows = db.prepare(
+      `SELECT id, session_key as sessionKey FROM sessions WHERE id IN (${placeholders})`,
+    ).all(...ids) as Array<{ id: string; sessionKey: string }>;
+    // This is a lifecycle transaction, not a best-effort batch: never remove a
+    // subset when one requested session disappeared before the transaction.
+    if (sessionRows.length !== ids.length) return 0;
     db.prepare(`DELETE FROM messages WHERE session_id IN (${placeholders})`).run(...ids);
     db.prepare(`DELETE FROM queue_items WHERE session_id IN (${placeholders})`).run(...ids);
-    if (sessionKeys.length > 0) {
-      const keyPlaceholders = sessionKeys.map(() => '?').join(',');
+    if (sessionRows.length > 0) {
+      const keyPlaceholders = sessionRows.map(() => '?').join(',');
       db.prepare(`DELETE FROM queue_pauses WHERE session_key IN (${keyPlaceholders})`)
-        .run(...sessionKeys.map((row) => row.sessionKey));
+        .run(...sessionRows.map((row) => row.sessionKey));
     }
     // See deleteSession: owned approvals are deleted; soft email links are unlinked.
     db.prepare(`DELETE FROM approvals WHERE session_id IN (${placeholders})`).run(...ids);

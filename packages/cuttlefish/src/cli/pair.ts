@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { gatewayBaseUrl, readGatewayInfo } from "../gateway/gateway-info.js";
 import { loadConfig } from "../shared/config.js";
 import { GATEWAY_INFO_FILE, CUTTLEFISH_HOME } from "../shared/paths.js";
+import { printCliError } from "./output.js";
 
 export interface PairingCodeResponse {
   code: string;
@@ -159,13 +160,11 @@ export function formatPairedDevices(devices: PairedDeviceResponse[]): string {
 export async function runPair(opts: { json?: boolean } = {}): Promise<void> {
   const connection = gatewayConnection();
   if (!fs.existsSync(CUTTLEFISH_HOME)) {
-    console.error("Gateway is not set up. Run \"cuttlefish setup\" first.");
-    process.exitCode = 1;
+    printCliError("Gateway is not set up. Run \"cuttlefish setup\" first.", opts.json);
     return;
   }
   if (!connection) {
-    console.error("Gateway auth token was not found. Start Cuttlefish first, then run \"cuttlefish pair\".");
-    process.exitCode = 1;
+    printCliError("Gateway auth token was not found. Start Cuttlefish first, then run \"cuttlefish pair\".", opts.json);
     return;
   }
 
@@ -174,21 +173,18 @@ export async function runPair(opts: { json?: boolean } = {}): Promise<void> {
     if (opts.json) console.log(JSON.stringify(pairing, null, 2));
     else console.log(formatPairingInstructions(pairing, connection.port));
   } catch (err) {
-    console.error(err instanceof Error ? err.message : String(err));
-    process.exitCode = 1;
+    printCliError(err, opts.json);
   }
 }
 
 export async function runUnpair(deviceId?: string, opts: { json?: boolean } = {}): Promise<void> {
   const connection = gatewayConnection();
   if (!fs.existsSync(CUTTLEFISH_HOME)) {
-    console.error("Gateway is not set up. Run \"cuttlefish setup\" first.");
-    process.exitCode = 1;
+    printCliError("Gateway is not set up. Run \"cuttlefish setup\" first.", opts.json);
     return;
   }
   if (!connection) {
-    console.error("Gateway auth token was not found. Start Cuttlefish first, then run \"cuttlefish unpair\".");
-    process.exitCode = 1;
+    printCliError("Gateway auth token was not found. Start Cuttlefish first, then run \"cuttlefish unpair\".", opts.json);
     return;
   }
 
@@ -203,7 +199,6 @@ export async function runUnpair(deviceId?: string, opts: { json?: boolean } = {}
     if (opts.json) console.log(JSON.stringify(result, null, 2));
     else console.log(result.current ? "Unpaired this browser." : `Unpaired ${deviceId}.`);
   } catch (err) {
-    console.error(err instanceof Error ? err.message : String(err));
-    process.exitCode = 1;
+    printCliError(err, opts.json);
   }
 }

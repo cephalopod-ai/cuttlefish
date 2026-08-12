@@ -112,6 +112,10 @@
 - Deleting a session archives its session-generated tickets; deleting an employee
   archives that employee's assigned tickets, so neither lifecycle action leaves
   a dangling board reference.
+- Session and employee deletion coordinates board archival through a lifecycle
+  service. Board files are restored if primary-record deletion fails, session
+  batches are all-or-none, and talk-graph/in-memory cleanup is emitted only after
+  durable deletion succeeds.
 
 ### Kanban optimistic save protection
 - `packages/cuttlefish/src/gateway/board-service.ts`
@@ -171,7 +175,19 @@
   session interruption path.
 - Disabled action controls explain the state boundary. Dual-lane apply refuses
   dirty base worktrees, missing winner worktrees, empty patches, and patch
-  conflicts; it applies only unstaged base-repo changes.
+  conflicts; it applies only unstaged base-repo changes. The dashboard enables
+  Apply only for the explicitly selected lane and requires confirmation naming
+  the lane, task, repository path, and unstaged-change effect.
+
+### Chat send and speech-modal interaction safety
+- `packages/web/src/components/chat/chat-input-composer.tsx`
+- `packages/web/src/components/stt/whisper-download-modal.tsx`
+- A submitted chat does not expose its Stop action until the original Send
+  gesture's rapid-repeat window has elapsed, so an ordinary double-click cannot
+  silently interrupt the turn.
+- The Whisper model download prompt is an announced modal dialog with labelled
+  title/description, initial focus, focus containment and restoration, and
+  Escape cancellation before a download begins.
 
 ### Organization agent create/edit panel
 - `packages/web/src/routes/org/page.tsx`
@@ -335,7 +351,12 @@
   the explicit `restart` command interrupts active sessions. Detached starts
   preserve an in-memory `--port` override in the daemon child.
 - The skills CLI reads the seeded object-shaped `skills.json` manifest and
-  remains compatible with legacy flat-array manifests.
+  remains compatible with legacy flat-array manifests. Empty or whitespace-only
+  `skills find` queries fail before starting the external registry client.
+- A bare `cuttlefish` invocation prints normal discovery help and exits zero.
+  Commands offering `--json` return a `{status:"error",message}` object on
+  stdout with a nonzero exit for action and parser failures; human-mode errors
+  remain concise on stderr.
 
 ### Startup (systemd) integration
 - `packages/cuttlefish/src/cli/startup.ts`
@@ -689,6 +710,13 @@
   - Kiro credit usage depends on the CLI footer text; if Kiro changes that footer, the local ledger may stop updating until the parser is updated.
   - No stable local Kiro quota endpoint is wired, so the gauge cannot verify account-side credit balance.
   - This source tree does not contain a scheduler/provider map architecture for routing Kiro to AWS. No Kiro-to-AWS provider mapping was added.
+
+### Codex CLI compatibility
+- `packages/cuttlefish/src/engines/codex.ts`
+- Headless Codex turns place workspace sandbox and approval-policy options at
+  the CLI's top level before `exec` or `exec resume`, matching current Codex
+  argument parsing while retaining `workspace-write` and `never` approval
+  policy.
 
 ### Context manager MVP
 - `packages/cuttlefish/src/engines/ollama.ts`

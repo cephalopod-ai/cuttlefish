@@ -86,6 +86,7 @@ function makeJsonReq(method: string, urlPath: string, body: unknown) {
       host: "localhost",
       "content-type": "application/json",
     },
+    cuttlefishPrincipal: { kind: "admin" },
   });
   return req;
 }

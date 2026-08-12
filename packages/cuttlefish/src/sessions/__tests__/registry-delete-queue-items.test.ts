@@ -61,6 +61,19 @@ describe("deleteSession/deleteSessions queue_items cleanup", () => {
     expect(queueRowCount(b.id)).toBe(0);
   });
 
+  it("deleteSessions leaves every row intact when any requested id is missing", () => {
+    const a = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:delq-atomic-a" });
+    const b = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:delq-atomic-b" });
+    reg.enqueueQueueItem(a.id, a.sessionKey, "a-1");
+    reg.enqueueQueueItem(b.id, b.sessionKey, "b-1");
+
+    expect(reg.deleteSessions([a.id, "missing-session", b.id])).toBe(0);
+    expect(sessionExists(a.id)).toBe(true);
+    expect(sessionExists(b.id)).toBe(true);
+    expect(queueRowCount(a.id)).toBe(1);
+    expect(queueRowCount(b.id)).toBe(1);
+  });
+
   it("deleteSession rolls back if a child-table delete fails mid-transaction", () => {
     const session = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:delq-rollback" });
     reg.insertMessage(session.id, "user", "keep me");

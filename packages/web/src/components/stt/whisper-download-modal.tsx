@@ -6,7 +6,7 @@
  * download it. Progress (downloadProgress) streams over `stt:*` WS events while
  * api.sttDownload() runs. Keep this dependency-free so any surface can mount it.
  */
-import React from "react"
+import React, { useEffect, useRef } from "react"
 
 interface WhisperDownloadModalProps {
   open: boolean
@@ -16,9 +16,47 @@ interface WhisperDownloadModalProps {
 }
 
 export function WhisperDownloadModal({ open, progress, onDownload, onCancel }: WhisperDownloadModalProps) {
+  const isDownloading = progress !== null
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const cancelRef = useRef<HTMLButtonElement>(null)
+  const downloadRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    ;(cancelRef.current ?? downloadRef.current)?.focus()
+    return () => previousFocus?.focus()
+  }, [open])
+
+  useEffect(() => {
+    if (open && isDownloading) dialogRef.current?.focus()
+  }, [isDownloading, open])
+
   if (!open) return null
 
-  const isDownloading = progress !== null
+  function onDialogKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Escape" && !isDownloading) {
+      event.preventDefault()
+      onCancel()
+      return
+    }
+    if (event.key !== "Tab") return
+    const controls = [...(dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), [href], [tabindex]:not([tabindex="-1"])') ?? [])]
+    if (controls.length === 0) {
+      event.preventDefault()
+      dialogRef.current?.focus()
+      return
+    }
+    const first = controls[0]
+    const last = controls[controls.length - 1]
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault()
+      last.focus()
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault()
+      first.focus()
+    }
+  }
 
   return (
     <div
@@ -26,8 +64,15 @@ export function WhisperDownloadModal({ open, progress, onDownload, onCancel }: W
       onClick={isDownloading ? undefined : onCancel}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="whisper-download-title"
+        aria-describedby="whisper-download-description"
+        tabIndex={-1}
         className="bg-[var(--bg)] rounded-[var(--radius-lg)] p-[var(--space-6)] max-w-[400px] w-[90%] shadow-[var(--shadow-overlay)]"
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={onDialogKeyDown}
       >
         <div className="w-12 h-12 rounded-[var(--radius-md)] bg-[var(--fill-secondary)] flex items-center justify-center mb-[var(--space-4)]">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -38,16 +83,16 @@ export function WhisperDownloadModal({ open, progress, onDownload, onCancel }: W
           </svg>
         </div>
 
-        <h3 className="text-[length:var(--text-headline)] font-[var(--weight-bold)] text-[var(--text-primary)] mb-[var(--space-2)]">
+        <h3 id="whisper-download-title" className="text-[length:var(--text-headline)] font-[var(--weight-bold)] text-[var(--text-primary)] mb-[var(--space-2)]">
           Enable voice input?
         </h3>
 
-        <p className="text-[length:var(--text-body)] text-[var(--text-secondary)] mb-[var(--space-5)] leading-[var(--leading-relaxed)]">
+        <p id="whisper-download-description" className="text-[length:var(--text-body)] text-[var(--text-secondary)] mb-[var(--space-5)] leading-[var(--leading-relaxed)]">
           This will download a speech recognition model (~500MB). Transcription runs locally on your server — no data leaves your network.
         </p>
 
         {isDownloading && (
-          <div className="mb-[var(--space-5)]">
+          <div className="mb-[var(--space-5)]" role="status" aria-live="polite">
             <div className="flex justify-between mb-[var(--space-2)] text-[length:var(--text-footnote)] text-[var(--text-tertiary)]">
               <span>Downloading model…</span>
               <span>{progress}%</span>
@@ -64,6 +109,7 @@ export function WhisperDownloadModal({ open, progress, onDownload, onCancel }: W
         <div className="flex gap-[var(--space-3)] justify-end">
           {!isDownloading && (
             <button
+              ref={cancelRef}
               onClick={onCancel}
               className="px-[var(--space-4)] py-[var(--space-2)] rounded-[var(--radius-md)] bg-[var(--fill-tertiary)] text-[var(--text-primary)] border-none cursor-pointer text-[length:var(--text-body)]"
             >
@@ -71,6 +117,7 @@ export function WhisperDownloadModal({ open, progress, onDownload, onCancel }: W
             </button>
           )}
           <button
+            ref={downloadRef}
             onClick={onDownload}
             disabled={isDownloading}
             className={`px-[var(--space-4)] py-[var(--space-2)] rounded-[var(--radius-md)] border-none text-[length:var(--text-body)] font-[var(--weight-semibold)] ${

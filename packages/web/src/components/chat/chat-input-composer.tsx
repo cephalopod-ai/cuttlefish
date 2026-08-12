@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { MicWaveform } from './mic-waveform'
 import type { useStt } from '@/hooks/use-stt'
 
@@ -45,7 +45,18 @@ export function ChatInputComposer({
   onSubmit,
   onInterrupt,
 }: ChatInputComposerProps) {
-  const showStop = loading && !!onInterrupt
+  const [interruptArmed, setInterruptArmed] = useState(false)
+  useEffect(() => {
+    if (!loading || !onInterrupt) {
+      setInterruptArmed(false)
+      return
+    }
+    // A second click from the original Send gesture can land after React has
+    // rendered loading=true. Keep that click inert before exposing Stop.
+    const timer = window.setTimeout(() => setInterruptArmed(true), 400)
+    return () => window.clearTimeout(timer)
+  }, [loading, onInterrupt])
+  const showStop = loading && !!onInterrupt && interruptArmed
 
   return (
     <div

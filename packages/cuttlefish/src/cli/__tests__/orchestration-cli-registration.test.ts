@@ -23,7 +23,7 @@ describe("shipped orchestration CLI registration (TS-RIG-001)", () => {
       stdio: "pipe",
     });
     expect(existsSync(cliEntry)).toBe(true);
-  }, 20_000);
+  }, 60_000);
 
   it("exposes every documented orchestration command group in shipped help", () => {
     const result = runCli(["--help"]);
@@ -35,6 +35,14 @@ describe("shipped orchestration CLI registration (TS-RIG-001)", () => {
     ]) {
       expect(result.stdout).toContain(command);
     }
+  });
+
+  it("treats a bare invocation as the successful discovery path", () => {
+    const result = runCli([]);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Usage: cuttlefish");
+    expect(result.stderr).toBe("");
   });
 
   it("runs workers, allocation dry-run, and simulation commands as JSON without durable scheduler state", () => {
@@ -64,6 +72,30 @@ describe("shipped orchestration CLI registration (TS-RIG-001)", () => {
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("--dry-run");
+  });
+
+  it("returns structured stdout for errors from --json actions", () => {
+    const result = runCli([
+      "scheduler", "allocate", join(orchestrationExamples, "task-standard.yaml"),
+      "--config-dir", orchestrationExamples, "--json",
+    ]);
+
+    expect(result.status).not.toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({
+      status: "error",
+      message: expect.stringContaining("--dry-run"),
+    });
+  });
+
+  it("returns structured stdout for global validation failures under --json", () => {
+    const result = runCli(["--instance", "not-cuttlefish", "unpair", "--json"]);
+
+    expect(result.status).not.toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({
+      status: "error",
+      message: expect.stringContaining("one local instance"),
+    });
+    expect(result.stderr).toBe("");
   });
 
   it("advertises the managed worktree command surface without executing it", () => {

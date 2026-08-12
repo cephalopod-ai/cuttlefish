@@ -9,6 +9,18 @@ import * as yaml from "js-yaml";
 const testHome = withTempCuttlefishHome("cuttlefish-org-dept-rename-");
 let tmpHome: string;
 
+function probeCaseSensitiveFilesystem(): boolean {
+  const dir = fs.mkdtempSync(path.join(process.env.TMPDIR || "/tmp", "cuttlefish-case-probe-"));
+  try {
+    fs.writeFileSync(path.join(dir, "probe"), "x");
+    return !fs.existsSync(path.join(dir, "PROBE"));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const CASE_SENSITIVE_FILESYSTEM = probeCaseSensitiveFilesystem();
+
 function makeRes() {
   let status = 200;
   const chunks: Buffer[] = [];
@@ -205,7 +217,7 @@ describe("PATCH /api/org/departments/:name", () => {
     expect(readEmployee("product", "cased").department).toBe("product");
   });
 
-  it("leaves a case-distinct sibling department untouched", async () => {
+  it.skipIf(!CASE_SENSITIVE_FILESYSTEM)("leaves a case-distinct sibling department untouched", async () => {
     // On a case-sensitive filesystem `org/platform/` and `org/Platform/` are two
     // unrelated departments. Renaming one must not rewrite the other's members:
     // only the lowercase directory moves, so rewriting both would strand the

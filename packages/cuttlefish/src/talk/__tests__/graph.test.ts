@@ -119,6 +119,18 @@ describe("maybeEmitTalkGraph", () => {
     maybeEmitTalkGraph("loner", "completed", { getSession, emit });
     expect(emit).not.toHaveBeenCalled();
   });
+  it("emits a removal from a captured session after the registry row is gone", () => {
+    seedTree();
+    const removed = sessions.get("emp1")!;
+    sessions.delete("emp1");
+    const emit = vi.fn();
+    maybeEmitTalkGraph("emp1", "removed", { getSession, emit, session: removed });
+    expect(emit).toHaveBeenCalledWith("talk:graph", expect.objectContaining({
+      rootId: "root",
+      change: "removed",
+      node: expect.objectContaining({ id: "emp1", depth: 2 }),
+    }));
+  });
 });
 
 // In-memory attachment deps for seeding the real attachments module.

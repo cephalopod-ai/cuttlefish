@@ -4,6 +4,7 @@ import { CUTTLEFISH_HOME } from "../shared/paths.js";
 import { collectEngineLimits } from "../shared/engine-limits.js";
 import { refreshCodexModels, refreshGrokModels, refreshPiModels, refreshHermesModels } from "../shared/models.js";
 import type { EngineLimitEngineSnapshot, EngineLimitWindow } from "../shared/types.js";
+import { printCliError } from "./output.js";
 
 export interface LimitsOptions {
   json?: boolean;
@@ -77,7 +78,7 @@ function printEngine(engine: EngineLimitEngineSnapshot): void {
 
 export async function runLimits(opts: LimitsOptions = {}): Promise<void> {
   if (!fs.existsSync(CUTTLEFISH_HOME)) {
-    console.log("Gateway is not set up. Run \"cuttlefish setup\" first.");
+    printCliError("Gateway is not set up. Run \"cuttlefish setup\" first.", opts.json);
     return;
   }
 

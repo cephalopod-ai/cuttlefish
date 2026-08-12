@@ -7,7 +7,8 @@ import { createSession, getSession, insertMessage, listSessions } from "../../..
 import { readJsonBody } from "../../http-helpers.js";
 import { authorizeManagerScope, disallowedManagerScopedFields, isDirectChildSession, isHrHumanOnlyBlocked, isManagerNameAuthorizedForPrincipal, MANAGER_MUTABLE_EMPLOYEE_FIELDS } from "../../manager-auth.js";
 import type { GatewayPrincipal } from "../../auth.js";
-import { archiveEmployeeBoardTickets, BoardConflictError, defaultBoardState, readBoardArray, readBoardState, validateBoardAssigneesForDepartment, writeMergedBoardPartial } from "../../board-service.js";
+import { BoardConflictError, defaultBoardState, readBoardArray, readBoardState, validateBoardAssigneesForDepartment, writeMergedBoardPartial } from "../../board-service.js";
+import { deleteEmployeeWithBoardCleanup } from "../../lifecycle-delete.js";
 import { resolveBestSessionForTicket, resolveTicketSessionFallbackState, resolveTicketSessionFailureReason, resolveTicketSessionStalled, shouldExposeSessionForTicket } from "../../ticket-session-resolver.js";
 import { dispatchTicket } from "../../ticket-dispatch.js";
 import { isActiveEmployee, scanOrg } from "../../org.js";
@@ -352,7 +353,6 @@ export async function handleOrgRoutes(
   }
 
   if (method === "DELETE" && params) {
-    const { deleteEmployeeYaml } = await import("../../org.js");
     const { getAllParents } = await import("../../org-hierarchy.js");
     const name = params.name;
     const registry = scanOrg();
@@ -373,23 +373,13 @@ export async function handleOrgRoutes(
       }, 409);
       return true;
     }
-    const deleted = deleteEmployeeYaml(name);
-    if (!deleted) {
-      notFound(res);
+    const deletion = deleteEmployeeWithBoardCleanup(ORG_DIR, name);
+    if (!deletion.ok) {
+      logger.error(`Employee ${name} was not deleted safely: ${deletion.error}`);
+      serverError(res, `Employee was not deleted: ${deletion.error}`);
       return true;
     }
-    try {
-      const archived = archiveEmployeeBoardTickets(ORG_DIR, name);
-      for (const department of archived.departments) {
-        context.emit("board:updated", { department });
-      }
-    } catch (err) {
-      context.reloadOrg?.();
-      context.emit("org:updated", { employee: name, action: "deleted" });
-      logger.error(`Employee ${name} was deleted but their Kanban cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
-      serverError(res, "Employee was deleted, but their Kanban ticket cleanup failed");
-      return true;
-    }
+    for (const department of deletion.archived.departments) context.emit("board:updated", { department });
     context.reloadOrg?.();
     context.emit("org:updated", { employee: name, action: "deleted" });
     json(res, { status: "ok" });

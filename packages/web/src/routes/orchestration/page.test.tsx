@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { runAxe, formatViolations } from "@/test/axe"
 import OrchestrationPage from "./page"
 import {
+  applyDualLaneWinner,
   loadOrchestrationDashboard,
   pauseOrchestrationQueue,
   retryContinuation,
@@ -19,6 +20,7 @@ vi.mock("@/components/page-layout", () => ({
 }))
 
 vi.mock("@/lib/orchestration-api", () => ({
+  applyDualLaneWinner: vi.fn(async () => ({ ok: true })),
   loadOrchestrationDashboard: vi.fn(),
   pauseOrchestrationQueue: vi.fn(async () => ({ ok: true })),
   retryContinuation: vi.fn(async () => ({ ok: true })),
@@ -28,6 +30,7 @@ vi.mock("@/lib/orchestration-api", () => ({
 }))
 
 const loadMock = vi.mocked(loadOrchestrationDashboard)
+const applyMock = vi.mocked(applyDualLaneWinner)
 const pauseQueueMock = vi.mocked(pauseOrchestrationQueue)
 const retryMock = vi.mocked(retryContinuation)
 const resumeQueueMock = vi.mocked(resumeOrchestrationQueue)
@@ -161,6 +164,25 @@ describe("OrchestrationPage", () => {
     fireEvent.click(openaiButtons[0])
 
     await waitFor(() => expect(selectMock).toHaveBeenCalledWith("select-task", "dual-coord", "openai"))
+  })
+
+  it("applies only the explicitly selected lane after confirmation", async () => {
+    loadMock.mockResolvedValue(sampleData({ dualLane: [dualLaneRun("selected-task", "selected")] }))
+    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true)
+
+    render(<OrchestrationPage />)
+    await screen.findByRole("tab", { name: "Dual-lane" })
+    activateTab("Dual-lane")
+
+    const applyButtons = await screen.findAllByRole("button", { name: "Apply" })
+    expect(applyButtons).toHaveLength(2)
+    expect((applyButtons[0] as HTMLButtonElement).disabled).toBe(false)
+    expect((applyButtons[1] as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(applyButtons[0])
+    expect(applyMock).not.toHaveBeenCalled()
+    fireEvent.click(applyButtons[0])
+    await waitFor(() => expect(applyMock).toHaveBeenCalledWith("selected-task", "dual-coord", "openai"))
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("/tmp/repo"))
   })
 
   it("saves and reapplies a Workers DataView filter", async () => {

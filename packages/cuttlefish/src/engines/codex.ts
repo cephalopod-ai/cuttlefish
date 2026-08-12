@@ -436,10 +436,12 @@ export class CodexEngine implements InterruptibleEngine {
   }
 
   private buildFreshArgs(opts: EngineRunOpts, prompt: string): string[] {
-    const args = ["exec"];
+    // Approval policy is a top-level Codex option in current CLI releases; it
+    // must precede `exec` (and especially `exec resume`) to be accepted.
+    const args = [...codexSandboxFlags(opts), "exec"];
     if (opts.model) args.push("--model", opts.model);
     if (opts.effortLevel && opts.effortLevel !== "default") args.push("-c", `model_reasoning_effort="${opts.effortLevel}"`);
-    args.push("--json", "--color", "never", ...codexSandboxFlags(opts), "--skip-git-repo-check");
+    args.push("--json", "--color", "never", "--skip-git-repo-check");
     if (opts.cwd) args.push("-C", opts.cwd);
     args.push(...codexMcpConfigFlagsFromFile(opts.mcpConfigPath));
     args.push(...codexCliFlags(opts.cliFlags));
@@ -448,10 +450,10 @@ export class CodexEngine implements InterruptibleEngine {
   }
 
   private buildResumeArgs(opts: EngineRunOpts, prompt: string): string[] {
-    const args = ["exec", "resume"];
+    const args = [...codexSandboxFlags(opts), "exec", "resume"];
     if (opts.model) args.push("--model", opts.model);
     if (opts.effortLevel && opts.effortLevel !== "default") args.push("-c", `model_reasoning_effort="${opts.effortLevel}"`);
-    args.push("--json", ...codexSandboxFlags(opts), "--skip-git-repo-check");
+    args.push("--json", "--skip-git-repo-check");
     args.push(...codexMcpConfigFlagsFromFile(opts.mcpConfigPath));
     args.push(...codexCliFlags(opts.cliFlags));
     args.push(opts.resumeSessionId!);

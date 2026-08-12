@@ -331,7 +331,7 @@ release of `cuttlefish-cli`.
   fake engine) covering: clean approve, changes_requested → revision → approve, and blocked-verdict
   (confirming the kanban card flips to `blocked`) — for both the chat and board dispatch paths.
 
-## [0.23.4] - 2026-06-30
+## Pre-release security and architecture campaign - 2026-06-30
 
 > Security and architecture defect-repair campaign following the pre-release cloud audit baseline.
 

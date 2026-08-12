@@ -222,10 +222,17 @@ function copyDirRecursive(src: string, dest: string): void {
 
 // ── CLI action functions ──────────────────────────────────────────
 
-export function skillsFind(query?: string): void {
-  const args = ["find"];
-  if (query) args.push(query);
-  const result = runNpxSkills(args);
+export function skillsFind(
+  query?: string,
+  dependencies: { runFinder?: (args: string[]) => ReturnType<typeof spawnSync> } = {},
+): void {
+  const normalized = query?.trim();
+  if (!normalized) {
+    console.error("Usage: cuttlefish skills find <query>");
+    process.exitCode = 1;
+    return;
+  }
+  const result = (dependencies.runFinder ?? runNpxSkills)(["find", normalized]);
   process.exitCode = result.status ?? 1;
 }
 

@@ -7,8 +7,10 @@ const mocks = vi.hoisted(() => ({
   refreshPiModels: vi.fn(async () => {}),
   refreshGrokModels: vi.fn(async () => {}),
   refreshHermesModels: vi.fn(async () => {}),
+  existsSync: vi.fn(() => true),
 }));
 
+vi.mock("node:fs", () => ({ default: { existsSync: mocks.existsSync } }));
 vi.mock("../../shared/paths.js", () => ({ CUTTLEFISH_HOME: process.cwd() }));
 vi.mock("../../shared/config.js", () => ({ loadConfig: () => mocks.config }));
 vi.mock("../../shared/engine-limits.js", () => ({ collectEngineLimits: async () => mocks.snapshot }));
@@ -23,6 +25,7 @@ import { runLimits } from "../limits.js";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.existsSync.mockReturnValue(true);
 });
 
 describe("limits JSON output", () => {
@@ -39,5 +42,25 @@ describe("limits JSON output", () => {
     expect(JSON.parse(String(stdout.mock.calls[0]?.[0]))).toEqual(mocks.snapshot);
 
     stdout.mockRestore();
+  });
+
+  it("returns a structured nonzero error when setup is missing", async () => {
+    mocks.existsSync.mockReturnValue(false);
+    const stdout = vi.spyOn(console, "log").mockImplementation(() => {});
+    const stderr = vi.spyOn(console, "error").mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    try {
+      await runLimits({ json: true });
+      expect(JSON.parse(String(stdout.mock.calls[0]?.[0]))).toEqual({
+        status: "error",
+        message: "Gateway is not set up. Run \"cuttlefish setup\" first.",
+      });
+      expect(stderr).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = previousExitCode;
+      stdout.mockRestore();
+      stderr.mockRestore();
+    }
   });
 });

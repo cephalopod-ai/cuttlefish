@@ -177,6 +177,8 @@ export function maybeEmitTalkGraph(
   deps: {
     getSession: (id: string) => Session | undefined;
     emit: (event: string, payload: unknown) => void;
+    /** Snapshot used when emitting a successful post-deletion delta. */
+    session?: Session;
     /** Reverse attachment lookup — defaults to the in-memory registry. */
     talkSessionsAttachedTo?: (targetId: string) => string[];
     /** Attachment mode lookup — defaults to the in-memory registry. */
@@ -184,15 +186,16 @@ export function maybeEmitTalkGraph(
   },
 ): void {
   try {
-    const session = deps.getSession(sessionId);
+    const session = deps.session ?? deps.getSession(sessionId);
     if (!session || session.source === "talk") return;
+    const getSessionForEvent = (id: string) => id === sessionId ? session : deps.getSession(id);
 
     // Descendant membership — walk parent links up to a talk root.
     const descendantRoot = session.parentSessionId
-      ? resolveTalkRoot(sessionId, deps.getSession)
+      ? resolveTalkRoot(sessionId, getSessionForEvent)
       : undefined;
     if (descendantRoot) {
-      const depth = talkDepth(sessionId, deps.getSession);
+      const depth = talkDepth(sessionId, getSessionForEvent);
       deps.emit(TALK_EVENTS.graph, {
         rootId: descendantRoot.id,
         change,

@@ -2,6 +2,7 @@
 import { Command } from "commander";
 import pkg from "../package.json" with { type: "json" };
 import { CANONICAL_INSTANCE_NAME, homeForInstance } from "../src/shared/instance-home.js";
+import { printCliError } from "../src/cli/output.js";
 
 const program = new Command();
 
@@ -27,17 +28,24 @@ program
   .version(pkg.version)
   .option("-i, --instance <name>", "Target the canonical instance (must be cuttlefish)");
 
+program.exitOverride();
+if (process.argv.includes("--json")) {
+  program.configureOutput({ writeErr: () => {} });
+}
+
+program.action(() => {
+  program.outputHelp();
+});
+
 // Pre-parse to set CUTTLEFISH_HOME before any module imports resolve paths
 program.hook("preAction", (thisCommand) => {
   const opts = thisCommand.opts();
   if (process.env.CUTTLEFISH_INSTANCE && process.env.CUTTLEFISH_INSTANCE !== CANONICAL_INSTANCE_NAME) {
-    console.error(`Error: Cuttlefish supports one local instance named "${CANONICAL_INSTANCE_NAME}".`);
-    process.exit(1);
+    throw new Error(`Cuttlefish supports one local instance named "${CANONICAL_INSTANCE_NAME}".`);
   }
   if (opts.instance) {
     if (opts.instance !== CANONICAL_INSTANCE_NAME) {
-      console.error(`Error: Cuttlefish supports one local instance named "${CANONICAL_INSTANCE_NAME}".`);
-      process.exit(1);
+      throw new Error(`Cuttlefish supports one local instance named "${CANONICAL_INSTANCE_NAME}".`);
     }
     process.env.CUTTLEFISH_INSTANCE = opts.instance;
     process.env.CUTTLEFISH_HOME = homeForInstance(opts.instance);
@@ -625,4 +633,10 @@ program
     });
 }
 
-program.parse();
+try {
+  await program.parseAsync();
+} catch (err) {
+  const code = (err as { code?: unknown } | null)?.code;
+  if (code === "commander.helpDisplayed" || code === "commander.version") process.exitCode = 0;
+  else printCliError(err, process.argv.includes("--json"));
+}

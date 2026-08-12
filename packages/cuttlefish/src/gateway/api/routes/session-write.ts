@@ -7,9 +7,8 @@ import {
   cancelQueueItemForSession,
   coercePortalEmployee,
   createSession,
-  deletePartialMessages,
   deleteSession,
-  deleteSessions,
+  deletePartialMessages,
   duplicateSession,
   enqueueQueueItem,
   getQueueItems,
@@ -53,7 +52,7 @@ import type { GatewayPrincipal } from "../../auth.js";
 import { acknowledgeLeaderAck } from "../../../sessions/leader-ack.js";
 import { dispatchEmployeeSessionRun } from "../../mid-pair-orchestrator.js";
 import { buildWorkspaceProfilePrompt, resolveWorkspaceProfile, type ResolvedWorkspaceProfile } from "../../workspace-profiles.js";
-import { archiveSessionBoardTickets } from "../../board-service.js";
+import { deleteSessionsWithBoardCleanup } from "../../lifecycle-delete.js";
 import {
   buildOperatorDelegationGrant,
   isHumanDelegateRole,
@@ -174,30 +173,20 @@ export async function handleSessionWriteRoutes(
       notFound(res);
       return true;
     }
+    const deletion = deleteSessionsWithBoardCleanup(ORG_DIR, [params.id]);
+    if (!deletion.ok) {
+      logger.error(`Session ${params.id} was not deleted safely: ${deletion.error}`);
+      serverError(res, `Session was not deleted: ${deletion.error}`);
+      return true;
+    }
     logger.info(`Killing engine process for deleted session ${params.id}`);
     killSessionEngines(context, session, "Interrupted: session deleted");
     context.sessionManager.getQueue().clearQueue(session.sessionKey || session.sourceRef || session.id);
-    maybeEmitTalkGraph(params.id, "removed", { getSession, emit: context.emit });
-    // Drop per-session in-memory talk state (mute flag, attachments) — these
-    // registries otherwise retain deleted-session entries for the daemon's life.
+    maybeEmitTalkGraph(params.id, "removed", { getSession, emit: context.emit, session });
+    // Drop per-session in-memory talk state only after durable deletion succeeds.
     clearTalkMuted(params.id);
     clearTalkAttachments(params.id);
-    const deleted = deleteSession(params.id);
-    if (!deleted) {
-      notFound(res);
-      return true;
-    }
-    try {
-      const archived = archiveSessionBoardTickets(ORG_DIR, [params.id]);
-      for (const department of archived.departments) {
-        context.emit("board:updated", { department });
-      }
-    } catch (err) {
-      context.emit("session:deleted", { sessionId: params.id });
-      logger.error(`Session ${params.id} was deleted but its Kanban cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
-      serverError(res, "Session was deleted, but its Kanban ticket cleanup failed");
-      return true;
-    }
+    for (const department of deletion.archived.departments) context.emit("board:updated", { department });
     context.emit("session:deleted", { sessionId: params.id });
     logger.info(`Session deleted: ${params.id}`);
     json(res, { status: "deleted" });
@@ -397,33 +386,24 @@ export async function handleSessionWriteRoutes(
     const existingIds = sessionsToDelete.map((session) => session.id);
     const missingIds = ids.filter((id) => !existingIds.includes(id));
 
-    for (const id of ids) {
-      const session = getSession(id);
-      if (!session) continue;
+    const deletion = deleteSessionsWithBoardCleanup(ORG_DIR, existingIds);
+    if (!deletion.ok) {
+      logger.error(`Bulk session deletion aborted safely: ${deletion.error}`);
+      serverError(res, `Sessions were not deleted: ${deletion.error}`);
+      return true;
+    }
+    for (const session of sessionsToDelete) {
       killSessionEngines(context, session, "Interrupted: session deleted");
       context.sessionManager.getQueue().clearQueue(session.sessionKey || session.sourceRef || session.id);
     }
-
-    for (const id of existingIds) {
-      maybeEmitTalkGraph(id, "removed", { getSession, emit: context.emit });
-    }
-    const count = deleteSessions(existingIds);
+    const count = deletion.count;
     const deletedIds = existingIds.filter((id) => !getSession(id));
-    try {
-      const archived = archiveSessionBoardTickets(ORG_DIR, deletedIds);
-      for (const department of archived.departments) {
-        context.emit("board:updated", { department });
-      }
-    } catch (err) {
-      for (const id of deletedIds) {
-        context.emit("session:deleted", { sessionId: id });
-      }
-      logger.error(`Bulk-deleted session Kanban cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
-      serverError(res, "Sessions were deleted, but their Kanban ticket cleanup failed");
-      return true;
-    }
-    for (const id of deletedIds) {
-      context.emit("session:deleted", { sessionId: id });
+    for (const department of deletion.archived.departments) context.emit("board:updated", { department });
+    for (const session of sessionsToDelete.filter((item) => deletedIds.includes(item.id))) {
+      maybeEmitTalkGraph(session.id, "removed", { getSession, emit: context.emit, session });
+      clearTalkMuted(session.id);
+      clearTalkAttachments(session.id);
+      context.emit("session:deleted", { sessionId: session.id });
     }
     const failedIds = ids.filter((id) => !deletedIds.includes(id));
     if (failedIds.length > 0 || count !== existingIds.length) {

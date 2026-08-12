@@ -272,10 +272,13 @@ export default function OrchestrationPage() {
                       `select:${run.taskId}:${run.coordinatorId}:${lane}`,
                       () => selectDualLaneWinner(run.taskId, run.coordinatorId, lane),
                     )}
-                    onApply={(run, lane) => runAction(
-                      `apply:${run.taskId}:${run.coordinatorId}:${lane}`,
-                      () => applyDualLaneWinner(run.taskId, run.coordinatorId, lane),
-                    )}
+                    onApply={(run, lane) => {
+                      if (!window.confirm(`Apply selected ${lane} lane for ${run.taskId} to ${run.baseCwd} as unstaged changes?`)) return
+                      void runAction(
+                        `apply:${run.taskId}:${run.coordinatorId}:${lane}`,
+                        () => applyDualLaneWinner(run.taskId, run.coordinatorId, lane),
+                      )
+                    }}
                     onArtifact={(run, kind) => runAction(
                       `artifact:${run.taskId}:${run.coordinatorId}:${kind}`,
                       async () => {
@@ -597,8 +600,10 @@ function DualLaneList({ runs, actionKey, onSelect, onApply, onArtifact }: {
                     Select {lane.id}
                   </button>
                   <button
-                    disabled={actionKey === `apply:${run.taskId}:${run.coordinatorId}:${lane.id}`}
-                    title={`Apply ${lane.id} winner as unstaged base repo changes`}
+                    disabled={run.state !== "selected" || run.selectedLane !== lane.id || actionKey === `apply:${run.taskId}:${run.coordinatorId}:${lane.id}`}
+                    title={run.state === "selected" && run.selectedLane === lane.id
+                      ? `Apply selected ${lane.id} winner as unstaged base repo changes`
+                      : "Select a winner before applying it"}
                     onClick={() => onApply(run, lane.id)}
                     className="focus-ring h-8 px-3 rounded-[var(--radius-sm)] border border-[var(--separator)] disabled:opacity-45 text-[length:var(--text-footnote)]"
                   >

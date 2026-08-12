@@ -59,7 +59,7 @@ Build a local releasable zip: `.\scripts\package-windows.ps1` →
 git clone https://github.com/cephalopod-ai/cuttlefish.git
 cd cuttlefish
 pnpm install
-pnpm setup                 # build and initialize the Cuttlefish home
+pnpm run setup             # build and initialize the Cuttlefish home
 pnpm cuttlefish start      # start the gateway daemon + web dashboard
 ```
 

@@ -124,12 +124,13 @@ function writeEmployee(subdir: string, name: string, body: string) {
   fs.writeFileSync(path.join(dir, `${name}.yaml`), body, "utf-8");
 }
 
-async function waitForStatus(id: string, status: string, ms = 500): Promise<void> {
+async function waitForStatus(id: string, status: string, ms = 2_000): Promise<void> {
   const deadline = Date.now() + ms;
   while (Date.now() < deadline) {
     if (getChangeRequest(id)?.status === status) return;
     await new Promise((r) => setTimeout(r, 5));
   }
+  if (getChangeRequest(id)?.status === status) return;
   throw new Error(`change ${id} never reached status ${status} (got ${getChangeRequest(id)?.status})`);
 }
 

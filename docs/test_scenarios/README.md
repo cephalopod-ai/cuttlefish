@@ -66,7 +66,7 @@ seams, error-message clarity, and cross-screen state consistency.
 
 1. **Environment**: Node 24.x (`.nvmrc` pins 24.13.0), pnpm 10+, at least
    one signed-in engine CLI. From a source checkout:
-   `pnpm install && pnpm setup && pnpm cuttlefish start`, dashboard at
+   `pnpm install && pnpm run setup && pnpm cuttlefish start`, dashboard at
    `http://localhost:8888` (or configured `gateway.port`).
 2. **Order**: execute files in numeric order — lifecycle first (nothing else
    works without a running gateway), then the primary chat happy path to

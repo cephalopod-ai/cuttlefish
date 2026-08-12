@@ -309,7 +309,7 @@ describe("CodexEngine — systemPrompt / developer_instructions injection", () =
     expect(finalArg).toContain("YOU ARE JIMBO");
     expect(finalArg).toContain("---");
     expect(finalArg).toContain("hello");
-    expect(call.args[0]).toBe("exec");
+    expect(call.args.indexOf("--ask-for-approval")).toBeLessThan(call.args.indexOf("exec"));
     expect(call.args).not.toContain("resume");
   });
 
@@ -322,8 +322,8 @@ describe("CodexEngine — systemPrompt / developer_instructions injection", () =
     const finalArg = call.args[call.args.length - 1];
     expect(finalArg).toBe("hello");
     expect(finalArg).not.toContain("YOU ARE JIMBO");
-    expect(call.args[0]).toBe("exec");
-    expect(call.args[1]).toBe("resume");
+    expect(call.args.indexOf("--ask-for-approval")).toBeLessThan(call.args.indexOf("exec"));
+    expect(call.args[call.args.indexOf("exec") + 1]).toBe("resume");
     expect(call.args).toContain("prev-thread");
   });
 

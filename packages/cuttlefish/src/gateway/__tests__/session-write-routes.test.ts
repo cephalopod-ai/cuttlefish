@@ -95,6 +95,13 @@ async function setup() {
 }
 
 function makeCtx(api: Awaited<ReturnType<typeof setup>>["api"]) {
+  const queue = {
+    getPendingCount: () => 0,
+    getTransportState: (_key: string, status: string) => status,
+    resumeQueue: vi.fn(),
+    clearQueue: vi.fn(),
+    clearCancelled: vi.fn(),
+  };
   return {
     getConfig: () => ({ gateway: {}, engines: {}, portal: {} }),
     connectors: new Map(),
@@ -102,13 +109,7 @@ function makeCtx(api: Awaited<ReturnType<typeof setup>>["api"]) {
     emit: vi.fn(),
     sessionManager: {
       getEngine: () => undefined,
-      getQueue: () => ({
-        getPendingCount: () => 0,
-      getTransportState: (_key: string, status: string) => status,
-      resumeQueue: vi.fn(),
-      clearQueue: vi.fn(),
-      clearCancelled: vi.fn(),
-      }),
+      getQueue: () => queue,
     },
   } as unknown as import("../api.js").ApiContext;
 }
@@ -541,6 +542,41 @@ describe("POST /api/sessions/bulk-delete duplicate ids (I-2)", () => {
     expect(board.deletedTickets.map((ticket: { id: string }) => ticket.id).sort()).toEqual([`session-${first.id}`, `session-${second.id}`].sort());
     expect(ctx.emit).toHaveBeenCalledWith("board:updated", { department: "qa" });
   });
+
+  it("does not interrupt or clear sessions when board archival rejects the batch", async () => {
+    const { api, reg } = await setup();
+    const { boardLock, boardPath } = await import("../board-service.js");
+    const ctx = makeCtx(api);
+    const session = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:bulk-board-locked", prompt: "keep running" });
+    const boardDir = path.join(testHome.home(), "org", "qa");
+    fs.mkdirSync(boardDir, { recursive: true });
+    fs.writeFileSync(path.join(boardDir, "board.json"), JSON.stringify([
+      { id: `session-${session.id}`, title: "Active", description: "", status: "in_progress", priority: "medium", assignee: "qa", source: "session", sessionId: session.id, createdAt: "2026-07-13T00:00:00.000Z", updatedAt: "2026-07-13T00:00:00.000Z" },
+    ]));
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let entered!: () => void;
+    const locked = new Promise<void>((resolve) => { entered = resolve; });
+    const held = boardLock.withLock(boardPath(path.join(testHome.home(), "org"), "qa"), async () => {
+      entered();
+      await gate;
+    });
+    await locked;
+
+    const cap = makeRes();
+    await api.handleApiRequest(
+      makeJsonReq("POST", "/api/sessions/bulk-delete", { ids: [session.id] }),
+      cap.res,
+      ctx,
+    );
+    release();
+    await held;
+
+    expect(cap.status).toBe(500);
+    expect(reg.getSession(session.id)).toBeDefined();
+    expect(hoisted.killSessionEngines).not.toHaveBeenCalled();
+    expect(ctx.sessionManager.getQueue().clearQueue).not.toHaveBeenCalled();
+  });
 });
 
 describe("DELETE /api/sessions/:id board cleanup", () => {
@@ -563,6 +599,37 @@ describe("DELETE /api/sessions/:id board cleanup", () => {
     expect(board.tickets.map((ticket: { id: string }) => ticket.id)).toEqual(["keep"]);
     expect(board.deletedTickets.map((ticket: { id: string }) => ticket.id)).toEqual([`session-${session.id}`]);
     expect(ctx.emit).toHaveBeenCalledWith("session:deleted", { sessionId: session.id });
+  });
+
+  it("does not interrupt or clear a session when board archival fails", async () => {
+    const { api, reg } = await setup();
+    const { boardLock, boardPath } = await import("../board-service.js");
+    const ctx = makeCtx(api);
+    const session = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:single-board-locked", prompt: "keep running" });
+    const boardDir = path.join(testHome.home(), "org", "qa");
+    fs.mkdirSync(boardDir, { recursive: true });
+    fs.writeFileSync(path.join(boardDir, "board.json"), JSON.stringify([
+      { id: `session-${session.id}`, title: "Active", description: "", status: "in_progress", priority: "medium", assignee: "qa", source: "session", sessionId: session.id, createdAt: "2026-07-13T00:00:00.000Z", updatedAt: "2026-07-13T00:00:00.000Z" },
+    ]));
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let entered!: () => void;
+    const locked = new Promise<void>((resolve) => { entered = resolve; });
+    const held = boardLock.withLock(boardPath(path.join(testHome.home(), "org"), "qa"), async () => {
+      entered();
+      await gate;
+    });
+    await locked;
+
+    const cap = makeRes();
+    await api.handleApiRequest(makeReq("DELETE", `/api/sessions/${session.id}`), cap.res, ctx);
+    release();
+    await held;
+
+    expect(cap.status).toBe(500);
+    expect(reg.getSession(session.id)).toBeDefined();
+    expect(hoisted.killSessionEngines).not.toHaveBeenCalled();
+    expect(ctx.sessionManager.getQueue().clearQueue).not.toHaveBeenCalled();
   });
 });
 

@@ -145,7 +145,6 @@ export async function submitOrgChange(
       });
       context.emit("org-change:updated", { id: request.id, status: "error" });
     });
-
   return { request, blocked: false };
 }
 

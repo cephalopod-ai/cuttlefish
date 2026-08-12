@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.23.5-7c3aed" alt="version 0.23.5" />
+  <img src="https://img.shields.io/badge/version-0.23.6-7c3aed" alt="version 0.23.6" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-7c3aed" alt="license: MIT" /></a>
   <img src="https://img.shields.io/badge/node-%E2%89%A524%20%3C25-7c3aed" alt="node >=24 <25" />
   <img src="https://img.shields.io/badge/status-beta-7c3aed" alt="status: beta" />
@@ -55,7 +55,7 @@ Full install matrix (npm, Homebrew, GitHub archives, Windows): **[`docs/INSTALL.
 git clone https://github.com/cephalopod-ai/cuttlefish.git
 cd cuttlefish
 pnpm install
-pnpm setup        # builds all packages and initializes ~/.cuttlefish (probes your engines, writes config)
+pnpm run setup    # builds all packages and initializes ~/.cuttlefish (probes your engines, writes config)
 
 # 2. Install + sign in to at least one engine (example: Claude Code)
 npm install -g @anthropic-ai/claude-code
@@ -155,7 +155,7 @@ Three ideas make Cuttlefish click:
 
 ## Engines - bring your own
 
-Cuttlefish detects whichever agent CLIs are on your `PATH` and makes them interchangeable engines. Switch per session or per employee in the dashboard; engines whose binary isn't installed are simply hidden. **No version pinning, no bundled model lists** - Cuttlefish asks each CLI what it can do at boot, so the moment your CLI learns a new model, Cuttlefish offers it.
+Cuttlefish detects whichever agent CLIs are on your `PATH` and makes them interchangeable engines. Switch per session or per employee in the dashboard; engines whose binary isn't installed are simply hidden. Model discovery is best-effort: supported CLIs are queried at boot, while configured and conservative built-in catalogs keep other engines usable when discovery is unavailable.
 
 | Engine | What it is | Install | Modes | Effort |
 |--------|-----------|---------|-------|--------|
@@ -339,7 +339,7 @@ Want to suggest something? [Open an issue](https://github.com/cephalopod-ai/cutt
 git clone https://github.com/cephalopod-ai/cuttlefish.git
 cd cuttlefish
 pnpm install
-pnpm setup   # one-time: builds all packages and creates ~/.cuttlefish
+pnpm run setup   # one-time: builds all packages and creates ~/.cuttlefish
 pnpm dev     # gateway (:8888) + Vite dev server (:5888) with hot reload
 ```
 

@@ -83,7 +83,7 @@ Asset name: `cuttlefish-cli-<version>-win32-x64.zip`
 git clone https://github.com/cephalopod-ai/cuttlefish.git
 cd cuttlefish
 pnpm install
-pnpm setup          # build + initialize %USERPROFILE%\.cuttlefish
+pnpm run setup      # build + initialize %USERPROFILE%\.cuttlefish
 pnpm cuttlefish start
 ```
 
@@ -190,7 +190,7 @@ cuttlefish start
 git clone https://github.com/cephalopod-ai/cuttlefish.git
 cd cuttlefish
 pnpm install
-pnpm setup
+pnpm run setup
 pnpm cuttlefish start
 ```
 
