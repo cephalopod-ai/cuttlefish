@@ -1,12 +1,14 @@
 # TODO History
 
 This record preserves closure status and evidence for Cuttlefish defects and
-TODOs removed from the active ledger on 2026-07-20. It is historical evidence,
-not a backlog. The active work is in [TODO_LEDGER.md](TODO_LEDGER.md).
+TODOs removed from the active ledger, including the 2026-07-20 and 2026-08-12
+repair campaigns. It is historical evidence, not a backlog. The active work is
+in [TODO_LEDGER.md](TODO_LEDGER.md).
 
 Source: previous `docs/TODO_LEDGER.md`, the 2026-07-20 live-playtest repair
 campaign (`.giles/feature-ledger/giles-ledger-0056-live-playtest-defect-repairs.md`),
-and the cited source/test evidence.
+the 2026-08-12 comprehensive audit/repair campaign, and the cited source/test
+evidence.
 
 | ID | Status | Priority | Area | Closure Summary | Evidence | Closed |
 |---|---|---|---|---|---|---|
@@ -110,3 +112,11 @@ and the cited source/test evidence.
 | RCR-CUT-003 | closed | P3 | claude-interactive | `cancelLateRecovery()` now logs a warning when it actually drops an armed late-Stop recovery listener (new turn superseding one, or `kill()`), instead of discarding it silently; the mtime pre-filter tolerance is now a named constant matching the poll interval, documented as a perf pre-filter (not the correctness boundary). | `5bb4433`; `packages/cuttlefish/src/engines/claude-interactive.ts`, `claude-late-recovery.ts`; `engines/__tests__/claude-interactive-late-recovery.test.ts` | 2026-07-23 |
 | RCR-CUT-004 | closed | P2 | orchestration-scheduler | Verified not a defect: `commitMutation()` already re-hydrates from the store inside a `BEGIN IMMEDIATE` transaction, so its snapshot delta can never be computed from state stale relative to a concurrent writer on the same DB file. Documented the invariant at the call site and added an end-to-end two-writer/reopen regression proving neither writer's commit loses the other's mutation. | `c37c4c4`; `packages/cuttlefish/src/orchestration/persistent-scheduler.ts`; `orchestration/__tests__/persistent-scheduler.test.ts` | 2026-07-23 |
 | DEP-CUT-001 | closed | P2 | dependency-hygiene | Pinned the transitive `protobufjs` dependency (via `@whiskeysockets/baileys` > `libsignal`) to `>=7.6.5` via `pnpm.overrides`, closing the moderate DoS advisory (`GHSA-j3f2-48v5-ccww`) left open since giles-ledger-0086. `pnpm audit --prod` reports no known vulnerabilities. | `d25a529`; root `package.json`, `pnpm-lock.yaml` | 2026-07-23 |
+| PLT-007 | closed | P2 | cli-ux | `cuttlefish start` is now idempotent when a healthy gateway already owns the configured port; intentional interruption remains the separate `restart` command. | `packages/cuttlefish/src/cli/start.ts`, `src/cli/__tests__/start.test.ts`; comprehensive audit repair commit `6ddd9be`; root validation | 2026-08-12 |
+| PLT-008 | closed | P3 | cli-ux | Empty or whitespace-only `skills find` queries now return usage failure before invoking the external registry client. | `packages/cuttlefish/src/cli/skills.ts`, `src/cli/__tests__/skills-find.test.ts`; focused and full backend suites | 2026-08-12 |
+| PLT-009 | closed | P2 | cli-ux | JSON-capable CLI commands now use a shared structured error envelope on stdout with a nonzero exit; parser/action failures and pair/unpair/limits early failures are covered. | `packages/cuttlefish/src/cli/output.ts`, `pair.ts`, `limits.ts`, `bin/cuttlefish.ts`; CLI output, limits, pair, and shipped-registration tests | 2026-08-12 |
+| PLT-010 | closed | P1 | install/docs | Every active source-install instruction now invokes `pnpm run setup`, avoiding pnpm's unrelated shell-profile-mutating builtin. | `README.md`, `packages/cuttlefish/README.md`, `docs/INSTALL.md`, `docs/test_scenarios/01-first-run-and-lifecycle.md`, `docs/test_scenarios/README.md`; source scan | 2026-08-12 |
+| PLT-011 | closed | P1 | engine/codex | Headless Codex places workspace sandbox and approval options before `exec`/`exec resume`, matching Codex 0.144.1 while retaining `workspace-write` and `never` policy. | `packages/cuttlefish/src/engines/codex.ts`, `src/engines/__tests__/codex.test.ts`; real `codex --sandbox workspace-write --ask-for-approval never exec[ resume] --help` probes | 2026-08-12 |
+| PLT-012 | closed | P1 | cli/lifecycle | Unix port ownership now asks `lsof` for LISTEN sockets only, so stopped client sockets no longer block status/start while real listeners remain protected. | `packages/cuttlefish/src/gateway/lifecycle.ts`, `src/gateway/__tests__/lifecycle-port.test.ts`; macOS two-process listener/client probe; commit `6ddd9be` | 2026-08-12 |
+| PLT-013 | closed | P2 | web/chat | Stop is exposed only after the original Send gesture's rapid-repeat window, preventing a double-click from silently interrupting the submitted turn. | `packages/web/src/components/chat/chat-input-composer.tsx`, `chat-input-composer.test.tsx`; full web suite | 2026-08-12 |
+| PLT-014 | closed | P3 | cli-ux | Bare `cuttlefish` now prints normal help to stdout and exits zero, while invalid commands/flags remain failures. | `packages/cuttlefish/bin/cuttlefish.ts`, `src/cli/__tests__/orchestration-cli-registration.test.ts`; built CLI probe | 2026-08-12 |

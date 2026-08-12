@@ -70,6 +70,13 @@ artifacts unless explicitly published.
 
 ## Session and Audit Log Summaries
 
+- `docs/audits/082026/2026-08-12-comprehensive-audit-repair.md` and
+  `docs/logs/session/082026/2026-08-12-comprehensive-audit-repair.md`:
+  39-lens comprehensive audit and staged repair campaign over the preceding
+  Cuttlefish playtest, active TODO ledger, security boundaries, runtime/data
+  integrity, CLI/UI, dependencies, release metadata, and Giles adapter cleanup;
+  all confirmed findings were repaired, adversarially re-reviewed, and passed
+  the authoritative checks, with residual risks and tool limits retained.
 - `docs/audits/082026/2026-08-12-cuttlefish-scenario-playtest.md` and
   `docs/logs/session/082026/2026-08-12-cuttlefish-scenario-playtest.md`:
   live Chrome/CLI pass over the 225-card Cuttlefish library; 43 cards were
