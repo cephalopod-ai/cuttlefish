@@ -12,41 +12,49 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  bump-formula:
+  resolve-version:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - name: Resolve published version
+        id: resolve
+        env:
+          WORKFLOW_RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          MANUAL_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_run" ]; then
+            TAG="${WORKFLOW_RUN_HEAD_BRANCH}"
+            VERSION="${TAG#v}"
+          else
+            VERSION="${MANUAL_VERSION}"
+          fi
+          if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Expected an exact numeric SemVer version, got: ${VERSION}" >&2
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+  bump-formula:
+    needs: resolve-version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.resolve-version.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
-
-      - name: Resolve published version
-        env:
-          # SECN-NODE-002: bind the untrusted branch name to an env var
-          # instead of interpolating it into the script text, so a crafted
-          # value is treated as shell data by bash, not as script content by
-          # the Actions template engine.
-          WORKFLOW_RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
-        run: |
-          if [ "${GITHUB_EVENT_NAME}" = "workflow_run" ]; then
-            TAG="${WORKFLOW_RUN_HEAD_BRANCH}"
-            case "${TAG}" in
-              v[0-9]*.[0-9]*.[0-9]*) VERSION="${TAG#v}" ;;
-              *) echo "Expected a v<semver> release tag, got: ${TAG}" >&2; exit 1 ;;
-            esac
-          else
-            VERSION="${{ inputs.version }}"
-          fi
-          case "${VERSION}" in
-            [0-9]*.[0-9]*.[0-9]*) ;;
-            *) echo "Expected a semver version, got: ${VERSION}" >&2; exit 1 ;;
-          esac
-          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          # Keep the write credential out of git configuration until the
+          # final, explicit push step.
+          persist-credentials: false
 
       - name: Wait for npm tarball
         run: |
@@ -71,10 +79,13 @@ jobs:
           sed -i "s|sha256 \".*\"|sha256 \"${SHA}\"|" Formula/cuttlefish.rb
 
       - name: Commit and push
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/cuttlefish.rb
           git diff --cached --quiet && echo "No changes" && exit 0
           git commit -m "formula: bump to v${VERSION}"
+          gh auth setup-git
           git push origin HEAD:main

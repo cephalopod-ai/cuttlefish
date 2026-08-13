@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { codexMcpConfigFlags, resolveMcpServers, sweepStaleMcpConfigFiles, writeMcpConfigFile } from "../resolver.js";
+import { cleanupMcpConfigFile, codexMcpConfigFlags, resolveMcpServers, sweepStaleMcpConfigFiles, writeMcpConfigFile } from "../resolver.js";
 import { setCuttlefishHomeForTest } from "../../shared/paths.js";
 import { logger } from "../../shared/logger.js";
 
@@ -116,6 +116,7 @@ describe("MCP resolver", () => {
     });
 
     afterEach(() => {
+      vi.restoreAllMocks();
       if (originalHome === undefined) {
         delete process.env.CUTTLEFISH_HOME;
       }
@@ -145,6 +146,26 @@ describe("MCP resolver", () => {
       expect(removed).toBe(1);
       expect(fs.existsSync(stalePath)).toBe(false);
       expect(fs.existsSync(freshPath)).toBe(true);
+    });
+
+    it("warns when normal MCP config cleanup fails", () => {
+      writeMcpConfigFile({ mcpServers: {} }, "cleanup-failure");
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+      vi.spyOn(fs, "unlinkSync").mockImplementationOnce(() => { throw new Error("permission denied"); });
+
+      cleanupMcpConfigFile("cleanup-failure");
+
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("cleanup-failure"));
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("permission denied"));
+    });
+
+    it("warns and returns zero when the stale-config directory cannot be enumerated", () => {
+      writeMcpConfigFile({ mcpServers: {} }, "enumeration-failure");
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+      vi.spyOn(fs, "readdirSync").mockImplementationOnce(() => { throw new Error("directory unavailable"); });
+
+      expect(sweepStaleMcpConfigFiles()).toBe(0);
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("directory unavailable"));
     });
   });
 });

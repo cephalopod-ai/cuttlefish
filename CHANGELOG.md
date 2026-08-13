@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Security
+- Server-side file fetches now pin each DNS-validated address into an Undici
+  dispatcher while preserving the original hostname for HTTP/TLS, closing the
+  DNS-rebinding gap across initial and redirected requests.
+- Homebrew workflow input is treated as data, exact numeric SemVer is required,
+  and write credentials are introduced only for the final push step. Secret
+  scanning now runs a pinned Gitleaks CLI without an organization license.
+- Vulnerable transitive `brace-expansion` releases are overridden to patched
+  `1.1.18` and `5.0.9` versions.
+
+### Reliability and Architecture
+- Chat threads distinguish resize-induced scroll drift from user read-up intent,
+  keeping a pinned thread at the bottom when the viewport or mobile keyboard
+  changes height.
+- Org and session-write routes now delegate mutation, approval, board, queue,
+  deletion, creation, and dispatch state machines to focused gateway services;
+  a source boundary test prevents those primitives from returning to routers.
+- MCP secret-bearing temp-config cleanup and stale-directory sweep failures now
+  emit non-secret-bearing warnings instead of disappearing silently.
+
 ## [0.23.7] - 2026-08-12
 
 Cuttlefish 0.23.7 is a security and reliability maintenance release. It

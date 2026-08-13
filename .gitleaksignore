@@ -1,0 +1,7 @@
+# Reviewed false positive: prose describing mocked authentication in a UI
+# playtest report; the matched text is not a credential.
+docs/cloud-audit/PLAYTEST-THEME-2026-07-01.md:generic-api-key:36
+
+# Reviewed false positive: intentionally fake sk-proj value used to assert that
+# the redaction helper removes OpenAI-style credential text.
+packages/cuttlefish/src/shared/__tests__/redact.test.ts:generic-api-key:9

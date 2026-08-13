@@ -50,6 +50,7 @@ jobs:
   scan:
     steps:
       - uses: actions/checkout@${sha} # v4.2.2
+      - run: gitleaks git --redact --verbose .
 `;
 
 const compliantCompose = `
@@ -112,4 +113,39 @@ test('missing secret scan workflow fails', () => {
 
 test('missing compose file fails', () => {
   assertFails(runFixture({ workflow: compliantWorkflow, compose: undefined }));
+});
+
+test('untrusted workflow input interpolated into run-script source fails', () => {
+  const workflow = `${compliantWorkflow}
+      - run: VERSION="\${{ inputs.version }}"
+`;
+  const result = runFixture({ workflow, compose: compliantCompose });
+  assertFails(result);
+  assert.match(result.output, /bound through env/);
+});
+
+test('untrusted workflow input bound through env remains valid shell data', () => {
+  const workflow = `${compliantWorkflow}
+      - env:
+          VERSION: \${{ inputs.version }}
+        run: test -n "$VERSION"
+`;
+  const result = runFixture({ workflow, compose: compliantCompose });
+  assert.equal(result.status, 0, result.output);
+});
+
+test('secret workflow that never executes a scan fails', () => {
+  const workflow = `
+name: Secret scan
+permissions:
+  contents: read
+jobs:
+  scan:
+    steps:
+      - uses: actions/checkout@${sha} # v4.2.2
+      - run: go install github.com/zricethezav/gitleaks/v8@v8.30.1
+`;
+  const result = runFixture({ workflow, compose: compliantCompose });
+  assertFails(result);
+  assert.match(result.output, /must execute a Gitleaks scan command/);
 });

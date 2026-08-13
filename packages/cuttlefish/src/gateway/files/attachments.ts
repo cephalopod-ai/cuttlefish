@@ -240,7 +240,10 @@ async function handleAttachmentJson(
       // buffer enforces the 50 MB cap incrementally instead of materializing the
       // whole response first (SEC-DOS-002).
       const response = await safeFetch(url!);
-      if (!response.ok) return serverError(res, `Failed to fetch URL: ${response.status} ${response.statusText}`);
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => {});
+        return serverError(res, `Failed to fetch URL: ${response.status} ${response.statusText}`);
+      }
       buffer = await bufferResponseWithLimit(response, MAX);
       if (!filename) filename = path.basename(new URL(url!).pathname) || "download";
     } catch (err) {

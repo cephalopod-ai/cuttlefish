@@ -46,6 +46,8 @@ function isNamedKey(key, name) {
   return isScalar(key) && key.value === name;
 }
 
+const untrustedRunExpression = /\$\{\{\s*(?:inputs\.|github\.event\.inputs\.|github\.event\.(?:issue|pull_request|comment|review|discussion|workflow_run)\.)/;
+
 function validateWorkflowFile(filePath) {
   const { document, lineCounter } = parseYamlFile(filePath);
   if (document.errors.length > 0) return;
@@ -59,6 +61,19 @@ function validateWorkflowFile(filePath) {
   }
 
   visitMappings(root, (pair) => {
+    if (isNamedKey(pair.key, 'run')) {
+      const line = nodeLine(pair.key, lineCounter);
+      // `defaults.run` is a mapping; only scalar `steps[*].run` scripts can
+      // contain executable shell source.
+      if (isScalar(pair.value) && typeof pair.value.value === 'string' && untrustedRunExpression.test(pair.value.value)) {
+        reportError(
+          filePath,
+          line,
+          "Untrusted workflow input/event data must be bound through env or an action input, not interpolated into run-script source."
+        );
+      }
+    }
+
     if (!isNamedKey(pair.key, 'uses')) return;
 
     const line = nodeLine(pair.key, lineCounter);
@@ -79,6 +94,24 @@ function validateWorkflowFile(filePath) {
       );
     }
   });
+}
+
+function validateSecretScanWorkflow(filePath) {
+  const { document, lineCounter } = parseYamlFile(filePath);
+  if (document.errors.length > 0) return;
+
+  let hasExecutableScan = false;
+  visitMappings(document.contents, (pair) => {
+    if (!isNamedKey(pair.key, 'run') || !isScalar(pair.value) || typeof pair.value.value !== 'string') return;
+    if (/(?:^|\s)gitleaks\s+(?:git|dir|detect)\b/m.test(pair.value.value)) hasExecutableScan = true;
+  });
+  if (!hasExecutableScan) {
+    reportError(
+      filePath,
+      nodeLine(document.contents, lineCounter),
+      'Secret-scanning workflow must execute a Gitleaks scan command, not only install or invoke entitlement-gated setup.'
+    );
+  }
 }
 
 function validateImage(filePath, pair, lineCounter) {
@@ -126,6 +159,8 @@ if (!fs.existsSync(workflowDir) || !fs.statSync(workflowDir).isDirectory()) {
 } else {
   if (!fs.existsSync(secretScanPath)) {
     reportError(secretScanPath, undefined, 'Missing required secret-scanning workflow file.');
+  } else {
+    validateSecretScanWorkflow(secretScanPath);
   }
 
   for (const file of fs.readdirSync(workflowDir)) {

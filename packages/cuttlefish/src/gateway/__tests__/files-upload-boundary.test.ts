@@ -5,6 +5,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { Readable } from "node:stream";
 
+const { undiciFetchMock } = vi.hoisted(() => ({ undiciFetchMock: vi.fn() }));
+
+vi.mock("undici", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("undici")>();
+  return { ...actual, fetch: undiciFetchMock };
+});
+
 const { home: tmp } = withStaticTempCuttlefishHome("cuttlefish-files-upload-");
 
 const MAX_UPLOAD_SIZE = 50 * 1024 * 1024;
@@ -15,8 +22,6 @@ type Reg = typeof import("../../sessions/registry.js");
 let files: Files;
 let reg: Reg;
 
-const originalFetch = globalThis.fetch;
-
 beforeAll(async () => {
   reg = await import("../../sessions/registry.js");
   files = await import("../files.js");
@@ -24,7 +29,7 @@ beforeAll(async () => {
 });
 
 afterEach(() => {
-  globalThis.fetch = originalFetch;
+  undiciFetchMock.mockReset();
 });
 
 function fakeReq(chunks: Array<string | Buffer>, contentType: string): import("node:http").IncomingMessage {
@@ -87,7 +92,7 @@ describe("POST /api/files JSON upload boundaries", () => {
   });
 
   it("rejects fetched URL content whose advertised size exceeds 50 MB", async () => {
-    const fetchSpy = vi.fn().mockResolvedValue(
+    undiciFetchMock.mockResolvedValue(
       new Response(new ReadableStream({
         start(controller) {
           controller.close();
@@ -97,7 +102,6 @@ describe("POST /api/files JSON upload boundaries", () => {
         headers: { "content-length": String(MAX_UPLOAD_SIZE + 1) },
       }),
     );
-    globalThis.fetch = fetchSpy as unknown as typeof fetch;
 
     const { res, out } = fakeRes();
     await files.handleFilesRequest(
@@ -113,7 +117,10 @@ describe("POST /api/files JSON upload boundaries", () => {
 
     // safeFetch (SEC-SSRF-001) now drives the fetch with redirect: "manual" so it
     // can re-validate each hop; the URL is still the one requested.
-    expect(fetchSpy).toHaveBeenCalledWith("https://93.184.216.34/file.bin", { redirect: "manual" });
+    expect(undiciFetchMock).toHaveBeenCalledWith(
+      "https://93.184.216.34/file.bin",
+      expect.objectContaining({ redirect: "manual", dispatcher: expect.anything() }),
+    );
     expect(out.status).toBe(400);
     expect(JSON.parse(out.body!)).toEqual({ error: "File exceeds 50 MB limit" });
   });

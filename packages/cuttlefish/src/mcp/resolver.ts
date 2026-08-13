@@ -297,8 +297,8 @@ export function cleanupMcpConfigFile(sessionId: string): void {
   const filePath = path.join(CUTTLEFISH_HOME, "tmp", "mcp", `${sessionId}.json`);
   try {
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-  } catch {
-    // Ignore cleanup errors
+  } catch (err) {
+    logger.warn(`Failed to remove MCP config for session ${sessionId}: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -321,10 +321,17 @@ export const MCP_CONFIG_STALE_MS = 24 * 60 * 60 * 1000;
  */
 export function sweepStaleMcpConfigFiles(maxAgeMs: number = MCP_CONFIG_STALE_MS): number {
   const tmpDir = path.join(CUTTLEFISH_HOME, "tmp", "mcp");
-  if (!fs.existsSync(tmpDir)) return 0;
+  let entries: fs.Dirent[];
+  try {
+    if (!fs.existsSync(tmpDir)) return 0;
+    entries = fs.readdirSync(tmpDir, { withFileTypes: true });
+  } catch (err) {
+    logger.warn(`Failed to enumerate stale MCP config files: ${err instanceof Error ? err.message : String(err)}`);
+    return 0;
+  }
   const cutoff = Date.now() - maxAgeMs;
   let removed = 0;
-  for (const entry of fs.readdirSync(tmpDir, { withFileTypes: true })) {
+  for (const entry of entries) {
     if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
     const filePath = path.join(tmpDir, entry.name);
     try {

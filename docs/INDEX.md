@@ -18,7 +18,8 @@ artifacts unless explicitly published.
   pre-release accurately.
 - `docs/changes/releases/v0.23.7.md`: v0.23.7 public release statement covering
   trust-boundary hardening, runtime/data-integrity repairs, Windows readiness,
-  and operator-impacting upgrade notes.
+  and operator-impacting upgrade notes; currently marked incomplete because
+  npm, platform assets, and Homebrew remain at v0.23.6.
 - `docs/USER_MANUAL.md`
 - `docs/QDRANT_SETUP.md`: maintained user manual for setup, workflows,
   persistence, recovery, and troubleshooting.
@@ -73,6 +74,21 @@ artifacts unless explicitly published.
 
 ## Session and Audit Log Summaries
 
+- `docs/audits/082026/2026-08-13-agent-skills-defect-repair-campaign.md` and
+  `docs/logs/session/082026/2026-08-13-agent-skills-defect-repair-campaign.md`:
+  governed local repair of all ten findings from the August 13 audit; closes
+  workflow injection, DNS rebinding, router-boundary drift, and silent MCP
+  cleanup, validates the local scanner/dependency/scroll/release-documentation
+  repairs, and preserves six remote or hosted-proof gates without claiming
+  compliance.
+- `docs/audits/082026/2026-08-13-agent-skills-comprehensive-audit.md`,
+  `docs/audits/082026-audit-summary.md`, and
+  `docs/logs/session/082026/2026-08-13-agent-skills-comprehensive-audit.md`:
+  current-source, platform-aware agent-skills audit across architecture, data
+  flow, security, reliability, contracts, dependencies, release state, and web
+  workflow behavior; records the ten-finding pre-repair baseline (two high,
+  seven medium, one low), restores it to the active TODO ledger, and preserves
+  scanner/Giles capability limits without claiming compliance.
 - `docs/audits/082026/2026-08-12-comprehensive-audit-repair.md` and
   `docs/logs/session/082026/2026-08-12-comprehensive-audit-repair.md`:
   39-lens comprehensive audit and staged repair campaign over the preceding

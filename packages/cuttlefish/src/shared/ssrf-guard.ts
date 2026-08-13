@@ -1,5 +1,13 @@
 import dns from "node:dns/promises";
 import net from "node:net";
+import type { LookupAddress } from "node:dns";
+import type { LookupFunction } from "node:net";
+import {
+  Agent,
+  fetch as undiciFetch,
+  type Dispatcher,
+  type RequestInit as UndiciRequestInit,
+} from "undici";
 
 /**
  * SSRF guard for user-supplied URLs that the gateway fetches server-side
@@ -10,9 +18,8 @@ import net from "node:net";
  * issue requests to loopback/internal addresses (cloud metadata, other local
  * services, etc.). This validates the scheme and resolves the host so every
  * resolved address is checked against private/reserved ranges before the fetch.
- *
- * Residual risk: a TOCTOU/DNS-rebinding window remains between this check and the
- * actual fetch. Pinning the validated IP into the request is tracked as follow-up.
+ * `safeFetch()` also pins those exact addresses into its request dispatcher so
+ * the network connection cannot perform a second, attacker-controlled lookup.
  */
 
 export interface UrlCheckResult {
@@ -22,6 +29,11 @@ export interface UrlCheckResult {
 
 export interface UrlCheckOptions {
   allowPrivateHosts?: boolean;
+}
+
+interface ResolvedUrlCheck extends UrlCheckResult {
+  hostname?: string;
+  addresses?: LookupAddress[];
 }
 
 function ipv4IsPrivate(ip: string): boolean {
@@ -70,6 +82,11 @@ export async function checkPublicUrl(rawUrl: string): Promise<UrlCheckResult> {
 }
 
 export async function validateUrlForServerFetch(rawUrl: string, options: UrlCheckOptions = {}): Promise<UrlCheckResult> {
+  const { ok, reason } = await resolveUrlForServerFetch(rawUrl, options);
+  return reason === undefined ? { ok } : { ok, reason };
+}
+
+async function resolveUrlForServerFetch(rawUrl: string, options: UrlCheckOptions = {}): Promise<ResolvedUrlCheck> {
   let parsed: URL;
   try {
     parsed = new URL(rawUrl);
@@ -92,16 +109,17 @@ export async function validateUrlForServerFetch(rawUrl: string, options: UrlChec
   }
 
   // Literal IP in the URL — check directly, no DNS.
-  if (net.isIP(host)) {
+  const literalFamily = net.isIP(host);
+  if (literalFamily) {
     return !options.allowPrivateHosts && isPrivateAddress(host)
       ? { ok: false, reason: "private/reserved IP" }
-      : { ok: true };
+      : { ok: true, hostname: lowerHost, addresses: [{ address: host, family: literalFamily }] };
   }
 
   // Hostname — resolve and ensure every address is public (anti-rebinding).
-  let addrs: Array<{ address: string }>;
+  let addrs: LookupAddress[];
   try {
-    addrs = await dns.lookup(host, { all: true });
+    addrs = await dns.lookup(host, { all: true, verbatim: true });
   } catch {
     return { ok: false, reason: "DNS resolution failed" };
   }
@@ -111,10 +129,84 @@ export async function validateUrlForServerFetch(rawUrl: string, options: UrlChec
       return { ok: false, reason: "host resolves to private/reserved IP" };
     }
   }
-  return { ok: true };
+  return { ok: true, hostname: lowerHost, addresses: addrs };
+}
+
+function normalizeLookupHost(hostname: string): string {
+  return hostname.replace(/^\[|\]$/g, "").toLowerCase();
+}
+
+/** Build a DNS lookup function that can return only already-validated addresses. */
+export function createPinnedLookup(
+  pinnedHosts: ReadonlyMap<string, readonly LookupAddress[]>,
+): LookupFunction {
+  return (hostname, options, callback) => {
+    const addresses = pinnedHosts.get(normalizeLookupHost(hostname));
+    if (!addresses?.length) {
+      const error = Object.assign(new Error(`No validated address is pinned for ${hostname}`), { code: "ENOTFOUND" });
+      callback(error, "", 0);
+      return;
+    }
+
+    const copies = addresses.map(({ address, family }) => ({ address, family }));
+    if (options.all) {
+      callback(null, copies);
+      return;
+    }
+    const selected = copies[0];
+    callback(null, selected.address, selected.family);
+  };
 }
 
 export class SsrfError extends Error {}
+
+function closeDispatcher(dispatcher: Dispatcher): void {
+  void dispatcher.close().catch(() => {});
+}
+
+function responseWithDispatcherCleanup(response: Response, dispatcher: Dispatcher): Response {
+  if (!response.body) {
+    closeDispatcher(dispatcher);
+    return response;
+  }
+
+  const reader = response.body.getReader();
+  let closed = false;
+  const finish = async (): Promise<void> => {
+    if (closed) return;
+    closed = true;
+    await dispatcher.close();
+  };
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const result = await reader.read();
+        if (result.done) {
+          controller.close();
+          await finish();
+        } else {
+          controller.enqueue(result.value);
+        }
+      } catch (err) {
+        controller.error(err);
+        await finish();
+      }
+    },
+    async cancel(reason) {
+      try {
+        await reader.cancel(reason);
+      } finally {
+        await finish();
+      }
+    },
+  });
+
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+}
 
 /**
  * Fetch a user-supplied URL server-side while re-validating every redirect hop.
@@ -139,22 +231,40 @@ export async function safeFetch(
 ): Promise<Response> {
   const maxRedirects = opts.maxRedirects ?? 5;
   let currentUrl = rawUrl;
-  for (let hop = 0; hop <= maxRedirects; hop++) {
-    const check = await checkPublicUrl(currentUrl);
-    if (!check.ok) throw new SsrfError(`Refusing to fetch URL: ${check.reason}`);
-    const response = await fetch(currentUrl, { ...init, redirect: "manual" });
-    // 3xx with a Location header is a redirect we must re-validate before following.
-    if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get("location");
-      if (!location) return response; // 3xx with no Location — hand back as-is.
-      if (hop === maxRedirects) throw new SsrfError("Too many redirects");
-      // Resolve relative Location against the current URL, then re-check next loop.
-      currentUrl = new URL(location, currentUrl).toString();
-      // Drain the redirect body so the socket can be reused.
-      await response.body?.cancel().catch(() => {});
-      continue;
+  const pinnedHosts = new Map<string, LookupAddress[]>();
+  const dispatcher = new Agent({ connect: { lookup: createPinnedLookup(pinnedHosts) } });
+
+  try {
+    for (let hop = 0; hop <= maxRedirects; hop++) {
+      const check = await resolveUrlForServerFetch(currentUrl, { allowPrivateHosts: false });
+      if (!check.ok || !check.hostname || !check.addresses?.length) {
+        throw new SsrfError(`Refusing to fetch URL: ${check.reason ?? "host did not resolve"}`);
+      }
+      // This map is the only address source used by the dispatcher lookup.
+      // A DNS change after validation therefore cannot redirect the socket.
+      pinnedHosts.set(check.hostname, check.addresses.map((address) => ({ ...address })));
+      // Keep fetch and Dispatcher on the same Undici implementation. Node's
+      // bundled global fetch can reject a dispatcher from a separately
+      // installed Undici version because their handler interfaces may differ.
+      const response = await undiciFetch(currentUrl, {
+        ...init,
+        redirect: "manual",
+        dispatcher,
+      } as unknown as UndiciRequestInit) as unknown as Response;
+      // 3xx with a Location header is a redirect we must re-validate before following.
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get("location");
+        if (!location) return responseWithDispatcherCleanup(response, dispatcher);
+        await response.body?.cancel().catch(() => {});
+        if (hop === maxRedirects) throw new SsrfError("Too many redirects");
+        currentUrl = new URL(location, currentUrl).toString();
+        continue;
+      }
+      return responseWithDispatcherCleanup(response, dispatcher);
     }
-    return response;
+    throw new SsrfError("Too many redirects");
+  } catch (err) {
+    await dispatcher.close().catch(() => {});
+    throw err;
   }
-  throw new SsrfError("Too many redirects");
 }

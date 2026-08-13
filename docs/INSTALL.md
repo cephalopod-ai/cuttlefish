@@ -12,9 +12,9 @@ Override with `CUTTLEFISH_HOME`.
 
 | Path | Best for | Status |
 |------|----------|--------|
-| **npm** `npm install -g cuttlefish-cli` | Everyday installs | Public package; matching GitHub releases publish new versions through the automated pipeline — see [RELEASING.md](RELEASING.md) |
-| **Homebrew** (macOS/Linux) | Formula users | Updated automatically after npm publish |
-| **GitHub Release archive** | Offline / pinned platform trees with native modules prebuilt | `linux-x64` + `darwin-arm64` `.tar.gz`, `win32-x64` `.zip` attached to the release |
+| **npm** `npm install -g cuttlefish-cli` | Everyday installs | Public package; current installable version is `0.23.6` |
+| **Homebrew** (macOS/Linux) | Formula users | Current formula is `0.23.6`; updated automatically after a successful npm publish |
+| **GitHub Release archive** | Offline / pinned platform trees with native modules prebuilt | Use a release that actually lists the platform asset; `v0.23.7` is incomplete and has none |
 | **Source** | Contributors and pre-publish installs | Always works |
 
 ---
@@ -145,6 +145,10 @@ Known Windows differences and limitations:
 ---
 
 ## macOS / Linux
+
+> **Current release state (2026-08-13):** GitHub `v0.23.7` is visible, but npm
+> publication failed and its downstream archives/formula update did not run.
+> Install `0.23.6` until a completed release supersedes or repairs that state.
 
 ### npm (after publication)
 

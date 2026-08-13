@@ -108,10 +108,12 @@ Windows zip install:
 
 Then open **[http://localhost:8888](http://localhost:8888)**, send your first message, and watch your COO delegate.
 
-> **Package availability.** `cuttlefish-cli` is available from npm. A release
-> with a matching `v<version>` tag publishes the npm package first; only after
-> that succeeds are platform archives and the Homebrew formula updated. See
-> [`docs/RELEASING.md`](docs/RELEASING.md) and [`docs/INSTALL.md`](docs/INSTALL.md).
+> **Package availability.** `cuttlefish-cli` is available from npm; the current
+> installable registry/Homebrew version is `0.23.6`. GitHub release `v0.23.7`
+> is incomplete: its npm publication failed, so it has no platform archives and
+> the formula was not advanced. A successful release publishes npm first, then
+> updates archives and Homebrew. See [`docs/RELEASING.md`](docs/RELEASING.md)
+> and [`docs/INSTALL.md`](docs/INSTALL.md).
 
 > **`--version` ≠ signed in.** Cuttlefish drives the official engine CLIs, so authenticate each one *before* `cuttlefish start` (run `claude` → `/login`, run `codex` to sign in, etc.). Without this, sessions can't reach the models - the most common fresh-install gotcha.
 

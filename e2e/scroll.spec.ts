@@ -12,7 +12,7 @@ async function openThread(page: Page) {
   const url = `/?session=${SESSION}`
   await page.goto(url, { waitUntil: 'networkidle' })
   await page.waitForSelector(scroller, { timeout: 15_000 })
-  await page.waitForTimeout(1500) // let messages render + mount-snap settle
+  await expect.poll(() => distance(page), { timeout: 4_000 }).toBeLessThan(60)
 }
 
 async function distance(page: Page) {
@@ -35,7 +35,7 @@ async function ensureScrollable(page: Page) {
 
 async function pinToBottom(page: Page) {
   await page.$eval(scroller, (el) => { el.scrollTop = el.scrollHeight })
-  await page.waitForTimeout(150)
+  await expect.poll(() => distance(page), { timeout: 4_000 }).toBeLessThan(60)
 }
 
 test.describe('chat stick-to-bottom', () => {
@@ -66,7 +66,6 @@ test.describe('chat stick-to-bottom', () => {
     await pinToBottom(page)
     expect(await distance(page)).toBeLessThan(60)
     await page.setViewportSize({ width: 1440, height: 520 }) // simulate keyboard / shrink
-    await page.waitForTimeout(400)
-    expect(await distance(page)).toBeLessThan(60)
+    await expect.poll(() => distance(page), { timeout: 4_000 }).toBeLessThan(60)
   })
 })

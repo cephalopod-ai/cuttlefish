@@ -87,11 +87,17 @@ export function useStickToBottom({
   messageCountRef.current = messageCount
   const mountedRef = useRef(false)
   const uiRaf = useRef<number | null>(null)
+  // Last height at which we intentionally pinned/read scroll state. Chromium
+  // can emit a scroll event for a viewport resize before ResizeObserver runs;
+  // without this distinction that synthetic drift looks like the user read up
+  // and disables following before the observer gets a chance to re-pin.
+  const viewportHeightRef = useRef(0)
 
   const [showJump, setShowJump] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
 
   const pinNow = useCallback((node: HTMLDivElement) => {
+    viewportHeightRef.current = node.clientHeight
     node.scrollTop = node.scrollHeight
   }, [])
 
@@ -116,6 +122,12 @@ export function useStickToBottom({
     if (!el) return
 
     const onScroll = () => {
+      const viewportChanged = el.clientHeight !== viewportHeightRef.current
+      viewportHeightRef.current = el.clientHeight
+      if (viewportChanged && followRef.current) {
+        pinNow(el)
+        return
+      }
       const dist = distanceFromBottom(el)
       if (animatingRef.current) {
         // Our own smooth scroll is still running; only clear once it reaches bottom.
@@ -150,7 +162,7 @@ export function useStickToBottom({
       el.removeEventListener('touchstart', cancelAnimating)
       if (uiRaf.current != null) cancelAnimationFrame(uiRaf.current)
     }
-  }, [el, threshold])
+  }, [el, pinNow, threshold])
 
   // ── Initial load / session switch (ChatPane is keyed → this hook remounts): ──
   // snap to bottom once, synchronously, the first time messages are present.

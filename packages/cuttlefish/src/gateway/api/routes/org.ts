@@ -3,18 +3,15 @@ import path from "node:path";
 import type { IncomingMessage as HttpRequest, ServerResponse } from "node:http";
 import { ORG_DIR } from "../../../shared/paths.js";
 import { logger } from "../../../shared/logger.js";
-import { createSession, getSession, insertMessage, listSessions } from "../../../sessions/registry.js";
+import { getSession, listSessions } from "../../../sessions/registry.js";
 import { readJsonBody } from "../../http-helpers.js";
-import { authorizeManagerScope, disallowedManagerScopedFields, isDirectChildSession, isHrHumanOnlyBlocked, isManagerNameAuthorizedForPrincipal, MANAGER_MUTABLE_EMPLOYEE_FIELDS } from "../../manager-auth.js";
+import { isDirectChildSession } from "../../manager-auth.js";
 import type { GatewayPrincipal } from "../../auth.js";
-import { BoardConflictError, defaultBoardState, readBoardArray, readBoardState, validateBoardAssigneesForDepartment, writeMergedBoardPartial } from "../../board-service.js";
-import { deleteEmployeeWithBoardCleanup } from "../../lifecycle-delete.js";
+import { defaultBoardState, readBoardArray, readBoardState } from "../../board-service.js";
 import { resolveBestSessionForTicket, resolveTicketSessionFallbackState, resolveTicketSessionFailureReason, resolveTicketSessionStalled, shouldExposeSessionForTicket } from "../../ticket-session-resolver.js";
 import { dispatchTicket } from "../../ticket-dispatch.js";
-import { isActiveEmployee, scanOrg } from "../../org.js";
-import { HR_EMPLOYEE_NAME } from "../../org-policy.js";
-import { buildCrossRequestBrief, buildOrgServices, computeExecutionProfileSummary, findServiceProvider, listOrgDepartments } from "../../org-services.js";
-import { evaluateCrossRequestChain, resolveCrossRequestIdentity } from "../../cross-request-guards.js";
+import { scanOrg } from "../../org.js";
+import { buildOrgServices, computeExecutionProfileSummary, listOrgDepartments } from "../../org-services.js";
 import { parseChangeInput } from "../../org-validation.js";
 import { resolveUserHeader } from "../../connector-reply.js";
 import type { ApiContext } from "../context.js";
@@ -22,6 +19,18 @@ import { matchRoute } from "../match-route.js";
 import { badRequest, json, notFound, serverError } from "../responses.js";
 import { loadSessionMessagesForApi } from "../session-query-routes.js";
 import type { OrgWarning } from "../../../shared/types.js";
+import {
+  applyApprovedOrgChange,
+  approveOrgChange,
+  createOrgEmployee,
+  deleteOrgEmployee,
+  rejectOrgChange,
+  renameOrgDepartment,
+  submitOrgChangeRequest,
+  updateDepartmentBoard,
+  updateOrgEmployee,
+} from "../../org-mutation-service.js";
+import { createCrossRequest } from "../../cross-request-service.js";
 
 const TICKET_SESSION_TAIL_LIMIT = 8;
 
@@ -99,143 +108,9 @@ export async function handleOrgRoutes(
       badRequest(res, "body must be a JSON object");
       return true;
     }
-
-    const fromEmployee = typeof body.fromEmployee === "string" ? body.fromEmployee.trim() : "";
-    const serviceName = typeof body.service === "string" ? body.service.trim() : "";
-    const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
-    let parentSessionId = typeof body.parentSessionId === "string" && body.parentSessionId.trim()
-      ? body.parentSessionId.trim()
-      : undefined;
-    const identity = resolveCrossRequestIdentity({
-      principal: (req as HttpRequest & { cuttlefishPrincipal?: GatewayPrincipal }).cuttlefishPrincipal,
-      fromEmployee,
-      parentSessionId,
-      lookup: { getSession },
-    });
-    if (!identity.ok) {
-      json(res, { error: identity.error, code: identity.code }, 403);
-      return true;
-    }
-    parentSessionId = identity.parentSessionId;
-    if (!fromEmployee) {
-      badRequest(res, "fromEmployee must be a non-empty string");
-      return true;
-    }
-    if (!serviceName) {
-      badRequest(res, "service must be a non-empty string");
-      return true;
-    }
-    if (!prompt) {
-      badRequest(res, "prompt must be a non-empty string");
-      return true;
-    }
-    if (parentSessionId && !getSession(parentSessionId)) {
-      notFound(res);
-      return true;
-    }
-
-    const registry = scanOrg();
-    const requester = registry.get(fromEmployee);
-    if (!requester || !isActiveEmployee(requester)) {
-      notFound(res);
-      return true;
-    }
-    const availableServices = buildOrgServices(registry);
-    const provider = findServiceProvider(registry, serviceName);
-    if (!provider) {
-      json(res, {
-        error: `No active provider is registered for service "${serviceName}"`,
-        code: "no_service_provider",
-        requestedService: serviceName,
-        availableServices,
-      }, 422);
-      return true;
-    }
-    if (isHrHumanOnlyBlocked(provider.employee.name, { isDirectTopLevelHumanRequest: false })) {
-      json(res, {
-        error: "HR / Org Steward accepts direct top-level requests from a human operator only",
-        code: "hr_human_only",
-      }, 403);
-      return true;
-    }
-    const engine = context.sessionManager.getEngine(provider.employee.engine);
-    if (!engine) {
-      serverError(res, `Provider engine "${provider.employee.engine}" is not available`);
-      return true;
-    }
-    const chainGuard = evaluateCrossRequestChain({
-      parentSessionId,
-      fromEmployee: requester.name,
-      provider: provider.employee.name,
-      lookup: { getSession },
-    });
-    if (!chainGuard.ok) {
-      json(res, {
-        error: chainGuard.error,
-        code: chainGuard.code,
-        requestedService: serviceName,
-        chain: chainGuard.chain,
-      }, 409);
-      return true;
-    }
-
-    const { resolveOrgHierarchy, resolveCrossRequestRoute, withPortalExecutive } = await import("../../org-hierarchy.js");
-    const config = context.getConfig();
-    const hierarchy = resolveOrgHierarchy(withPortalExecutive(registry, config.portal?.portalName, config));
-    const routed = resolveCrossRequestRoute(requester.name, provider.employee.name, hierarchy);
-    const brief = buildCrossRequestBrief({ requester, service: provider.service, prompt });
-    const now = Date.now();
-    const session = createSession({
-      engine: provider.employee.engine,
-      source: "web",
-      sourceRef: `cross-request:${now}:${provider.employee.name}`,
-      connector: "web",
-      sessionKey: `cross-request:${now}:${provider.employee.name}`,
-      replyContext: { source: "web" },
-      employee: provider.employee.name,
-      parentSessionId,
-      model: provider.employee.model,
-      effortLevel: provider.employee.effortLevel,
-      title: `Cross request: ${provider.service.name}`,
-      prompt: brief,
-      promptExcerpt: prompt,
-      portalName: context.getConfig().portal?.portalName,
-      transportMeta: {
-        crossRequest: {
-          fromEmployee: requester.name,
-          service: provider.service.name,
-          provider: provider.employee.name,
-          route: routed.route,
-          managers: routed.managers,
-          // The originating session, so the request is traceable from the
-          // requester's side too — `fromEmployee` alone is an employee name,
-          // ambiguous across all of that employee's sessions — and so the
-          // chain walk above has a durable edge to follow.
-          ...(parentSessionId ? { requesterSessionId: parentSessionId } : {}),
-        },
-      },
-    });
-    insertMessage(session.id, "user", brief);
-    const { dispatchEmployeeSessionRun } = await import("../../mid-pair-orchestrator.js");
-    void dispatchEmployeeSessionRun(session, brief, engine, context.getConfig(), context, provider.employee);
-    context.emit("session:created", { sessionId: session.id, employee: provider.employee.name });
-    if (session.parentSessionId) {
-      const talkParent = getSession(session.parentSessionId);
-      if (talkParent?.source === "talk") {
-        context.emit("talk:focus", { cooId: session.id, label: provider.service.name, parentId: talkParent.id });
-      }
-    }
-    json(res, {
-      sessionId: session.id,
-      provider: {
-        name: provider.employee.name,
-        displayName: provider.employee.displayName,
-        department: provider.employee.department,
-      },
-      route: routed.route,
-      managers: routed.managers,
-      service: provider.service.name,
-    }, 201);
+    const principal = (req as HttpRequest & { cuttlefishPrincipal?: GatewayPrincipal }).cuttlefishPrincipal;
+    const result = await createCrossRequest(body, principal, context);
+    json(res, result.body, result.statusCode);
     return true;
   }
 
@@ -270,22 +145,8 @@ export async function handleOrgRoutes(
       badRequest(res, "employee body must be a JSON object");
       return true;
     }
-    const { createEmployeeYaml, validateEmployeeCreate } = await import("../../org.js");
-    const registry = scanOrg();
-    const result = validateEmployeeCreate(context.getConfig(), body, registry.keys());
-    if (!result.ok || !result.employee) {
-      badRequest(res, result.error || "invalid employee");
-      return true;
-    }
-    const wrote = createEmployeeYaml(result.employee);
-    if (!wrote) {
-      badRequest(res, `employee "${result.employee.name}" already exists`);
-      return true;
-    }
-    context.reloadOrg?.();
-    context.emit("org:updated", { employee: result.employee.name, action: "created" });
-    const created = scanOrg().get(result.employee.name);
-    json(res, { status: "ok", employee: created ?? null }, 201);
+    const result = await createOrgEmployee(body, context);
+    json(res, result.body, result.statusCode);
     return true;
   }
 
@@ -298,91 +159,15 @@ export async function handleOrgRoutes(
       badRequest(res, "update body must be a JSON object");
       return true;
     }
-    const { updateEmployeeYaml, validateEmployeeUpdate } = await import("../../org.js");
-    const registry = scanOrg();
-    const current = registry.get(params.name);
-    if (!current) {
-      notFound(res);
-      return true;
-    }
-    const managerName = typeof body.managerName === "string" ? body.managerName.trim() : "";
-    if (managerName) {
-      const principal = (req as HttpRequest & { cuttlefishPrincipal?: GatewayPrincipal }).cuttlefishPrincipal;
-      if (!isManagerNameAuthorizedForPrincipal(managerName, principal)) {
-        json(res, { error: "Session-scoped callers may only act as their own bound manager identity" }, 403);
-        return true;
-      }
-      const config = context.getConfig();
-      const auth = authorizeManagerScope(registry, managerName, [params.name], config.portal?.portalName, config);
-      if (!auth.ok) {
-        json(res, { error: auth.error }, 403);
-        return true;
-      }
-      const disallowedFields = disallowedManagerScopedFields(body);
-      if (disallowedFields.length > 0) {
-        json(
-          res,
-          {
-            error: `manager-scoped employee updates may only modify ${[...MANAGER_MUTABLE_EMPLOYEE_FIELDS].join(", ")} (received: ${disallowedFields.join(", ")})`,
-          },
-          403,
-        );
-        return true;
-      }
-    }
-    const employeeUpdate = { ...body };
-    delete employeeUpdate.managerName;
-
-    const result = validateEmployeeUpdate(context.getConfig(), current, employeeUpdate, registry.keys());
-    if (!result.ok) {
-      badRequest(res, result.error || "invalid update");
-      return true;
-    }
-
-    const wrote = updateEmployeeYaml(params.name, result.updates!);
-    if (!wrote) {
-      notFound(res);
-      return true;
-    }
-
-    context.reloadOrg?.();
-    context.emit("org:updated", { employee: params.name });
-    const updated = scanOrg().get(params.name);
-    json(res, { status: "ok", employee: updated ?? null });
+    const principal = (req as HttpRequest & { cuttlefishPrincipal?: GatewayPrincipal }).cuttlefishPrincipal;
+    const result = await updateOrgEmployee(params.name, body, principal, context);
+    json(res, result.body, result.statusCode);
     return true;
   }
 
   if (method === "DELETE" && params) {
-    const { getAllParents } = await import("../../org-hierarchy.js");
-    const name = params.name;
-    const registry = scanOrg();
-    const current = registry.get(name);
-    if (!current) {
-      notFound(res);
-      return true;
-    }
-    // Refuse to orphan reports: block deletion while anyone still reports to
-    // this employee (primary or secondary matrix links).
-    const reports = [...registry.values()]
-      .filter((emp) => getAllParents(emp.reportsTo).includes(name))
-      .map((emp) => emp.name);
-    if (reports.length > 0) {
-      json(res, {
-        error: `Cannot delete "${name}" while ${reports.length} employee${reports.length === 1 ? "" : "s"} still report${reports.length === 1 ? "s" : ""} to them. Reassign or remove them first.`,
-        reports,
-      }, 409);
-      return true;
-    }
-    const deletion = deleteEmployeeWithBoardCleanup(ORG_DIR, name);
-    if (!deletion.ok) {
-      logger.error(`Employee ${name} was not deleted safely: ${deletion.error}`);
-      serverError(res, `Employee was not deleted: ${deletion.error}`);
-      return true;
-    }
-    for (const department of deletion.archived.departments) context.emit("board:updated", { department });
-    context.reloadOrg?.();
-    context.emit("org:updated", { employee: name, action: "deleted" });
-    json(res, { status: "ok" });
+    const result = await deleteOrgEmployee(params.name, context);
+    json(res, result.body, result.statusCode);
     return true;
   }
 
@@ -408,43 +193,14 @@ export async function handleOrgRoutes(
   if (method === "POST" && pathname === "/api/org/change-requests") {
     const parsed = await readJsonBody(req, res);
     if (!parsed.ok) return true;
-    const input = parseChangeInput(parsed.body);
-    if (!input.ok) {
-      badRequest(res, input.error);
-      return true;
-    }
     const body = parsed.body as Record<string, unknown>;
-    const { validateOrgChange } = await import("../../org.js");
-    const validation = validateOrgChange(context.getConfig(), input.value);
-    if (!validation.ok) {
-      badRequest(res, validation.error || "invalid org change");
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      badRequest(res, "change request body must be a JSON object");
       return true;
     }
-    // Run the full HR pipeline: hard guards → classify → persist pending_critique
-    // → background HR critique → approval gate (or auto-apply for low-risk).
-    const { submitOrgChange } = await import("../../hr-steward.js");
     const principal = (req as HttpRequest & { cuttlefishPrincipal?: GatewayPrincipal }).cuttlefishPrincipal;
-    const result = await submitOrgChange(
-      {
-        changeType: input.value.changeType,
-        employeeName: input.value.employeeName,
-        proposed: input.value.proposed,
-        rationale: typeof body.rationale === "string" ? body.rationale : "",
-        evidenceRefs: Array.isArray(body.evidenceRefs)
-          ? body.evidenceRefs.filter((x): x is string => typeof x === "string")
-          : [],
-        proposedBy: typeof body.proposedBy === "string" && body.proposedBy.trim() ? body.proposedBy.trim() : "user",
-        // Never accept an origin session from the request body: only the
-        // transport-authenticated scoped principal may establish this binding.
-        originSessionId: principal?.kind === "session" ? principal.sessionId : null,
-      },
-      context,
-    );
-    if (result.blocked) {
-      json(res, { status: "blocked", error: result.reason, changeRequest: result.request }, 409);
-      return true;
-    }
-    json(res, { status: "ok", changeRequest: result.request }, 202);
+    const result = await submitOrgChangeRequest(body, principal, context);
+    json(res, result.body, result.statusCode);
     return true;
   }
 
@@ -481,120 +237,25 @@ export async function handleOrgRoutes(
 
   params = matchRoute("/api/org/change-requests/:id/approve", pathname);
   if (method === "POST" && params) {
-    const { getChangeRequest, updateChangeRequestStatus } = await import("../../org-changes.js");
-    const { applyOrgChange, recordHrDecisionMessage } = await import("../../hr-steward.js");
-    const { getApproval, resolveApproval } = await import("../../approvals.js");
-    const request = getChangeRequest(params.id);
-    if (!request) {
-      notFound(res);
-      return true;
-    }
-    if (request.status !== "pending_approval" && request.status !== "approved") {
-      json(res, { error: `change is ${request.status}, not awaiting approval` }, 409);
-      return true;
-    }
     const actor = resolveUserHeader(req.headers, context.getConfig().gateway.userHeader);
-    const approvalSessionId = request.approvalId ? (getApproval(request.approvalId)?.sessionId ?? null) : null;
-    if (request.approvalId) {
-      try {
-        const resolved = resolveApproval(request.approvalId, "approved", actor);
-        context.emit("approval:resolved", {
-          approvalId: resolved.id,
-          sessionId: resolved.sessionId,
-          state: "approved",
-        });
-      } catch {
-        /* already resolved — proceed to apply idempotently */
-      }
-    }
-    recordHrDecisionMessage(approvalSessionId, request, { action: "approved", actor }, context);
-    updateChangeRequestStatus(params.id, "approved");
-    const applied = await applyOrgChange(request, context);
-    if (!applied.ok) {
-      recordHrDecisionMessage(approvalSessionId, request, { action: "failed", actor, error: applied.error ?? null }, context);
-      json(res, { status: "error", error: applied.error, changeRequest: getChangeRequest(params.id) }, 400);
-      return true;
-    }
-    recordHrDecisionMessage(approvalSessionId, request, { action: "applied", actor }, context);
-    json(res, { status: "ok", changeRequest: getChangeRequest(params.id) });
+    const result = await approveOrgChange(params.id, actor, context);
+    json(res, result.body, result.statusCode);
     return true;
   }
 
   params = matchRoute("/api/org/change-requests/:id/reject", pathname);
   if (method === "POST" && params) {
-    const { getChangeRequest, updateChangeRequestStatus } = await import("../../org-changes.js");
-    const { recordHrDecisionMessage } = await import("../../hr-steward.js");
-    const { getApproval, resolveApproval } = await import("../../approvals.js");
-    const request = getChangeRequest(params.id);
-    if (!request) {
-      notFound(res);
-      return true;
-    }
-    if (!["pending_approval", "approved"].includes(request.status)) {
-      json(res, { error: `change is ${request.status}, not awaiting approval` }, 409);
-      return true;
-    }
     const actor = resolveUserHeader(req.headers, context.getConfig().gateway.userHeader);
-    const approvalSessionId = request.approvalId ? (getApproval(request.approvalId)?.sessionId ?? null) : null;
-    if (request.approvalId) {
-      try {
-        const resolved = resolveApproval(request.approvalId, "rejected", actor);
-        context.emit("approval:resolved", {
-          approvalId: resolved.id,
-          sessionId: resolved.sessionId,
-          state: "rejected",
-        });
-      } catch {
-        /* already resolved */
-      }
-    }
-    const updated = updateChangeRequestStatus(params.id, "rejected");
-    recordHrDecisionMessage(approvalSessionId, request, { action: "rejected", actor }, context);
-    context.emit("org-change:updated", { id: params.id, status: "rejected" });
-    json(res, { status: "ok", changeRequest: updated });
+    const result = await rejectOrgChange(params.id, actor, context);
+    json(res, result.body, result.statusCode);
     return true;
   }
 
   params = matchRoute("/api/org/change-requests/:id/apply", pathname);
   if (method === "POST" && params) {
-    const { getChangeRequest, updateChangeRequestStatus } = await import("../../org-changes.js");
-    const { applyOrgChange, recordHrDecisionMessage } = await import("../../hr-steward.js");
-    const { getApproval, resolveApproval } = await import("../../approvals.js");
-    const request = getChangeRequest(params.id);
-    if (!request) {
-      notFound(res);
-      return true;
-    }
-    if (!["pending_approval", "approved"].includes(request.status)) {
-      json(res, { error: `Change request is '${request.status}' and cannot be applied` }, 409);
-      return true;
-    }
     const actor = resolveUserHeader(req.headers, context.getConfig().gateway.userHeader);
-    const approvalSessionId = request.approvalId ? (getApproval(request.approvalId)?.sessionId ?? null) : null;
-    if (request.approvalId) {
-      try {
-        const resolved = resolveApproval(request.approvalId, "approved", actor);
-        context.emit("approval:resolved", {
-          approvalId: resolved.id,
-          sessionId: resolved.sessionId,
-          state: "approved",
-        });
-      } catch {
-        /* already resolved — continue idempotently */
-      }
-    }
-    recordHrDecisionMessage(approvalSessionId, request, { action: "approved", actor }, context);
-    if (request.status === "pending_approval") {
-      updateChangeRequestStatus(params.id, "approved");
-    }
-    const applied = await applyOrgChange(request, context);
-    if (!applied.ok) {
-      recordHrDecisionMessage(approvalSessionId, request, { action: "failed", actor, error: applied.error ?? null }, context);
-      json(res, { status: "error", error: applied.error, changeRequest: getChangeRequest(params.id) }, 400);
-      return true;
-    }
-    recordHrDecisionMessage(approvalSessionId, request, { action: "applied", actor }, context);
-    json(res, { status: "ok", changeRequest: getChangeRequest(params.id) });
+    const result = await applyApprovedOrgChange(params.id, actor, context);
+    json(res, result.body, result.statusCode);
     return true;
   }
 
@@ -604,23 +265,8 @@ export async function handleOrgRoutes(
     if (!parsed.ok) return true;
     const body = parsed.body as Record<string, unknown>;
     const nextName = typeof body.name === "string" ? body.name.trim() : "";
-    const { renameDepartment } = await import("../../department-rename.js");
-    const result = renameDepartment(params.name, nextName);
-    if (!result.ok) {
-      json(res, { error: result.error }, result.status);
-      return true;
-    }
-    context.reloadOrg?.();
-    context.emit("org:updated", {
-      action: "department-renamed",
-      previousDepartment: result.previousDepartment,
-      department: result.department,
-      employees: result.employees,
-    });
-    if (result.movedDirectory) {
-      context.emit("board:updated", { department: result.department, previousDepartment: result.previousDepartment });
-    }
-    json(res, { status: "ok", ...result });
+    const result = await renameOrgDepartment(params.name, nextName, context);
+    json(res, result.body, result.statusCode);
     return true;
   }
 
@@ -786,44 +432,10 @@ export async function handleOrgRoutes(
 
   params = matchRoute("/api/org/departments/:name/board", pathname);
   if (method === "PUT" && params) {
-    const deptDir = path.join(ORG_DIR, params.name);
-    if (!fs.existsSync(deptDir)) {
-      notFound(res);
-      return true;
-    }
     const parsed = await readJsonBody(req, res);
     if (!parsed.ok) return true;
-    try {
-      const currentTickets = readBoardState(ORG_DIR, params.name)?.tickets ?? [];
-      const assigneeError = validateBoardAssigneesForDepartment(params.name, parsed.body, currentTickets);
-      if (assigneeError) {
-        badRequest(res, assigneeError);
-        return true;
-      }
-      const activeSessionIds = new Set(listSessions().map((session) => session.id));
-      const { rejected } = writeMergedBoardPartial(ORG_DIR, params.name, parsed.body, { activeSessionIds });
-      if (rejected.length > 0) {
-        logger.warn(
-          `PUT /api/org/departments/${params.name}/board: accepted valid tickets, rejected ${rejected.length} invalid: ` +
-          rejected.map((r) => `[${r.index}] ${r.error}`).join("; "),
-        );
-      }
-      context.emit("board:updated", { department: params.name });
-      json(res, rejected.length > 0 ? { status: "partial", rejectedTickets: rejected } : { status: "ok" });
-      return true;
-    } catch (err) {
-      logger.warn(`PUT /api/org/departments/${params.name}/board failed: ${err instanceof Error ? err.message : String(err)}`);
-      if (err instanceof BoardConflictError) {
-        json(res, {
-          reason: "board-conflict",
-          error: err.message,
-          ticketIds: err.ticketIds,
-        }, 409);
-        return true;
-      }
-      badRequest(res, err instanceof Error ? err.message : "Invalid board payload");
-      return true;
-    }
+    const result = updateDepartmentBoard(params.name, parsed.body, context);
+    json(res, result.body, result.statusCode);
     return true;
   }
 

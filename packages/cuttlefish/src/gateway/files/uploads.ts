@@ -315,6 +315,7 @@ export async function handleJsonUpload(req: HttpRequest, res: ServerResponse, co
       // 3xx to a private/metadata address cannot slip past the initial check.
       const response = await safeFetch(url!);
       if (!response.ok) {
+        await response.body?.cancel().catch(() => {});
         return serverError(res, `Failed to fetch URL: ${response.status} ${response.statusText}`);
       }
       buffer = await bufferResponseWithLimit(response, MAX_UPLOAD_SIZE);

@@ -135,9 +135,13 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
   // TMP-CUT-019 / DAT-BUS-006: sweep MCP per-session temp config files (can
   // hold secrets) orphaned by a hard process kill mid-session, same
   // 24h-interval convention as the upload cleanup above.
-  try { sweepStaleMcpConfigFiles(); } catch { }
+  try { sweepStaleMcpConfigFiles(); } catch (err) {
+    logger.warn(`Failed to sweep stale MCP config files during startup: ${err instanceof Error ? err.message : String(err)}`);
+  }
   const mcpConfigSweepTimer = setInterval(() => {
-    try { sweepStaleMcpConfigFiles(); } catch { }
+    try { sweepStaleMcpConfigFiles(); } catch (err) {
+      logger.warn(`Failed to sweep stale MCP config files on schedule: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }, 24 * 60 * 60 * 1000);
   mcpConfigSweepTimer.unref?.();
 

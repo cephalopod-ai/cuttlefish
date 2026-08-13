@@ -51,6 +51,10 @@ The release workflows deliberately run in this order:
 This sequence means an npm failure cannot leave a release claiming binary
 archives or a Homebrew formula for a tarball that does not exist.
 
+It can still leave the triggering GitHub Release visible without an npm
+package or downstream assets. Treat that release as incomplete, correct public
+install guidance immediately, and follow the recovery procedure below.
+
 ## Recovery
 
 If a release tag does not match `packages/cuttlefish/package.json`, the npm
@@ -61,3 +65,10 @@ reuse the failed tag.
 `v0.1.0` is such a historical failed pre-release: it did not publish
 `cuttlefish-cli` or release platform archives. It must not be presented as an
 installable package release.
+
+`v0.23.7` is the current incomplete-release example: its publish job passed the
+repository/package checks and provenance step, then npm rejected the publish
+for missing/expired authority. npm, platform archives, and the Homebrew formula
+therefore remain at `0.23.6`. Restore the npm credential or trusted-publisher
+connection before choosing the immutable-version-safe recovery path; reconcile
+the duplicate draft and public release only with explicit release authority.

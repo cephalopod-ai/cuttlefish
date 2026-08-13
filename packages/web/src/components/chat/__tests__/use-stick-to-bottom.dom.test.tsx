@@ -117,6 +117,21 @@ describe('useStickToBottom — behaviour', () => {
     expect(dist(el)).toBe(0)
   })
 
+  it('resize/keyboard: re-pins when the resize scroll event beats ResizeObserver', () => {
+    const { getByTestId, rerender } = render(<Harness messageCount={0} />)
+    const el = getByTestId('scroller')
+    setMetrics(el, 1000, 200, 0)
+    act(() => { rerender(<Harness messageCount={5} />) })
+    expect(dist(el)).toBe(0)
+
+    // Chromium may dispatch this scroll before the observer callback. The
+    // 150px viewport loss must not be mistaken for user intent to detach.
+    setMetrics(el, 1000, 50, el.scrollTop)
+    act(() => { fireEvent.scroll(el) })
+    expect(dist(el)).toBe(0)
+    expect(getByTestId('jump').textContent).toBe('hide')
+  })
+
   it('tab-return: visibilitychange re-pins while following', () => {
     const { getByTestId, rerender } = render(<Harness messageCount={0} />)
     const el = getByTestId('scroller')

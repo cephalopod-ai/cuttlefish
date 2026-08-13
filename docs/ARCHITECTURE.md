@@ -96,6 +96,12 @@ owning model reasoning.
   remains outside Cuttlefish core.
 - Run bundle export also lives in the gateway service layer so copy/filter rules
   stay centralized and session routes remain thin action adapters.
+- Org mutation and cross-request state machines live in
+  `org-mutation-service.ts` and `cross-request-service.ts`; the org route owns
+  only transport parsing, high-level query sequencing, and response translation.
+- Session creation, mutation, deletion, stop/reset/duplicate, and queue
+  transitions live in `create-session.ts` and `session-lifecycle-service.ts`;
+  `api/routes/session-write.ts` remains the HTTP adapter.
 
 ## Extension Points
 
