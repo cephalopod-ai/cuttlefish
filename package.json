@@ -36,13 +36,13 @@
     "@eslint/js": "^10.0.1",
     "@next/eslint-plugin-next": "^16.3.0",
     "@playwright/test": "^1.62.1",
-    "eslint": "^10.8.0",
+    "eslint": "^10.8.1",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "globals": "^17.9.0",
-    "turbo": "^2.10.8",
+    "globals": "^17.10.0",
+    "turbo": "^2.10.9",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.66.0",
+    "typescript-eslint": "^8.67.0",
     "yaml": "^2.9.0"
   }
 }
