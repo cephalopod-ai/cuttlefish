@@ -7,7 +7,7 @@
 | `docs/changes/releases/v0.23.7.md` | release statement | current | maintainers | created 2026-08-12 from the validated repair campaign and release diff | Publish with `v0.23.7` and retain as the tagged release record. |
 | `docs/RELEASING.md` | release contract | canonical | maintainers | added 2026-07-21 | Use before publishing npm, GitHub archives, or the Homebrew formula. |
 | `docs/INSTALL.md` | operator install guide | canonical | operators | added 2026-07-21 | Windows/macOS/Linux install matrix; `install.ps1` / platform archives / source. |
-| `docs/INDEX.md` | docs index | canonical | `AGENTS.md` docs rules | reconciled 2026-08-12 with the current playtest and comprehensive audit/repair records | Keep aligned with tracked docs and local-record index entries. |
+| `docs/INDEX.md` | docs index | canonical | `AGENTS.md` docs rules | reconciled 2026-08-16: removed dangling references to local-only (`.gitignore`d) audit/session files and pointed curated summaries at the TODO/TEST ledgers and Giles feature ledger | Keep aligned with tracked docs and local-record index entries. |
 | `docs/USER_MANUAL.md` | user manual | current | doc stewardship | reconciled 2026-07-20 (added missing `/command`, `/approvals`, `/archive` routes) | Maintain with CLI/UI changes. |
 | `docs/SPECIFICATION.md` | specification | current | doc stewardship | reconciled 2026-07-20 | Keep requirements source-grounded. |
 | `docs/ARCHITECTURE.md` | architecture | current | doc stewardship | reconciled 2026-07-20 | Update with gateway/runtime changes. |

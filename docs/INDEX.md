@@ -74,128 +74,25 @@ artifacts unless explicitly published.
 
 ## Session and Audit Log Summaries
 
-- `docs/audits/082026/2026-08-13-agent-skills-defect-repair-campaign.md` and
-  `docs/logs/session/082026/2026-08-13-agent-skills-defect-repair-campaign.md`:
-  governed local repair of all ten findings from the August 13 audit; closes
-  workflow injection, DNS rebinding, router-boundary drift, and silent MCP
-  cleanup, validates the local scanner/dependency/scroll/release-documentation
-  repairs, and preserves six remote or hosted-proof gates without claiming
-  compliance.
-- `docs/audits/082026/2026-08-13-agent-skills-comprehensive-audit.md`,
-  `docs/audits/082026-audit-summary.md`, and
-  `docs/logs/session/082026/2026-08-13-agent-skills-comprehensive-audit.md`:
-  current-source, platform-aware agent-skills audit across architecture, data
-  flow, security, reliability, contracts, dependencies, release state, and web
-  workflow behavior; records the ten-finding pre-repair baseline (two high,
-  seven medium, one low), restores it to the active TODO ledger, and preserves
-  scanner/Giles capability limits without claiming compliance.
-- `docs/audits/082026/2026-08-12-comprehensive-audit-repair.md` and
-  `docs/logs/session/082026/2026-08-12-comprehensive-audit-repair.md`:
-  39-lens comprehensive audit and staged repair campaign over the preceding
-  Cuttlefish playtest, active TODO ledger, security boundaries, runtime/data
-  integrity, CLI/UI, dependencies, release metadata, and Giles adapter cleanup;
-  all confirmed findings were repaired, adversarially re-reviewed, and passed
-  the authoritative checks, with residual risks and tool limits retained.
-- `docs/audits/082026/2026-08-12-cuttlefish-scenario-playtest.md` and
-  `docs/logs/session/082026/2026-08-12-cuttlefish-scenario-playtest.md`:
-  live Chrome/CLI pass over the 225-card Cuttlefish library; 43 cards were
-  exercised and five new setup, Codex, lifecycle, chat-send, and CLI-help
-  defects were confirmed without touching operator state.
-- `docs/audits/072026/2026-07-22-full-agent-skills-repo-audit.md`,
-  `docs/audits/072026/2026-07-22-full-agent-skills-findings.json`,
-  `docs/audits/072026/2026-07-22-full-agent-skills-vulnerability-details.md`,
-  `docs/logs/session/072026/2026-07-22-full-agent-skills-repo-audit.md`, and
-  `docs/logs/session/072026/2026-07-22-full-agent-skills-repair-campaign.md`:
-  full current-source private agent-skills audit across 39 applicable lenses;
-  records fifteen confirmed findings and their repair-campaign closure,
-  separates informational dependency/Giles/header residuals, and preserves
-  browser automation as a blocked capability gate.
-- `docs/audits/072026/2026-07-21-full-scenario-library-playtest.md` and
-  `docs/logs/session/072026/2026-07-21-full-scenario-library-playtest.md`, plus
-  `docs/logs/session/072026/2026-07-21-playtest-defect-repair-campaign.md`:
-  225-card review and 61-card partial live execution using disposable homes;
-  records and subsequently closes four P2 checkpoint, resource-screening,
-  Ollama-output, and CLI-JSON defects while preserving browser and
-  specialized-fixture capability gates.
-- `docs/audits/072026/2026-07-21-sb-cut-001-collaboration-complete.md` and
-  `docs/logs/session/072026/2026-07-21-sb-cut-001-collaboration-complete.md`:
-  completed Project/Session Collaboration Prototype with unified Team and
-  Management feeds, structured routing and authority, durable URL/inspector
-  state, atomic project-tree deletion, Talk frontend retirement, full release
-  validation, rebuilt live-daemon proof, and approval-auth reconfirmation.
-- `docs/audits/072026/2026-07-20-leader-ack-root-cause-repair.md`: root-cause analysis and closure evidence for premature background callbacks, stale manager-synthesis suppression, and stale acknowledgement re-arming; also records the two-contact supervisor policy and cheap executive triage.
-- `docs/audits/072026/2026-07-20-test-scenario-library-rigor-audit.md` and
-  `docs/logs/session/072026/2026-07-20-test-scenario-library-rigor-expansion.md`:
-  full 181-card structural/source audit, 26-card operations/control-plane
-  expansion, and the confirmed orchestration CLI registration gap.
-- `docs/audits/072026/2026-07-20-scenario-library-playtest.md` and
-  `docs/audits/072026/2026-07-20-scenario-library-playtest-repair.md`: fresh
-  disposable-home scenario-library playtest, its three confirmed CLI
-  lifecycle/instance-reporting/JSON-stream findings, and their live-verified
-  repair closure; the unavailable-browser limit remains recorded.
-- `docs/audits/072026/2026-07-20-live-playtest-defect-repair.md` and
-  `docs/logs/session/072026/2026-07-20-live-playtest-defect-repair.md`:
-  repair record for the six confirmed lifecycle, skills, cron, routing, and
-  CLI error-handling findings from the supplied live playtest report.
-- `docs/audits/072026/2026-07-20-full-scenario-library-playtest.md` and
-  `docs/logs/session/072026/2026-07-20-full-scenario-library-playtest.md`:
-  225-card library review and disposable-home execution record; confirms
-  web-turn accounting, checkpoint replay, orchestration CLI registration, and
-  Skills add/idempotency defects while separating blocked browser/fixture work.
-- `docs/audits/072026/2026-07-20-documentation-stewardship.md` and
-  `docs/logs/session/072026/2026-07-20-documentation-stewardship.md`:
-  source-grounded documentation reconciliation, including the active-only TODO
-  ledger and the current weekly-schedule test failure.
-- `docs/audits/072026/2026-07-20-team-approval-routing-repair.md` and
-  `docs/logs/session/072026/2026-07-20-team-approval-routing-repair.md`:
-  repair record for authenticated chat-originated org-change proposals and
-  operator-only approval resolution.
-- `docs/audits/072026/2026-07-20-hr-singleton-model-switch.md` and
-  `docs/logs/session/072026/2026-07-20-hr-singleton-model-switch.md`:
-  repair record for honoring selectable same-engine model and effort changes
-  in the reusable HR chat.
-- `docs/audits/072026/2026-07-20-coo-fable-default.md` and
-  `docs/logs/session/072026/2026-07-20-coo-fable-default.md`:
-  alignment of the virtual COO, default configuration, and Fable-to-Opus
-  fallback policy.
+Raw session logs (`docs/logs/session/`) and audit details (`docs/audits/`)
+are local-only artifacts: the repository `.gitignore` excludes both trees,
+and per `docs/DOC_MAINTENANCE.md` they are not published unless a maintainer
+explicitly selects and reviews them. Do not treat this index as a list of
+tracked audit/session files.
 
-- `docs/logs/session/072026/2026-07-20-fleetview-workers-dataview.md`:
-  implementation and validation record for shareable Workers DataView URLs,
-  derived presence, the accessible inspector, and built-browser coverage.
+One tracked baseline pair was force-added before the ignore rule and remains
+in the checkout:
 
-- `docs/audits/072026/2026-07-16-full-audit-repair-campaign.md`:
-  current-source full repository audit; records twelve confirmed P1–P3
-  findings, their repair dispositions, final regression evidence, and explicit
-  residual validation limits.
-- `docs/logs/session/072026/2026-07-16-full-audit-repair-campaign.md`:
-  staged repair-campaign record for the full audit, including locality gates,
-  adversarial reviews, commit boundaries, and final closure checks.
-- `docs/logs/session/072026/2026-07-13-deferred-backlog-repair-campaign.md`:
-  repair-campaign record for the reopened architecture, scheduler-integrity,
-  work-state, and Workers DataView backlog items.
-- `docs/logs/session/072026/2026-07-13-hr-human-only-routing-repair.md`:
-  repair evidence for making HR / Org Steward human-only after the Program
-  Manager playtest, including live rejection probes and full validation.
-- `docs/logs/session/072026/2026-07-12-program-manager-live-playtest.md`:
-  live Program Manager role playtest covering manual department-manager
-  delegation from simple through complex scenarios; records the confirmed HR
-  singleton parent-link failure and cleanup evidence.
-- `docs/logs/session/072026/2026-07-12-agent-skills-audit-sweep.md`:
-  extended current-branch MCP agent-skills audit summary; records ten confirmed
-  baseline residuals, their local repair closure, and static-only UI/Giles limits.
-- `docs/logs/session/072026/2026-07-12-agent-skills-defect-repair-campaign.md`:
-  governed eight-stage repair record for all ten findings, including final
-  regression evidence and local commit references.
-- `docs/logs/session/072026/2026-07-12-twenty-scenario-live-playtest.md`:
-  July 2026 live playtest summary — twenty gateway scenarios covering solo,
-  review, failover, Grok recovery, and manager delegation; durable findings and
-  repair plan are kept in the paired local audit record.
-- `docs/logs/session/072026/2026-07-12-twenty-scenario-defect-repair.md`:
-  repair-campaign record for the delegation-scope and review-lifecycle findings
-  from that playtest.
-- `docs/logs/session/062026-session-summary.md`: June 2026 durable session summary —
-  multi-role execution, security hardening, kanban improvements, Qdrant, email,
-  orchestration, and D1–D8 defect repair campaign (model alias, crash masking, UI fixes).
+- `docs/audits/072026/2026-07-21-sb-cut-001-gate0-baseline.md` and
+  `docs/logs/session/072026/2026-07-21-sb-cut-001-gate0-baseline.md`: the
+  Gate-0 collaboration-prototype baseline record (initial evidence for
+  SB-CUT-001); its findings feed the active TODO ledger.
+
+Curated summaries of completed campaigns (for example the August 2026
+agent-skills audit and repair campaign, the July 2026 comprehensive audit and
+repair campaign, and the SB-CUT-001 collaboration completion) are reflected
+in `docs/TODO_LEDGER.md`, `docs/TODO_HISTORY.md`, `docs/TEST_LEDGER.md`, and
+the `.giles/feature-ledger/` entries rather than in tracked raw-log files.
 
 ## FleetView Implementation Status
 
