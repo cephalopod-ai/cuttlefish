@@ -1,4 +1,4 @@
-export const SETUP_ENGINES = ["claude", "codex", "grok", "hermes", "ollama", "kilo", "aider"] as const;
+export const SETUP_ENGINES = ["claude", "codex", "grok", "hermes", "ollama", "kilo", "aider", "vibe"] as const;
 export type SetupEngine = (typeof SETUP_ENGINES)[number];
 
 const PREFERRED_SETUP_ENGINES: readonly SetupEngine[] = ["claude", "codex", "grok", "hermes"];

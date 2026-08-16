@@ -111,6 +111,9 @@ describe("getModelRegistry with a models: block", () => {
 });
 
 describe("cache + invalidate", () => {
+  // Real-machine engine CLIs (e.g. vibe-acp's Python startup) make each
+  // uncached getModelRegistry() call's engineAvailable sweep noticeably
+  // slower than the default vitest timeout budgets for.
   it("caches across calls and refreshes only after invalidate", () => {
     const a = getModelRegistry(cfg({}));
     const b = getModelRegistry(cfg({ claude: { bin: "claude", model: "CHANGED" } }));
@@ -118,5 +121,5 @@ describe("cache + invalidate", () => {
     invalidateModelRegistry();
     const c = getModelRegistry(cfg({ claude: { bin: "claude", model: "CHANGED" } }));
     expect(c.claude.models[0].id).toBe("CHANGED");
-  });
+  }, 15_000);
 });

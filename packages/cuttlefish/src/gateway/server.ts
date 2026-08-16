@@ -20,6 +20,7 @@ import { GrokEngine } from "../engines/grok.js";
 import { GrokInteractiveEngine } from "../engines/grok-interactive.js";
 import { HermesAcpEngine } from "../engines/hermes-acp.js";
 import { HermesInteractiveEngine } from "../engines/hermes-interactive.js";
+import { VibeAcpEngine } from "../engines/vibe-acp.js";
 import { KiloEngine } from "../engines/kilo.js";
 import { KiroEngine } from "../engines/kiro.js";
 import { OllamaEngine } from "../engines/ollama.js";
@@ -285,11 +286,12 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
   const ollamaEngine = new OllamaEngine();
   const kiloEngine = new KiloEngine();
   const aiderEngine = new AiderEngine();
-  logger.info("Engines initialized: claude (interactive PTY), codex (headless + interactive PTY), antigravity (interactive PTY), grok (headless + interactive PTY), hermes (headless + interactive PTY), pi, kiro (headless), ollama (headless), kilo (headless), aider (headless + interactive PTY)");
+  logger.info("Engines initialized: claude (interactive PTY), codex (headless + interactive PTY), antigravity (interactive PTY), grok (headless + interactive PTY), hermes (headless + interactive PTY), pi, kiro (headless), ollama (headless), kilo (headless), aider (headless + interactive PTY), vibe (headless ACP)");
 
   const codexEngine = new CodexEngine();
   const grokEngine = new GrokEngine();
   const hermesEngine = new HermesAcpEngine();
+  const vibeEngine = new VibeAcpEngine();
   const engines = new Map<string, Engine>();
   engines.set("claude", interactiveClaudeEngine);
   logger.info("Claude work turns: INTERACTIVE PTY (cc_entrypoint=cli, Max-subsidized)");
@@ -302,6 +304,7 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
   engines.set("ollama", ollamaEngine);
   engines.set("kilo", kiloEngine);
   engines.set("aider", aiderEngine);
+  engines.set("vibe", vibeEngine);
 
   const ptyViewEngines: Record<string, Engine & PtyViewEngine> = {
     claude: interactiveClaudeEngine,
@@ -837,6 +840,7 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
       kiloEngine.killAll();
       aiderEngine.killAll();
       aiderInteractiveEngine.killAll();
+      vibeEngine.killAll();
     },
     getOrchestrationRuntime: () => orchestrationRuntime,
     ptyWss: transports.ptyWss,

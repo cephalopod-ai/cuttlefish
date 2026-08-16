@@ -142,6 +142,7 @@ export function GatewayWorkspacesSection({
             { value: "ollama", label: "Ollama" },
             { value: "kilo", label: "Kilo" },
             { value: "aider", label: "Aider" },
+            { value: "vibe", label: "Vibe" },
           ]}
         />
       </FieldRow>
@@ -564,6 +565,32 @@ export function EngineConfigurationSection({
         API key (ANTHROPIC_API_KEY, OPENAI_API_KEY, …) is set in the gateway's
         environment.
       </FieldHint>
+
+      <div className="border-t border-[var(--separator)] mt-[var(--space-3)] pt-[var(--space-3)]" />
+
+      <div className="text-[length:var(--text-caption1)] font-[var(--weight-semibold)] text-[var(--text-tertiary)] mb-[var(--space-2)]">
+        Vibe
+      </div>
+      <FieldRow label="Binary Path">
+        <SettingsInput
+          value={config.engines?.vibe?.bin ?? ""}
+          onChange={(v) => updateConfig(["engines", "vibe", "bin"], v)}
+          placeholder="vibe-acp"
+        />
+      </FieldRow>
+      <FieldRow label="Model">
+        <SettingsSelect
+          value={config.engines?.vibe?.model ?? "mistral-medium-3.5"}
+          onChange={(v) => updateConfig(["engines", "vibe", "model"], v)}
+          options={modelOptions("vibe", [
+            { value: "mistral-medium-3.5", label: "Mistral Medium 3.5" },
+          ])}
+        />
+      </FieldRow>
+      <FieldHint>
+        Mistral AI's Vibe CLI, run via its dedicated ACP entrypoint (vibe-acp). Requires
+        Vibe to already be installed and authenticated (run `vibe --setup`).
+      </FieldHint>
     </Section>
   )
 }
@@ -612,6 +639,7 @@ export function RecoveryFallbacksSection({
             { value: "ollama", label: "Ollama" },
             { value: "kilo", label: "Kilo" },
             { value: "aider", label: "Aider" },
+            { value: "vibe", label: "Vibe" },
           ]}
         />
       </FieldRow>

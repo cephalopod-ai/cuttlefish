@@ -608,6 +608,7 @@ describe("GET /api/status", () => {
           ollama: { bin: "__cuttlefish_missing_ollama_for_status_test__", model: "gemma4" },
           kilo: { bin: "__cuttlefish_missing_kilo_for_status_test__", model: "kilo-auto/free" },
           aider: { bin: "__cuttlefish_missing_aider_for_status_test__", model: "default" },
+          vibe: { bin: "__cuttlefish_missing_vibe_for_status_test__", model: "mistral-medium-3.5" },
         },
       }),
       connectors: new Map(),

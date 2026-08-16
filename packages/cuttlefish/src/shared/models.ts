@@ -23,6 +23,7 @@ import {
 } from "./hermes-models.js";
 import { discoverAiderModels, knownAiderModels, type AiderModelDiscovery } from "./aider-models.js";
 import { discoverCodexModels, type CodexModelDiscovery } from "./codex-models.js";
+import { knownVibeModels, VIBE_EFFORT_LEVELS } from "./vibe-models.js";
 
 /**
  * Model + capability registry — the single source of truth for which engines and
@@ -40,7 +41,7 @@ import { discoverCodexModels, type CodexModelDiscovery } from "./codex-models.js
  */
 
 /** Engines registered in this build (mirrors server.ts engine map). */
-export const ENGINE_NAMES = ["claude", "codex", "antigravity", "grok", "pi", "kiro", "hermes", "ollama", "kilo", "aider"] as const;
+export const ENGINE_NAMES = ["claude", "codex", "antigravity", "grok", "pi", "kiro", "hermes", "ollama", "kilo", "aider", "vibe"] as const;
 export type EngineName = (typeof ENGINE_NAMES)[number];
 
 /** Binary name probed for each engine's availability (override via engines.<name>.bin). */
@@ -55,6 +56,9 @@ const ENGINE_BIN: Record<EngineName, string> = {
   ollama: "ollama",
   kilo: "kilo",
   aider: "aider",
+  // Vibe ships a dedicated ACP-over-stdio entrypoint distinct from the
+  // interactive `vibe` binary; that's the one this engine actually spawns.
+  vibe: "vibe-acp",
 };
 
 const EFFORT_MECHANISM: Record<EngineName, EffortMechanism> = {
@@ -68,6 +72,7 @@ const EFFORT_MECHANISM: Record<EngineName, EffortMechanism> = {
   ollama: "none",
   kilo: "none",
   aider: "none",
+  vibe: "none",
 };
 
 export const CODEX_DEFAULT_MODEL = "gpt-5.5";
@@ -88,6 +93,7 @@ const SYNTH_DEFAULTS: Record<EngineName, { supportsEffort: boolean; effortLevels
   // Aider auto-detects its model from whichever API key is in env; "default" is a
   // sentinel meaning "don't pass --model" (the engine omits the flag for it).
   aider: { supportsEffort: false, effortLevels: [], fallbackModel: "default" },
+  vibe: { supportsEffort: false, effortLevels: VIBE_EFFORT_LEVELS, fallbackModel: "mistral-medium-3.5" },
 };
 
 /** Optional per-engine `bin` override from config. */
@@ -120,6 +126,7 @@ const ENGINE_INSTALL_HINT: Record<EngineName, string> = {
   ollama: "install Ollama from https://ollama.com/download and pull a model, e.g. `ollama pull gemma4`",
   kilo: "npm install -g @kilocode/cli, then run `kilo` and use /connect to add a provider",
   aider: "install Aider (`python -m pip install aider-install && aider-install`, or `pipx install aider-chat`), then set an API key (e.g. ANTHROPIC_API_KEY or OPENAI_API_KEY)",
+  vibe: "install the Mistral Vibe CLI (see https://mistral.ai for install instructions), then run `vibe --setup` to authenticate",
 };
 
 /** Actionable error message for a session blocked by a missing or broken engine CLI. */
@@ -348,6 +355,10 @@ export function buildRegistry(config: CuttlefishConfig): ModelRegistry {
       registry[name] = buildAiderEntry(config, block?.aider, synthesized[name], available);
       continue;
     }
+    if (name === "vibe") {
+      registry[name] = buildVibeEntry(config, block?.vibe, synthesized[name], available);
+      continue;
+    }
     const engineBlock = block?.[name];
     registry[name] = engineBlock
       ? fromEngineModelsConfig(name, engineBlock, available)
@@ -428,6 +439,19 @@ function buildHermesEntry(
   if (hermesBlock) return fromEngineModelsConfig("hermes", hermesBlock, available, pinned);
   const known = knownHermesModels(pinned);
   return { name: "hermes", available, defaultModel: known.defaultModel || synthEntry.defaultModel, effortMechanism: "none", models: known.models };
+}
+
+/** Vibe registry entry: config `models.vibe` block > known catalog (no live discovery). */
+function buildVibeEntry(
+  config: CuttlefishConfig,
+  vibeBlock: EngineModelsConfig | undefined,
+  synthEntry: EngineRegistryEntry,
+  available: boolean,
+): EngineRegistryEntry {
+  const pinned = config.engines.vibe?.model;
+  if (vibeBlock) return fromEngineModelsConfig("vibe", vibeBlock, available, pinned);
+  const known = knownVibeModels(pinned);
+  return { name: "vibe", available, defaultModel: known.defaultModel || synthEntry.defaultModel, effortMechanism: "none", models: known.models };
 }
 
 /** Aider registry entry: env-discovered models > config `models.aider` block > known catalog. */

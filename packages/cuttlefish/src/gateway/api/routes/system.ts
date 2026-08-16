@@ -145,7 +145,7 @@ export async function handleSystemRoutes(
     // engines.default with no sibling engine config, unlike every other
     // config-writing path.
     if (engine !== undefined && !isKnownEngine(engine)) {
-      badRequest(res, `Unknown engine "${engine}" (expected one of: claude, codex, antigravity, grok, pi, kiro, hermes, ollama, kilo, aider)`);
+      badRequest(res, `Unknown engine "${engine}" (expected one of: claude, codex, antigravity, grok, pi, kiro, hermes, ollama, kilo, aider, vibe)`);
       return true;
     }
 

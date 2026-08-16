@@ -70,6 +70,7 @@ export interface Config {
     ollama?: { bin?: string; model?: string }
     kilo?: { bin?: string; model?: string; effortLevel?: string }
     aider?: { bin?: string; model?: string }
+    vibe?: { bin?: string; model?: string }
   }
   modelFallback?: {
     enabled?: boolean
@@ -87,7 +88,7 @@ export interface Config {
     maxCostUsd?: number
     interruptOnNewMessage?: boolean
     rateLimitStrategy?: "wait" | "fallback"
-    fallbackEngine?: "claude" | "codex" | "antigravity" | "grok" | "pi" | "kiro" | "ollama" | "kilo" | "aider"
+    fallbackEngine?: "claude" | "codex" | "antigravity" | "grok" | "pi" | "kiro" | "ollama" | "kilo" | "aider" | "vibe"
   }
   connectors?: {
     slack?: {

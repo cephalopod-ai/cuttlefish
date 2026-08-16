@@ -164,7 +164,7 @@ export interface CuttlefishConfig {
     exposeResolvedFilePaths?: boolean;
   };
   engines: {
-    default: "claude" | "codex" | "antigravity" | "grok" | "pi" | "hermes" | "kiro" | "ollama" | "kilo" | "aider";
+    default: "claude" | "codex" | "antigravity" | "grok" | "pi" | "hermes" | "kiro" | "ollama" | "kilo" | "aider" | "vibe";
     claude: {
       bin: string;
       model: string;
@@ -187,6 +187,8 @@ export interface CuttlefishConfig {
     hermes?: { bin?: string; model?: string };
     /** Kiro engine. `bin` optional — PATH-resolved. */
     kiro?: { bin?: string; model?: string; effortLevel?: string; creditBudget?: number; billingAnchorDay?: number };
+    /** Vibe (Mistral AI's `vibe-acp` CLI) engine. `bin` optional — PATH-resolved. No effort. */
+    vibe?: { bin?: string; model?: string };
   };
   models?: ModelsConfig;
   connectors: Record<string, any> & {
@@ -206,7 +208,7 @@ export interface CuttlefishConfig {
     maxCostUsd?: number;
     interruptOnNewMessage?: boolean;
     rateLimitStrategy?: "wait" | "fallback";
-    fallbackEngine?: "claude" | "codex" | "antigravity" | "grok" | "pi" | "kiro" | "hermes" | "ollama" | "kilo" | "aider";
+    fallbackEngine?: "claude" | "codex" | "antigravity" | "grok" | "pi" | "kiro" | "hermes" | "ollama" | "kilo" | "aider" | "vibe";
     autoResumeOnBoot?: boolean;
     /** Ledger-0007 Finding 2: cap on concurrent turn dispatches across the whole
      *  gateway (the default (non-orchestration) dispatch path had no cap at all —
