@@ -5,7 +5,7 @@ subcommands for deterministic automation sweeps, CI probe selection, and any
 external surface-metadata generators. It supersedes any generated classification
 that conflicts with the evidence recorded here.
 
-Last updated: 2026-06-24
+Last updated: 2026-08-16
 
 ## Classification Key
 
@@ -319,6 +319,12 @@ without a subcommand.
 | `cuttlefish continuations list` | List durable continuations |
 | `cuttlefish scheduler allocate\|plan\|simulate\|stats` | Dry-run only; no live mutations |
 | `cuttlefish migrate --check` | Check-only migration scan; no writes |
+| `cuttlefish ledger status` | Show run-ledger schema version and record counts |
+| `cuttlefish inspect runs\|run\|lineage\|dead-letter\|policy` | Read-only run-ledger, artifact-lineage, dead-letter, and policy inspection |
+| `cuttlefish recovery notices` | List corrupt-database recovery notices |
+| `cuttlefish worktree diff` | Show the diff for a managed task worktree |
+| `cuttlefish startup status` | Show systemd startup integration status |
+| `cuttlefish unpair` (no arg) | List paired browsers |
 
 ### Process-mutating (bounded, non-destructive to data)
 
@@ -340,6 +346,15 @@ without a subcommand.
 | `cuttlefish skills add\|remove\|update\|restore` | Mutates the skills registry |
 | `cuttlefish queue pause-task\|resume-task` | Mutates queue state |
 | `cuttlefish holds create\|extend\|cancel` | Mutates TTL-bounded holds |
+| `cuttlefish ledger reset` | Quarantines an incompatible run-ledger DB; prompts unless `--force` |
+| `cuttlefish run` | Submits an opt-in live orchestration task to the running gateway |
+| `cuttlefish dual-lane select\|apply` | Select or apply a completed dual-lane orchestration result |
+| `cuttlefish continuations retry` | Retry a failed orchestration continuation |
+| `cuttlefish recovery requeue` | Requeue one recovered continuation in a paused state |
+| `cuttlefish worktree create` | Create a managed task worktree |
+| `cuttlefish worktree cleanup` | Remove a managed task worktree |
+| `cuttlefish pair` | Mint a one-time paired-browser capability code |
+| `cuttlefish unpair <deviceId>` | Revoke a paired-browser capability by id |
 
 ### Destructive (exclude from all automated sweeps)
 

@@ -282,7 +282,7 @@ gateway:
   allowArbitraryFileRead: false
 
 engines:
-  default: claude        # claude | codex | grok | antigravity | pi | hermes | kiro | ollama | kilo
+  default: claude        # claude | codex | grok | antigravity | pi | hermes | kiro | ollama | kilo | aider
   claude:
     bin: claude          # binary on your PATH (override to point elsewhere)
     model: claude-fable-5
