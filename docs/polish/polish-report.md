@@ -2,115 +2,144 @@
 
 ## Summary
 
-- Date: 2026-06-26
-- Repo: `/home/ericl/Work/vscode/public_share/cuttlefish`
-- Branch: `main`
-- Agent: Codex
-- Scope: focused code-polish stewardship after the Cuttlefish rebrand and audit repair pass.
-- Behavior changes: none.
+A code-polish pass (`governance-code-polish`) was run against the cuttlefish
+repo on 2026-08-17. The repo entered the pass in an unusually clean state —
+all four baseline gates (typecheck, lint, test, build) were green with zero
+pre-existing failures, and a first-pass scan across all six assessable POL
+codes found **zero genuine findings**. No code-polish patches were required or
+applied. This report exists to disposition the required coverage table and
+document the one governance gap surfaced (POL-008 lint blindness).
 
 ## Scope
 
-### Included
+`packages/cuttlefish/src` (378 non-test `.ts` files) and `packages/web/src`
+(228 non-test `.ts`/`.tsx` files), excluding `__tests__/` directories and
+`*.test.*` files. `packages/contracts` was included in baseline validation but
+not independently POL-scanned (small, shared-type-only package).
 
-- Startup/convention scan of repo docs, manifests, lint/test/CI config, source layout, tracked artifact risks, and TODO/debug markers.
-- Low-risk stale-import cleanup in active CLI code.
-- Required TODO ledger creation for current code-polish debt.
-- Required polish report artifacts under `docs/polish/`.
+## Files changed
 
-### Excluded
+None. This was a report-only pass for the code surface; no source files were
+modified. (Documentation changes from the paired `governance-doc-stewardship`
+pass are tracked separately — see `docs/STRUCTURE_COMPLIANCE.md` and
+`docs/DOCUMENTATION_INVENTORY.md`.)
 
-- Public API, CLI, route, schema, migration, and package-name renames.
-- Repo-wide source headers, because the repo has no existing source-header convention and broad header churn would be noisy.
-- Historical docs rewrite, dependency changes, generated files, lockfiles, and build outputs.
+## Naming changes
 
-## Files Changed
+None proposed. Existing conventions (kebab-case files, camelCase
+functions/variables, PascalCase classes) are already consistent across both
+packages.
 
-| File | Change type | Reason |
+## File/directory renames
+
+None.
+
+## Headers added or normalized
+
+None. The repo has no file-header/license-banner convention (files begin
+directly with imports); this is an existing, consistent convention, not a
+gap — POL-003 is dispositioned `n/a` below.
+
+## Comments/docstrings added
+
+None needed. JSDoc is used selectively and accurately for actual API
+documentation; no missing-docstring gap was found on the sampled high-risk
+public surfaces (CLI entrypoint, gateway API routes, web UI entry,
+`packages/contracts`).
+
+## Dead code removed
+
+None found. See POL-008 below for the one caveat on detection method.
+
+## TODO/FIXME disposition
+
+Zero floating markers found. Grep for `FIXME`/`HACK`/`XXX` returned no hits
+anywhere in `packages/cuttlefish/src`, `packages/web/src`, or
+`packages/contracts/src`. The only `TODO` string hits (`board-worker.ts:20`,
+`:179`, `settings-config-sections.tsx:753`) are the literal name of a kanban
+board status ("TODO tickets"), not floating debt markers.
+
+## Architecture/layout observations
+
+None raised by this pass. Repo-wide architecture/config-centralization
+findings already exist under Giles (`GCFG-002/003/004`, routed as
+STRUCT-13 in `docs/STRUCTURE_COMPLIANCE.md`) and are out of scope for a
+code-polish pass — no mechanical fix, requires an architecture decision.
+
+## POL coverage table (mandatory — one row per POL-001..018)
+
+| Code | Disposition | Evidence |
 |---|---|---|
-| `docs/polish/intake.md` | report artifact | Record repo-state intake. |
-| `docs/polish/convention-baseline.md` | report artifact | Record discovered conventions and exclusions. |
-| `docs/polish/source-header-policy.md` | report artifact | Document no-header convention and future policy. |
-| `docs/polish/rename-manifest.md` | report artifact | Record that no renames were applied. |
-| `docs/polish/structure-review.md` | report artifact | Record structure observations and cleanup. |
-| `docs/polish/todo-ledger.md` | report artifact | Track active polish TODO dispositions. |
-| `docs/polish/polish-report.md` | report artifact | Final polish summary. |
-| `packages/cuttlefish/src/cli/instances.ts` | source polish | Removed a stale import left after single-instance hardening. |
-| `packages/cuttlefish/src/shared/__tests__/paths.test.ts` | regression guard | Added a package-surface scan preventing inherited gateway port reuse. |
+| POL-001 Misleading/inconsistent symbol names | clean | Naming conventions consistent across both packages (kebab-case files, camelCase vars/functions, PascalCase classes); no misleading names surfaced during the intake scan. |
+| POL-002 File/directory naming violations | clean | Same evidence as POL-001; no violations found. |
+| POL-003 Source header issues | n/a | Repo has no header/banner convention (files begin with imports); this is the repo's existing, consistent choice, not a gap to fill. |
+| POL-004 Missing public API docstrings | clean | Sampled high-risk public surfaces (CLI entrypoint `bin/cuttlefish.ts`, gateway API routes, `packages/contracts/src`, `packages/web/src/main.tsx`) carry adequate documentation; no missing-docstring findings surfaced. |
+| POL-005 Comment rot | clean | 0 findings. All flagged candidates were legitimate, accurate comments describing intentional backward-compat/fallback behavior (e.g. `shared/config.ts` legacy Codex context-window handling). |
+| POL-006 Commented-out code | clean | 0 findings. All `//`-prefixed candidate lines were prose explanation, not disabled code. |
+| POL-007 Debug remnants | clean | 0 findings. `console.log` usage in `cli/**` is intentional CLI stdout output; the single `console.log` in `shared/logger.ts` is the module's own gated stdout sink. No `debugger;` statements anywhere. |
+| POL-008 Dead code (safe tier) | **n/a — not assessable via configured tooling; governance gap flagged, not fixed** | `eslint.config.mjs` explicitly disables `@typescript-eslint/no-unused-vars` repo-wide (deliberate, documented convention), and no `tsconfig` sets `noUnusedLocals`/`noUnusedParameters`. A genuine POL-008 pass needs an explicit, disclosed, temporary read-only override (e.g. `ts-prune` or a scoped lint-rule enable) rather than treating `pnpm lint`'s silence as clearance. Not applied in this pass — changing lint config is outside code-polish's non-goals boundary without operator sign-off. |
+| POL-009 Floating TODO/FIXME/HACK markers | clean | 0 genuine markers found repo-wide; see TODO disposition above. |
+| POL-010 Magic literals | not independently re-verified | Not sampled with dedicated tooling this pass; no candidates surfaced incidentally during the POL-005/006/007/009/011/015 scan. Deferred — no evidence of a problem, but not exhaustively checked. |
+| POL-011 Logging hygiene | clean | Central `shared/logger.ts` applies `redactText()` to every message before write; no logged secrets found (`mcp/resolver.ts:176` logs the *absence* of a key, not a value); no wrong-log-level patterns spotted in sampled output. |
+| POL-012 Error-handling text and broad catches | not independently re-verified | Not sampled with dedicated tooling this pass; flag-only code (route to security/semantics skills if a broad-catch defect is later found), no findings surfaced incidentally. |
+| POL-013 Vague test names/fixtures | not independently re-verified | Not sampled this pass; test suite is large (≈3470 tests) and out of scope for a triage-level intake. |
+| POL-014 Stale doc/code references | handled under `governance-doc-stewardship` | Doc-code alignment (missing `docs/INDEX.md` links, stale `docs/STRUCTURE_COMPLIANCE.md`/`docs/DOCUMENTATION_INVENTORY.md` dates) is the doc-stewardship pass's mandate; see that pass's output for disposition, not duplicated here. |
+| POL-015 Formatting drift | clean | `pnpm lint` is clean with `--max-warnings=0` enforced across all 3 packages; no separate formatter configured, ESLint is the sole style gate and it passes. |
+| POL-016 Oversized files/functions | not independently re-verified — route to `repair-source-modularization` if found | Not sampled this pass; no candidates surfaced incidentally. |
+| POL-017 Architecture boundary violations | routed — see `docs/STRUCTURE_COMPLIANCE.md` STRUCT-13 | Giles already tracks config-centralization drift (`GCFG-002/003/004`); no additional code-polish-specific boundary violation surfaced. |
+| POL-018 Duplicate helpers | not independently re-verified | Not sampled this pass; no candidates surfaced incidentally during the triage scan. |
 
-## Naming Changes
+## Baseline compare (pre vs post, deltas explained)
 
-| Symbol | Old name | New name | Reason | Risk |
-|---|---|---|---|---|
-| None | None | None | No low-risk naming change was justified. | none |
+Pre-polish baseline (recorded before any inspection):
 
-## File/Directory Renames
-
-| Old path | New path | Reason | Reference update strategy | Risk | Verified |
-|---|---|---|---|---|---|
-| None | None | No renames applied. | Not applicable. | none | Not applicable. |
-
-## Headers Added Or Normalized
-
-| File group | Count | Notes |
-|---|---:|---|
-| Active source files | 0 | Existing repo convention does not use per-file headers; broad header churn deferred. |
-
-## Comments/Docstrings Added
-
-| File | Function/Class | Reason |
+| Command | Result | Time |
 |---|---|---|
-| None | None | No source comment/docstring patch was needed for this focused pass. |
+| `pnpm typecheck` | PASS, 0 errors | 3.38s |
+| `pnpm lint` | PASS, 0 errors/warnings | 3.76s |
+| `pnpm test` | PASS, ≈3470 passed / 3 skipped / 0 failed | 77.9s |
+| `pnpm build` | PASS, 0 errors (1 benign Vite loader deprecation notice) | 0.59s (mostly cached) |
 
-## Dead Code Removed
+Post-pass: **no source files were changed** by this skill, so no post-polish
+re-run was required to detect a behavior delta — there is no delta to explain,
+because there is no polish diff. (The paired documentation changes from
+`governance-doc-stewardship` do not affect typecheck/lint/test/build and were
+validated separately — see that pass's evidence.)
 
-| File | Removed item | Evidence unused |
-|---|---|---|
-| `packages/cuttlefish/src/cli/instances.ts` | `TEMPLATE_DIR` import | No references in the module after the single-instance cleanup. |
+## Diff audit result
 
-## TODO/FIXME Disposition
+N/A — zero source-code hunks were produced by this pass. Nothing to trace to a
+POL code; nothing to revert.
 
-| ID | File | Status | Disposition |
-|---|---|---|---|
-| POLISH-20260626-001 | CLI stdout | verified-not-a-defect | `console.log` in CLI command files is intentional user-facing output. |
-| POLISH-20260626-002 | Historical docs | deferred-with-risk | Archival TODO snippets left for a dedicated docs archival pass. |
-| POLISH-20260626-003 | `instances.ts` | fixed | Removed stale `TEMPLATE_DIR` import. |
-| POLISH-20260626-004 | port isolation | fixed | Added a regression guard against the inherited gateway port in runtime package surfaces. |
+## Validation commands
 
-## Architecture/Layout Observations
+- `pnpm typecheck` — PASS (pre-baseline; not re-run post-pass, no source diff)
+- `pnpm lint` — PASS (pre-baseline; not re-run post-pass, no source diff)
+- `pnpm test` — PASS (pre-baseline; not re-run post-pass, no source diff)
+- `pnpm build` — PASS (pre-baseline; not re-run post-pass, no source diff)
 
-### Issues Corrected
+## Remaining risks
 
-- A stale CLI import left after the single-instance hardening was removed.
-- Runtime package surfaces now have a test guard against reintroducing the inherited gateway port.
+- POL-008 is a real, disclosed governance gap: the repo cannot currently
+  detect unused imports/exports/dead code through its own lint gate. Not
+  fixed here because enabling a new lint rule is a config change beyond a
+  cleanup-safe default and needs operator sign-off.
+- POL-010, 012, 013, 016, 018 were not independently re-verified with
+  dedicated tooling in this triage-level pass; no incidental findings
+  surfaced, but a deeper pass with more time/tooling could still find
+  something these codes cover.
 
-### Deferred Observations
+## Deferred recommendations
 
-- `.claude/` and `.agents/` are tracked tooling surfaces. They may be intentional, but they deserve a dedicated public-tooling review before any cleanup. `.fissure/` is local-only tooling and is ignored.
-- Historical docs/specs are extensive and may benefit from a future archival/indexing pass.
+- If dead-code detection is wanted, propose a scoped follow-up: run `ts-prune`
+  (or temporarily enable `@typescript-eslint/no-unused-vars` in report-only
+  mode) against both packages, review findings with the operator, then decide
+  whether to re-enable the rule permanently or keep it off with the reason
+  recorded.
+- POL-010/012/013/016/018 could be given a dedicated deeper pass if the
+  operator wants full coverage rather than triage-level assurance.
 
-## Validation Commands
+## Public API compatibility notes
 
-| Command | Result | Notes |
-|---|---|---|
-| `pnpm --filter cuttlefish-cli typecheck` | passed | `tsc --noEmit` completed successfully. |
-| `pnpm --filter cuttlefish-cli lint` | passed | ESLint completed with `--max-warnings=0`. |
-| `pnpm --filter cuttlefish-cli test -- src/cli/__tests__/instances-safety.test.ts src/shared/__tests__/paths.test.ts` | passed | Vitest completed with 198 files passed, 1559 tests passed, 1 skipped. |
-| `pnpm --filter cuttlefish-cli test -- src/shared/__tests__/paths.test.ts` | passed | Vitest completed with 198 files passed, 1560 tests passed, 1 skipped after adding the port guard. |
-| `git diff --check` | passed | No whitespace errors. |
-| live Cuttlefish status | passed | Running daemon reports port `8888`; the separate upstream process remains on its inherited port. |
-
-## Remaining Risks
-
-- Full `pnpm build`, full `pnpm test`, and e2e checks are outside this narrow polish pass unless later run separately.
-- Historical planning docs still contain TODO/example snippets by design.
-
-## Deferred Recommendations
-
-- Run a dedicated public-tooling review for `.claude/` and `.agents/`.
-- Run a docs archival pass if old planning/spec documents should be made less prominent in the public repo.
-- Avoid repo-wide source headers unless the team deliberately adopts them as a convention.
-
-## Public API Compatibility Notes
-
-- No public APIs, CLI commands, package exports, routes, config keys, schemas, or migrations changed.
+Not applicable — no renames, no public surface changes, no source edits in
+this pass.

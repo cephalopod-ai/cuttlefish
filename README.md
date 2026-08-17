@@ -91,20 +91,7 @@ cuttlefish setup
 cuttlefish start
 ```
 
-Each [GitHub Release](https://github.com/cephalopod-ai/cuttlefish/releases) that completes the release pipeline also ships prebuilt platform archives (native modules included for that OS/arch):
-
-| Asset | Platform |
-|-------|----------|
-| `cuttlefish-cli-<version>-linux-x64.tar.gz` | Linux x64 |
-| `cuttlefish-cli-<version>-darwin-arm64.tar.gz` | macOS Apple Silicon |
-| `cuttlefish-cli-<version>-win32-x64.zip` | Windows x64 |
-
-Windows zip install:
-
-```powershell
-.\scripts\install.ps1 -FromRelease -Force
-# or: .\scripts\install.ps1 -ArchivePath .\cuttlefish-cli-<version>-win32-x64.zip -Force
-```
+Each [GitHub Release](https://github.com/cephalopod-ai/cuttlefish/releases) that completes the release pipeline also ships prebuilt platform archives (Linux x64, macOS Apple Silicon, Windows x64) with native modules included; see **[`docs/INSTALL.md`](docs/INSTALL.md)** for the full asset table and Windows zip install steps.
 
 Then open **[http://localhost:8888](http://localhost:8888)**, send your first message, and watch your COO delegate.
 
@@ -171,6 +158,7 @@ Cuttlefish detects whichever agent CLIs are on your `PATH` and makes them interc
 | **ollama** | Local Ollama CLI driving a pulled local model | install from [ollama.com](https://ollama.com/download), then `ollama pull <model>` | Chat | - |
 | **kilo** | Kilo Code CLI in autonomous terminal mode | `npm install -g @kilocode/cli` and run `kilo` once to `/connect` | Chat | - |
 | **aider** | [Aider](https://aider.chat) AI pair-programmer | `python -m pip install aider-install && aider-install` (or `pipx install aider-chat`), then set a provider API key | Chat · CLI (xterm) | - |
+| **vibe** | Mistral AI Vibe CLI - open-source, ACP-native | see [Mistral AI](https://mistral.ai), then run `vibe --setup` to authenticate | Chat (ACP streaming) | - |
 
 The picker shows real model names out of the box (Opus 5, GPT-5.6 Sol, Gemini 3.x…). Those labels live in your `config.yaml`, so a fresh install looks polished day one - while Grok, Pi, and Hermes report their model lists live at session start, and Aider surfaces the models for whichever provider API keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …) are present in the gateway env.
 
@@ -179,14 +167,7 @@ The picker shows real model names out of the box (Opus 5, GPT-5.6 Sol, Gemini 3.
 <details>
 <summary><b>How the Claude engine runs on your subscription</b> (the PTY details)</summary>
 
-Cuttlefish drives the **real interactive `claude` binary inside a [node-pty](https://github.com/microsoft/node-pty) pseudo-terminal** - byte-for-byte identical to typing `claude` at your shell - so Anthropic's billing pipeline counts it against your Max/Pro subscription rather than your API credit pool. Every Claude turn (cron, Slack, web Chat, web CLI) flows through one path:
-
-- **Hooks for turn boundaries.** A per-session settings file registers Claude Code's `SessionStart` / `Stop` / `PreToolUse` / `PostToolUse` hooks; a tiny relay POSTs each event back to the daemon over loopback, so it knows exactly when a turn starts, finishes, or hits a rate limit - no screen-scraping.
-- **Real streaming.** The PTY's `claude` is pointed at a per-session loopback proxy via `ANTHROPIC_BASE_URL`; Cuttlefish intercepts the model's own SSE stream and forwards it to the UI word-by-word.
-- **One process, two views.** The dashboard's Chat ↔ CLI toggle is two views of the *same* PTY: Chat renders the parsed stream, CLI attaches `xterm.js` to the live terminal.
-- **Exact cost.** At turn end the daemon sums token usage straight from Claude Code's own transcript JSONL.
-
-Codex, Grok, and Pi use a simpler spawn-per-turn model; Hermes streams over ACP. They don't have Claude's subscription-billing wrinkle, so they don't need a PTY.
+Cuttlefish drives the **real interactive `claude` binary inside a [node-pty](https://github.com/microsoft/node-pty) pseudo-terminal** - byte-for-byte identical to typing `claude` at your shell - so Anthropic's billing pipeline counts it against your Max/Pro subscription rather than your API credit pool. Session-lifecycle hooks report turn boundaries over loopback (no screen-scraping), the PTY's SSE stream is intercepted and forwarded word-by-word, and the dashboard's Chat ↔ CLI toggle is two views of that same PTY. Codex, Grok, and Pi use a simpler spawn-per-turn model; Hermes and Vibe stream over ACP - none of them need a PTY.
 
 </details>
 
@@ -225,7 +206,7 @@ Every department also has a **board**. Assign tickets to employees, watch work m
 
 ## Features
 
-- **🔌 Ten engines, one picker** - Claude Code, Codex, Grok, Antigravity, Pi, Hermes, Kiro, Ollama, Kilo, Aider; pick engine + model + effort per session or per employee, switchable mid-chat.
+- **🔌 Eleven engines, one picker** - Claude Code, Codex, Grok, Antigravity, Pi, Hermes, Kiro, Ollama, Kilo, Aider, Vibe; pick engine + model + effort per session or per employee, switchable mid-chat.
 - **🏢 AI org system** - employees, departments, ranks, managers, and a reporting hierarchy of any depth, all in editable YAML.
 - **🧩 Real delegation** - parent/child sessions with completion callbacks and a COO-review pattern that filters noise before it reaches you.
 - **⏰ Cron scheduling** - hot-reloadable background jobs with run history and optional failure alerts.
@@ -242,18 +223,32 @@ Every department also has a **board**. Assign tickets to employees, watch work m
 - **🔄 Hot-reload & self-modification** - edit config, cron, org, or skills and the daemon reloads live; agents can edit those files too.
 - **🔗 MCP support** - connect engines to any MCP server, with per-employee allow-lists.
 
+Cuttlefish auto-configures MCP servers for every engine session - no per-engine setup. Add one to `~/.cuttlefish/config.yaml`:
+
+```yaml
+mcp:
+  browser:
+    enabled: true
+    provider: playwright   # built-in Browser automation
+  search:
+    enabled: true
+    provider: brave
+    apiKey: ${BRAVE_API_KEY}
+  custom:
+    my-database:
+      command: npx
+      args: ["-y", "@my/mcp-server-postgres@<reviewed-version>"]
+      env:
+        DATABASE_URL: ${DATABASE_URL}
+```
+
+Full server catalog, per-employee opt-out/allow-lists, and env-secret handling: **[MCP guide](packages/cuttlefish/template/docs/mcp.md)**.
+
 ## Lineage And Credit
 
-Cuttlefish is forked from [`repo-makeover/jinn`](https://github.com/repo-makeover/jinn), which is itself a substantial rework/fork of the original [`hristo2612/jinn`](https://github.com/hristo2612/jinn). The original Jinn project and the direct `repo-makeover/jinn` fork remain the technical lineage and MIT-licensed basis for this work, and we gratefully credit their authors.
+Cuttlefish is forked from [`repo-makeover/jinn`](https://github.com/repo-makeover/jinn), itself a substantial rework of the original [`hristo2612/jinn`](https://github.com/hristo2612/jinn). Both remain the technical lineage and MIT-licensed basis for this work, and we gratefully credit their authors.
 
-Where Jinn established the core idea - a lightweight gateway that orchestrates agent CLIs as an AI organization - Cuttlefish deliberately keeps that layer lightweight ("bus, not brain") and invests its divergence in **traceability, provenance capture, and governance**:
-
-- **Traceability & provenance** - a persistent run ledger records every execution, and an artifact-lineage store links outputs back to the sessions, engines, and inputs that produced them, so any result can be audited end to end.
-- **Governance** - human approval gates, per-employee budgets and session caps, policy evaluation with export gating, machine-readable governance metadata (`governance/*.yaml`), a maintained decision log, and documentation/validation ledgers.
-- **Hardened orchestration** - a durable, provider-neutral run scheduler (queue controls, dual-lane runs, worktree-isolated execution, recovery/requeue) with an operations dashboard - added without turning the gateway itself into an agent framework.
-- **Safety & engineering hygiene** - stricter file-read boundaries and transfer guards, SSRF protection, secret-stripped engine environments, Node 24 pinning, and explicit lint/typecheck/test surfaces with broad seam-test coverage.
-
-The source-grounded fork diff lives in [`docs/UPSTREAM_DIFF_BASELINE.md`](docs/UPSTREAM_DIFF_BASELINE.md).
+Where Jinn established the core idea - a lightweight gateway that orchestrates agent CLIs as an AI organization - Cuttlefish keeps that layer lightweight ("bus, not brain") and invests its divergence in **traceability, provenance capture, and governance**: a persistent run ledger and artifact-lineage store, human approval gates and budget caps, machine-readable governance metadata, a hardened durable orchestration scheduler, and stricter file/network/secret boundaries. The source-grounded fork diff lives in [`docs/UPSTREAM_DIFF_BASELINE.md`](docs/UPSTREAM_DIFF_BASELINE.md).
 
 ---
 
@@ -282,7 +277,7 @@ gateway:
   allowArbitraryFileRead: false
 
 engines:
-  default: claude        # claude | codex | grok | antigravity | pi | hermes | kiro | ollama | kilo | aider
+  default: claude        # claude | codex | grok | antigravity | pi | hermes | kiro | ollama | kilo | aider | vibe
   claude:
     bin: claude          # binary on your PATH (override to point elsewhere)
     model: claude-fable-5
