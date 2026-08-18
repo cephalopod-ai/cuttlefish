@@ -1,10 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Employee, CuttlefishConfig } from "../shared/types.js";
-import { CUTTLEFISH_HOME, ORG_DIR, CRON_JOBS, DOCS_DIR } from "../shared/paths.js";
+import { CUTTLEFISH_HOME, ORG_DIR, DOCS_DIR } from "../shared/paths.js";
 import { gatewayBaseUrl } from "../gateway/gateway-info.js";
 import { INBOUND_MESSAGE_SAFETY_CONTEXT, isUntrustedSource } from "../sessions/untrusted-input.js";
 import { buildManagerDelegationDiscipline, resolveSupervisedNodes } from "./manager-delegation.js";
+import { loadJobs } from "../cron/jobs.js";
 import { describeGrokModelForOperator } from "../shared/grok-models.js";
 import type { OperatorDelegationScope } from "./operator-delegation.js";
 import { HUMAN_DELEGATION_MODELS_LABEL } from "./operator-delegation.js";
@@ -635,9 +636,8 @@ function buildOrgContext(hierarchy?: import("../shared/types.js").OrgHierarchy):
  */
 function buildCronContext(): string | null {
   try {
-    const raw = fs.readFileSync(CRON_JOBS, "utf-8");
-    const jobs = JSON.parse(raw);
-    if (!Array.isArray(jobs) || jobs.length === 0) return null;
+    const jobs = loadJobs();
+    if (jobs.length === 0) return null;
 
     const enabled = jobs.filter((j: any) => j.enabled !== false);
     const disabledCount = jobs.length - enabled.length;
@@ -734,7 +734,20 @@ function buildConnectorContext(connectors: string[], gatewayUrl: string, session
   ].join("\n");
 }
 
+// The environment scan performs several synchronous filesystem calls on every
+// session turn, so use the same short freshness window as the knowledge listing.
+let environmentCache: { builtAt: number; value: string | null } | null = null;
+
 function buildEnvironmentContext(): string | null {
+  if (environmentCache && Date.now() - environmentCache.builtAt < KNOWLEDGE_CACHE_TTL_MS) {
+    return environmentCache.value;
+  }
+  const value = buildEnvironmentContextUncached();
+  environmentCache = { builtAt: Date.now(), value };
+  return value;
+}
+
+function buildEnvironmentContextUncached(): string | null {
   const home = process.env.HOME || process.env.USERPROFILE || "";
   const lines: string[] = [`## Local environment`];
   let hasContent = false;
@@ -927,16 +940,18 @@ function trimContext(sections: Section[], maxChars: number): string {
   let result = parts.join("\n\n");
   if (result.length <= maxChars) return result;
 
+  let length = result.length;
+
   // Trim OPTIONAL sections first, then STANDARD
   for (const tier of [Tier.OPTIONAL, Tier.STANDARD]) {
     for (let i = sections.length - 1; i >= 0; i--) {
-      if (result.length <= maxChars) break;
+      if (length <= maxChars) break;
       if (sections[i].tier === tier && sections[i].summary) {
+        length += sections[i].summary.length - parts[i].length;
         parts[i] = sections[i].summary;
-        result = parts.join("\n\n");
       }
     }
   }
 
-  return result;
+  return parts.join("\n\n");
 }
