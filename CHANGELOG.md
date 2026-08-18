@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Features
+- **Vibe engine (Mistral AI).** Cuttlefish now drives Mistral's `vibe` CLI as
+  a first-class engine via its dedicated `vibe-acp` stdio entrypoint — real
+  Agent Client Protocol, the same shape as the Hermes engine and sharing its
+  `HermesRpc` transport and permission auto-approve behavior. Setup exposes
+  Vibe alongside the other engines; like every engine, it appears only when
+  `vibe-acp` is on your `PATH`. See `packages/cuttlefish/src/engines/vibe-acp.ts`.
+
 ### Security
 - Server-side file fetches now pin each DNS-validated address into an Undici
   dispatcher while preserving the original hostname for HTTP/TLS, closing the
