@@ -16,16 +16,16 @@
     "@cuttlefish/contracts": "0.1.0",
     "@dagrejs/dagre": "^3.1.1",
     "@tanstack/react-query": "^5",
-    "@tanstack/react-virtual": "^3.14.9",
+    "@tanstack/react-virtual": "^3.14.10",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
-    "@xyflow/react": "^12.11.2",
+    "@xyflow/react": "^12.11.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "d3-hierarchy": "3.1.2",
     "emojilib": "^4.0.2",
-    "lucide-react": "^1.31.0",
+    "lucide-react": "^1.32.0",
     "radix-ui": "^1.6.7",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
@@ -50,6 +50,6 @@
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
     "vite": "^8",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }
