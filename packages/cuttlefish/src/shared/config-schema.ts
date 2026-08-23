@@ -5,6 +5,17 @@ import { validateKnowledge } from "./config-schema-knowledge.js";
 // imported (not the models.js ENGINE_NAMES array) to avoid a second,
 // differently-shaped copy of the same list in this file.
 import { isKnownEngine } from "./models.js";
+import {
+  isPlainObject,
+  pushUnknownKeys,
+  validateBoolean,
+  validateExecString,
+  validateNumber,
+  validatePort,
+  validateString,
+  validateStringArray,
+  validateStringOrStringArray,
+} from "./config-schema-primitives.js";
 
 const TIME_OF_DAY_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const ENGINE_NAMES = new Set(["claude", "codex", "antigravity", "grok", "pi", "kiro", "hermes", "ollama", "kilo", "aider", "vibe"]);
@@ -19,47 +30,6 @@ const ENGINE_FAILURE_REASONS = new Set<EngineFailureReason>([
   "context_overflow",
   "unknown",
 ]);
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-function pushUnknownKeys(
-  problems: string[],
-  value: Record<string, unknown>,
-  allowed: Iterable<string>,
-  label: string,
-): void {
-  const allowedKeys = new Set(allowed);
-  const unknown = Object.keys(value).filter((key) => !allowedKeys.has(key));
-  if (unknown.length > 0) {
-    const prefix = label === "config" ? "unknown config keys" : `unknown ${label} config keys`;
-    problems.push(`${prefix}: ${unknown.join(", ")}`);
-  }
-}
-function validateStringArray(problems: string[], path: string, value: unknown): void {
-  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) {
-    problems.push(`${path} must be an array of strings`);
-  }
-}
-function validateNumber(problems: string[], path: string, value: unknown): void {
-  if (typeof value !== "number") problems.push(`${path} must be a number (got ${typeof value})`);
-}
-function validatePort(problems: string[], path: string, value: unknown): void {
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > 65535) {
-    problems.push(`${path} must be an integer from 1 to 65535`);
-  }
-}
-function validateString(problems: string[], path: string, value: unknown): void {
-  if (typeof value !== "string") problems.push(`${path} must be a string (got ${typeof value})`);
-}
-
-function validateBoolean(problems: string[], path: string, value: unknown): void {
-  if (typeof value !== "boolean") problems.push(`${path} must be a boolean (got ${typeof value})`);
-}
-
-function validateStringOrStringArray(problems: string[], path: string, value: unknown): void {
-  const valid = typeof value === "string" || (Array.isArray(value) && value.every((entry) => typeof entry === "string"));
-  if (!valid) problems.push(`${path} must be a string or array of strings`);
-}
 
 function validateAutonomousModeBlock(problems: string[], path: string, value: unknown, cwd: unknown): void {
   if (!isPlainObject(value)) {
@@ -136,22 +106,6 @@ function validateAutonomousModeSingleton(problems: string[], workspaces: unknown
 }
 
 
-function hasControlChars(s: string): boolean {
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    if (c <= 0x1f || c === 0x7f) return true;
-  }
-  return false;
-}
-function validateExecString(problems: string[], path: string, value: unknown): void {
-  if (typeof value !== "string") {
-    problems.push(`${path} must be a string (got ${typeof value})`);
-    return;
-  }
-  if (hasControlChars(value)) {
-    problems.push(`${path} must not contain control characters or newlines`);
-  }
-}
 
 function validateWorkspaces(problems: string[], value: unknown): void {
   if (!isPlainObject(value)) {
