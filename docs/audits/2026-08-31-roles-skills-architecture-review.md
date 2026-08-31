@@ -41,14 +41,16 @@ roles first is possible; doing traits first is what makes it safe by
 construction rather than by care. See F2 for the precise boundary.
 
 **The headline gap:** skills are delivered **globally, not per role.** The
-daemon symlinks *every* installed skill into the two synchronized discovery
-homes — `~/.claude/skills` and `~/.agents/skills` (`gateway/watcher.ts`) — with
-no filtering by role or session. Engines that read neither home get no skills at
-all (F6). So the delivery is all-or-nothing in both directions: unfiltered where
-it reaches, absent where it does not. There is no enforcement point where "role
-`reviewer` gets skills `code-review`, `adversarial-review`" could take effect.
-The proposal's central mechanism — the skill differentiating the role — is the
-one piece of machinery that does not exist yet.
+daemon symlinks *every* installed skill into two **instance-local** directories —
+`<CUTTLEFISH_HOME>/.claude/skills` and `<CUTTLEFISH_HOME>/.agents/skills`, i.e.
+`~/.cuttlefish/.claude/skills` by default (`gateway/watcher.ts`,
+`shared/paths.ts:95-96`) — with no filtering by role or session. Whether an
+engine sees them then depends on its **working directory** (F6). Either way the
+delivery is all-or-nothing: unfiltered where it reaches, absent where it does
+not. There is no enforcement point where "role `reviewer` gets skills
+`code-review`, `adversarial-review`" could take effect. The proposal's central
+mechanism — the skill differentiating the role — is the one piece of machinery
+that does not exist yet.
 
 Recommended path: **COA-B** (data-only role↔skill binding + declarative role
 traits), deferring the full three-axis model.
@@ -63,7 +65,7 @@ traits), deferring the full three-axis model.
 | C2 | "Tagteam's current architecture already has a closed Role vocabulary" | **Inverted.** The role vocabulary is *open*: roles are parsed from an operator-supplied `roles.yaml`, and `RoleDefinition.id` is a free string. What *is* closed is the **mode** vocabulary — five allocation modes and five live-run modes. | `orchestration/config.ts:42`; `orchestration/types.ts` (`RoleDefinition`); `orchestration/coordinator.ts:15`; `orchestration/live-run.ts:1` |
 | C3 | "supervisor / worker / scout" are the current Tagteam roles | **Not the shipped vocabulary.** The template roles are `architect`, `seniorImplementer`, `independentReviewer`, `adversarialReviewer`, `qaGate`, `localTriage`. `supervisor` is a concept in the *org* system (`reportsTo` chains), not the orchestration role set; `scout` does not appear. | `docs/orchestration/examples/roles.yaml`; `packages/cuttlefish/template/orchestration/roles.yaml`; `gateway/org-validation.ts:36,388` |
 | C4 | "I would make Skills the main extension … implement Skills before adding more roles" | **Already shipped, in part.** Skills exist as a CLI (`add`/`find`/`list`/`update`), a provenance manifest (not a content pin — see F5), a filesystem convention, live hot-reload, HTTP routes, a dashboard catalog, and a dedicated prompt-injection screening path. | `cli/skills.ts` (400 lines); `gateway/api/routes/skills.ts`; `gateway/watcher.ts:123-137`; `gateway/content-screening.ts`; `docs/USER_MANUAL.md:91-102`; `README.md:307` |
-| C5 | "skills should be provider-independent … the provider supplies intelligence" | **True in format, not in delivery.** Skills *are* provider-neutral Markdown (`SKILL.md`). Delivery is provider-*specific*: the sync writes symlinks into exactly two well-known homes. | `gateway/watcher.ts:29`; `shared/paths.ts:95-96` |
+| C5 | "skills should be provider-independent … the provider supplies intelligence" | **True in format, not in delivery.** Skills *are* provider-neutral Markdown (`SKILL.md`). Delivery is provider-*specific* **and working-directory-dependent**: the sync writes symlinks into two instance-local directories under `CUTTLEFISH_HOME`, which an engine discovers only when its cwd is that home (see F6). | `gateway/watcher.ts:29`; `shared/paths.ts:95-96`; `shared/instance-home.ts`; `engines/claude-interactive.ts:463,527` |
 
 **C1 is the one to resolve first.** Three of the proposal's design decisions
 are justified by "Tagteam already has X". If Tagteam is an external system not
@@ -99,8 +101,12 @@ And separately:
    installed via `cuttlefish skills add`, recorded in
    `~/.cuttlefish/skills.json` (a provenance record of `{name, source,
    installedAt}` — **not** a version or content pin; see F5),
-   and symlinked into `~/.claude/skills/` and `~/.agents/skills/` by the daemon
-   watcher on change.
+   and symlinked into `<CUTTLEFISH_HOME>/.claude/skills/` and
+   `<CUTTLEFISH_HOME>/.agents/skills/` by the daemon watcher on change. Note
+   these are **instance-local**, not the user-level `~/.claude/skills`;
+   `buildCuttlefishPaths(home)` derives them from `CUTTLEFISH_HOME`
+   (`shared/paths.ts:60,95-96`), which `homeForInstance` resolves to
+   `$CUTTLEFISH_HOME` or `~/.cuttlefish` (`shared/instance-home.ts`).
 
 **The critical observation:** capabilities answer *"can this provider do it?"*
 (routing). The proposal's skills answer *"how is it done?"* (procedure). Both
@@ -126,12 +132,11 @@ the first**.
 - **Expected under the proposal:** a `reviewer` invocation sees
   `code-review`, `architecture-review`, `adversarial-review` and *not*
   `implementation`.
-- **Scope of the impact (stated precisely, cf. F6):** this is global *within
-  the two synchronized homes*, not across every engine. For engines that read
-  `~/.claude/skills` or `~/.agents/skills`, every session sees every skill —
-  that is where the least-privilege concern bites: a read-only reviewer is
-  handed the implementation playbooks regardless. For the remaining adapters,
-  the problem is the opposite one in F6: they may discover no skills at all.
+- **Scope of the impact (stated precisely, cf. F6):** this is global *within the
+  two instance-local directories*, not across every engine. Wherever a session
+  does discover them, it sees **every** installed skill — that is where the
+  least-privilege concern bites: a read-only reviewer is handed the
+  implementation playbooks regardless. Where it does not (F6), it sees none.
   Neither case gives a role a *specific* skill set.
 - **Impact:** the proposal's core mechanism ("the skill determines how it
   performs the role") has no enforcement point. Writing `skills:` under a role
@@ -279,18 +284,42 @@ the first**.
 
 ### F6 — "Provider-independent" is true of the format, not the delivery (Medium)
 
+- **Corrected in revision.** Earlier revisions of this report stated that the
+  watcher syncs skills into the user-level `~/.claude/skills` and
+  `~/.agents/skills`. That was wrong — both are derived from `CUTTLEFISH_HOME`,
+  not `os.homedir()` — and the error was load-bearing for F1 and F6, because it
+  hid the working-directory dependency described below. The corrected paths and
+  their consequence follow.
+
 - **Observed:** `packages/cuttlefish/src/engines/` contains adapters for
   claude, codex, antigravity, aider, grok, hermes, kilo, kiro, ollama, pi, vibe,
-  mock. The watcher syncs skills into exactly two homes: `~/.claude/skills` and
-  `~/.agents/skills` (`shared/paths.ts:95-96`). Note the asymmetry: the skills
-  CLI *reads* `~/.codex/skills` when detecting already-installed skills
-  (`cli/skills.ts:20-23`) but the daemon never *writes* there.
+  mock. The watcher syncs skills into two **instance-local** directories,
+  `<CUTTLEFISH_HOME>/.claude/skills` and `<CUTTLEFISH_HOME>/.agents/skills`
+  (`gateway/watcher.ts:29`, `shared/paths.ts:60,95-96`,
+  `shared/instance-home.ts`) — **not** the user-level `~/.claude/skills`.
+- **Discovery is working-directory-dependent, which is the sharper point.**
+  Engines are spawned with `cwd: opts.cwd || CUTTLEFISH_HOME`
+  (`engines/claude-interactive.ts:463,527`) and `HOME` is not overridden. So a
+  session with **no explicit cwd** runs *inside* `CUTTLEFISH_HOME`, where the
+  synced directory is exactly the engine's project-level `./.claude/skills` and
+  the skills are found. A session pointed at a **real project directory** —
+  the normal case for repository work — resolves `./.claude/skills` to that
+  project's own directory instead, and the Cuttlefish-synced skills are not on
+  the path at all unless the user separately installed them into their own
+  `~/.claude/skills`.
+- **A second asymmetry.** The skills CLI's `GLOBAL_SKILL_DIRS` are `os.homedir()`
+  based — `~/.claude/skills`, `~/.agents/skills`, `~/.codex/skills`
+  (`cli/skills.ts:19-23`) — so `skills add` *detects* skills in the user-level
+  dirs while the daemon *writes* only to the instance-local ones. The two halves
+  of the subsystem address different locations.
 - **Impact:** the proposal's "provider adapter" box at the bottom of its diagram
-  is, in practice, a filesystem convention that two engine families honour. A
-  role whose behaviour depends on a skill will behave differently — silently —
-  depending on which engine the scheduler routes it to. That directly undercuts
-  cross-family review, where the *point* is that a different provider looks at
-  the work.
+  is, in practice, a filesystem convention honoured by two engine families *and*
+  conditional on the session's working directory. A role whose behaviour depends
+  on a skill will behave differently — silently — depending both on which engine
+  the scheduler routes it to and on whether the session has an explicit cwd.
+  That directly undercuts cross-family review, where the *point* is that a
+  different provider looks at the work, and it means a role/skill binding tested
+  in a no-cwd session may simply not apply in real repository work.
 - **Remediation:** publish a per-engine skill-delivery matrix before promising
   provider independence. An engine-agnostic fallback — injecting the skill text
   through the per-session prompt path rather than relying on filesystem
@@ -391,9 +420,10 @@ Two contained changes, in this order:
 reach and trust, and no single option has both properties:**
 
 - **B2a — names only.** The block names the skills; the engine loads the
-  content from its own skills home. **Reach:** only engines that read
-  `~/.claude/skills` or `~/.agents/skills`; elsewhere the named skill is a
-  dangling reference, so this does **not** mitigate F6. **Trust:** adds no new
+  content from its own skills home. **Reach:** only where the engine actually
+  discovers the instance-local directories — which per F6 means an engine of the
+  right family *and* a session whose cwd is `CUTTLEFISH_HOME`; elsewhere the
+  named skill is a dangling reference, so this does **not** mitigate F6. **Trust:** adds no new
   path — but note what the existing path is *not*. Native discovery is
   **unscreened**: neither `skillsAdd()` nor `syncSkillSymlinks()` invokes
   content screening, and the engine reads `SKILL.md` from its own home without
