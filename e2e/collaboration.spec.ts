@@ -15,7 +15,10 @@ test("Team project feed supports inspection, structured mention routing, and rel
   await page.getByRole("menuitemcheckbox", { name: /Builder/ }).click()
   await composer.fill("Browser structured Team send")
   await page.getByRole("button", { name: "Send collaboration message" }).click()
-  await expect(page.getByText("Browser structured Team send")).toBeVisible()
+  // Scope to the feed item: until onSend resolves the composer is disabled but
+  // still holds the text (collaboration-composer.tsx clears it only after the
+  // await), so an unscoped getByText matches both and trips strict mode.
+  await expect(page.getByLabel("You message").getByText("Browser structured Team send")).toBeVisible()
   await expect(page.getByText("builder: queued")).toBeVisible()
 })
 
