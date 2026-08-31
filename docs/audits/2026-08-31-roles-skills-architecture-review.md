@@ -302,11 +302,13 @@ the first**.
   (`engines/claude-interactive.ts:463,527`) and `HOME` is not overridden. So a
   session with **no explicit cwd** runs *inside* `CUTTLEFISH_HOME`, where the
   synced directory is exactly the engine's project-level `./.claude/skills` and
-  the skills are found. A session pointed at a **real project directory** —
-  the normal case for repository work — resolves `./.claude/skills` to that
-  project's own directory instead, and the Cuttlefish-synced skills are not on
-  the path at all unless the user separately installed them into their own
-  `~/.claude/skills`.
+  the skills are found. A session **with a cwd set** — `Session.cwd` is
+  optional and comes from `body.cwd` or a workspace profile
+  (`gateway/create-session.ts:148-154`), and any session targeting a repository
+  necessarily has one — resolves `./.claude/skills` to that repository instead,
+  and the Cuttlefish-synced skills are not on the path at all unless the user
+  separately installed them into their own `~/.claude/skills`. Both cases occur
+  by construction; this report does not measure how the mix falls in practice.
 - **A second asymmetry.** The skills CLI's `GLOBAL_SKILL_DIRS` are `os.homedir()`
   based — `~/.claude/skills`, `~/.agents/skills`, `~/.codex/skills`
   (`cli/skills.ts:19-23`) — so `skills add` *detects* skills in the user-level
@@ -316,10 +318,19 @@ the first**.
   is, in practice, a filesystem convention honoured by two engine families *and*
   conditional on the session's working directory. A role whose behaviour depends
   on a skill will behave differently — silently — depending both on which engine
-  the scheduler routes it to and on whether the session has an explicit cwd.
-  That directly undercuts cross-family review, where the *point* is that a
-  different provider looks at the work, and it means a role/skill binding tested
-  in a no-cwd session may simply not apply in real repository work.
+  the scheduler routes it to and on whether the session's cwd happens to be
+  `CUTTLEFISH_HOME`. That directly undercuts cross-family review, where the
+  *point* is that a different provider looks at the work.
+- **For orchestrated runs specifically, this is decidable from config.** Live
+  runs always pass an explicit cwd to the dispatched session
+  (`orchestration/run-mode.ts:315,335,388,505`, from `opts.workspace.cwd`),
+  and `resolveTaskBaseCwd` resolves it as
+  `task.cwd ?? config.workspaces?.defaultCwd ?? CUTTLEFISH_HOME`
+  (`orchestration/worktree.ts:67-68`). So an orchestrated session discovers the
+  synced skills **only** in the fallback case where neither a task cwd nor a
+  `workspaces.defaultCwd` is set. Configure either — which any real repository
+  task does — and skill discovery silently stops. An `isolated_worktree` lane is
+  further removed still, since the worktree path is a different directory again.
 - **Remediation:** publish a per-engine skill-delivery matrix before promising
   provider independence. An engine-agnostic fallback — injecting the skill text
   through the per-session prompt path rather than relying on filesystem
