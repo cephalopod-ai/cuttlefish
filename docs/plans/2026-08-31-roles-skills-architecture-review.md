@@ -8,7 +8,7 @@
 - **Method:** read-only inspection of this checkout (`packages/cuttlefish/src/orchestration/`,
   `packages/cuttlefish/src/cli/skills.ts`, `packages/cuttlefish/src/gateway/`,
   `docs/orchestration/`, `governance/`). No build, test, or lint run — see
-  [Validation status](#validation-status).
+  [Validation status](#8-validation-status).
 - **Status of conclusions:** findings are source-grounded with file/line evidence.
   Courses of action are proposals, not decisions; nothing here is implemented.
 
@@ -23,13 +23,15 @@ however, do not match this checkout in four places, and one of those mismatches
 inverts its sequencing advice.
 
 **The headline correction:** the proposal says *"implement Skills before adding
-more roles."* The evidence says **implement declarative role traits before
-either.** Role semantics today are inferred by *substring matching on role IDs*
-(`roleId.toLowerCase().includes("review")`). Adopting the proposal's own
-vocabulary — renaming `tester` to `verifier`, adding `debugger` and `security` —
-would silently disable the cross-family reviewer policy and the `architecture`
-mode preconditions. That is a fail-open quality control, and it triggers on the
-proposal's very first rename.
+more roles."* The evidence suggests **declarative role traits belong ahead of
+both.** Role semantics resolve by declared `requiredCapabilities` but *fall back
+to substring matching on role IDs* (`roleId.toLowerCase().includes("review")`).
+The proposal's vocabulary — renaming `tester` to `verifier`, adding `debugger`
+and `security` — is therefore workable today **only** where each role also
+declares the right capabilities; where it does not, the cross-family reviewer
+policy and `architecture`-mode preconditions degrade with no error. Adding the
+roles first is possible; doing traits first is what makes it safe by
+construction rather than by care. See F2 for the precise boundary.
 
 **The headline gap:** skills are delivered **globally, not per role.** The
 daemon symlinks *every* installed skill into *every* engine home
@@ -119,7 +121,7 @@ the first**.
 - **Remediation:** see COA-B (advisory binding via the per-session prompt path)
   and COA-D (hard filesystem scoping).
 
-### F2 — Role semantics are inferred by substring matching on role IDs (High)
+### F2 — Role semantics fall back to substring matching on role IDs (Medium-High)
 
 - **Observed:** the coordinator and cross-family policy classify roles by name
   first, capabilities second:
@@ -129,23 +131,35 @@ the first**.
   - `isAdversarialReviewer` — `roleId.includes("adversarial")` (`coordinator.ts:201-205`)
   - `isQa` — `roleId.includes("qa")` (`coordinator.ts:207-211`)
 - **Expected:** role kind is declared, not guessed from the identifier.
-- **Impact — this fires on the proposal's own vocabulary:**
-  - `verifier` matches **no** reviewer or QA predicate by name. Unless it
-    declares `code_review`/`validation` capabilities, `single_worker_with_review`
-    throws `"requires a reviewer role"`, and — worse — the **cross-family
-    reviewer policy is a quality/independence control that would simply not
-    apply**, without an error. Fail-open.
-  - `security` and `debugger` match nothing at all; in `architecture` mode they
-    are ignored when the required five are selected (`coordinator.ts:146-160`).
+- **What still works (stated so this is not overread):** every predicate falls
+  back to declared `requiredCapabilities`, and reviewer detection additionally
+  accepts `familyConstraint: opposite_of_implementer`. A freely named role such
+  as `verifier` therefore works **today**, with no schema change, provided it
+  declares `code_review`, `validation`, or the applicable family constraint.
+  Renaming roles is not blocked.
+- **Impact — a silent, name-driven misconfiguration hazard:**
+  - `verifier` matches no reviewer or QA predicate *by name*. Configured with
+    the right capabilities it behaves correctly; configured without them,
+    `single_worker_with_review` throws `"requires a reviewer role"` — and, in
+    the mixed case, the **cross-family reviewer policy simply does not apply**,
+    with no error. That path is fail-open, and nothing in the config surface
+    warns the operator.
+  - `security` and `debugger` match nothing by name; in `architecture` mode
+    they are ignored when the required five are selected
+    (`coordinator.ts:146-160`).
   - Conversely, a role innocently named `preview-generator` is classified as a
     **reviewer** (contains "review"), and can be handed a cross-family
-    constraint it was never meant to carry.
+    constraint it was never meant to carry. This direction is not fixable by
+    careful capability declaration — the name alone decides it.
 - **Remediation:** add an explicit, optional `kind` (or `traits: []`) field to
   `RoleDefinition`, resolve by `kind` first and fall back to today's heuristics
-  for backward compatibility. This is a small, contained change and it is the
-  **prerequisite for any new role name**, including the proposal's.
+  for backward compatibility. This is a small, contained change. It is
+  **strongly advisable before growing the role vocabulary** — it removes the
+  substring fallback and makes the coupling between a role's name and its
+  enforced controls explicit — but it is **not a hard prerequisite**: new roles
+  can be added safely today by declaring capabilities carefully.
 
-### F3 — New roles/skills are a governed agent surface (Medium-High)
+### F3 — Procedure-bearing skills sit outside the registry's current scope (Low-Medium, open question)
 
 - **Observed:** `governance/agent_registry.yaml` declares
   `registry_mode: "authoritative"` and `undeclared_agent_surface: "forbidden"`.
@@ -153,14 +167,23 @@ the first**.
   agent-instruction document under `docs/orchestration/agent-instructions/`
   (`codex-architect.md`, `codex-implementer.md`, `claude-reviewer.md`,
   `antigravity-reviewer.md`, `local-worker.md`).
-- **Impact:** a skill that carries operating procedure ("Procedure: 1. identify
-  affected components … Output: architecture_review.json") is an agent surface
-  in substance. Shipping a skill catalogue without registry entries would put
-  the repo in violation of its own governance posture.
-- **Remediation:** decide up front whether skills are (a) registry-declared
-  surfaces with instruction docs, or (b) explicitly out of registry scope with
-  a documented rationale under `governance/exceptions.yaml`. Do not leave it
-  implicit.
+- **Scope, precisely:** the enforcing rule is narrower than the registry
+  header suggests. `governance/giles_ruleset.yaml` AGENT-002
+  (`undeclared_agent_surface_forbidden`, severity `warn`) defines the surface
+  as *"any file under `docs/orchestration/agent-instructions/` not declared in
+  `agent_registry.yaml`"*, and `governance/schema_registry.yaml` scopes
+  `agent.delegate.v1` to that same directory. Runtime skills under
+  `~/.cuttlefish/skills/` are **outside** that scope today.
+- **Impact — an open question, not a violation:** a skill that carries
+  operating procedure ("Procedure: 1. identify affected components … Output:
+  `architecture_review.json`") resembles an agent surface *in substance* while
+  falling outside the registry's declared *scope*. Shipping a skill catalogue
+  therefore breaches no current rule; the question is whether the registry
+  should be extended to cover procedure-bearing skills.
+- **Remediation:** treat this as a policy decision to make deliberately, not a
+  compliance gap to remediate. No registry entries or
+  `governance/exceptions.yaml` entries are required under the rules as written;
+  do not add them on the strength of this report alone.
 
 ### F4 — A checked-in engineering-role taxonomy conflicts with a stated extension rule (Medium)
 
@@ -172,10 +195,18 @@ the first**.
   their skill sets into `packages/cuttlefish/template/orchestration/roles.yaml`
   is exactly the specialization that rule pushes outward. Cuttlefish is
   described in `AGENTS.md` as *"a bus, not a brain."*
-- **Remediation:** ship the taxonomy as an **external, versioned policy pack**
-  (a roles/skills bundle installable via the existing skills manifest), leaving
-  the tracked template minimal. This also preserves the proposal's own goal:
-  different teams want different role sets.
+- **Remediation:** keep the taxonomy **out of the tracked template** and ship
+  it as an external, versioned policy pack, leaving
+  `packages/cuttlefish/template/orchestration/roles.yaml` minimal. This also
+  preserves the proposal's own goal: different teams want different role sets.
+- **Caveat — the delivery path does not exist yet.** Policy-pack distribution
+  is **not implemented**, and the skills manifest cannot stand in for it:
+  `skillsAdd()` installs exactly one skill *directory* into `SKILLS_DIR` and
+  records only `{name, source, installedAt}` (`cli/skills.ts:68-83,239-278`).
+  No inspected code copies a bundled `roles.yaml` into orchestration config or
+  otherwise applies a pack. Choosing this remediation means designing that
+  installer/config-import path as part of the work — it is not a capability to
+  be assumed.
 
 ### F5 — Skills are privileged control-plane state, and the proposal multiplies them (Medium)
 
@@ -192,10 +223,21 @@ the first**.
   privileged, leniently-screened, prompt-injection-relevant artifacts, installed
   from third-party sources via `npx skills add`." The existing defences are
   sound; the proposal increases the surface they must hold.
+- **Skill content is not pinned today.** `SKILLS_NPX_SPEC = "skills@1.5.12"`
+  (`cli/skills.ts:16`) pins the *installer CLI*, and only in the `--version`
+  probe at `cli/setup.ts:53` — the install path itself spawns
+  `npx skills add …` with no version spec (`cli/skills.ts:151,174-177`). The
+  manifest stores the caller-supplied `source` with no resolved version and no
+  content hash, and `skillsUpdate()` simply re-runs that source
+  (`cli/skills.ts:329-361`), so an unpinned source can change content between
+  runs.
 - **Remediation:** keep provenance-based trust exactly as is; require a human
-  review gate and manifest pinning (`SKILLS_NPX_SPEC` is already version-pinned
-  at `cli/skills.ts:16`) for any skill that carries procedure a role will
-  execute; never let a role definition install a skill implicitly.
+  review gate for any skill that carries procedure a role will execute; never
+  let a role definition install a skill implicitly. If role behaviour is to
+  depend on skill content, add real content pinning — immutable source
+  references or verified hashes recorded in the manifest. Do not rely on
+  `SKILLS_NPX_SPEC` for this: it is installer-only pinning and gives no
+  guarantee about the skill being installed.
 
 ### F6 — "Provider-independent" is true of the format, not the delivery (Medium)
 
@@ -276,7 +318,7 @@ Two contained changes, in this order:
   reuses the shipped skills subsystem, scheduler, leases, artifacts and
   recovery; B1 removes the fail-open control in F2 *before* anyone introduces
   `verifier`; delivery is engine-agnostic (mitigates F6); no new privileged
-  surface (F5 unchanged); role/skill data can ship as an external pack (F4).
+  surface (F5 unchanged); role/skill data stays out of the tracked template (F4).
 - **Cons:** advisory only — a model may ignore the block, so this is **not**
   least-privilege and does not satisfy anyone who reads "role gets these skills"
   as an isolation guarantee; adds a validation seam (unknown skill names) and a
@@ -291,7 +333,8 @@ Two contained changes, in this order:
 - **Pros:** conceptually clean; matches the proposal as written; the
   decomposition is genuinely good design *in the abstract*.
 - **Cons:** collides with two existing mode vocabularies (F8) and a third
-  role-ish vocabulary in the org system; needs registry work (F3) and conflicts
+  role-ish vocabulary in the org system; raises the registry-scope question
+  (F3) and conflicts
   with the "no downstream vocabulary in tracked source" rule (F4); still
   requires B1 and B2 as substrate, so it is strictly more work than COA-B with
   no additional near-term capability.
@@ -325,13 +368,16 @@ containing only the skills bound to the invocation's role.
 
 1. **COA-A now** — correct the record (C1-C5). Cheap, and it prevents a design
    built on a component that is not in this checkout.
-2. **COA-B1 next, before any new role names** — declarative role traits. This
-   inverts the proposal's sequencing for a concrete reason: the proposal's own
-   vocabulary (`verifier`, `security`, `debugger`) trips F2 on introduction, and
-   the failure is silent.
-3. **COA-B2 after that** — advisory role↔skill binding, shipped as an external
-   policy pack rather than checked into the template (F4), with `skills:`
-   validated against the manifest at load.
+2. **COA-B1 next, ahead of growing the role vocabulary** — declarative role
+   traits. This reorders the proposal's sequencing for a concrete reason: the
+   proposal's own vocabulary (`verifier`, `security`, `debugger`) depends
+   entirely on capabilities being declared correctly, and where they are not,
+   the degradation is silent. Adding roles first is *possible* (see F2); doing
+   traits first is what makes it safe by construction rather than by care.
+3. **COA-B2 after that** — advisory role↔skill binding, kept out of the tracked
+   template (F4), with `skills:` validated against the manifest at load. Note
+   that external policy-pack delivery is not implemented and would have to be
+   designed as part of this step.
 4. **Defer COA-C.** Revisit only if the collaboration axis proves necessary in
    practice, and rename it to avoid the `mode` collision.
 5. **Treat COA-D as a separate, later decision** driven by a least-privilege
@@ -401,12 +447,24 @@ design, including its already-shipped skills subsystem.
   compliance data remains under `governance/logs/`.
 - **Artifact placement deviation, disclosed.** `AGENTS.md` routes durable audit
   summaries to `docs/audits/` and session logs to `docs/logs/session/<MMYYYY>/`.
-  Both trees are git-ignored (`.gitignore:27-28`), so a report that must be
-  committed and pushed cannot live there. This review is therefore placed in the
-  tracked `docs/plans/` tree alongside the existing design and verification
-  plans, and linked from `docs/INDEX.md` as the documentation rules require. A
-  local-only session note was also written under
-  `docs/logs/session/082026/` on the machine that produced this report; it is
-  not part of the published repo.
+  Both trees are git-ignored (`.gitignore:27-28`), and `AGENTS.md` states the
+  intent explicitly: audit files there *"live only on the machine that produced
+  them and are not part of the published repo."* A review that must be committed
+  and pushed therefore cannot live in `docs/audits/` without contradicting that
+  rule rather than satisfying it.
+- **Classification.** This document is a **design review of an externally
+  supplied proposal**, not an audit of this repository's code — it evaluates a
+  proposed architecture against the current implementation. It is placed in the
+  tracked `docs/plans/` tree, whose contents already include review and
+  verification artifacts (`2026-06-24-auth-ux-verification-plan.md`,
+  `2026-06-24-security-hardening-verification.md`), and is listed under
+  **Current Operator Docs** in `docs/INDEX.md` — not under that index's
+  *Historical Design And Planning Archives* heading, which describes the older
+  material in the same directory. If the operator prefers this to be classified
+  and retained as an audit artifact, the correct move is a local copy under
+  `docs/audits/`, which by design would not be published.
+- A local-only session note was also written under `docs/logs/session/082026/`
+  on the machine that produced this report; it is not part of the published
+  repo.
 - **No decision is recorded.** Nothing here is entered in
   `docs/DECISION_LOG.md`; selecting a course of action is the operator's call.

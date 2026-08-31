@@ -131,7 +131,10 @@ These are historical audit inputs. They retain their original observations and d
 not override the canonical operator documentation or the active TODO ledger.
 
 - `docs/plans/`: early Cuttlefish design, implementation, auth UX,
-  security-hardening, and chat-redesign planning archives.
+  security-hardening, and chat-redesign planning archives. Note that this
+  directory also holds current (non-archival) review and verification
+  artifacts, which are listed individually under "Current Operator Docs"
+  above; only the dated pre-2026-08 planning material is historical.
 - `docs/superpowers/specs/`: feature design specs.
 - `docs/superpowers/plans/`: detailed implementation plans.
 
