@@ -64,7 +64,7 @@ traits), deferring the full three-axis model.
 | C1 | "Cuttlefish … already integrates Tagteam" | **Not found.** A case-insensitive search for `tag.?team` across the repo (excluding `node_modules`/`.git`) returns zero matches. The capabilities attributed to Tagteam (run loop, artifacts, role dispatch, capability routing, recovery, quality gates) all exist — inside Cuttlefish's own `orchestration` package. | `packages/cuttlefish/src/orchestration/{scheduler,coordinator,artifacts,recovery-requeue,store-recovery}.ts` |
 | C2 | "Tagteam's current architecture already has a closed Role vocabulary" | **Inverted.** The role vocabulary is *open*: roles are parsed from an operator-supplied `roles.yaml`, and `RoleDefinition.id` is a free string. What *is* closed is the **mode** vocabulary — five allocation modes and five live-run modes. | `orchestration/config.ts:42`; `orchestration/types.ts` (`RoleDefinition`); `orchestration/coordinator.ts:15`; `orchestration/live-run.ts:1` |
 | C3 | "supervisor / worker / scout" are the current Tagteam roles | **Not the shipped vocabulary.** The template roles are `architect`, `seniorImplementer`, `independentReviewer`, `adversarialReviewer`, `qaGate`, `localTriage`. `supervisor` is a concept in the *org* system (`reportsTo` chains), not the orchestration role set; `scout` does not appear. | `docs/orchestration/examples/roles.yaml`; `packages/cuttlefish/template/orchestration/roles.yaml`; `gateway/org-validation.ts:36,388` |
-| C4 | "I would make Skills the main extension … implement Skills before adding more roles" | **Already shipped, in part.** Skills exist as a CLI (`add`/`find`/`list`/`update`), a provenance manifest (not a content pin — see F5), a filesystem convention, live hot-reload, HTTP routes, a dashboard catalog, and a dedicated prompt-injection screening path. | `cli/skills.ts` (400 lines); `gateway/api/routes/skills.ts`; `gateway/watcher.ts:123-137`; `gateway/content-screening.ts`; `docs/USER_MANUAL.md:91-102`; `README.md:307` |
+| C4 | "I would make Skills the main extension … implement Skills before adding more roles" | **Already shipped, in part.** Skills exist as a CLI (`add`/`find`/`list`/`update`), a provenance manifest (not a content pin — see F5), a filesystem convention, live hot-reload, HTTP routes, and a dashboard catalog. (A prompt-injection screening module exists, but per F5 it is **not** invoked on skill install, sync, or native discovery.) | `cli/skills.ts` (400 lines); `gateway/api/routes/skills.ts`; `gateway/watcher.ts:123-137`; `gateway/content-screening.ts`; `docs/USER_MANUAL.md:91-102`; `README.md:307` |
 | C5 | "skills should be provider-independent … the provider supplies intelligence" | **True in format, not in delivery.** Skills *are* provider-neutral Markdown (`SKILL.md`). Delivery is provider-*specific* **and working-directory-dependent**: the sync writes symlinks into two instance-local directories under `CUTTLEFISH_HOME`, which an engine discovers only when its cwd is that home (see F6). | `gateway/watcher.ts:29`; `shared/paths.ts:95-96`; `shared/instance-home.ts`; `engines/claude-interactive.ts:463,527` |
 
 **C1 is the one to resolve first.** Three of the proposal's design decisions
@@ -448,8 +448,12 @@ reach and trust, and no single option has both properties:**
 - **B2b — inlined content.** The block carries the `SKILL.md` text.
   **Reach:** engine-agnostic, so it does mitigate F6. **Trust:** this creates a
   **new** path injecting third-party procedural content into the prompt of every
-  routed engine, bypassing the provenance-based filesystem screening that F5
-  documents. F5 is **not** unchanged, and the review/screening gate F5 asks for
+  routed engine. It does **not** bypass a control — per F5 the native filesystem
+  route was never screened either — but it *widens* that unscreened route from
+  the engines and working directories that happen to discover skills to **all**
+  routed sessions, and makes the content flow through Cuttlefish, which at least
+  makes screening possible. F5's exposure is **not** unchanged, and the
+  review/screening gate F5 asks for
   must be applied to this path specifically, before a role can bind a skill.
 
 - **Pros:** no new orchestration layer, exactly as the proposal advocates;
@@ -569,9 +573,11 @@ design, including its already-shipped skills subsystem.
    incoherent. Validation should reject it; today nothing would.
 5. **Third-party skill trust.** If skills carry the operating procedure for
    roles that edit repositories, an installed skill becomes remote code
-   influence over an agent with `repo_edit`. The provenance model in
-   `content-screening.ts` is the right foundation; a review gate on
-   procedure-bearing skills is a necessary addition.
+   influence over an agent with `repo_edit`. Note this is not a gap in an
+   existing control: per F5, skill content is unscreened on the normal path —
+   `content-screening.ts` is a sound provenance model but is wired to inbound
+   text and attachments, not to skills. Extending it to procedure-bearing
+   skills, plus a human review gate, would be **new** work rather than a fix.
 6. **Org system vs. orchestration roles.** `Employee.rank`/`persona` and
    `RoleDefinition` are two separate answers to "who is this agent". The
    proposal addresses only the second. Left unreconciled, operators will have to
