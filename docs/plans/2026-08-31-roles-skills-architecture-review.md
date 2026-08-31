@@ -34,11 +34,14 @@ roles first is possible; doing traits first is what makes it safe by
 construction rather than by care. See F2 for the precise boundary.
 
 **The headline gap:** skills are delivered **globally, not per role.** The
-daemon symlinks *every* installed skill into *every* engine home
-(`gateway/watcher.ts`). There is no enforcement point where "role `reviewer`
-gets skills `code-review`, `adversarial-review`" could take effect. The
-proposal's central mechanism — the skill differentiating the role — is the one
-piece of machinery that does not exist yet.
+daemon symlinks *every* installed skill into the two synchronized discovery
+homes — `~/.claude/skills` and `~/.agents/skills` (`gateway/watcher.ts`) — with
+no filtering by role or session. Engines that read neither home get no skills at
+all (F6). So the delivery is all-or-nothing in both directions: unfiltered where
+it reaches, absent where it does not. There is no enforcement point where "role
+`reviewer` gets skills `code-review`, `adversarial-review`" could take effect.
+The proposal's central mechanism — the skill differentiating the role — is the
+one piece of machinery that does not exist yet.
 
 Recommended path: **COA-B** (data-only role↔skill binding + declarative role
 traits), deferring the full three-axis model.
@@ -114,10 +117,16 @@ the first**.
 - **Expected under the proposal:** a `reviewer` invocation sees
   `code-review`, `architecture-review`, `adversarial-review` and *not*
   `implementation`.
+- **Scope of the impact (stated precisely, cf. F6):** this is global *within
+  the two synchronized homes*, not across every engine. For engines that read
+  `~/.claude/skills` or `~/.agents/skills`, every session sees every skill —
+  that is where the least-privilege concern bites: a read-only reviewer is
+  handed the implementation playbooks regardless. For the remaining adapters,
+  the problem is the opposite one in F6: they may discover no skills at all.
+  Neither case gives a role a *specific* skill set.
 - **Impact:** the proposal's core mechanism ("the skill determines how it
   performs the role") has no enforcement point. Writing `skills:` under a role
-  in YAML today would be inert documentation. It also forecloses least-privilege:
-  a read-only reviewer is handed the implementation playbooks regardless.
+  in YAML today would be inert documentation.
 - **Remediation:** see COA-B (advisory binding via the per-session prompt path)
   and COA-D (hard filesystem scoping).
 
@@ -185,28 +194,37 @@ the first**.
   `governance/exceptions.yaml` entries are required under the rules as written;
   do not add them on the strength of this report alone.
 
-### F4 — A checked-in engineering-role taxonomy conflicts with a stated extension rule (Medium)
+### F4 — Generic roles belong in the template; only program-specific vocabulary goes external (Low)
 
-- **Observed:** `docs/ARCHITECTURE.md:117-120` — *"Keep downstream program
-  vocabulary, policy examples, and release semantics out of tracked generic
-  source, templates, and operator docs; program-specific specialization belongs
-  in external policy packs."*
-- **Impact:** baking `architect / developer / verifier / reviewer / scout` and
-  their skill sets into `packages/cuttlefish/template/orchestration/roles.yaml`
-  is exactly the specialization that rule pushes outward. Cuttlefish is
-  described in `AGENTS.md` as *"a bus, not a brain."*
-- **Remediation:** keep the taxonomy **out of the tracked template** and ship
-  it as an external, versioned policy pack, leaving
-  `packages/cuttlefish/template/orchestration/roles.yaml` minimal. This also
-  preserves the proposal's own goal: different teams want different role sets.
-- **Caveat — the delivery path does not exist yet.** Policy-pack distribution
-  is **not implemented**, and the skills manifest cannot stand in for it:
-  `skillsAdd()` installs exactly one skill *directory* into `SKILLS_DIR` and
-  records only `{name, source, installedAt}` (`cli/skills.ts:68-83,239-278`).
-  No inspected code copies a bundled `roles.yaml` into orchestration config or
-  otherwise applies a pack. Choosing this remediation means designing that
-  installer/config-import path as part of the work — it is not a capability to
-  be assumed.
+- **Corrected finding.** An earlier revision claimed that adding the proposal's
+  roles to the tracked template would conflict with a stated extension rule, and
+  pushed the taxonomy toward an external policy pack. That reasoning does not
+  hold and the conflict claim is withdrawn.
+- **Observed:** `docs/ARCHITECTURE.md:117-120` excludes *"downstream **program**
+  vocabulary, policy examples, and release semantics"* from tracked generic
+  source, and says *"**program-specific** specialization belongs in external
+  policy packs."* The operative qualifier is program-specific.
+- **Why the earlier reading was wrong:** the shipped generic template already
+  defines six engineering roles —
+  `packages/cuttlefish/template/orchestration/roles.yaml` carries `architect`
+  (:5), `seniorImplementer` (:13), `independentReviewer` (:25),
+  `adversarialReviewer` (:37), `qaGate` (:47), `localTriage` (:56). The
+  proposal's `architect / developer / verifier / reviewer / scout` is the same
+  genus of generic engineering vocabulary, and nothing establishes it as
+  downstream- or program-specific. The rule does not bite.
+- **What the rule does still constrain:** a role set carrying a *particular
+  organisation's* program names, policy examples, or release semantics. Keep
+  that out of the tracked template.
+- **Remediation:** add generic roles through the **existing template extension
+  point** (`template/orchestration/roles.yaml` plus a coordinator template),
+  which is the documented path and needs no new machinery. Do **not** route
+  them through an external policy pack: that delivery mechanism is **not
+  implemented** — `skillsAdd()` installs one skill *directory* into `SKILLS_DIR`
+  and records only `{name, source, installedAt}`
+  (`cli/skills.ts:68-83,239-278`), and no inspected code imports a bundled
+  `roles.yaml` into orchestration config. Reserve an external pack for the
+  program-specific case, and design the installer path if that case ever
+  arrives.
 
 ### F5 — Skills are privileged control-plane state, and the proposal multiplies them (Medium)
 
@@ -254,12 +272,18 @@ the first**.
   cross-family review, where the *point* is that a different provider looks at
   the work.
 - **Remediation:** publish a per-engine skill-delivery matrix before promising
-  provider independence, and add an engine-agnostic fallback: inject the skill
-  text through the per-session prompt path rather than relying on discovery.
-  A precedent exists but is engine-specific — `--append-system-prompt` for
-  Claude (`engines/claude-interactive-args.ts:46`,
-  `engines/claude-interactive.ts:446-448`); other engines receive context via
-  `sessions/context.ts`.
+  provider independence. An engine-agnostic fallback — injecting the skill text
+  through the per-session prompt path rather than relying on filesystem
+  discovery — would close the gap; a precedent exists but is engine-specific
+  (`--append-system-prompt` for Claude, `engines/claude-interactive-args.ts:46`
+  and `engines/claude-interactive.ts:446-448`; other engines receive context via
+  `sessions/context.ts`).
+- **Trade-off, stated here so the two findings are read together:** that
+  fallback is COA-B2b, and it is not free. Inlining third-party skill text into
+  every routed engine's prompt bypasses the provenance-based filesystem
+  screening in F5 and creates a new untrusted-content path. Closing F6 this way
+  widens F5; the screening gate and content pinning F5 asks for become
+  prerequisites, not optional extras.
 
 ### F7 — A stale note in `docs/orchestration/README.md` contradicts the shipped CLI (Low)
 
@@ -334,19 +358,42 @@ Two contained changes, in this order:
    prompt path. Advisory (the model is *told* which skills apply); the global
    symlink set is unchanged.
 
+**B2 must choose what the block carries — the two variants differ in both
+reach and trust, and no single option has both properties:**
+
+- **B2a — names only.** The block names the skills; the engine loads the
+  content from its own skills home. **Reach:** only engines that read
+  `~/.claude/skills` or `~/.agents/skills`; elsewhere the named skill is a
+  dangling reference, so this does **not** mitigate F6. **Trust:** no new path
+  — F5 genuinely unchanged, since content still arrives through the existing
+  screened filesystem route.
+- **B2b — inlined content.** The block carries the `SKILL.md` text.
+  **Reach:** engine-agnostic, so it does mitigate F6. **Trust:** this creates a
+  **new** path injecting third-party procedural content into the prompt of every
+  routed engine, bypassing the provenance-based filesystem screening that F5
+  documents. F5 is **not** unchanged, and the review/screening gate F5 asks for
+  must be applied to this path specifically, before a role can bind a skill.
+
 - **Pros:** no new orchestration layer, exactly as the proposal advocates;
   reuses the shipped skills subsystem, scheduler, leases, artifacts and
-  recovery; B1 removes the fail-open control in F2 *before* anyone introduces
-  `verifier`; delivery is engine-agnostic (mitigates F6); no new privileged
-  surface (F5 unchanged); role/skill data stays out of the tracked template (F4).
+  recovery; B1 removes the fail-open control in F2 *before* anyone grows the
+  role vocabulary; role data can go through the existing template extension
+  point (F4).
 - **Cons:** advisory only — a model may ignore the block, so this is **not**
   least-privilege and does not satisfy anyone who reads "role gets these skills"
   as an isolation guarantee; adds a validation seam (unknown skill names) and a
-  new failure mode (role references an uninstalled skill).
-- **Effort:** small-to-medium. **Risk:** low. **Reversible:** yes — both fields
-  are optional and additive.
+  new failure mode (role references an uninstalled skill). **B2a leaves F6
+  unaddressed; B2b widens the F5 surface.** An earlier revision of this report
+  claimed both engine-agnostic delivery *and* an unchanged F5 surface; those are
+  mutually exclusive and the claim is withdrawn.
+- **Effort:** small-to-medium. **Risk:** low for **B2a**; **medium for B2b**,
+  which is a new untrusted-content path, not a packaging change.
+  **Reversible:** yes — both fields are optional and additive.
 - **Mitigations:** validate `skills:` against the manifest at config load and
   fail loudly, not silently; state plainly in docs that binding is advisory.
+  If **B2b** is chosen, screen inlined skill text on that path and gate
+  procedure-bearing skills behind human review (F5), and pin skill content
+  (also F5) so a role's behaviour cannot change under it.
 
 ### COA-C — Full three-axis Mode / Role / Skill model as proposed
 
@@ -354,10 +401,8 @@ Two contained changes, in this order:
   decomposition is genuinely good design *in the abstract*.
 - **Cons:** collides with two existing mode vocabularies (F8) and a third
   role-ish vocabulary in the org system; raises the registry-scope question
-  (F3) and conflicts
-  with the "no downstream vocabulary in tracked source" rule (F4); still
-  requires B1 and B2 as substrate, so it is strictly more work than COA-B with
-  no additional near-term capability.
+  (F3); still requires B1 and B2 as substrate, so it is strictly more work than
+  COA-B with no additional near-term capability.
 - **Effort:** large. **Risk:** medium-high (touches coordinator, scheduler
   inputs, config schema, docs, governance). **Reversible:** partly — a config
   schema change is a compatibility commitment.
@@ -394,10 +439,14 @@ containing only the skills bound to the invocation's role.
    entirely on capabilities being declared correctly, and where they are not,
    the degradation is silent. Adding roles first is *possible* (see F2); doing
    traits first is what makes it safe by construction rather than by care.
-3. **COA-B2 after that** — advisory role↔skill binding, kept out of the tracked
-   template (F4), with `skills:` validated against the manifest at load. Note
-   that external policy-pack delivery is not implemented and would have to be
-   designed as part of this step.
+3. **COA-B2 after that** — advisory role↔skill binding, with `skills:`
+   validated against the manifest at load, and generic roles added through the
+   existing template extension point rather than an unimplemented policy pack
+   (F4). Decide **B2a vs B2b** explicitly at this step: B2a (names only) is the
+   lower-risk default but leaves F6 unaddressed; B2b (inlined skill text) is the
+   only variant that reaches every engine, and it must ship with the F5
+   screening gate and content pinning, because it is a new untrusted-content
+   path.
 4. **Defer COA-C.** Revisit only if the collaboration axis proves necessary in
    practice, and rename it to avoid the `mode` collision.
 5. **Treat COA-D as a separate, later decision** driven by a least-privilege
