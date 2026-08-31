@@ -171,9 +171,22 @@ the first**.
     they are ignored when the required five are selected
     (`coordinator.ts:146-160`).
   - Conversely, a role innocently named `preview-generator` is classified as a
-    **reviewer** (contains "review"), and can be handed a cross-family
-    constraint it was never meant to carry. This direction is not fixable by
-    careful capability declaration — the name alone decides it.
+    **reviewer** (contains "review") by `isReviewerRole`, and that classification
+    drives real execution behaviour in `run-mode.ts`: the lease is given a
+    generated **review bundle** instead of a normal working directory (:493,
+    `createReviewBundle`), its prompt is prefixed *"Review-only pass. Do not
+    modify files."* (:600), and it is excluded from becoming the implementation
+    workspace (:216). A role meant to generate previews would be silently turned
+    into a read-only reviewer. This direction is **not** fixable by careful
+    capability declaration — the name alone decides it.
+  - **What it does not do (corrected):** an earlier revision claimed such a role
+    could also be handed a cross-family constraint. It cannot.
+    `familyConstraint` is read only from the parsed YAML `RoleDefinition` —
+    `selectWorker` branches on
+    `role.familyConstraint === "opposite_of_implementer"`
+    (`scheduler.ts:331-341`) and `familyConstraintAllows` returns `true`
+    immediately when the field is absent (`scheduler.ts:433-446`). It is never
+    inferred from a role ID.
 - **Remediation:** add an explicit, optional `kind` (or `traits: []`) field to
   `RoleDefinition`, resolve by `kind` first and fall back to today's heuristics
   for backward compatibility. This is a small, contained change. It is
