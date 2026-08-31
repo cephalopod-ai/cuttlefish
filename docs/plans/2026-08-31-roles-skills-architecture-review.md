@@ -237,6 +237,15 @@ the first**.
   **by provenance only** — a comment there records the audit finding (D-F3/G-07)
   that naming an uploaded file `skill.md` or nesting it under any `skills/` path
   must not confer trust.
+- **What screening does *not* cover:** that provenance logic runs only where
+  content is explicitly processed — inbound text and run attachments
+  (`gateway/server.ts:483,567`, `gateway/run-attachments.ts:17`,
+  `gateway/ticket-dispatch.ts:23`). Neither `skillsAdd()` nor
+  `syncSkillSymlinks()` invokes it, and an engine reading `SKILL.md` from its
+  own skills home never passes through Cuttlefish at all. Installed skill
+  content is therefore **unscreened on the normal path**; the control-plane
+  protections above guard *who may write* the directory, not *what the file
+  says*.
 - **Impact:** "make Skills the main extension point" means "grow the number of
   privileged, leniently-screened, prompt-injection-relevant artifacts, installed
   from third-party sources via `npx skills add`." The existing defences are
@@ -353,9 +362,9 @@ Two contained changes, in this order:
    have `coordinator.ts` and `cross-family.ts` resolve by declaration first and
    fall back to the current heuristics. Fixes F2. Independently worth doing.
 2. **B2:** add optional `skills: string[]` to `RoleDefinition`; at dispatch,
-   resolve names against the installed manifest and inject an explicit
-   "for this role, apply these skills" block through the existing per-session
-   prompt path. Advisory (the model is *told* which skills apply); the global
+   resolve names against the **installed skill directories** and inject an
+   explicit "for this role, apply these skills" block through the existing
+   per-session prompt path. Advisory (the model is *told* which skills apply); the global
    symlink set is unchanged.
 
 **B2 must choose what the block carries — the two variants differ in both
@@ -364,9 +373,17 @@ reach and trust, and no single option has both properties:**
 - **B2a — names only.** The block names the skills; the engine loads the
   content from its own skills home. **Reach:** only engines that read
   `~/.claude/skills` or `~/.agents/skills`; elsewhere the named skill is a
-  dangling reference, so this does **not** mitigate F6. **Trust:** no new path
-  — F5 genuinely unchanged, since content still arrives through the existing
-  screened filesystem route.
+  dangling reference, so this does **not** mitigate F6. **Trust:** adds no new
+  path — but note what the existing path is *not*. Native discovery is
+  **unscreened**: neither `skillsAdd()` nor `syncSkillSymlinks()` invokes
+  content screening, and the engine reads `SKILL.md` from its own home without
+  Cuttlefish seeing it. `screenUntrustedText` / `screenAttachmentContent` are
+  wired into inbound text and run attachments
+  (`gateway/server.ts:483,567`, `gateway/run-attachments.ts:17`,
+  `gateway/ticket-dispatch.ts:23`), not into skill installation or sync. So B2a
+  leaves F5's *surface* unchanged while inheriting an already-unscreened route;
+  F5's human review gate is needed either way, and an earlier revision of this
+  report wrongly described this route as screened.
 - **B2b — inlined content.** The block carries the `SKILL.md` text.
   **Reach:** engine-agnostic, so it does mitigate F6. **Trust:** this creates a
   **new** path injecting third-party procedural content into the prompt of every
@@ -389,8 +406,17 @@ reach and trust, and no single option has both properties:**
 - **Effort:** small-to-medium. **Risk:** low for **B2a**; **medium for B2b**,
   which is a new untrusted-content path, not a packaging change.
   **Reversible:** yes — both fields are optional and additive.
-- **Mitigations:** validate `skills:` against the manifest at config load and
-  fail loudly, not silently; state plainly in docs that binding is advisory.
+- **Mitigations:** validate `skills:` at config load and fail loudly, not
+  silently — but build the catalogue from **`SKILLS_DIR` on disk**, using
+  `skills.json` only as optional source metadata. Manifest-only validation
+  would reject legitimately installed skills: `cuttlefish setup` copies the ten
+  bundled template skills into `SKILLS_DIR` (`cli/setup.ts:716`) while seeding
+  `skills.json` as `{"installed": {}}` (`template/skills.json`), and
+  `skillsList()` already treats a directory with no manifest entry as a valid
+  `(local)` skill (`cli/skills.ts:293-326`). On a fresh install, manifest-only
+  validation would reject every shipped skill — including `onboarding`, which
+  `sessions/context.ts:817` actively invokes. Also state plainly in docs that
+  binding is advisory.
   If **B2b** is chosen, screen inlined skill text on that path and gate
   procedure-bearing skills behind human review (F5), and pin skill content
   (also F5) so a role's behaviour cannot change under it.
