@@ -46,11 +46,12 @@ daemon symlinks *every* installed skill into two **instance-local** directories 
 `~/.cuttlefish/.claude/skills` by default (`gateway/watcher.ts`,
 `shared/paths.ts:95-96`) — with no filtering by role or session. Whether an
 engine sees them then depends on its **working directory**, and per F6 the
-window is narrow: every inspected interactive dispatcher gives the engine a cwd
-that is *not* `CUTTLEFISH_HOME`, so on the evidence the synced skills reach an
-engine in one configuration — an orchestrated run with no task cwd and no
-`workspaces.defaultCwd`. Either way the delivery is all-or-nothing: unfiltered
-where it reaches, absent where it does not. There is no enforcement point where "role `reviewer` gets skills
+window is narrow: no dispatcher gives the engine `CUTTLEFISH_HOME` as its cwd by
+default, so on the evidence the synced skills reach an engine only where that
+cwd is arrived at deliberately — an orchestrated run with no task cwd and no
+`workspaces.defaultCwd`, or a session an operator has explicitly pointed there.
+Either way the delivery is all-or-nothing: unfiltered where it reaches, absent
+where it does not. There is no enforcement point where "role `reviewer` gets skills
 `code-review`, `adversarial-review`" could take effect. The proposal's central
 mechanism — the skill differentiating the role — is the one piece of machinery
 that does not exist yet.
@@ -317,16 +318,27 @@ the first**.
   For the synced directory to be seen, the engine's **cwd** must be
   `CUTTLEFISH_HOME` (making it the project-level `./.claude/skills`) or its
   **`HOME`** must be — and `HOME` is never overridden for engine processes.
-  Tracing the dispatch paths, cwd is essentially never `CUTTLEFISH_HOME`:
-  - **Interactive / web sessions — not discovered.** Every inspected dispatcher
-    passes an explicit cwd from `resolveSessionWorkspace(session)`
+  Tracing the dispatch paths, no default puts the cwd at `CUTTLEFISH_HOME`:
+  - **Interactive / web sessions — not discovered by default.** Every inspected
+    dispatcher passes an explicit cwd from `resolveSessionWorkspace(session)`
     (`gateway/run-web-session.ts:210,575`, `gateway/pty-ws.ts:48`,
     `sessions/manager.ts:237,419`, `sessions/rate-limit-handler.ts:269,376`).
     That helper returns `session.cwd` when set, and otherwise
     **`${CUTTLEFISH_HOME}-workspaces/<sessionId>`** — a sibling directory, by
     explicit design: *"Keep implicit engine workspaces outside the gateway
-    control-plane home"* (`sessions/session-workspace.ts:6-16`). Either way the
-    cwd is not `CUTTLEFISH_HOME`, so the synced skills are not on the path.
+    control-plane home"* (`sessions/session-workspace.ts:6-16`). So the implicit
+    default is not `CUTTLEFISH_HOME`, and a session pointed at a repository is
+    not either.
+  - **One exception, for completeness.** An operator *can* set a session's cwd
+    to `CUTTLEFISH_HOME` explicitly: `resolveSessionWorkspace` returns a
+    populated `session.cwd` unchanged, and `validateCwd` enforces
+    `workspaces.roots` only when that list is non-empty
+    (`sessions/session-patch.ts:71-91`), so with roots unset any existing
+    directory is accepted. Such a session would discover the synced skills. It
+    is a supported configuration rather than a designed delivery path — it
+    points a working session at the gateway control-plane home, which
+    `hook-endpoint.ts` otherwise defends against writes to — but the report
+    should not claim it is impossible.
   - **The adapter's own fallback is not reached on those paths.**
     `engines/claude-interactive.ts:463,527` reads `cwd: opts.cwd ||
     CUTTLEFISH_HOME`, but every dispatcher above supplies `opts.cwd`, so the
@@ -339,9 +351,11 @@ the first**.
     `workspaces.defaultCwd` is configured does the cwd land on
     `CUTTLEFISH_HOME` and the skills become discoverable.
 - **Consequence — the filesystem delivery path is narrower than it looks.** On
-  the evidence above, the synced skills reach an engine in one configuration:
-  an orchestrated run with no task cwd and no `workspaces.defaultCwd`. Ordinary
-  interactive sessions do not see them via this route at all. A user's own
+  the evidence above, the synced skills reach an engine only where the cwd
+  lands on `CUTTLEFISH_HOME`: an orchestrated run with no task cwd and no
+  `workspaces.defaultCwd`, or a session an operator has explicitly pointed at
+  that directory. Neither is a default — ordinary interactive sessions do not
+  see them via this route. A user's own
   `~/.claude/skills` is a separate matter — engines read it, but the daemon
   never writes there (see the asymmetry below), so anything found that way was
   installed by the user, not synced by Cuttlefish.
@@ -361,7 +375,8 @@ the first**.
   on a skill will behave differently — silently — depending both on which engine
   the scheduler routes it to and on whether that session's cwd happens to be
   `CUTTLEFISH_HOME` — which, per the trace above, ordinary interactive sessions
-  never are. That directly undercuts cross-family review, where the *point* is
+  are not, absent deliberate configuration. That directly undercuts cross-family
+  review, where the *point* is
   that a different provider looks at the work.
 - **Also note:** an `isolated_worktree` lane is further removed again, since the
   worktree path is a different directory from the base cwd.
