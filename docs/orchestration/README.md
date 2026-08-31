@@ -1,11 +1,13 @@
 # Provider-Neutral Matrix Orchestration
 
-> **CLI exposure note (verified 2026-07-20):** the orchestration command
-> handlers documented below exist, but the canonical Cuttlefish binary does not
-> currently register their command groups. `cuttlefish --help` therefore omits
-> `workers`, `scheduler`, `run`, `queue`, `dual-lane`, and `worktree`. Use the
-> authenticated orchestration API/dashboard for live operations; treat the CLI
-> examples as blocked until binary registration is repaired.
+> **CLI exposure (verified 2026-08-31):** the orchestration command groups are
+> registered on the canonical Cuttlefish binary — `workers`, `scheduler`,
+> `leases`, `queue`, `run`, `dual-lane`, `holds`, `artifacts`, `continuations`,
+> `recovery`, and `worktree` all appear in `cuttlefish --help`
+> (`packages/cuttlefish/bin/cuttlefish.ts`). Their presence in shipped help is
+> pinned by `src/cli/__tests__/orchestration-cli-registration.test.ts`
+> (TS-RIG-001). The CLI examples below are usable; the authenticated
+> orchestration API and dashboard remain available for the same operations.
 
 Status: implemented as a provider-neutral foundation with durable
 scheduler-state, provider-adapter contract modules, opt-in live-adapter

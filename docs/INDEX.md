@@ -2,7 +2,10 @@
 
 This index lists operator-facing docs that are maintained in this checkout.
 Audit and session logs under `docs/audits/` and `docs/logs/` are local-only
-artifacts unless explicitly published.
+artifacts unless explicitly published. Both trees are listed in `.gitignore`,
+which suppresses only *untracked* files, so a file deliberately added there
+stays tracked and published; the audit files linked individually below are
+those deliberate cases.
 
 ## Current Operator Docs
 
@@ -78,11 +81,11 @@ artifacts unless explicitly published.
   foundation, durable scheduler state, adapter contracts, CLI dry-run/observe
   commands, opt-in live run modes, git worktree execution, and orchestration
   HTTP routes.
-- `docs/plans/2026-08-31-roles-skills-architecture-review.md`: source-grounded
+- `docs/audits/2026-08-31-roles-skills-architecture-review.md`: source-grounded
   review of an external "MODE / ROLE / SKILLS" proposal against the shipped
   orchestration role model and skills subsystem, with findings, courses of
-  action, and mitigations. Analysis only — records no decision and changes no
-  behavior.
+  action, and mitigations. One of the deliberately published audit files (see
+  the retention note above); records no decision.
 
 ## Session and Audit Log Summaries
 
@@ -131,10 +134,7 @@ These are historical audit inputs. They retain their original observations and d
 not override the canonical operator documentation or the active TODO ledger.
 
 - `docs/plans/`: early Cuttlefish design, implementation, auth UX,
-  security-hardening, and chat-redesign planning archives. Note that this
-  directory also holds current (non-archival) review and verification
-  artifacts, which are listed individually under "Current Operator Docs"
-  above; only the dated pre-2026-08 planning material is historical.
+  security-hardening, and chat-redesign planning archives.
 - `docs/superpowers/specs/`: feature design specs.
 - `docs/superpowers/plans/`: detailed implementation plans.
 

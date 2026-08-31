@@ -1,7 +1,10 @@
 # Roles + Skills Architecture Proposal — Source-Grounded Review
 
 - **Date:** 2026-08-31
-- **Type:** design review (analysis only — no code changed)
+- **Type:** design review. Analysis only, with two exceptions the operator
+  authorised: F7's remediation (a stale note in `docs/orchestration/README.md`)
+  and a flaky-test fix in `e2e/collaboration.spec.ts` that was blocking CI on
+  the branch carrying this report. Both are recorded in §8.
 - **Subject:** an external proposal to layer `MODE → ROLE → SKILLS → provider adapter`
   onto Cuttlefish via a component named "Tagteam", and to "implement Skills
   before adding more roles"
@@ -10,7 +13,8 @@
   `docs/orchestration/`, `governance/`). No build, test, or lint run — see
   [Validation status](#8-validation-status).
 - **Status of conclusions:** findings are source-grounded with file/line evidence.
-  Courses of action are proposals, not decisions; nothing here is implemented.
+  Courses of action are proposals, not decisions; **none of COA-A…COA-D is
+  implemented.** The only changes made are the two remediations noted above.
 
 ---
 
@@ -319,10 +323,15 @@ the first**.
   This is the failure mode `AGENTS.md` targets with *"keep documentation
   aligned with current behavior."* It is also how this report went wrong, which
   is the more transferable lesson: verify against source, not against a doc.
-- **Remediation:** delete the stale note from `docs/orchestration/README.md`.
-  Deliberately **not** done in this change set — it is an unrelated
-  documentation fix and belongs in its own commit rather than inside a review
-  report. No constraint on a role/skill rollout follows from this finding.
+- **Remediation — done.** The stale note at `docs/orchestration/README.md:3-8`
+  has been replaced with a source-verified statement: all eleven groups
+  (`workers`, `scheduler`, `leases`, `queue`, `run`, `dual-lane`, `holds`,
+  `artifacts`, `continuations`, `recovery`, `worktree`) are registered in
+  `packages/cuttlefish/bin/cuttlefish.ts` (:209, :225, :273, :290, :330, :342,
+  :363, :417, :435, :461, :489) and pinned in shipped `--help` by TS-RIG-001.
+  An earlier revision of this report deferred the fix to its own commit; the
+  operator asked for it to be applied, and it is included here. No constraint on
+  a role/skill rollout follows from this finding.
 
 ### F8 — The proposal's "Mode" axis collides with two existing mode vocabularies (Low)
 
@@ -522,11 +531,26 @@ design, including its already-shipped skills subsystem.
 
 ## 8. Validation status
 
-- **Ran:** nothing. This is an analysis task under `AGENTS.md` audit rules
-  ("write findings and evidence; do not patch code unless explicitly
-  instructed"). `pnpm typecheck`, `pnpm test`, `pnpm lint`, and `pnpm build`
-  were **not** run, and no source file was modified — only this document and the
-  `docs/INDEX.md` link to it.
+- **Scope of changes made.** `AGENTS.md` audit rules say to write findings and
+  evidence and "do not patch code unless explicitly instructed". The operator
+  explicitly instructed two patches, so this change set is not purely
+  analytical:
+  1. **`e2e/collaboration.spec.ts:18`** — scoped an unscoped `getByText` to the
+     feed item, fixing a Playwright strict-mode race that failed twice in four
+     CI runs on this branch. **Validated:** full e2e suite **9/9 passed**
+     locally against the preinstalled Chromium, plus `pnpm lint` and
+     `pnpm typecheck` clean. The original failure could **not** be reproduced
+     deterministically on demand — it is timing-dependent, and repeated local
+     runs share one e2e server and pollute each other's state; the diagnosis
+     rests on two identical CI failures plus the source reading in the commit
+     message.
+  2. **`docs/orchestration/README.md:3-8`** — replaced the stale CLI-exposure
+     note (F7). Documentation only; verified by reading
+     `packages/cuttlefish/bin/cuttlefish.ts` and TS-RIG-001 rather than by
+     running anything.
+- **Not run for this revision:** `pnpm test` and `pnpm build` were not re-run
+  after the documentation edits, which touch no source. CI runs the full suite
+  on this branch.
 - **Evidence basis:** direct file reads at the paths and lines cited above,
   in this checkout at branch `claude/cuttlefish-roles-skills-euxbrt`.
 - **Not verified:** runtime behaviour of the symlink sync on Windows; whether
@@ -540,24 +564,29 @@ design, including its already-shipped skills subsystem.
   Giles access may skip the `.giles/feature-ledger/` requirement; no ledger
   entry was written and no compliance status is claimed here. Canonical
   compliance data remains under `governance/logs/`.
-- **Artifact placement deviation, disclosed.** `AGENTS.md` routes durable audit
-  summaries to `docs/audits/` and session logs to `docs/logs/session/<MMYYYY>/`.
-  Both trees are git-ignored (`.gitignore:27-28`), and `AGENTS.md` states the
-  intent explicitly: audit files there *"live only on the machine that produced
-  them and are not part of the published repo."* A review that must be committed
-  and pushed therefore cannot live in `docs/audits/` without contradicting that
-  rule rather than satisfying it.
+- **Placement — resolved by the operator.** This report lives at
+  `docs/audits/2026-08-31-roles-skills-architecture-review.md`, the location
+  `AGENTS.md` specifies for durable audit summaries. It was first placed under
+  `docs/plans/` and moved here on the operator's instruction.
+- **A correction to an earlier revision of this section.** That revision argued
+  a report that must be committed *"cannot live in `docs/audits/`"*, because
+  `.gitignore:27` lists the tree and `AGENTS.md` says its files *"live only on
+  the machine that produced them and are not part of the published repo."* That
+  was too absolute. `.gitignore` only suppresses **untracked** files, and the
+  tree already carries two tracked, published audit documents —
+  `docs/audits/2026-08-16-vibe-playtest-full-library.md` and
+  `docs/audits/072026/2026-07-21-sb-cut-001-gate0-baseline.md`. Publishing here
+  is therefore precedented, not a contradiction. The automated review that first
+  raised this was right, and the reasoning used to decline it was wrong.
+- **What the retention rule still means.** `AGENTS.md` describes `docs/audits/`
+  as local-by-default: new audit files are untracked unless deliberately added.
+  This one is deliberately tracked, so it is published while most audit output
+  stays local. Anyone adding a further audit file gets local-only behaviour by
+  default.
 - **Classification.** This document is a **design review of an externally
-  supplied proposal**, not an audit of this repository's code — it evaluates a
-  proposed architecture against the current implementation. It is placed in the
-  tracked `docs/plans/` tree, whose contents already include review and
-  verification artifacts (`2026-06-24-auth-ux-verification-plan.md`,
-  `2026-06-24-security-hardening-verification.md`), and is listed under
-  **Current Operator Docs** in `docs/INDEX.md` — not under that index's
-  *Historical Design And Planning Archives* heading, which describes the older
-  material in the same directory. If the operator prefers this to be classified
-  and retained as an audit artifact, the correct move is a local copy under
-  `docs/audits/`, which by design would not be published.
+  supplied proposal** — it evaluates a proposed architecture against the current
+  implementation — and records findings with evidence and remediation, which is
+  what places it in the audit tree rather than the planning archive.
 - A local-only session note was also written under `docs/logs/session/082026/`
   on the machine that produced this report; it is not part of the published
   repo.
