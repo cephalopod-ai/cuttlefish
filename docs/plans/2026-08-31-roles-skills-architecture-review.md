@@ -261,15 +261,35 @@ the first**.
   `engines/claude-interactive.ts:446-448`); other engines receive context via
   `sessions/context.ts`.
 
-### F7 — Orchestration CLI command groups are not registered (Low-Medium)
+### F7 — A stale note in `docs/orchestration/README.md` contradicts the shipped CLI (Low)
 
-- **Observed:** `docs/orchestration/README.md` carries a verified (2026-07-20)
-  note that the handlers exist but the binary does not register `workers`,
-  `scheduler`, `run`, `queue`, `dual-lane`, or `worktree`; operations must go
-  through the authenticated API/dashboard.
-- **Impact:** any role/skill workflow documented as CLI steps is blocked today.
-- **Remediation:** treat binary registration as a prerequisite for a
-  CLI-facing rollout, or scope the rollout to API/dashboard.
+- **Corrected finding.** An earlier revision of this report claimed the
+  orchestration command groups were unregistered and that a CLI-facing rollout
+  was therefore blocked. That was wrong: it trusted a document instead of the
+  binary. The claim is withdrawn.
+- **Observed (source of truth):** `packages/cuttlefish/bin/cuttlefish.ts`
+  registers every group — `workers` (:209), `scheduler` (:225), `queue` (:290),
+  `run` (:330), `dual-lane` (:342), `worktree` (:489) — alongside `leases`,
+  `holds`, `artifacts`, `continuations`, and `recovery`. A regression test
+  pins this: `src/cli/__tests__/orchestration-cli-registration.test.ts`
+  (TS-RIG-001) builds the shipped binary and asserts all eleven groups appear
+  in `--help`. `docs/feature_inventory.md:381-403` documents the commands as
+  available.
+- **The actual defect:** `docs/orchestration/README.md:3-8` still carries a
+  *"CLI exposure note (verified 2026-07-20)"* stating that the binary "does not
+  currently register their command groups" and that the CLI examples are
+  "blocked until binary registration is repaired." The registration was
+  repaired; the note was never removed, and it now contradicts both the binary
+  and its own regression test.
+- **Impact:** an operator reading the orchestration README is told a working
+  CLI surface is unusable, and is steered to the API/dashboard unnecessarily.
+  This is the failure mode `AGENTS.md` targets with *"keep documentation
+  aligned with current behavior."* It is also how this report went wrong, which
+  is the more transferable lesson: verify against source, not against a doc.
+- **Remediation:** delete the stale note from `docs/orchestration/README.md`.
+  Deliberately **not** done in this change set — it is an unrelated
+  documentation fix and belongs in its own commit rather than inside a review
+  report. No constraint on a role/skill rollout follows from this finding.
 
 ### F8 — The proposal's "Mode" axis collides with two existing mode vocabularies (Low)
 
