@@ -535,15 +535,27 @@ design, including its already-shipped skills subsystem.
   evidence and "do not patch code unless explicitly instructed". The operator
   explicitly instructed two patches, so this change set is not purely
   analytical:
-  1. **`e2e/collaboration.spec.ts:18`** — scoped an unscoped `getByText` to the
-     feed item, fixing a Playwright strict-mode race that failed twice in four
-     CI runs on this branch. **Validated:** full e2e suite **9/9 passed**
-     locally against the preinstalled Chromium, plus `pnpm lint` and
-     `pnpm typecheck` clean. The original failure could **not** be reproduced
-     deterministically on demand — it is timing-dependent, and repeated local
-     runs share one e2e server and pollute each other's state; the diagnosis
-     rests on two identical CI failures plus the source reading in the commit
-     message.
+  1. **`e2e/collaboration.spec.ts`** — two unscoped `getByText` assertions on
+     just-sent message bodies (lines 24 and 42) are now scoped to
+     `page.getByRole("feed")`, fixing a Playwright strict-mode race.
+     **A first attempt was incomplete:** it fixed only the Team-lane assertion
+     and left the identical pattern in the Management test, which then failed CI
+     on the next push. The corrected fix scopes to the feed container, which
+     `collaboration-pane.tsx` renders as a *sibling* of the composer (:184
+     vs :194), so the composer is excluded **structurally rather than by
+     timing** — and applies it to both call sites. The third `composer.fill`
+     (line 33) is never asserted by body text, only by its status string, so it
+     cannot collide.
+     **Validated:** full e2e suite **9/9 passed**, plus two further isolated runs
+     of `collaboration.spec.ts` against fresh servers, all green.
+     Note that `pnpm lint` and `pnpm typecheck` do **not** cover this file —
+     the web lint glob is `src/**` — so the Playwright runs are the only
+     validation that exercises it.
+     The original failure could **not** be reproduced deterministically on
+     demand: it is timing-dependent, and repeated local runs share one e2e
+     server and pollute each other's state. That is precisely why the first
+     attempt's single green suite was misleading, and why the corrected fix
+     rests on a structural argument rather than on observed passes.
   2. **`docs/orchestration/README.md:3-8`** — replaced the stale CLI-exposure
      note (F7). Documentation only; verified by reading
      `packages/cuttlefish/bin/cuttlefish.ts` and TS-RIG-001 rather than by
