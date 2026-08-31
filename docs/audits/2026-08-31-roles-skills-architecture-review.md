@@ -8,10 +8,13 @@
 - **Subject:** an external proposal to layer `MODE → ROLE → SKILLS → provider adapter`
   onto Cuttlefish via a component named "Tagteam", and to "implement Skills
   before adding more roles"
-- **Method:** read-only inspection of this checkout (`packages/cuttlefish/src/orchestration/`,
+- **Method:** the *analysis* is read-only inspection of this checkout
+  (`packages/cuttlefish/src/orchestration/`,
   `packages/cuttlefish/src/cli/skills.ts`, `packages/cuttlefish/src/gateway/`,
-  `docs/orchestration/`, `governance/`). No build, test, or lint run — see
-  [Validation status](#8-validation-status).
+  `docs/orchestration/`, `governance/`) — no build, test, or lint was run to
+  reach any finding here. Checks *were* run for the two authorised remediations
+  above, which are a separate matter; §8 records exactly which, and what they do
+  and do not cover. See [Validation status](#8-validation-status).
 - **Status of conclusions:** findings are source-grounded with file/line evidence.
   Courses of action are proposals, not decisions; **none of COA-A…COA-D is
   implemented.** The only changes made are the two remediations noted above.
@@ -59,7 +62,7 @@ traits), deferring the full three-axis model.
 | C1 | "Cuttlefish … already integrates Tagteam" | **Not found.** A case-insensitive search for `tag.?team` across the repo (excluding `node_modules`/`.git`) returns zero matches. The capabilities attributed to Tagteam (run loop, artifacts, role dispatch, capability routing, recovery, quality gates) all exist — inside Cuttlefish's own `orchestration` package. | `packages/cuttlefish/src/orchestration/{scheduler,coordinator,artifacts,recovery-requeue,store-recovery}.ts` |
 | C2 | "Tagteam's current architecture already has a closed Role vocabulary" | **Inverted.** The role vocabulary is *open*: roles are parsed from an operator-supplied `roles.yaml`, and `RoleDefinition.id` is a free string. What *is* closed is the **mode** vocabulary — five allocation modes and five live-run modes. | `orchestration/config.ts:42`; `orchestration/types.ts` (`RoleDefinition`); `orchestration/coordinator.ts:15`; `orchestration/live-run.ts:1` |
 | C3 | "supervisor / worker / scout" are the current Tagteam roles | **Not the shipped vocabulary.** The template roles are `architect`, `seniorImplementer`, `independentReviewer`, `adversarialReviewer`, `qaGate`, `localTriage`. `supervisor` is a concept in the *org* system (`reportsTo` chains), not the orchestration role set; `scout` does not appear. | `docs/orchestration/examples/roles.yaml`; `packages/cuttlefish/template/orchestration/roles.yaml`; `gateway/org-validation.ts:36,388` |
-| C4 | "I would make Skills the main extension … implement Skills before adding more roles" | **Already shipped, in part.** Skills exist as a CLI (`add`/`find`/`list`/`update`), a pinned manifest, a filesystem convention, live hot-reload, HTTP routes, a dashboard catalog, and a dedicated prompt-injection screening path. | `cli/skills.ts` (400 lines); `gateway/api/routes/skills.ts`; `gateway/watcher.ts:123-137`; `gateway/content-screening.ts`; `docs/USER_MANUAL.md:91-102`; `README.md:307` |
+| C4 | "I would make Skills the main extension … implement Skills before adding more roles" | **Already shipped, in part.** Skills exist as a CLI (`add`/`find`/`list`/`update`), a provenance manifest (not a content pin — see F5), a filesystem convention, live hot-reload, HTTP routes, a dashboard catalog, and a dedicated prompt-injection screening path. | `cli/skills.ts` (400 lines); `gateway/api/routes/skills.ts`; `gateway/watcher.ts:123-137`; `gateway/content-screening.ts`; `docs/USER_MANUAL.md:91-102`; `README.md:307` |
 | C5 | "skills should be provider-independent … the provider supplies intelligence" | **True in format, not in delivery.** Skills *are* provider-neutral Markdown (`SKILL.md`). Delivery is provider-*specific*: the sync writes symlinks into exactly two well-known homes. | `gateway/watcher.ts:29`; `shared/paths.ts:95-96` |
 
 **C1 is the one to resolve first.** Three of the proposal's design decisions
@@ -93,7 +96,9 @@ taxonomy must be mapped onto these, not laid beside them.
 And separately:
 
 4. **Skill** — a Markdown playbook in `~/.cuttlefish/skills/<name>/SKILL.md`,
-   installed via `cuttlefish skills add`, pinned in `~/.cuttlefish/skills.json`,
+   installed via `cuttlefish skills add`, recorded in
+   `~/.cuttlefish/skills.json` (a provenance record of `{name, source,
+   installedAt}` — **not** a version or content pin; see F5),
    and symlinked into `~/.claude/skills/` and `~/.agents/skills/` by the daemon
    watcher on change.
 
@@ -251,9 +256,11 @@ the first**.
   protections above guard *who may write* the directory, not *what the file
   says*.
 - **Impact:** "make Skills the main extension point" means "grow the number of
-  privileged, leniently-screened, prompt-injection-relevant artifacts, installed
-  from third-party sources via `npx skills add`." The existing defences are
-  sound; the proposal increases the surface they must hold.
+  privileged, **unscreened**, prompt-injection-relevant artifacts, installed from
+  third-party sources via `npx skills add`." The control-plane defences are sound
+  for what they cover — who may write the directory — but they do not inspect
+  content, and the proposal increases the number of files whose content is
+  trusted implicitly.
 - **Skill content is not pinned today.** `SKILLS_NPX_SPEC = "skills@1.5.12"`
   (`cli/skills.ts:16`) pins the *installer CLI*, and only in the `--version`
   probe at `cli/setup.ts:53` — the install path itself spawns
@@ -292,11 +299,14 @@ the first**.
   and `engines/claude-interactive.ts:446-448`; other engines receive context via
   `sessions/context.ts`).
 - **Trade-off, stated here so the two findings are read together:** that
-  fallback is COA-B2b, and it is not free. Inlining third-party skill text into
-  every routed engine's prompt bypasses the provenance-based filesystem
-  screening in F5 and creates a new untrusted-content path. Closing F6 this way
-  widens F5; the screening gate and content pinning F5 asks for become
-  prerequisites, not optional extras.
+  fallback is COA-B2b, and it is not free. Inlining third-party skill text puts
+  that content into every routed engine's prompt. Note the accurate framing: the
+  filesystem route it replaces was never screened either (F5), so B2b does not
+  *bypass* a control — it widens an already-unscreened path from the engines
+  that discover skills natively to **all** of them, and routes the content
+  through Cuttlefish, which at least makes screening possible. Closing F6 this
+  way therefore makes F5's review gate and content pinning prerequisites, not
+  optional extras.
 
 ### F7 — A stale note in `docs/orchestration/README.md` contradicts the shipped CLI (Low)
 
@@ -367,7 +377,8 @@ Write down the existing Capability / Role / Employee / Skill model, correct the
 
 Two contained changes, in this order:
 
-1. **B1 (prerequisite):** add optional `kind`/`traits` to `RoleDefinition`;
+1. **B1 (do first — an ordering choice, not a hard prerequisite; see F2):**
+   add optional `kind`/`traits` to `RoleDefinition`;
    have `coordinator.ts` and `cross-family.ts` resolve by declaration first and
    fall back to the current heuristics. Fixes F2. Independently worth doing.
 2. **B2:** add optional `skills: string[]` to `RoleDefinition`; at dispatch,
@@ -475,7 +486,9 @@ containing only the skills bound to the invocation's role.
    the degradation is silent. Adding roles first is *possible* (see F2); doing
    traits first is what makes it safe by construction rather than by care.
 3. **COA-B2 after that** — advisory role↔skill binding, with `skills:`
-   validated against the manifest at load, and generic roles added through the
+   validated at load **against the skill directories on disk** — not the
+   manifest, for the reason F5 and COA-B give — and generic roles added through
+   the
    existing template extension point rather than an unimplemented policy pack
    (F4). Decide **B2a vs B2b** explicitly at this step: B2a (names only) is the
    lower-risk default but leaves F6 unaddressed; B2b (inlined skill text) is the
