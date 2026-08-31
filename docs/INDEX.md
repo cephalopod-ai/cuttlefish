@@ -78,6 +78,11 @@ artifacts unless explicitly published.
   foundation, durable scheduler state, adapter contracts, CLI dry-run/observe
   commands, opt-in live run modes, git worktree execution, and orchestration
   HTTP routes.
+- `docs/plans/2026-08-31-roles-skills-architecture-review.md`: source-grounded
+  review of an external "MODE / ROLE / SKILLS" proposal against the shipped
+  orchestration role model and skills subsystem, with findings, courses of
+  action, and mitigations. Analysis only — records no decision and changes no
+  behavior.
 
 ## Session and Audit Log Summaries
 
