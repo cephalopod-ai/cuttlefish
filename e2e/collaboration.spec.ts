@@ -18,9 +18,13 @@ test("Team project feed supports inspection, structured mention routing, and rel
   // Scope sent-message assertions to the feed. Until onSend resolves the
   // composer is disabled but still holds the text (collaboration-composer.tsx
   // clears it only after the await), so an unscoped getByText matches both the
-  // feed bubble and the textarea and trips strict mode. The composer is a
-  // sibling of the feed in collaboration-pane.tsx, so role="feed" excludes it
-  // structurally rather than by timing.
+  // feed bubble and the textarea and trips strict mode. React renders a
+  // controlled textarea's value as a text child node, so getByText does match
+  // it — verified by probe: filling the composer without sending gives
+  // getByText(probe).count() === 1 and getByRole("feed").getByText(probe)
+  // .count() === 0. The composer is a sibling of the feed in
+  // collaboration-pane.tsx, so role="feed" excludes it structurally rather
+  // than by timing.
   await expect(page.getByRole("feed").getByText("Browser structured Team send")).toBeVisible()
   await expect(page.getByText("builder: queued")).toBeVisible()
 })

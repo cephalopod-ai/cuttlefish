@@ -611,11 +611,24 @@ design, including its already-shipped skills subsystem.
      Note that `pnpm lint` and `pnpm typecheck` do **not** cover this file —
      the web lint glob is `src/**` — so the Playwright runs are the only
      validation that exercises it.
-     The original failure could **not** be reproduced deterministically on
-     demand: it is timing-dependent, and repeated local runs share one e2e
-     server and pollute each other's state. That is precisely why the first
-     attempt's single green suite was misleading, and why the corrected fix
-     rests on a structural argument rather than on observed passes.
+     The original *failure* could not be reproduced deterministically on demand
+     — it is timing-dependent — but the **mechanism** was confirmed by direct
+     measurement rather than left to inference. A throwaway probe filled the
+     composer with a unique string and never sent it, so the feed could not
+     contain it, then counted matches:
+
+     | probe | result |
+     | --- | --- |
+     | `page.getByText(probe).count()` | **1** |
+     | `page.getByRole("feed").getByText(probe).count()` | **0** |
+     | `#collaboration-textarea` `textContent` / `childNodes` | the probe string / **1** |
+
+     So a React controlled `<textarea value={…}>` *does* carry a text child node
+     and *is* matched by `getByText`, while the feed-scoped locator excludes it.
+     That is the second match, and feed scoping removes it. (An automated review
+     argued the textarea could not match because a controlled textarea has no
+     text child; the measurement above shows otherwise, and Playwright's original
+     failure output had already named the textarea as element 2 of 2.)
   2. **`docs/orchestration/README.md:3-8`** — replaced the stale CLI-exposure
      note (F7). Documentation only; verified by reading
      `packages/cuttlefish/bin/cuttlefish.ts` and TS-RIG-001 rather than by
