@@ -85,6 +85,10 @@ import { recoverOrphanedRunsAtStartup } from "../shared/run-recovery.js";
 import { canSendWsEventToPrincipal } from "./ws-event-scope.js";
 import { createA2AAdapter } from "../a2a/index.js";
 import { OutboundA2AService } from "../a2a/outbound.js";
+import {
+  recoverExternalA2ACrossRequests,
+  recoverableExternalA2ACrossRequestSessionIds,
+} from "./external-a2a-cross-request.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -148,7 +152,11 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
   }, 24 * 60 * 60 * 1000);
   mcpConfigSweepTimer.unref?.();
 
-  const recovered = recoverStaleSessions();
+  // Durable outbound A2A task identities are resumed after ApiContext exists.
+  // Preserve those sessions here so the generic stale-run sweep does not make
+  // the later domain recovery unreachable.
+  const recoverableExternalA2ASessionIds = recoverableExternalA2ACrossRequestSessionIds();
+  const recovered = recoverStaleSessions({ excludeSessionIds: recoverableExternalA2ASessionIds });
   if (recovered > 0) {
     logger.info(`Recovered ${recovered} stale session(s) — marked as "interrupted" for resume`);
   }
@@ -698,6 +706,10 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
     bindOrchestrationRuntimeHandlers(orchestrationRuntime, apiContext);
   };
 
+  const recoveredExternalA2ARequests = recoverExternalA2ACrossRequests(apiContext);
+  if (recoveredExternalA2ARequests > 0) {
+    logger.info(`Resumed ${recoveredExternalA2ARequests} outbound A2A cross-request watcher(s)`);
+  }
   void resumePendingWebQueueItems(apiContext);
   reconcileOrphanedTickets({ engines, orgDir: ORG_DIR, getSession, listSessions, emit, cause: "startup" });
   logBoardSummary(ORG_DIR, (msg) => logger.info(msg));

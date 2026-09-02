@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { TaskState, type Artifact, type Message, type Part, type Task } from "@a2a-js/sdk";
-import type { Employee } from "../shared/types.js";
+import type { Employee, Session } from "../shared/types.js";
 import {
   createSession,
   beginSessionRun,
@@ -8,6 +8,7 @@ import {
   getSession,
   insertFile,
   insertMessage,
+  listSessions,
   patchSessionTransportMeta,
   updateSession,
 } from "../sessions/registry.js";
@@ -43,6 +44,44 @@ interface ActiveExternalRequest {
 }
 
 const activeExternalRequests = new Map<string, ActiveExternalRequest>();
+const EXTERNAL_REQUEST_HEARTBEAT_MS = 10_000;
+
+function recoverableExternalRequestMeta(
+  session: Pick<Session, "engine" | "status" | "transportMeta">,
+): { destinationId: string; taskId: string; lastProgressMessageId?: string } | undefined {
+  if (session.engine !== "a2a" || session.status !== "running") return undefined;
+  const rawMeta = session.transportMeta?.a2aOutbound;
+  const meta = rawMeta && typeof rawMeta === "object" && !Array.isArray(rawMeta)
+    ? rawMeta as Record<string, unknown>
+    : {};
+  const destinationId = typeof meta.destinationId === "string" ? meta.destinationId : undefined;
+  const taskId = typeof meta.taskId === "string" ? meta.taskId : undefined;
+  if (!destinationId || !taskId) return undefined;
+  return {
+    destinationId,
+    taskId,
+    ...(typeof meta.lastProgressMessageId === "string"
+      ? { lastProgressMessageId: meta.lastProgressMessageId }
+      : {}),
+  };
+}
+
+/** Identify sessions the generic boot sweep must leave running for A2A recovery. */
+export function recoverableExternalA2ACrossRequestSessionIds(): ReadonlySet<string> {
+  return new Set(
+    listSessions({ status: "running", engine: "a2a" })
+      .filter((session) => recoverableExternalRequestMeta(session) !== undefined)
+      .map((session) => session.id),
+  );
+}
+
+function startExternalRequestHeartbeat(sessionId: string): () => void {
+  const timer = setInterval(() => {
+    updateSession(sessionId, { lastActivity: new Date().toISOString() });
+  }, EXTERNAL_REQUEST_HEARTBEAT_MS);
+  timer.unref?.();
+  return () => clearInterval(timer);
+}
 
 function patchOutboundMeta(sessionId: string, patch: Record<string, unknown>): void {
   patchSessionTransportMeta(sessionId, (current) => {
@@ -139,13 +178,13 @@ async function recordRemoteProgress(
   task: Task,
   context: ApiContext,
   execution: ActiveExternalRequest,
-): Promise<void> {
+): Promise<string | undefined> {
   execution.taskId = task.id;
   const artifactIds = await registerRemoteArtifacts(sessionId, destinationId, task, context);
   const progressMessage = task.status?.message;
+  const progressText = progressMessage ? externalA2AResultText(progressMessage) : "";
   if (progressMessage?.messageId && !execution.seenMessageIds.has(progressMessage.messageId)) {
-    const text = externalA2AResultText(progressMessage);
-    if (text) insertMessage(sessionId, "assistant", text);
+    if (progressText) insertMessage(sessionId, "assistant", progressText);
     execution.seenMessageIds.add(progressMessage.messageId);
   }
   patchOutboundMeta(sessionId, {
@@ -156,14 +195,17 @@ async function recordRemoteProgress(
     artifactCount: task.artifacts.length,
     artifactIds,
     statusTimestamp: task.status?.timestamp,
+    ...(progressMessage?.messageId ? { lastProgressMessageId: progressMessage.messageId } : {}),
   });
   const state = task.status?.state;
+  const lastActivity = new Date().toISOString();
   if (state === TaskState.TASK_STATE_INPUT_REQUIRED || state === TaskState.TASK_STATE_AUTH_REQUIRED) {
-    updateSession(sessionId, { status: "waiting", lastError: null });
+    updateSession(sessionId, { status: "waiting", lastActivity, lastError: null });
   } else if (!externalA2ATaskIsTerminal(task)) {
-    updateSession(sessionId, { status: "running", lastError: null });
+    updateSession(sessionId, { status: "running", lastActivity, lastError: null });
   }
   context.emit("session:updated", { sessionId });
+  return progressText || undefined;
 }
 
 async function finalizeRemoteResult(
@@ -175,18 +217,21 @@ async function finalizeRemoteResult(
 ): Promise<void> {
   if (execution.finalized) return;
   execution.finalized = true;
-  if (isA2ATask(result)) await recordRemoteProgress(sessionId, destinationId, result, context, execution);
+  const progressText = isA2ATask(result)
+    ? await recordRemoteProgress(sessionId, destinationId, result, context, execution)
+    : undefined;
   const state = isA2ATask(result) ? result.status?.state : TaskState.TASK_STATE_COMPLETED;
   const text = externalA2AResultText(result) || `External A2A request ended in ${remoteState(result)}.`;
-  insertMessage(sessionId, "assistant", text);
+  if (text !== progressText) insertMessage(sessionId, "assistant", text);
+  const lastActivity = new Date().toISOString();
   if (state === TaskState.TASK_STATE_INPUT_REQUIRED || state === TaskState.TASK_STATE_AUTH_REQUIRED) {
-    updateSession(sessionId, { status: "waiting", lastError: null });
+    updateSession(sessionId, { status: "waiting", lastActivity, lastError: null });
   } else if (state === TaskState.TASK_STATE_COMPLETED) {
-    updateSession(sessionId, { status: "idle", lastError: null });
+    updateSession(sessionId, { status: "idle", lastActivity, lastError: null });
   } else if (state === TaskState.TASK_STATE_CANCELED) {
-    updateSession(sessionId, { status: "interrupted", lastError: "Remote A2A task was canceled" });
+    updateSession(sessionId, { status: "interrupted", lastActivity, lastError: "Remote A2A task was canceled" });
   } else {
-    updateSession(sessionId, { status: "error", lastError: `Remote A2A task ended in ${remoteState(result)}` });
+    updateSession(sessionId, { status: "error", lastActivity, lastError: `Remote A2A task ended in ${remoteState(result)}` });
   }
   context.emit("session:updated", { sessionId });
 }
@@ -221,10 +266,73 @@ export function requestExternalA2ACrossRequestStop(sessionId: string, context: A
     .then((task) => finalizeRemoteResult(sessionId, destinationId, task, context, finalization))
     .catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
-      updateSession(sessionId, { status: "error", lastError: `Remote A2A cancellation failed: ${message}` });
+      updateSession(sessionId, {
+        status: "error",
+        lastActivity: new Date().toISOString(),
+        lastError: `Remote A2A cancellation failed: ${message}`,
+      });
       context.emit("session:updated", { sessionId });
     });
   return true;
+}
+
+async function resumeExternalRequest(
+  sessionId: string,
+  destinationId: string,
+  taskId: string,
+  context: ApiContext,
+  execution: ActiveExternalRequest,
+): Promise<void> {
+  const stopHeartbeat = startExternalRequestHeartbeat(sessionId);
+  try {
+    const outbound = context.a2aOutbound;
+    if (!outbound) throw new Error("Outbound A2A service is unavailable");
+    updateSession(sessionId, { status: "running", lastActivity: new Date().toISOString(), lastError: null });
+    context.emit("session:updated", { sessionId });
+    const result = await outbound.waitForTask(destinationId, taskId, {
+      signal: execution.controller.signal,
+      onUpdate: async (task) => { await recordRemoteProgress(sessionId, destinationId, task, context, execution); },
+    });
+    await finalizeRemoteResult(sessionId, destinationId, result, context, execution);
+  } catch (error) {
+    if (execution.cancelRequested) return;
+    const message = error instanceof Error ? error.message : String(error);
+    updateSession(sessionId, {
+      status: "error",
+      lastActivity: new Date().toISOString(),
+      lastError: `Outbound A2A recovery failed: ${message}`,
+    });
+    context.emit("session:updated", { sessionId });
+  } finally {
+    stopHeartbeat();
+    if (activeExternalRequests.get(sessionId) === execution) activeExternalRequests.delete(sessionId);
+  }
+}
+
+/** Resume polling for durable outbound task identities without replaying the remote mutation. */
+export function recoverExternalA2ACrossRequests(context: ApiContext): number {
+  let recovered = 0;
+  for (const session of listSessions({ status: "running", engine: "a2a" })) {
+    if (activeExternalRequests.has(session.id)) continue;
+    const meta = recoverableExternalRequestMeta(session);
+    if (!meta) continue;
+    const { destinationId, taskId } = meta;
+    const execution: ActiveExternalRequest = {
+      controller: new AbortController(),
+      destinationId,
+      taskId,
+      cancelRequested: false,
+      finalized: false,
+      seenMessageIds: new Set(
+        meta.lastProgressMessageId ? [meta.lastProgressMessageId] : [],
+      ),
+    };
+    activeExternalRequests.set(session.id, execution);
+    patchOutboundMeta(session.id, { recoveryStartedAt: new Date().toISOString() });
+    void resumeExternalRequest(session.id, destinationId, taskId, context, execution);
+    recovered += 1;
+  }
+  return recovered;
 }
 
 async function runExternalRequest(
@@ -235,11 +343,15 @@ async function runExternalRequest(
 ): Promise<void> {
   const outbound = context.a2aOutbound;
   if (!outbound) {
-    updateSession(sessionId, { status: "error", lastError: "Outbound A2A service is unavailable" });
+    updateSession(sessionId, {
+      status: "error",
+      lastActivity: new Date().toISOString(),
+      lastError: "Outbound A2A service is unavailable",
+    });
     context.emit("session:updated", { sessionId });
     return;
   }
-  updateSession(sessionId, { status: "running", lastError: null });
+  updateSession(sessionId, { status: "running", lastActivity: new Date().toISOString(), lastError: null });
   context.emit("session:updated", { sessionId });
   const execution: ActiveExternalRequest = {
     controller: new AbortController(),
@@ -249,6 +361,7 @@ async function runExternalRequest(
     seenMessageIds: new Set(),
   };
   activeExternalRequests.set(sessionId, execution);
+  const stopHeartbeat = startExternalRequestHeartbeat(sessionId);
   try {
     let result = await outbound.send({
       destinationId: service.destinationId,
@@ -267,7 +380,7 @@ async function runExternalRequest(
       if (!externalA2ATaskIsTerminal(result)) {
         result = await outbound.waitForTask(service.destinationId, result.id, {
           signal: execution.controller.signal,
-          onUpdate: (task) => recordRemoteProgress(sessionId, service.destinationId, task, context, execution),
+          onUpdate: async (task) => { await recordRemoteProgress(sessionId, service.destinationId, task, context, execution); },
         });
       }
     }
@@ -277,6 +390,7 @@ async function runExternalRequest(
       if (!execution.taskId) {
         updateSession(sessionId, {
           status: "interrupted",
+          lastActivity: new Date().toISOString(),
           lastError: "External A2A request stopped before the remote task identity was confirmed",
         });
         context.emit("session:updated", { sessionId });
@@ -284,9 +398,14 @@ async function runExternalRequest(
       return;
     }
     const message = error instanceof Error ? error.message : String(error);
-    updateSession(sessionId, { status: "error", lastError: `Outbound A2A request failed: ${message}` });
+    updateSession(sessionId, {
+      status: "error",
+      lastActivity: new Date().toISOString(),
+      lastError: `Outbound A2A request failed: ${message}`,
+    });
     context.emit("session:updated", { sessionId });
   } finally {
+    stopHeartbeat();
     if (activeExternalRequests.get(sessionId) === execution) activeExternalRequests.delete(sessionId);
   }
 }

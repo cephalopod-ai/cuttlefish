@@ -498,11 +498,12 @@ export function getSessionGroupCounts(portalSlug?: string | null): Record<string
   return out;
 }
 
-export function recoverStaleSessions(): number {
+export function recoverStaleSessions(options: { excludeSessionIds?: ReadonlySet<string> } = {}): number {
   const now = new Date().toISOString();
   const running = listSessions({ status: 'running' });
   let changed = 0;
   for (const session of running) {
+    if (options.excludeSessionIds?.has(session.id)) continue;
     const updated = updateSession(session.id, {
       status: 'interrupted',
       lastActivity: now,

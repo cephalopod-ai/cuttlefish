@@ -99,4 +99,20 @@ describe("recoverStaleSessions ledger sync", () => {
     expect(recovered).toBe(1);
     expect(ledger.getRunLedger().getRun(runId)!.currentState).toBe("interrupted");
   });
+
+  it("preserves explicitly excluded sessions and their active runs for domain recovery", () => {
+    const preserved = reg.createSession({ engine: "a2a", source: "web", sourceRef: "web:a2a" });
+    const preservedRun = reg.beginSessionRun({ sessionId: preserved.id, prompt: "remote" });
+    const preservedRunId = (preservedRun!.transportMeta as Record<string, unknown>).activeRunId as string;
+    reg.updateSession(preserved.id, { status: "running" });
+    const stale = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:stale" });
+    reg.updateSession(stale.id, { status: "running" });
+
+    const recovered = reg.recoverStaleSessions({ excludeSessionIds: new Set([preserved.id]) });
+
+    expect(recovered).toBe(1);
+    expect(reg.getSession(preserved.id)?.status).toBe("running");
+    expect(ledger.getRunLedger().getRun(preservedRunId)!.currentState).toBe("running");
+    expect(reg.getSession(stale.id)?.status).toBe("interrupted");
+  });
 });

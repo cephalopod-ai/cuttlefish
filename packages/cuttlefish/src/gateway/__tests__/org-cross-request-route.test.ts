@@ -93,11 +93,12 @@ function makeCtx() {
 async function setup() {
   vi.resetModules();
   const api = await import("../api.js");
+  const externalA2A = await import("../external-a2a-cross-request.js");
   const reg = await import("../../sessions/registry.js");
   const lifecycle = await import("../session-lifecycle-service.js");
   const runLedger = await import("../../run-ledger/index.js");
   reg.initDb();
-  return { api, reg, lifecycle, runLedger };
+  return { api, externalA2A, reg, lifecycle, runLedger };
 }
 
 beforeEach(() => {
@@ -456,6 +457,88 @@ describe("POST /api/org/cross-request", () => {
     expect(reg.getMessages(cap.body.sessionId).at(-1)?.content).toContain("Remote completion won the race");
     const activeRunId = reg.getSession(cap.body.sessionId)?.transportMeta?.activeRunId as string;
     expect(runLedger.getRunLedger().getRun(activeRunId)?.currentState).toBe("completed");
+  });
+
+  it("coalesces startup recovery and resumes polling without replaying the remote request", async () => {
+    const { externalA2A, reg } = await setup();
+    const ctx = makeCtx();
+    const oldActivity = "2026-09-01T00:00:00.000Z";
+    const session = reg.createSession({
+      engine: "a2a",
+      source: "web",
+      sourceRef: "cross-request:recovery",
+      connector: "web",
+      sessionKey: "cross-request:recovery",
+      prompt: "Recover remote work",
+      transportMeta: {
+        a2aOutbound: {
+          destinationId: "recovery-peer",
+          skillId: "research",
+          taskId: "remote-recovery-task",
+          contextId: "remote-recovery-context",
+          state: "TASK_STATE_WORKING",
+        },
+      },
+    });
+    reg.updateSession(session.id, { status: "running", lastActivity: oldActivity });
+    const working = {
+      id: "remote-recovery-task",
+      contextId: "remote-recovery-context",
+      status: { state: 2, message: undefined, timestamp: new Date().toISOString() },
+      artifacts: [],
+      history: [],
+      metadata: {},
+    };
+    const completed = {
+      ...working,
+      status: {
+        state: 3,
+        message: {
+          messageId: "remote-recovery-completed",
+          taskId: working.id,
+          contextId: working.contextId,
+          role: 2,
+          parts: [{ content: { $case: "text", value: "Recovered remote completion" }, filename: "", mediaType: "text/plain" }],
+          metadata: {},
+          extensions: [],
+          referenceTaskIds: [],
+        },
+        timestamp: new Date().toISOString(),
+      },
+    };
+    let finish!: () => void;
+    const send = vi.fn();
+    const waitForTask = vi.fn(async (
+      _destinationId: string,
+      _taskId: string,
+      options: { onUpdate: (value: any) => Promise<void> },
+    ) => {
+      await options.onUpdate(working);
+      await new Promise<void>((resolve) => { finish = resolve; });
+      await options.onUpdate(completed);
+      return completed;
+    });
+    ctx.a2aOutbound = { send, waitForTask };
+
+    const preservedAtBoot = externalA2A.recoverableExternalA2ACrossRequestSessionIds();
+    expect([...preservedAtBoot]).toEqual([session.id]);
+    expect(reg.recoverStaleSessions({ excludeSessionIds: preservedAtBoot })).toBe(0);
+    expect(reg.getSession(session.id)?.status).toBe("running");
+    expect(externalA2A.recoverExternalA2ACrossRequests(ctx)).toBe(1);
+    expect(externalA2A.recoverExternalA2ACrossRequests(ctx)).toBe(0);
+    await vi.waitFor(() => expect(waitForTask).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(reg.getSession(session.id)).toMatchObject({
+      status: "running",
+      transportMeta: { a2aOutbound: { recoveryStartedAt: expect.any(String) } },
+    }));
+    expect(reg.getSession(session.id)?.lastActivity).not.toBe(oldActivity);
+    expect(send).not.toHaveBeenCalled();
+
+    await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
+    finish();
+    await vi.waitFor(() => expect(reg.getSession(session.id)).toMatchObject({ status: "idle", lastError: null }));
+    expect(reg.getMessages(session.id).at(-1)?.content).toContain("Recovered remote completion");
+    expect(reg.getMessages(session.id).filter((entry: { role: string }) => entry.role === "assistant")).toHaveLength(1);
   });
 });
 

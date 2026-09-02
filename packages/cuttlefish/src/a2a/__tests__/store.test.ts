@@ -1,9 +1,9 @@
 import Database from "better-sqlite3";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Role, TaskState, type Message } from "@a2a-js/sdk";
 import { ServerCallContext } from "@a2a-js/sdk/server";
 import { A2AUser } from "../auth.js";
-import { SqliteA2ATaskStore } from "../store.js";
+import { SqliteA2ATaskStore, type A2ATaskRecord } from "../store.js";
 import {
   CREATE_A2A_CONTEXTS_TABLE,
   CREATE_A2A_MESSAGES_TABLE,
@@ -28,8 +28,8 @@ function database(): Database.Database {
 
 const context = (owner: string) => new ServerCallContext({ user: new A2AUser(owner), requestedVersion: "1.0" });
 
-const message = (content = "hello"): Message => ({
-  messageId: "client-message-1",
+const message = (content = "hello", messageId = "client-message-1"): Message => ({
+  messageId,
   contextId: "",
   taskId: "",
   role: Role.ROLE_USER,
@@ -117,6 +117,104 @@ describe("SqliteA2ATaskStore", () => {
       pageToken: "",
       statusTimestampAfter: undefined,
     }, context("partner-a"))).totalSize).toBe(1);
+    db.close();
+  });
+
+  it("filters context and paginates in SQLite before projecting ordinary task lists", async () => {
+    const db = database();
+    const projector = vi.fn(async (record: A2ATaskRecord) => record.task);
+    const store = new SqliteA2ATaskStore(() => db, projector);
+    const owner = context("partner-a");
+    for (let index = 0; index < 5; index += 1) {
+      store.reserveInitial({
+        ...message(`selected-${index}`, `selected-message-${index}`),
+        contextId: "selected-context",
+      }, owner);
+    }
+    for (let index = 0; index < 4; index += 1) {
+      store.reserveInitial({
+        ...message(`other-${index}`, `other-message-${index}`),
+        contextId: "other-context",
+      }, owner);
+    }
+
+    const first = await store.list({
+      tenant: "",
+      contextId: "selected-context",
+      status: TaskState.TASK_STATE_UNSPECIFIED,
+      pageSize: 2,
+      pageToken: "",
+      statusTimestampAfter: undefined,
+    }, owner);
+
+    expect(first).toMatchObject({ pageSize: 2, totalSize: 5 });
+    expect(first.tasks).toHaveLength(2);
+    expect(first.nextPageToken).not.toBe("");
+    expect(projector).toHaveBeenCalledTimes(2);
+
+    projector.mockClear();
+    const second = await store.list({
+      tenant: "",
+      contextId: "selected-context",
+      status: TaskState.TASK_STATE_UNSPECIFIED,
+      pageSize: 2,
+      pageToken: first.nextPageToken,
+      statusTimestampAfter: undefined,
+    }, owner);
+    expect(second.tasks).toHaveLength(2);
+    expect(second.totalSize).toBe(5);
+    expect(projector).toHaveBeenCalledTimes(2);
+    db.close();
+  });
+
+  it("preserves exact projected status and timestamp filtering across pages", async () => {
+    const db = database();
+    const projector = vi.fn(async (record: A2ATaskRecord) => ({
+      ...record.task,
+      status: {
+        state: record.initialMessageId.includes("-completed-")
+          ? TaskState.TASK_STATE_COMPLETED
+          : TaskState.TASK_STATE_WORKING,
+        message: record.task.status?.message,
+        timestamp: record.initialMessageId.endsWith("-old")
+          ? "2026-09-01T00:00:00.000Z"
+          : "2026-09-03T00:00:00.000Z",
+      },
+    }));
+    const store = new SqliteA2ATaskStore(() => db, projector);
+    const owner = context("partner-a");
+    store.reserveInitial(message("one", "one-completed-recent"), owner);
+    store.reserveInitial(message("two", "two-working-recent"), owner);
+    store.reserveInitial(message("three", "three-completed-old"), owner);
+    store.reserveInitial(message("four", "four-completed-recent"), owner);
+
+    const first = await store.list({
+      tenant: "",
+      contextId: "",
+      status: TaskState.TASK_STATE_COMPLETED,
+      pageSize: 1,
+      pageToken: "",
+      statusTimestampAfter: "2026-09-02T00:00:00.000Z",
+    }, owner);
+
+    expect(first).toMatchObject({ pageSize: 1, totalSize: 2 });
+    expect(first.tasks).toHaveLength(1);
+    expect(first.nextPageToken).not.toBe("");
+    expect(projector).toHaveBeenCalledTimes(4);
+
+    projector.mockClear();
+    const second = await store.list({
+      tenant: "",
+      contextId: "",
+      status: TaskState.TASK_STATE_COMPLETED,
+      pageSize: 1,
+      pageToken: first.nextPageToken,
+      statusTimestampAfter: "2026-09-02T00:00:00.000Z",
+    }, owner);
+    expect(second).toMatchObject({ pageSize: 1, totalSize: 2, nextPageToken: "" });
+    expect(second.tasks).toHaveLength(1);
+    expect(second.tasks[0]?.id).not.toBe(first.tasks[0]?.id);
+    expect(projector).toHaveBeenCalledTimes(4);
     db.close();
   });
 });

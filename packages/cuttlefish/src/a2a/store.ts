@@ -275,11 +275,28 @@ export class SqliteA2ATaskStore implements TaskStore {
 
   async list(params: ListTasksRequest, context: ServerCallContext): Promise<ListTasksResponse> {
     const owner = ownerId(context);
-    const rows = this.getDb().prepare(
+    const db = this.getDb();
+    const conditions = ["owner_id = ?"];
+    const values: unknown[] = [owner];
+    if (params.contextId) {
+      conditions.push("context_id = ?");
+      values.push(params.contextId);
+    }
+    const where = conditions.join(" AND ");
+    const size = Math.min(100, Math.max(1, params.pageSize ?? 50));
+    const offset = parsePageToken(params.pageToken);
+    // Projected status and its timestamp come from the live backing session tree,
+    // so a2a_tasks.updated_at is not a semantics-preserving SQL substitute.
+    const requiresProjectedFiltering = Boolean(params.status) || Boolean(params.statusTimestampAfter);
+    const totalSize = requiresProjectedFiltering
+      ? undefined
+      : (db.prepare(`SELECT COUNT(*) AS count FROM a2a_tasks WHERE ${where}`).get(...values) as { count: number }).count;
+    const rows = db.prepare(
       `SELECT task_id, context_id, owner_id, initial_message_id, input_hash,
               session_id, task_json, canceled_at, created_at, updated_at
-         FROM a2a_tasks WHERE owner_id = ? ORDER BY updated_at DESC, task_id DESC`,
-    ).all(owner) as A2ATaskRow[];
+         FROM a2a_tasks WHERE ${where} ORDER BY updated_at DESC, task_id DESC
+         ${requiresProjectedFiltering ? "" : "LIMIT ? OFFSET ?"}`,
+    ).all(...values, ...(requiresProjectedFiltering ? [] : [size, offset])) as A2ATaskRow[];
     const projected = await Promise.all(rows.map(async (row) => {
       const record = recordFromRow(row);
       return this.projector ? this.projector(record) : record.task;
@@ -293,18 +310,18 @@ export class SqliteA2ATaskStore implements TaskStore {
       }
       return true;
     });
-    const size = Math.min(100, Math.max(1, params.pageSize ?? 50));
-    const offset = parsePageToken(params.pageToken);
-    const tasks = filtered.slice(offset, offset + size).map((task) => ({
+    const filteredTotal = totalSize ?? filtered.length;
+    const page = requiresProjectedFiltering ? filtered.slice(offset, offset + size) : filtered;
+    const tasks = page.map((task) => ({
       ...limitHistory(task, params.historyLength),
       artifacts: params.includeArtifacts === true ? task.artifacts : [],
     }));
     const nextOffset = offset + tasks.length;
     return {
       tasks,
-      nextPageToken: nextOffset < filtered.length ? pageToken(nextOffset) : "",
+      nextPageToken: nextOffset < filteredTotal ? pageToken(nextOffset) : "",
       pageSize: size,
-      totalSize: filtered.length,
+      totalSize: filteredTotal,
     };
   }
 }

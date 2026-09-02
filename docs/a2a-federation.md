@@ -137,11 +137,14 @@ the managed file and lineage path; text, data, and URL artifact parts are
 registered as metadata-only lineage records while their readable content is
 included in the child session. Stopping the local child aborts polling and sends
 an A2A cancellation to the stored remote task; if completion races cancellation,
-the remote terminal response determines the settled local state. A gateway
-restart does not yet resume an outbound cross-request that was waiting in the
-background; use the stored remote task ID with the direct outbound task endpoint
-to recover it. The stored mapping also lets a later local stop request propagate
-cancellation after restart.
+the remote terminal response determines the settled local state. On gateway
+startup, running outbound cross-request sessions with a stored destination and
+remote task ID resume polling that task without sending the original request
+again. Duplicate recovery attempts in one process coalesce. The stored mapping
+also lets a later local stop request propagate cancellation after restart. If the
+gateway stops before the peer returns a task ID, Cuttlefish cannot identify remote
+work to resume or cancel; the local session fails visibly rather than replaying the
+request.
 
 ## Outbound operator API
 
