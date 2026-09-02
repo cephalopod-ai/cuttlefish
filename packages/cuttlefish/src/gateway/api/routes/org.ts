@@ -31,6 +31,7 @@ import {
   updateOrgEmployee,
 } from "../../org-mutation-service.js";
 import { createCrossRequest } from "../../cross-request-service.js";
+import { appendExternalA2AServices } from "../../../a2a/external-services.js";
 
 const TICKET_SESSION_TAIL_LIMIT = 8;
 
@@ -96,7 +97,9 @@ export async function handleOrgRoutes(
   }
 
   if (method === "GET" && pathname === "/api/org/services") {
-    json(res, { services: buildOrgServices(scanOrg()) });
+    json(res, {
+      services: appendExternalA2AServices(buildOrgServices(scanOrg()), context.getConfig()),
+    });
     return true;
   }
 

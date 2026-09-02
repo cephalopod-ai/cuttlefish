@@ -366,6 +366,15 @@ modelFallback:
 connectors: {}
 portal: {}
 
+# External A2A federation is opt-in. When enabled, only named provides
+# services in allowedServices are advertised or invokable. Generate a long,
+# unique credential for each partner and keep config.yaml owner-readable only.
+# See docs/a2a-federation.md for inbound and outbound examples.
+a2a:
+  enabled: false
+  allowedServices: []
+  clients: []
+
 # ── Optional blocks (uncomment to customize) ──────────────────────────────
 # MCP servers give employees browser, search, and custom tool access.
 # mcp:

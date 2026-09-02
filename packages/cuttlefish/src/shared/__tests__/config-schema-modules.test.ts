@@ -28,6 +28,7 @@ import {
 } from "../config-schema-runtime.js";
 import { validateBoardWorker, validateCron, validateOrchestration } from "../config-schema-scheduling.js";
 import { validateWorkspaces } from "../config-schema-workspaces.js";
+import { validateA2A } from "../config-schema-a2a.js";
 
 type SectionValidator = (problems: string[], value: unknown) => void;
 
@@ -53,6 +54,7 @@ const SECTIONS: Array<[string, SectionValidator]> = [
   ["context", validateContext],
   ["stt", validateStt],
   ["talk", validateTalk],
+  ["a2a", validateA2A],
   ["remotes", validateRemotes],
   ["policy", validatePolicy],
 ];

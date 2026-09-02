@@ -10,6 +10,11 @@ import {
   buildOrgServices,
   findServiceProvider,
 } from "./org-services.js";
+import {
+  appendExternalA2AServices,
+  findConfiguredExternalA2AService,
+} from "../a2a/external-services.js";
+import { createExternalA2ACrossRequest } from "./external-a2a-cross-request.js";
 
 export interface CrossRequestResult {
   statusCode: number;
@@ -48,9 +53,12 @@ export async function createCrossRequest(
   if (!requester || !isActiveEmployee(requester)) {
     return { statusCode: 404, body: { error: "Not found" } };
   }
-  const availableServices = buildOrgServices(registry);
+  const config = context.getConfig();
+  const nativeServices = buildOrgServices(registry);
+  const availableServices = appendExternalA2AServices(nativeServices, config);
   const provider = findServiceProvider(registry, serviceName);
-  if (!provider) {
+  const externalProvider = provider ? undefined : findConfiguredExternalA2AService(config, serviceName);
+  if (!provider && !externalProvider) {
     return {
       statusCode: 422,
       body: {
@@ -61,6 +69,30 @@ export async function createCrossRequest(
       },
     };
   }
+  if (externalProvider) {
+    if (!context.a2aOutbound) {
+      return { statusCode: 503, body: { error: "Outbound A2A service is unavailable", code: "a2a_unavailable" } };
+    }
+    const chainGuard = evaluateCrossRequestChain({
+      parentSessionId,
+      fromEmployee: requester.name,
+      provider: externalProvider.providerId,
+      lookup: { getSession },
+    });
+    if (!chainGuard.ok) {
+      return {
+        statusCode: 409,
+        body: {
+          error: chainGuard.error,
+          code: chainGuard.code,
+          requestedService: serviceName,
+          chain: chainGuard.chain,
+        },
+      };
+    }
+    return createExternalA2ACrossRequest({ requester, service: externalProvider, prompt, parentSessionId, context });
+  }
+  if (!provider) throw new Error("Internal service resolution invariant failed");
   if (isHrHumanOnlyBlocked(provider.employee.name, { isDirectTopLevelHumanRequest: false })) {
     return {
       statusCode: 403,
@@ -93,7 +125,6 @@ export async function createCrossRequest(
   }
 
   const { resolveOrgHierarchy, resolveCrossRequestRoute, withPortalExecutive } = await import("./org-hierarchy.js");
-  const config = context.getConfig();
   const hierarchy = resolveOrgHierarchy(withPortalExecutive(registry, config.portal?.portalName, config));
   const routed = resolveCrossRequestRoute(requester.name, provider.employee.name, hierarchy);
   const brief = buildCrossRequestBrief({ requester, service: provider.service, prompt });

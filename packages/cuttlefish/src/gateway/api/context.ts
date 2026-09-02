@@ -67,4 +67,6 @@ export interface ApiContext {
    *  that construct a minimal ApiContext keep working unchanged; absence means
    *  "no cap enforced" at the one call site that reads it. */
   runSemaphore?: Semaphore;
+  /** Outbound A2A federation client, confined by configured destination origins and skills. */
+  a2aOutbound?: import("../../a2a/outbound.js").OutboundA2AService;
 }

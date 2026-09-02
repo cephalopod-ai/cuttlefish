@@ -72,5 +72,29 @@ describe("dispatchCollaborationMessage", () => {
       response: { status: "queued", projectionWarning: expect.stringContaining("projection") },
     });
   });
-});
 
+  it("runs boundary linkage before dispatch and preserves external attribution", async () => {
+    const order: string[] = [];
+    const recordEvent = vi.fn();
+    const result = await dispatchCollaborationMessage({
+      lane: "management",
+      message: "federated request",
+      targets: [{ recipientId: "a", session: fakeSession("existing", "a") }],
+      context: context(),
+      author: { kind: "system", id: "partner-a", displayName: "A2A client partner-a" },
+      beforeDispatch: ({ session }) => {
+        order.push(`linked:${session.id}`);
+      },
+      dispatchTurn: vi.fn(async () => {
+        order.push("dispatched");
+        return { statusCode: 200, body: { status: "queued" }, insertedMessageId: "m-a2a" };
+      }) as never,
+      recordEvent,
+    });
+    expect(result.ok).toBe(true);
+    expect(order).toEqual(["linked:existing", "dispatched"]);
+    expect(recordEvent).toHaveBeenCalledWith(expect.objectContaining({
+      author: { kind: "system", id: "partner-a", displayName: "A2A client partner-a" },
+    }));
+  });
+});

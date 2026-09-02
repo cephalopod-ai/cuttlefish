@@ -314,11 +314,21 @@ Everything is human-readable files you own - `cat` it, edit it, commit it. Set
 `CUTTLEFISH_HOME` before invoking the CLI to use an isolated runtime home;
 lifecycle commands and `cuttlefish list` use that same active home.
 
+### External A2A federation
+
+Cuttlefish can expose an explicitly allowlisted subset of employee `provides`
+services and invoke explicitly configured remote skills using A2A 1.0 over
+HTTP+JSON. The adapter translates at the gateway boundary; Cuttlefish sessions,
+collaboration events, approvals, and artifact lineage remain the source of
+truth. Federation is off by default and requires per-peer credentials and
+allowlists. See [A2A Federation](docs/a2a-federation.md) for setup, security
+controls, supported operations, and current transport limits.
+
 ---
 
 ## Roadmap
 
-Cuttlefish is in active development. Shipped recently: the orchestration Command Center, approval gates, the run ledger and artifact-lineage provenance stores, ten-engine support, file attachments, agent-to-agent messaging, shared memory, and live streaming. On deck:
+Cuttlefish is in active development. Shipped recently: the orchestration Command Center, approval gates, the run ledger and artifact-lineage provenance stores, ten-engine support, file attachments, internal agent-to-agent messaging, opt-in external A2A HTTP+JSON federation, shared memory, and live streaming. On deck:
 
 - **Engines** - deeper local-model support (llama.cpp and richer local-agent adapters), engine fallback chains.
 - **Connectors** - iMessage, outbound email/reply workflows, generic webhooks.

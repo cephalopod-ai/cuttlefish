@@ -83,7 +83,7 @@ export async function continueSession(input: ContinueSessionInput): Promise<Cont
     ? input.operatorDelegationScopes
     : legacyScopes;
   if (requestedDelegationScopes) {
-    if (input.principal?.kind === "session") {
+    if (input.principal?.kind !== "admin") {
       return { statusCode: 403, body: { error: "Only a direct human operator message can delegate operator authority", code: "operator_delegation_human_only" } };
     }
     if (!isHumanDelegateRole(session.employee, session.source)) {
@@ -221,4 +221,3 @@ export async function continueSession(input: ContinueSessionInput): Promise<Cont
   }
   return { statusCode: 200, body: { status: "queued", sessionId: session.id }, insertedMessageId };
 }
-

@@ -78,6 +78,9 @@ artifacts unless explicitly published.
   foundation, durable scheduler state, adapter contracts, CLI dry-run/observe
   commands, opt-in live run modes, git worktree execution, and orchestration
   HTTP routes.
+- `docs/a2a-federation.md`: opt-in A2A 1.0 HTTP+JSON federation, inbound and
+  outbound allowlists, authentication, task-state translation, operator routes,
+  interoperability evidence, and current transport limits.
 
 ## Session and Audit Log Summaries
 

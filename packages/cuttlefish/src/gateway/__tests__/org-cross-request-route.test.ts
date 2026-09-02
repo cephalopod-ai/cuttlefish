@@ -94,8 +94,10 @@ async function setup() {
   vi.resetModules();
   const api = await import("../api.js");
   const reg = await import("../../sessions/registry.js");
+  const lifecycle = await import("../session-lifecycle-service.js");
+  const runLedger = await import("../../run-ledger/index.js");
   reg.initDb();
-  return { api, reg };
+  return { api, reg, lifecycle, runLedger };
 }
 
 beforeEach(() => {
@@ -136,6 +138,33 @@ provides:
 });
 
 describe("POST /api/org/cross-request", () => {
+  it("includes configured external A2A services in normal service discovery", async () => {
+    const { api } = await setup();
+    const cap = makeRes();
+    const ctx = makeCtx();
+    const baseConfig = ctx.getConfig();
+    ctx.getConfig = () => ({
+      ...baseConfig,
+      a2a: {
+        destinations: [{
+          id: "independent-peer",
+          agentCardUrl: "https://peer.example/.well-known/agent-card.json",
+          token: "0123456789abcdef",
+          allowedSkills: ["research"],
+          services: [{ name: "external-research", description: "Research via an A2A peer", skillId: "research" }],
+        }],
+      },
+    });
+
+    await api.handleApiRequest(makeJsonReq("GET", "/api/org/services", {}), cap.res, ctx);
+
+    expect(cap.status).toBe(200);
+    expect(cap.body.services).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "code-review", provider: expect.objectContaining({ name: "platform-dev" }) }),
+      expect.objectContaining({ name: "external-research", provider: expect.objectContaining({ name: "a2a:independent-peer" }) }),
+    ]));
+  });
+
   it("creates and dispatches a provider session for a discovered service", async () => {
     const { api, reg } = await setup();
     const ctx = makeCtx();
@@ -210,6 +239,223 @@ describe("POST /api/org/cross-request", () => {
     });
     expect(reg.listSessions()).toHaveLength(0);
     expect(hoisted.dispatchEmployeeSessionRun).not.toHaveBeenCalled();
+  });
+
+  it("routes a simulated Gosling A2A-backed delegate through the same cross-request surface", async () => {
+    const { api, reg } = await setup();
+    const cap = makeRes();
+    const ctx = makeCtx();
+    const baseConfig = ctx.getConfig();
+    ctx.getConfig = () => ({
+      ...baseConfig,
+      a2a: {
+        destinations: [{
+          id: "gosling-delegate",
+          agentCardUrl: "https://peer.example/.well-known/agent-card.json",
+          token: "0123456789abcdef",
+          allowedSkills: ["research"],
+          services: [{ name: "external-research", description: "Research via an A2A peer", skillId: "research" }],
+        }],
+      },
+    });
+    ctx.a2aOutbound = {
+      send: vi.fn(async () => ({
+        id: "remote-task-1",
+        contextId: "remote-context-1",
+        status: {
+          state: 3,
+          message: {
+            messageId: "remote-message-1",
+            taskId: "remote-task-1",
+            contextId: "remote-context-1",
+            role: 2,
+            parts: [{ content: { $case: "text", value: "Remote research completed" }, filename: "", mediaType: "text/plain" }],
+            metadata: {},
+            extensions: [],
+            referenceTaskIds: [],
+          },
+          timestamp: new Date().toISOString(),
+        },
+        artifacts: [],
+        history: [],
+        metadata: {},
+      })),
+      waitForTask: vi.fn(),
+    };
+
+    await api.handleApiRequest(makeJsonReq("POST", "/api/org/cross-request", {
+      fromEmployee: "content-writer",
+      service: "external-research",
+      prompt: "Research this protocol",
+    }), cap.res, ctx);
+
+    expect(cap.status).toBe(201);
+    expect(cap.body).toMatchObject({
+      provider: { name: "a2a:gosling-delegate", department: "external" },
+      service: "external-research",
+      route: ["content-writer", "a2a:gosling-delegate"],
+    });
+    await vi.waitFor(() => expect(ctx.a2aOutbound.send).toHaveBeenCalledWith(expect.objectContaining({
+      destinationId: "gosling-delegate",
+      skillId: "research",
+    })));
+    await vi.waitFor(() => expect(reg.getSession(cap.body.sessionId)).toMatchObject({
+      engine: "a2a",
+      status: "idle",
+    }));
+    expect(reg.getMessages(cap.body.sessionId).at(-1)?.content).toContain("Remote research completed");
+    expect(hoisted.dispatchEmployeeSessionRun).not.toHaveBeenCalled();
+  });
+
+  it("projects remote progress and registers outbound artifacts in lineage", async () => {
+    const { api, reg, runLedger } = await setup();
+    const cap = makeRes();
+    const ctx = makeCtx();
+    const baseConfig = ctx.getConfig();
+    ctx.getConfig = () => ({
+      ...baseConfig,
+      a2a: {
+        destinations: [{
+          id: "progress-peer",
+          agentCardUrl: "https://peer.example/.well-known/agent-card.json",
+          token: "0123456789abcdef",
+          allowedSkills: ["research"],
+          services: [{ name: "external-research", description: "Research via an A2A peer", skillId: "research" }],
+        }],
+      },
+    });
+    const task = (state: number, text: string, artifacts: unknown[] = []) => ({
+      id: "remote-progress-task",
+      contextId: "remote-progress-context",
+      status: {
+        state,
+        message: {
+          messageId: `remote-progress-${state}`,
+          taskId: "remote-progress-task",
+          contextId: "remote-progress-context",
+          role: 2,
+          parts: [{ content: { $case: "text", value: text }, filename: "", mediaType: "text/plain" }],
+          metadata: {},
+          extensions: [],
+          referenceTaskIds: [],
+        },
+        timestamp: new Date().toISOString(),
+      },
+      artifacts,
+      history: [],
+      metadata: {},
+    });
+    ctx.a2aOutbound = {
+      send: vi.fn(async () => task(2, "Remote work started")),
+      waitForTask: vi.fn(async (_destinationId: string, _taskId: string, options: { onUpdate: (value: any) => Promise<void> }) => {
+        const completed = task(3, "Remote work completed", [{
+          artifactId: "report-1",
+          name: "research-report.txt",
+          description: "Remote report",
+          parts: [{ content: { $case: "text", value: "Report body" }, filename: "research-report.txt", mediaType: "text/plain" }],
+          metadata: {},
+          extensions: [],
+        }]);
+        await options.onUpdate(completed);
+        return completed;
+      }),
+    };
+
+    await api.handleApiRequest(makeJsonReq("POST", "/api/org/cross-request", {
+      fromEmployee: "content-writer",
+      service: "external-research",
+      prompt: "Research progress and artifacts",
+    }), cap.res, ctx);
+
+    await vi.waitFor(() => expect(reg.getSession(cap.body.sessionId)).toMatchObject({
+      status: "idle",
+      transportMeta: { a2aOutbound: { state: "TASK_STATE_COMPLETED", artifactCount: 1 } },
+    }));
+    expect(reg.getMessages(cap.body.sessionId).map((entry) => entry.content).join("\n")).toContain("Remote work started");
+    const session = reg.getSession(cap.body.sessionId)!;
+    const activeRunId = session.transportMeta?.activeRunId as string;
+    const artifacts = reg.listArtifacts({ producingRunId: activeRunId });
+    expect(artifacts).toEqual([expect.objectContaining({
+      filename: "research-report.txt",
+      artifactKind: "generated",
+      path: null,
+      tags: expect.arrayContaining(["a2a-output", "metadata-only"]),
+    })]);
+    expect(runLedger.getRunLedger().getRun(activeRunId)).toMatchObject({
+      sessionId: cap.body.sessionId,
+      engine: "a2a",
+      currentState: "completed",
+    });
+  });
+
+  it("propagates a local stop and lets remote completion win the cancellation race", async () => {
+    const { api, reg, lifecycle, runLedger } = await setup();
+    const cap = makeRes();
+    const ctx = makeCtx();
+    const baseConfig = ctx.getConfig();
+    ctx.getConfig = () => ({
+      ...baseConfig,
+      a2a: {
+        destinations: [{
+          id: "race-peer",
+          agentCardUrl: "https://peer.example/.well-known/agent-card.json",
+          token: "0123456789abcdef",
+          allowedSkills: ["research"],
+          services: [{ name: "external-research", description: "Research via an A2A peer", skillId: "research" }],
+        }],
+      },
+    });
+    const working = {
+      id: "remote-race-task",
+      contextId: "remote-race-context",
+      status: { state: 2, message: undefined, timestamp: new Date().toISOString() },
+      artifacts: [],
+      history: [],
+      metadata: {},
+    };
+    const completed = {
+      ...working,
+      status: {
+        state: 3,
+        message: {
+          messageId: "remote-race-completed",
+          taskId: working.id,
+          contextId: working.contextId,
+          role: 2,
+          parts: [{ content: { $case: "text", value: "Remote completion won the race" }, filename: "", mediaType: "text/plain" }],
+          metadata: {},
+          extensions: [],
+          referenceTaskIds: [],
+        },
+        timestamp: new Date().toISOString(),
+      },
+    };
+    ctx.a2aOutbound = {
+      send: vi.fn(async () => working),
+      waitForTask: vi.fn(async (_destinationId: string, _taskId: string, options: { signal: AbortSignal }) => new Promise((_, reject) => {
+        options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true });
+      })),
+      cancelTask: vi.fn(async () => completed),
+    };
+
+    await api.handleApiRequest(makeJsonReq("POST", "/api/org/cross-request", {
+      fromEmployee: "content-writer",
+      service: "external-research",
+      prompt: "Exercise cancellation race",
+    }), cap.res, ctx);
+    await vi.waitFor(() => expect(reg.getSession(cap.body.sessionId)?.transportMeta?.a2aOutbound).toMatchObject({
+      taskId: "remote-race-task",
+      state: "TASK_STATE_WORKING",
+    }));
+
+    const stopped = lifecycle.stopSession(cap.body.sessionId, ctx);
+
+    expect(stopped).toMatchObject({ statusCode: 200, body: { externalInterruptible: true } });
+    await vi.waitFor(() => expect(ctx.a2aOutbound.cancelTask).toHaveBeenCalledWith("race-peer", "remote-race-task"));
+    await vi.waitFor(() => expect(reg.getSession(cap.body.sessionId)).toMatchObject({ status: "idle", lastError: null }));
+    expect(reg.getMessages(cap.body.sessionId).at(-1)?.content).toContain("Remote completion won the race");
+    const activeRunId = reg.getSession(cap.body.sessionId)?.transportMeta?.activeRunId as string;
+    expect(runLedger.getRunLedger().getRun(activeRunId)?.currentState).toBe("completed");
   });
 });
 

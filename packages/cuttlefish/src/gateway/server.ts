@@ -83,6 +83,8 @@ import { bindOrchestrationRuntimeHandlers } from "./server/orchestration.js";
 import { createGatewayTransports, type GatewayWebSocket } from "./server/transports.js";
 import { recoverOrphanedRunsAtStartup } from "../shared/run-recovery.js";
 import { canSendWsEventToPrincipal } from "./ws-event-scope.js";
+import { createA2AAdapter } from "../a2a/index.js";
+import { OutboundA2AService } from "../a2a/outbound.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -456,6 +458,7 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
     browserBootstrap,
     runSemaphore,
   };
+  apiContext.a2aOutbound = new OutboundA2AService(() => currentConfig);
   const emailService = new EmailService(currentConfig.email, {
     client: new ImapEmailMailboxClient(),
     onAutoIngest: async (message) => {
@@ -719,6 +722,7 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
 
   const webDir = path.resolve(__dirname, "..", "..", "web");
   const authRequiredNow = (): boolean => shouldRequireGatewayAuth(currentConfig);
+  const a2aAdapter = createA2AAdapter(apiContext);
   const transports = createGatewayTransports({
     apiContext,
     authRequiredNow,
@@ -733,6 +737,7 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
     getSession,
     webDir,
     wsClients,
+    a2aAdapter,
   });
 
   syncSkillSymlinks();

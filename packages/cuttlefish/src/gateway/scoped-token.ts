@@ -134,6 +134,10 @@ export function scopedTokenForbidden(method: string | undefined, rawPathname: st
   if (pathname === "/api/checkpoints" || pathname.startsWith("/api/checkpoints/")) return true;
   if (pathname === "/api/cron" || pathname.startsWith("/api/cron/")) return true;
   if (pathname === "/api/orchestration" || pathname.startsWith("/api/orchestration/")) return true;
+  // Outbound A2A calls carry operator-configured remote credentials and can
+  // create work outside this gateway. They remain operator-only until a
+  // separately scoped service-request bridge can bind destination + skill.
+  if (pathname === "/api/a2a/outbound" || pathname.startsWith("/api/a2a/outbound/")) return true;
   // Operator onboarding writes operator-level config (see routes/system.ts) — an
   // agent token must not reach it, same rationale as /api/config and /api/system.
   if (pathname === "/api/onboarding" || pathname.startsWith("/api/onboarding/")) return true;

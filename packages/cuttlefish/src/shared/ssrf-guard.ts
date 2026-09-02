@@ -102,10 +102,8 @@ async function resolveUrlForServerFetch(rawUrl: string, options: UrlCheckOptions
   if (!host) return { ok: false, reason: "missing host" };
 
   const lowerHost = host.toLowerCase();
-  if (lowerHost === "localhost" || lowerHost.endsWith(".localhost")) {
-    return options.allowPrivateHosts
-      ? { ok: true }
-      : { ok: false, reason: "loopback host" };
+  if ((lowerHost === "localhost" || lowerHost.endsWith(".localhost")) && !options.allowPrivateHosts) {
+    return { ok: false, reason: "loopback host" };
   }
 
   // Literal IP in the URL — check directly, no DNS.
@@ -227,7 +225,7 @@ function responseWithDispatcherCleanup(response: Response, dispatcher: Dispatche
 export async function safeFetch(
   rawUrl: string,
   init: RequestInit = {},
-  opts: { maxRedirects?: number } = {},
+  opts: { maxRedirects?: number; allowPrivateHosts?: boolean; allowedOrigins?: ReadonlySet<string> } = {},
 ): Promise<Response> {
   const maxRedirects = opts.maxRedirects ?? 5;
   let currentUrl = rawUrl;
@@ -236,7 +234,16 @@ export async function safeFetch(
 
   try {
     for (let hop = 0; hop <= maxRedirects; hop++) {
-      const check = await resolveUrlForServerFetch(currentUrl, { allowPrivateHosts: false });
+      let currentOrigin: string;
+      try {
+        currentOrigin = new URL(currentUrl).origin;
+      } catch {
+        throw new SsrfError("Refusing to fetch URL: malformed URL");
+      }
+      if (opts.allowedOrigins && !opts.allowedOrigins.has(currentOrigin)) {
+        throw new SsrfError(`Refusing to fetch URL outside the configured origin allowlist: ${currentOrigin}`);
+      }
+      const check = await resolveUrlForServerFetch(currentUrl, { allowPrivateHosts: opts.allowPrivateHosts === true });
       if (!check.ok || !check.hostname || !check.addresses?.length) {
         throw new SsrfError(`Refusing to fetch URL: ${check.reason ?? "host did not resolve"}`);
       }

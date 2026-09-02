@@ -106,6 +106,25 @@ describe("ssrf-guard: safeFetch redirect re-validation (SEC-SSRF-001)", () => {
     );
     await expect(safeFetch("https://8.8.8.8/start")).rejects.toBeInstanceOf(SsrfError);
   });
+
+  it("confines every redirect hop to an exact origin allowlist", async () => {
+    undiciFetchMock.mockResolvedValueOnce(
+      mockResponse(302, { location: "https://1.1.1.1/final" }),
+    );
+    await expect(safeFetch("https://8.8.8.8/start", {}, {
+      allowedOrigins: new Set(["https://8.8.8.8"]),
+    })).rejects.toThrow(/origin allowlist/);
+    expect(undiciFetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows an exact loopback origin only after both private-host and origin opt-ins", async () => {
+    undiciFetchMock.mockResolvedValueOnce(mockResponse(200));
+    const response = await safeFetch("http://127.0.0.1:9999/a2a", {}, {
+      allowPrivateHosts: true,
+      allowedOrigins: new Set(["http://127.0.0.1:9999"]),
+    });
+    expect(response.status).toBe(200);
+  });
 });
 
 describe("ssrf-guard: DNS pinning (SEC-CUT-017)", () => {

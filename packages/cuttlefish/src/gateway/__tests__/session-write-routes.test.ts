@@ -284,6 +284,49 @@ describe("POST /api/sessions prompt validation (I-1)", () => {
     expect(agent.body).toMatchObject({ code: "operator_delegation_human_only" });
   });
 
+  it("requires an authenticated admin to delegate authority on a continued session", async () => {
+    const { api, reg } = await setup();
+    const ctx = makeCtx(api);
+    ctx.getConfig = () => ({
+      gateway: { userHeader: "x-operator" },
+      engines: { default: "codex", codex: { bin: "codex", model: "gpt-5.6-sol" } },
+      portal: {},
+    }) as any;
+    ctx.sessionManager.getEngine = () => ({ name: "codex" }) as any;
+    const session = reg.createSession({
+      engine: "codex",
+      model: "gpt-5.6-sol",
+      source: "web",
+      sourceRef: "web:program-manager",
+      employee: "program-manager",
+      prompt: "coordinate",
+    });
+    const prompt = "/delegate-authority all\nResolve the release gate.";
+
+    const unauthenticated = makeRes();
+    await api.handleApiRequest(
+      makeJsonReq("POST", `/api/sessions/${session.id}/message`, { message: prompt }),
+      unauthenticated.res,
+      ctx,
+    );
+    expect(unauthenticated.status).toBe(403);
+    expect(unauthenticated.body).toMatchObject({ code: "operator_delegation_human_only" });
+    expect(reg.getSession(session.id)?.transportMeta?.operatorDelegation).toBeUndefined();
+
+    const req = makeJsonReq("POST", `/api/sessions/${session.id}/message`, { message: prompt });
+    req.cuttlefishPrincipal = { kind: "admin" };
+    req.headers["x-operator"] = "human@example.test";
+    const authenticated = makeRes();
+    await api.handleApiRequest(req, authenticated.res, ctx);
+
+    expect(authenticated.status, JSON.stringify(authenticated.body)).toBe(200);
+    expect(reg.getSession(session.id)?.transportMeta?.operatorDelegation).toMatchObject({
+      state: "active",
+      scopes: ["approve", "decide", "plan", "act"],
+      grantedBy: "human@example.test",
+    });
+  });
+
   it("rejects a whitespace-only message on POST /api/sessions/:id/message", async () => {
     const { api, reg } = await setup();
     const ctx = makeCtx(api);
