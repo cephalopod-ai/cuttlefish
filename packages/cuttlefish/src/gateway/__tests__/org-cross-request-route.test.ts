@@ -90,6 +90,23 @@ function makeCtx() {
   } as any;
 }
 
+function configureDeduplicatingDestination(ctx: any, id: string, agentCardUrl: string): void {
+  const baseConfig = ctx.getConfig();
+  ctx.getConfig = () => ({
+    ...baseConfig,
+    a2a: {
+      destinations: [{
+        id,
+        agentCardUrl,
+        token: "0123456789abcdef",
+        allowedSkills: ["research"],
+        messageIdDeduplication: "guaranteed",
+        services: [],
+      }],
+    },
+  });
+}
+
 async function setup() {
   vi.resetModules();
   const api = await import("../api.js");
@@ -97,8 +114,9 @@ async function setup() {
   const reg = await import("../../sessions/registry.js");
   const lifecycle = await import("../session-lifecycle-service.js");
   const runLedger = await import("../../run-ledger/index.js");
+  const runRecovery = await import("../../shared/run-recovery.js");
   reg.initDb();
-  return { api, externalA2A, reg, lifecycle, runLedger };
+  return { api, externalA2A, reg, lifecycle, runLedger, runRecovery };
 }
 
 beforeEach(() => {
@@ -299,13 +317,118 @@ describe("POST /api/org/cross-request", () => {
     await vi.waitFor(() => expect(ctx.a2aOutbound.send).toHaveBeenCalledWith(expect.objectContaining({
       destinationId: "gosling-delegate",
       skillId: "research",
+      messageId: expect.any(String),
     })));
     await vi.waitFor(() => expect(reg.getSession(cap.body.sessionId)).toMatchObject({
       engine: "a2a",
       status: "idle",
     }));
     expect(reg.getMessages(cap.body.sessionId).at(-1)?.content).toContain("Remote research completed");
+    expect(reg.getSession(cap.body.sessionId)?.transportMeta?.a2aOutbound).toMatchObject({
+      requestMessageId: ctx.a2aOutbound.send.mock.calls[0]![0].messageId,
+      requestMessage: expect.stringContaining("Research this protocol"),
+    });
     expect(hoisted.dispatchEmployeeSessionRun).not.toHaveBeenCalled();
+  });
+
+  it("does not replay an unknown send outcome without an explicit peer guarantee", async () => {
+    const { api, externalA2A, reg } = await setup();
+    const cap = makeRes();
+    const ctx = makeCtx();
+    const baseConfig = ctx.getConfig();
+    ctx.getConfig = () => ({
+      ...baseConfig,
+      a2a: {
+        destinations: [{
+          id: "non-idempotent-peer",
+          agentCardUrl: "https://peer.example/.well-known/agent-card.json",
+          token: "0123456789abcdef",
+          allowedSkills: ["research"],
+          services: [{ name: "external-research", description: "Research via an A2A peer", skillId: "research" }],
+        }],
+      },
+    });
+    const send = vi.fn(async (_input: unknown) => {
+      throw new Error("connection closed before response");
+    });
+    ctx.a2aOutbound = { send, waitForTask: vi.fn() };
+
+    await api.handleApiRequest(makeJsonReq("POST", "/api/org/cross-request", {
+      fromEmployee: "content-writer",
+      service: "external-research",
+      prompt: "Do not replay an ambiguous request",
+    }), cap.res, ctx);
+
+    await vi.waitFor(() => expect(reg.getSession(cap.body.sessionId)).toMatchObject({
+      status: "error",
+      lastError: expect.stringContaining("outcome is unknown and was not replayed"),
+      transportMeta: { a2aOutbound: { dispatchOutcome: "unknown-not-replayed" } },
+    }));
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(externalA2A.recoverableExternalA2ACrossRequestSessionIds().has(cap.body.sessionId)).toBe(false);
+  });
+
+  it("reconciles an opted-in peer with one stable message ID and bounded retries", async () => {
+    const { api, reg } = await setup();
+    const cap = makeRes();
+    const ctx = makeCtx();
+    const baseConfig = ctx.getConfig();
+    ctx.getConfig = () => ({
+      ...baseConfig,
+      a2a: {
+        destinations: [{
+          id: "deduplicating-peer",
+          agentCardUrl: "https://peer.example/.well-known/agent-card.json",
+          token: "0123456789abcdef",
+          allowedSkills: ["research"],
+          messageIdDeduplication: "guaranteed",
+          services: [{ name: "external-research", description: "Research via an A2A peer", skillId: "research" }],
+        }],
+      },
+    });
+    const completed = {
+      id: "remote-deduplicated-task",
+      contextId: "remote-deduplicated-context",
+      status: { state: 3, message: undefined, timestamp: new Date().toISOString() },
+      artifacts: [],
+      history: [],
+      metadata: {},
+    };
+    let attempts = 0;
+    const send = vi.fn(async (_input: { messageId: string }) => {
+      attempts += 1;
+      if (attempts <= 2) throw new Error(`ambiguous attempt ${attempts}`);
+      return completed;
+    });
+    ctx.a2aOutbound = { send, waitForTask: vi.fn() };
+
+    await api.handleApiRequest(makeJsonReq("POST", "/api/org/cross-request", {
+      fromEmployee: "content-writer",
+      service: "external-research",
+      prompt: "Reconcile under an explicit guarantee",
+    }), cap.res, ctx);
+
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+    expect(reg.getSession(cap.body.sessionId)).toMatchObject({
+      status: "waiting",
+      lastError: expect.stringContaining("reconciliation pending"),
+      transportMeta: {
+        a2aOutbound: {
+          messageIdDeduplication: "guaranteed",
+          destinationAgentCardUrl: "https://peer.example/.well-known/agent-card.json",
+          reconciliationAttempts: 1,
+          reconciliationPendingAt: expect.any(String),
+        },
+      },
+    });
+
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(3), { timeout: 2_500 });
+    await vi.waitFor(() => expect(reg.getSession(cap.body.sessionId)).toMatchObject({
+      status: "idle",
+      lastError: null,
+      transportMeta: { a2aOutbound: { reconciliationAttempts: 0 } },
+    }));
+    expect(new Set(send.mock.calls.map(([input]) => input.messageId)).size).toBe(1);
   });
 
   it("projects remote progress and registers outbound artifacts in lineage", async () => {
@@ -459,6 +582,530 @@ describe("POST /api/org/cross-request", () => {
     expect(runLedger.getRunLedger().getRun(activeRunId)?.currentState).toBe("completed");
   });
 
+  it("does not cancel a terminal task when stop arrives during raw artifact persistence", async () => {
+    const { api, reg, lifecycle } = await setup();
+    const cap = makeRes();
+    const ctx = makeCtx();
+    const baseConfig = ctx.getConfig();
+    ctx.getConfig = () => ({
+      ...baseConfig,
+      a2a: {
+        destinations: [{
+          id: "terminal-race-peer",
+          agentCardUrl: "https://peer.example/.well-known/agent-card.json",
+          token: "0123456789abcdef",
+          allowedSkills: ["research"],
+          services: [{ name: "external-research", description: "Research via an A2A peer", skillId: "research" }],
+        }],
+      },
+    });
+    const completed = {
+      id: "remote-terminal-race-task",
+      contextId: "remote-terminal-race-context",
+      status: {
+        state: 3,
+        message: {
+          messageId: "remote-terminal-race-completed",
+          taskId: "remote-terminal-race-task",
+          contextId: "remote-terminal-race-context",
+          role: 2,
+          parts: [{ content: { $case: "text", value: "Remote task already completed" }, filename: "", mediaType: "text/plain" }],
+          metadata: {},
+          extensions: [],
+          referenceTaskIds: [],
+        },
+        timestamp: new Date().toISOString(),
+      },
+      artifacts: [{
+        artifactId: "terminal-race-file",
+        name: "terminal-race.txt",
+        description: "Raw terminal result",
+        parts: [{
+          content: { $case: "raw", value: Uint8Array.from(Buffer.from("terminal artifact")) },
+          filename: "terminal-race.txt",
+          mediaType: "text/plain",
+        }],
+        metadata: {},
+        extensions: [],
+      }],
+      history: [],
+      metadata: {},
+    };
+    const cancelTask = vi.fn(async () => completed);
+    ctx.a2aOutbound = {
+      send: vi.fn(async () => completed),
+      waitForTask: vi.fn(),
+      cancelTask,
+    };
+
+    const originalMkdir = fs.promises.mkdir.bind(fs.promises);
+    let enteredPersistence!: () => void;
+    let releasePersistence!: () => void;
+    const persistenceEntered = new Promise<void>((resolve) => { enteredPersistence = resolve; });
+    const persistenceGate = new Promise<void>((resolve) => { releasePersistence = resolve; });
+    const mkdirSpy = vi.spyOn(fs.promises, "mkdir").mockImplementation((async (dirPath: any, options?: any) => {
+      enteredPersistence();
+      await persistenceGate;
+      return originalMkdir(dirPath, options);
+    }) as typeof fs.promises.mkdir);
+
+    try {
+      await api.handleApiRequest(makeJsonReq("POST", "/api/org/cross-request", {
+        fromEmployee: "content-writer",
+        service: "external-research",
+        prompt: "Exercise terminal artifact cancellation race",
+      }), cap.res, ctx);
+      await persistenceEntered;
+      expect(reg.getSession(cap.body.sessionId)?.transportMeta?.a2aOutbound).toMatchObject({
+        taskId: "remote-terminal-race-task",
+        state: "TASK_STATE_COMPLETED",
+      });
+
+      expect(lifecycle.stopSession(cap.body.sessionId, ctx)).toMatchObject({
+        statusCode: 200,
+        body: { externalInterruptible: true },
+      });
+      releasePersistence();
+
+      await vi.waitFor(() => expect(reg.getSession(cap.body.sessionId)).toMatchObject({
+        status: "idle",
+        lastError: null,
+      }));
+      expect(cancelTask).not.toHaveBeenCalled();
+      expect(reg.getMessages(cap.body.sessionId).at(-1)?.content).toContain("Remote task already completed");
+    } finally {
+      releasePersistence();
+      mkdirSpy.mockRestore();
+    }
+  });
+
+  it("keeps a pre-task send alive long enough to recover its identity and cancel it", async () => {
+    const { api, reg, lifecycle } = await setup();
+    const cap = makeRes();
+    const ctx = makeCtx();
+    const baseConfig = ctx.getConfig();
+    ctx.getConfig = () => ({
+      ...baseConfig,
+      a2a: {
+        destinations: [{
+          id: "slow-peer",
+          agentCardUrl: "https://peer.example/.well-known/agent-card.json",
+          token: "0123456789abcdef",
+          allowedSkills: ["research"],
+          services: [{ name: "external-research", description: "Research via an A2A peer", skillId: "research" }],
+        }],
+      },
+    });
+    const working = {
+      id: "remote-slow-task",
+      contextId: "remote-slow-context",
+      status: { state: 2, message: undefined, timestamp: new Date().toISOString() },
+      artifacts: [],
+      history: [],
+      metadata: {},
+    };
+    const canceled = {
+      ...working,
+      status: { state: 5, message: undefined, timestamp: new Date().toISOString() },
+    };
+    let finishSend!: (value: typeof working) => void;
+    const send = vi.fn(async (_input: { messageId: string; signal: AbortSignal }) => (
+      new Promise<typeof working>((resolve) => { finishSend = resolve; })
+    ));
+    const cancelTask = vi.fn(async () => canceled);
+    ctx.a2aOutbound = { send, waitForTask: vi.fn(), cancelTask };
+
+    await api.handleApiRequest(makeJsonReq("POST", "/api/org/cross-request", {
+      fromEmployee: "content-writer",
+      service: "external-research",
+      prompt: "Stop before the peer returns its task ID",
+    }), cap.res, ctx);
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    const sendInput = send.mock.calls[0]![0];
+    expect(sendInput.messageId).toEqual(expect.any(String));
+
+    expect(lifecycle.stopSession(cap.body.sessionId, ctx)).toMatchObject({
+      statusCode: 200,
+      body: { externalInterruptible: true },
+    });
+    expect(sendInput.signal.aborted).toBe(false);
+    expect(cancelTask).not.toHaveBeenCalled();
+
+    finishSend(working);
+    await vi.waitFor(() => expect(cancelTask).toHaveBeenCalledWith("slow-peer", "remote-slow-task"));
+    await vi.waitFor(() => expect(reg.getSession(cap.body.sessionId)).toMatchObject({
+      status: "interrupted",
+      lastError: "Remote A2A task was canceled",
+    }));
+  });
+
+  it("replays a crashed pre-task send with its durable logical message ID", async () => {
+    const { externalA2A, reg } = await setup();
+    const ctx = makeCtx();
+    const agentCardUrl = "https://pre-task-peer.example/.well-known/agent-card.json";
+    configureDeduplicatingDestination(ctx, "pre-task-peer", agentCardUrl);
+    const session = reg.createSession({
+      engine: "a2a",
+      source: "web",
+      sourceRef: "cross-request:pre-task-recovery",
+      connector: "web",
+      sessionKey: "cross-request:pre-task-recovery",
+      prompt: "Recover request before remote identity",
+      transportMeta: {
+        a2aOutbound: {
+          destinationId: "pre-task-peer",
+          skillId: "research",
+          requestMessageId: "stable-pre-task-message",
+          requestMessage: "Durably checkpointed request",
+          messageIdDeduplication: "guaranteed",
+          destinationAgentCardUrl: agentCardUrl,
+          state: "SUBMITTED",
+        },
+      },
+    });
+    reg.updateSession(session.id, { status: "running" });
+    const working = {
+      id: "remote-pre-task",
+      contextId: "remote-pre-task-context",
+      status: { state: 2, message: undefined, timestamp: new Date().toISOString() },
+      artifacts: [],
+      history: [],
+      metadata: {},
+    };
+    const completed = {
+      ...working,
+      status: { state: 3, message: undefined, timestamp: new Date().toISOString() },
+    };
+    const send = vi.fn(async () => working);
+    const waitForTask = vi.fn(async () => completed);
+    ctx.a2aOutbound = { send, waitForTask };
+
+    const preservedAtBoot = externalA2A.recoverableExternalA2ACrossRequestSessionIds();
+    expect([...preservedAtBoot]).toEqual([session.id]);
+    expect(reg.recoverStaleSessions({ excludeSessionIds: preservedAtBoot })).toBe(0);
+    expect(externalA2A.recoverExternalA2ACrossRequests(ctx)).toBe(1);
+    expect(externalA2A.recoverExternalA2ACrossRequests(ctx)).toBe(0);
+
+    await vi.waitFor(() => expect(send).toHaveBeenCalledWith(expect.objectContaining({
+      destinationId: "pre-task-peer",
+      skillId: "research",
+      messageId: "stable-pre-task-message",
+      message: "Durably checkpointed request",
+    })));
+    await vi.waitFor(() => expect(waitForTask).toHaveBeenCalledWith(
+      "pre-task-peer",
+      "remote-pre-task",
+      expect.any(Object),
+    ));
+    await vi.waitFor(() => expect(reg.getSession(session.id)).toMatchObject({ status: "idle", lastError: null }));
+    expect(reg.getMessages(session.id).filter((entry: { role: string }) => entry.role === "assistant")).toHaveLength(1);
+
+    reg.updateSession(session.id, { status: "running" });
+    expect(externalA2A.recoverExternalA2ACrossRequests(ctx)).toBe(1);
+    await vi.waitFor(() => expect(waitForTask).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(reg.getSession(session.id)).toMatchObject({ status: "idle", lastError: null }));
+    expect(reg.getMessages(session.id).filter((entry: { role: string }) => entry.role === "assistant")).toHaveLength(1);
+  });
+
+  it("refuses taskless replay when the current destination removes its deduplication guarantee", async () => {
+    const { externalA2A, reg } = await setup();
+    const ctx = makeCtx();
+    const agentCardUrl = "https://drift-peer.example/.well-known/agent-card.json";
+    const baseConfig = ctx.getConfig();
+    ctx.getConfig = () => ({
+      ...baseConfig,
+      a2a: {
+        destinations: [{
+          id: "drift-peer",
+          agentCardUrl,
+          token: "0123456789abcdef",
+          allowedSkills: ["research"],
+          services: [],
+        }],
+      },
+    });
+    const session = reg.createSession({
+      engine: "a2a",
+      source: "web",
+      sourceRef: "cross-request:removed-dedupe-guarantee",
+      prompt: "Do not replay after guarantee removal",
+      transportMeta: {
+        a2aOutbound: {
+          destinationId: "drift-peer",
+          destinationAgentCardUrl: agentCardUrl,
+          skillId: "research",
+          requestMessageId: "removed-guarantee-message",
+          requestMessage: "Sensitive checkpointed request",
+          messageIdDeduplication: "guaranteed",
+          state: "SUBMITTED",
+        },
+      },
+    });
+    reg.updateSession(session.id, { status: "running" });
+    const send = vi.fn();
+    ctx.a2aOutbound = { send, waitForTask: vi.fn() };
+
+    expect(externalA2A.recoverExternalA2ACrossRequests(ctx)).toBe(1);
+    await vi.waitFor(() => expect(reg.getSession(session.id)).toMatchObject({
+      status: "error",
+      lastError: expect.stringContaining("no longer guarantees message-ID deduplication"),
+      transportMeta: { a2aOutbound: { dispatchOutcome: "replay-refused-config-drift" } },
+    }));
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("refuses taskless replay when a destination ID is reassigned to a different peer", async () => {
+    const { externalA2A, reg } = await setup();
+    const ctx = makeCtx();
+    configureDeduplicatingDestination(
+      ctx,
+      "reassigned-peer",
+      "https://replacement-peer.example/.well-known/agent-card.json",
+    );
+    const session = reg.createSession({
+      engine: "a2a",
+      source: "web",
+      sourceRef: "cross-request:reassigned-peer",
+      prompt: "Do not send a prior request to a replacement peer",
+      transportMeta: {
+        a2aOutbound: {
+          destinationId: "reassigned-peer",
+          destinationAgentCardUrl: "https://original-peer.example/.well-known/agent-card.json",
+          skillId: "research",
+          requestMessageId: "reassigned-peer-message",
+          requestMessage: "Sensitive checkpointed request",
+          messageIdDeduplication: "guaranteed",
+          state: "SUBMITTED",
+        },
+      },
+    });
+    reg.updateSession(session.id, { status: "running" });
+    const send = vi.fn();
+    ctx.a2aOutbound = { send, waitForTask: vi.fn() };
+
+    expect(externalA2A.recoverExternalA2ACrossRequests(ctx)).toBe(1);
+    await vi.waitFor(() => expect(reg.getSession(session.id)).toMatchObject({
+      status: "error",
+      lastError: expect.stringContaining("no longer matches the checkpointed peer identity"),
+      transportMeta: { a2aOutbound: { dispatchOutcome: "replay-refused-config-drift" } },
+    }));
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("stops durable reconciliation after the configured attempt ceiling", async () => {
+    const { externalA2A, reg } = await setup();
+    const ctx = makeCtx();
+    const agentCardUrl = "https://offline-deduplicating-peer.example/.well-known/agent-card.json";
+    configureDeduplicatingDestination(ctx, "offline-deduplicating-peer", agentCardUrl);
+    const session = reg.createSession({
+      engine: "a2a",
+      source: "web",
+      sourceRef: "cross-request:reconciliation-ceiling",
+      connector: "web",
+      sessionKey: "cross-request:reconciliation-ceiling",
+      prompt: "Bound permanent peer failures",
+      transportMeta: {
+        a2aOutbound: {
+          destinationId: "offline-deduplicating-peer",
+          skillId: "research",
+          requestMessageId: "stable-ceiling-message",
+          requestMessage: "Durably checkpointed request",
+          messageIdDeduplication: "guaranteed",
+          destinationAgentCardUrl: agentCardUrl,
+          reconciliationPendingAt: "2026-09-02T00:00:00.000Z",
+          reconciliationAttempts: 2,
+          state: "SUBMITTED",
+        },
+      },
+    });
+    reg.updateSession(session.id, { status: "waiting" });
+    const send = vi.fn(async (_input: unknown) => {
+      throw new Error("peer remains unavailable");
+    });
+    ctx.a2aOutbound = { send, waitForTask: vi.fn() };
+
+    expect(externalA2A.recoverExternalA2ACrossRequests(ctx)).toBe(1);
+    await vi.waitFor(() => expect(reg.getSession(session.id)).toMatchObject({
+      status: "error",
+      lastError: expect.stringContaining("failed after 3 attempts"),
+      transportMeta: {
+        a2aOutbound: {
+          reconciliationPendingAt: null,
+          reconciliationAttempts: 3,
+        },
+      },
+    }));
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(externalA2A.recoverableExternalA2ACrossRequestSessionIds().has(session.id)).toBe(false);
+  });
+
+  it("terminalizes an exhausted waiting checkpoint found during startup", async () => {
+    const { externalA2A, reg } = await setup();
+    const ctx = makeCtx();
+    const agentCardUrl = "https://offline-deduplicating-peer.example/.well-known/agent-card.json";
+    const session = reg.createSession({
+      engine: "a2a",
+      source: "web",
+      sourceRef: "cross-request:torn-reconciliation-ceiling",
+      connector: "web",
+      sessionKey: "cross-request:torn-reconciliation-ceiling",
+      prompt: "Heal a torn exhausted checkpoint",
+      transportMeta: {
+        a2aOutbound: {
+          destinationId: "offline-deduplicating-peer",
+          skillId: "research",
+          requestMessageId: "stable-torn-ceiling-message",
+          requestMessage: "Durably checkpointed request",
+          messageIdDeduplication: "guaranteed",
+          destinationAgentCardUrl: agentCardUrl,
+          reconciliationPendingAt: null,
+          reconciliationError: "last ambiguous failure",
+          reconciliationAttempts: 3,
+          state: "SUBMITTED",
+        },
+      },
+    });
+    reg.updateSession(session.id, { status: "waiting" });
+    const send = vi.fn();
+    ctx.a2aOutbound = { send, waitForTask: vi.fn() };
+
+    expect(externalA2A.recoverableExternalA2ACrossRequestSessionIds().has(session.id)).toBe(true);
+    expect(externalA2A.recoverExternalA2ACrossRequests(ctx)).toBe(0);
+    expect(send).not.toHaveBeenCalled();
+    expect(reg.getSession(session.id)).toMatchObject({
+      status: "error",
+      lastError: expect.stringContaining("failed after 3 attempts"),
+      transportMeta: {
+        a2aOutbound: {
+          reconciliationPendingAt: null,
+          reconciliationAttempts: 3,
+        },
+      },
+    });
+    expect(externalA2A.recoverableExternalA2ACrossRequestSessionIds().has(session.id)).toBe(false);
+  });
+
+  it("does not report another session's recovery as a successful target stop", async () => {
+    const { externalA2A, reg } = await setup();
+    const ctx = makeCtx();
+    const target = reg.createSession({
+      engine: "a2a",
+      source: "web",
+      sourceRef: "cross-request:incomplete-stop-target",
+      prompt: "Incomplete non-replayable target",
+      transportMeta: {
+        a2aOutbound: {
+          destinationId: "target-peer",
+          skillId: "research",
+          requestMessageId: "target-message",
+          requestMessage: "Target request",
+        },
+      },
+    });
+    reg.updateSession(target.id, { status: "running" });
+    const other = reg.createSession({
+      engine: "a2a",
+      source: "web",
+      sourceRef: "cross-request:other-recoverable-session",
+      prompt: "Other recoverable request",
+      transportMeta: {
+        a2aOutbound: {
+          destinationId: "other-peer",
+          taskId: "other-remote-task",
+        },
+      },
+    });
+    reg.updateSession(other.id, { status: "running" });
+    const completed = {
+      id: "other-remote-task",
+      contextId: "other-context",
+      status: { state: 3, message: undefined, timestamp: new Date().toISOString() },
+      artifacts: [],
+      history: [],
+      metadata: {},
+    };
+    const waitForTask = vi.fn(async () => completed);
+    ctx.a2aOutbound = { send: vi.fn(), waitForTask };
+
+    expect(externalA2A.requestExternalA2ACrossRequestStop(target.id, ctx)).toBe(false);
+    expect(waitForTask).toHaveBeenCalledWith("other-peer", "other-remote-task", expect.any(Object));
+    expect(reg.getSession(target.id)?.status).toBe("running");
+    await vi.waitFor(() => expect(reg.getSession(other.id)?.status).toBe("idle"));
+  });
+
+  it("recovers a cancellation requested before restart and before task identity", async () => {
+    const { externalA2A, reg, runLedger, runRecovery } = await setup();
+    const ctx = makeCtx();
+    const agentCardUrl = "https://cancel-recovery-peer.example/.well-known/agent-card.json";
+    configureDeduplicatingDestination(ctx, "cancel-recovery-peer", agentCardUrl);
+    const session = reg.createSession({
+      engine: "a2a",
+      source: "web",
+      sourceRef: "cross-request:pre-task-cancel-recovery",
+      connector: "web",
+      sessionKey: "cross-request:pre-task-cancel-recovery",
+      prompt: "Cancel checkpointed request",
+      transportMeta: {
+        a2aOutbound: {
+          destinationId: "cancel-recovery-peer",
+          skillId: "research",
+          requestMessageId: "stable-cancel-message",
+          requestMessage: "Durably checkpointed canceled request",
+          messageIdDeduplication: "guaranteed",
+          destinationAgentCardUrl: agentCardUrl,
+          cancellationRequestedAt: "2026-09-02T00:00:00.000Z",
+          state: "SUBMITTED",
+        },
+      },
+    });
+    const started = reg.beginSessionRun({
+      sessionId: session.id,
+      prompt: "Cancel checkpointed request",
+      transportMeta: session.transportMeta,
+    })!;
+    const activeRunId = started.transportMeta?.activeRunId as string;
+    reg.updateSession(session.id, { status: "running" });
+    reg.updateSession(session.id, { status: "waiting" });
+    expect(runLedger.getRunLedger().getRun(activeRunId)?.currentState).toBe("blocked");
+
+    const working = {
+      id: "remote-cancel-recovery-task",
+      contextId: "remote-cancel-recovery-context",
+      status: { state: 2, message: undefined, timestamp: new Date().toISOString() },
+      artifacts: [],
+      history: [],
+      metadata: {},
+    };
+    const canceled = {
+      ...working,
+      status: { state: 5, message: undefined, timestamp: new Date().toISOString() },
+    };
+    const send = vi.fn(async (_input: unknown) => working);
+    const waitForTask = vi.fn();
+    const cancelTask = vi.fn(async () => canceled);
+    ctx.a2aOutbound = { send, waitForTask, cancelTask };
+
+    const preservedAtBoot = externalA2A.recoverableExternalA2ACrossRequestSessionIds();
+    expect(preservedAtBoot.has(session.id)).toBe(true);
+    runRecovery.recoverOrphanedRunsAtStartup(new Set(preservedAtBoot), false);
+    expect(runLedger.getRunLedger().getRun(activeRunId)?.currentState).toBe("blocked");
+    expect(externalA2A.recoverExternalA2ACrossRequests(ctx)).toBe(1);
+
+    await vi.waitFor(() => expect(send).toHaveBeenCalledWith(expect.objectContaining({
+      messageId: "stable-cancel-message",
+    })));
+    await vi.waitFor(() => expect(cancelTask).toHaveBeenCalledWith(
+      "cancel-recovery-peer",
+      "remote-cancel-recovery-task",
+    ));
+    expect(waitForTask).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(reg.getSession(session.id)).toMatchObject({
+      status: "interrupted",
+      lastError: "Remote A2A task was canceled",
+    }));
+    expect(runLedger.getRunLedger().getRun(activeRunId)?.currentState).toBe("interrupted");
+  });
+
   it("coalesces startup recovery and resumes polling without replaying the remote request", async () => {
     const { externalA2A, reg } = await setup();
     const ctx = makeCtx();
@@ -508,13 +1155,15 @@ describe("POST /api/org/cross-request", () => {
     };
     let finish!: () => void;
     const send = vi.fn();
+    let waitCount = 0;
     const waitForTask = vi.fn(async (
       _destinationId: string,
       _taskId: string,
       options: { onUpdate: (value: any) => Promise<void> },
     ) => {
       await options.onUpdate(working);
-      await new Promise<void>((resolve) => { finish = resolve; });
+      waitCount += 1;
+      if (waitCount === 1) await new Promise<void>((resolve) => { finish = resolve; });
       await options.onUpdate(completed);
       return completed;
     });
@@ -538,6 +1187,22 @@ describe("POST /api/org/cross-request", () => {
     finish();
     await vi.waitFor(() => expect(reg.getSession(session.id)).toMatchObject({ status: "idle", lastError: null }));
     expect(reg.getMessages(session.id).at(-1)?.content).toContain("Recovered remote completion");
+    expect(reg.getMessages(session.id).filter((entry: { role: string }) => entry.role === "assistant")).toHaveLength(1);
+
+    const recoveredSession = reg.getSession(session.id)!;
+    const outboundMeta = recoveredSession.transportMeta?.a2aOutbound as Record<string, unknown>;
+    const { lastProgressMessageId: _lostCrashMarker, ...metaWithoutMarker } = outboundMeta;
+    reg.updateSession(session.id, {
+      status: "running",
+      transportMeta: {
+        ...recoveredSession.transportMeta,
+        a2aOutbound: metaWithoutMarker as any,
+      },
+    });
+
+    expect(externalA2A.recoverExternalA2ACrossRequests(ctx)).toBe(1);
+    await vi.waitFor(() => expect(waitForTask).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(reg.getSession(session.id)).toMatchObject({ status: "idle", lastError: null }));
     expect(reg.getMessages(session.id).filter((entry: { role: string }) => entry.role === "assistant")).toHaveLength(1);
   });
 });

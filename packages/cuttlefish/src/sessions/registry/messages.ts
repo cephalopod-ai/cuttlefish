@@ -71,6 +71,26 @@ export function insertMessage(sessionId: string, role: string, content: string, 
   return id;
 }
 
+/** Insert a caller-keyed message exactly once across process retries. */
+export function insertMessageOnce(
+  sessionId: string,
+  id: string,
+  role: string,
+  content: string,
+  media?: MessageMedia[],
+  blocks?: ChatBlock[],
+): boolean {
+  const db = initDb();
+  const mediaJson = media && media.length > 0 ? JSON.stringify(media) : null;
+  const blocksJson = blocks && blocks.length > 0 ? JSON.stringify(blocks) : null;
+  const result = db.prepare(`
+    INSERT INTO messages (id, session_id, role, content, timestamp, media, blocks)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO NOTHING
+  `).run(id, sessionId, role, content, Date.now(), mediaJson, blocksJson);
+  return result.changes === 1;
+}
+
 export function getMessages(sessionId: string): SessionMessage[] {
   const db = initDb();
   const rows = db

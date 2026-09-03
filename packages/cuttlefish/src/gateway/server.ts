@@ -152,7 +152,8 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
   }, 24 * 60 * 60 * 1000);
   mcpConfigSweepTimer.unref?.();
 
-  // Durable outbound A2A task identities are resumed after ApiContext exists.
+  // Durable outbound A2A task identities and pre-task request checkpoints are
+  // resumed after ApiContext exists.
   // Preserve those sessions here so the generic stale-run sweep does not make
   // the later domain recovery unreachable.
   const recoverableExternalA2ASessionIds = recoverableExternalA2ACrossRequestSessionIds();
@@ -177,7 +178,10 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
   // live session or orchestration allocation gets marked `interrupted`.
   // Orchestration-engine runs are skipped only when the orchestration runtime
   // is enabled, because it performs its own finer-grained boot-time sweep.
-  const liveSessionIds = new Set(listSessions({ status: 'running' }).map((s) => s.id));
+  const liveSessionIds = new Set([
+    ...listSessions({ status: 'running' }).map((s) => s.id),
+    ...recoverableExternalA2ASessionIds,
+  ]);
   recoverOrphanedRunsAtStartup(liveSessionIds, config.orchestration?.enabled === true);
   if (sweptPartials > 0) {
     logger.info(`Swept ${sweptPartials} stranded mid-turn partial message(s) from previous run`);
@@ -834,6 +838,7 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
     connectors,
     gatewayInfoFile: GATEWAY_INFO_FILE,
     getRunningSessions: () => listSessions({ status: "running" }),
+    getPreservedRunningSessionIds: recoverableExternalA2ACrossRequestSessionIds,
     hookRegistry,
     interruptSession: (sessionId) => {
       updateSession(sessionId, {

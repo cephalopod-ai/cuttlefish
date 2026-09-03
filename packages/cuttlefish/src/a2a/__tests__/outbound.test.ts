@@ -70,13 +70,23 @@ describe("OutboundA2AService", () => {
       if (url.endsWith("agent-card.json")) return jsonResponse(AgentCard.toJSON(card()));
       if (url.endsWith("/message:send")) {
         const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-        expect(body).toMatchObject({ message: { metadata: { skillId: "review-code" } } });
+        expect(body).toMatchObject({
+          message: {
+            messageId: "stable-request-message-1",
+            metadata: { skillId: "review-code" },
+          },
+        });
         return jsonResponse({ task: Task.toJSON(remoteTask) });
       }
       throw new Error(`unexpected request ${url}`);
     });
     const service = new OutboundA2AService(config, { guardedFetch });
-    const result = await service.send({ destinationId: "peer", skillId: "review-code", message: "Review this" });
+    const result = await service.send({
+      destinationId: "peer",
+      skillId: "review-code",
+      message: "Review this",
+      messageId: "stable-request-message-1",
+    });
     expect(result).toMatchObject({ id: "remote-task-1", status: { state: TaskState.TASK_STATE_COMPLETED } });
     expect(guardedFetch).toHaveBeenCalledTimes(2);
   });

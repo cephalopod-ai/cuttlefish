@@ -116,6 +116,7 @@ export function validateA2A(problems: string[], value: unknown): void {
       "services",
       "allowedOrigins",
       "allowPrivateHosts",
+      "messageIdDeduplication",
       "timeoutMs",
     ], at);
     validateString(problems, `${at}.id`, rawDestination.id);
@@ -136,6 +137,12 @@ export function validateA2A(problems: string[], value: unknown): void {
     }
     if (rawDestination.allowPrivateHosts !== undefined) {
       validateBoolean(problems, `${at}.allowPrivateHosts`, rawDestination.allowPrivateHosts);
+    }
+    if (rawDestination.messageIdDeduplication !== undefined) {
+      validateString(problems, `${at}.messageIdDeduplication`, rawDestination.messageIdDeduplication);
+      if (rawDestination.messageIdDeduplication !== "guaranteed") {
+        problems.push(`${at}.messageIdDeduplication must be guaranteed when set`);
+      }
     }
     if (rawDestination.timeoutMs !== undefined) {
       validateNumber(problems, `${at}.timeoutMs`, rawDestination.timeoutMs);

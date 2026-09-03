@@ -36,6 +36,8 @@ export interface OutboundA2ASendInput {
   destinationId: string;
   skillId: string;
   message: string;
+  /** Stable logical-request identity used to reconcile an unknown send outcome. */
+  messageId?: string;
   taskId?: string;
   contextId?: string;
   returnImmediately?: boolean;
@@ -138,7 +140,7 @@ function defaultGuardedFetch(
 
 function makeMessage(input: OutboundA2ASendInput): Message {
   return {
-    messageId: randomUUID(),
+    messageId: input.messageId ?? randomUUID(),
     taskId: input.taskId ?? "",
     contextId: input.contextId ?? "",
     role: Role.ROLE_USER,

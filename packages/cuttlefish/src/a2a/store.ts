@@ -50,6 +50,8 @@ interface A2AMessageRow {
 
 export type A2ATaskProjector = (record: A2ATaskRecord) => Task | Promise<Task>;
 
+const PROJECTED_LIST_BATCH_SIZE = 100;
+
 function ownerId(context: ServerCallContext): string {
   const user = context.user;
   if (!user?.isAuthenticated || !user.userName) {
@@ -102,6 +104,16 @@ function parsePageToken(value: string): number {
 
 function pageToken(offset: number): string {
   return Buffer.from(String(offset), "utf8").toString("base64url");
+}
+
+function matchesListFilters(task: Task, params: ListTasksRequest): boolean {
+  if (params.contextId && task.contextId !== params.contextId) return false;
+  if (params.status && task.status?.state !== params.status) return false;
+  if (params.statusTimestampAfter) {
+    const timestamp = task.status?.timestamp;
+    if (!timestamp || timestamp < params.statusTimestampAfter) return false;
+  }
+  return true;
 }
 
 export class SqliteA2ATaskStore implements TaskStore {
@@ -288,30 +300,58 @@ export class SqliteA2ATaskStore implements TaskStore {
     // Projected status and its timestamp come from the live backing session tree,
     // so a2a_tasks.updated_at is not a semantics-preserving SQL substitute.
     const requiresProjectedFiltering = Boolean(params.status) || Boolean(params.statusTimestampAfter);
-    const totalSize = requiresProjectedFiltering
-      ? undefined
-      : (db.prepare(`SELECT COUNT(*) AS count FROM a2a_tasks WHERE ${where}`).get(...values) as { count: number }).count;
-    const rows = db.prepare(
-      `SELECT task_id, context_id, owner_id, initial_message_id, input_hash,
-              session_id, task_json, canceled_at, created_at, updated_at
-         FROM a2a_tasks WHERE ${where} ORDER BY updated_at DESC, task_id DESC
-         ${requiresProjectedFiltering ? "" : "LIMIT ? OFFSET ?"}`,
-    ).all(...values, ...(requiresProjectedFiltering ? [] : [size, offset])) as A2ATaskRow[];
-    const projected = await Promise.all(rows.map(async (row) => {
-      const record = recordFromRow(row);
-      return this.projector ? this.projector(record) : record.task;
-    }));
-    const filtered = projected.filter((task) => {
-      if (params.contextId && task.contextId !== params.contextId) return false;
-      if (params.status && task.status?.state !== params.status) return false;
-      if (params.statusTimestampAfter) {
-        const timestamp = task.status?.timestamp;
-        if (!timestamp || timestamp < params.statusTimestampAfter) return false;
+    let filteredTotal: number;
+    let page: Task[];
+    if (requiresProjectedFiltering) {
+      // Exact totals for live projected state require visiting every SQL-matched
+      // candidate. Keyset batches bound rows and async projections held at once.
+      let cursor: Pick<A2ATaskRow, "updated_at" | "task_id"> | undefined;
+      let matched = 0;
+      page = [];
+      for (;;) {
+        const batchConditions = [...conditions];
+        const batchValues = [...values];
+        if (cursor) {
+          batchConditions.push("(updated_at < ? OR (updated_at = ? AND task_id < ?))");
+          batchValues.push(cursor.updated_at, cursor.updated_at, cursor.task_id);
+        }
+        const rows = db.prepare(
+          `SELECT task_id, context_id, owner_id, initial_message_id, input_hash,
+                  session_id, task_json, canceled_at, created_at, updated_at
+             FROM a2a_tasks WHERE ${batchConditions.join(" AND ")}
+             ORDER BY updated_at DESC, task_id DESC LIMIT ?`,
+        ).all(...batchValues, PROJECTED_LIST_BATCH_SIZE) as A2ATaskRow[];
+        if (rows.length === 0) break;
+        const projected = await Promise.all(rows.map(async (row) => {
+          const record = recordFromRow(row);
+          return this.projector ? this.projector(record) : record.task;
+        }));
+        for (const task of projected) {
+          if (!matchesListFilters(task, params)) continue;
+          if (matched >= offset && page.length < size) page.push(task);
+          matched += 1;
+        }
+        if (rows.length < PROJECTED_LIST_BATCH_SIZE) break;
+        const last = rows.at(-1)!;
+        cursor = { updated_at: last.updated_at, task_id: last.task_id };
       }
-      return true;
-    });
-    const filteredTotal = totalSize ?? filtered.length;
-    const page = requiresProjectedFiltering ? filtered.slice(offset, offset + size) : filtered;
+      filteredTotal = matched;
+    } else {
+      filteredTotal = (db.prepare(
+        `SELECT COUNT(*) AS count FROM a2a_tasks WHERE ${where}`,
+      ).get(...values) as { count: number }).count;
+      const rows = db.prepare(
+        `SELECT task_id, context_id, owner_id, initial_message_id, input_hash,
+                session_id, task_json, canceled_at, created_at, updated_at
+           FROM a2a_tasks WHERE ${where} ORDER BY updated_at DESC, task_id DESC
+           LIMIT ? OFFSET ?`,
+      ).all(...values, size, offset) as A2ATaskRow[];
+      const projected = await Promise.all(rows.map(async (row) => {
+        const record = recordFromRow(row);
+        return this.projector ? this.projector(record) : record.task;
+      }));
+      page = projected.filter((task) => matchesListFilters(task, params));
+    }
     const tasks = page.map((task) => ({
       ...limitHistory(task, params.historyLength),
       artifacts: params.includeArtifacts === true ? task.artifacts : [],

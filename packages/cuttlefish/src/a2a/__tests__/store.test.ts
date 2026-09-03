@@ -217,4 +217,57 @@ describe("SqliteA2ATaskStore", () => {
     expect(projector).toHaveBeenCalledTimes(4);
     db.close();
   });
+
+  it("bounds dynamic projection batches while retaining exact totals", async () => {
+    const db = database();
+    let active = 0;
+    let maxActive = 0;
+    const projector = vi.fn(async (record: A2ATaskRecord) => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await Promise.resolve();
+      active -= 1;
+      return {
+        ...record.task,
+        status: {
+          state: record.initialMessageId.includes("-match-")
+            ? TaskState.TASK_STATE_COMPLETED
+            : TaskState.TASK_STATE_WORKING,
+          message: record.task.status?.message,
+          timestamp: record.task.status?.timestamp ?? "2026-09-02T00:00:00.000Z",
+        },
+      };
+    });
+    const store = new SqliteA2ATaskStore(() => db, projector);
+    const owner = context("partner-a");
+    for (let index = 0; index < 205; index += 1) {
+      store.reserveInitial({
+        ...message(`candidate-${index}`, `candidate-${index % 2 === 0 ? "match" : "miss"}-${index}`),
+        contextId: "batched-context",
+      }, owner);
+    }
+    for (let index = 0; index < 25; index += 1) {
+      store.reserveInitial({
+        ...message(`excluded-${index}`, `excluded-match-${index}`),
+        contextId: "other-context",
+      }, owner);
+    }
+
+    const result = await store.list({
+      tenant: "",
+      contextId: "batched-context",
+      status: TaskState.TASK_STATE_COMPLETED,
+      pageSize: 7,
+      pageToken: "",
+      statusTimestampAfter: undefined,
+    }, owner);
+
+    expect(result).toMatchObject({ pageSize: 7, totalSize: 103 });
+    expect(result.tasks).toHaveLength(7);
+    expect(result.nextPageToken).not.toBe("");
+    expect(projector).toHaveBeenCalledTimes(205);
+    expect(maxActive).toBeLessThanOrEqual(100);
+    expect(maxActive).toBeGreaterThan(1);
+    db.close();
+  });
 });

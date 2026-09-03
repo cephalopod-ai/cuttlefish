@@ -128,6 +128,18 @@ development peer, set `allowPrivateHosts: true` and list its exact loopback or
 private origin. Credential-bearing public peers must use HTTPS; cleartext HTTP
 is rejected in both configuration validation and the runtime client.
 
+A2A 1.0 permits, but does not require, a server to deduplicate repeated
+Send Message operations by `messageId`. Cuttlefish therefore does not replay an
+unknown outbound send outcome by default. Set
+`messageIdDeduplication: guaranteed` on a destination only when that peer's
+operator or contract explicitly guarantees this behavior. The opt-in allows at
+most three durable reconciliation attempts under the same message ID; permanent
+failures settle visibly instead of retrying forever. Cuttlefish also pins the
+canonical Agent Card URL in the request checkpoint and revalidates both that
+peer identity and the current deduplication setting before every taskless
+replay. Removing the guarantee or reassigning the destination ID fails the
+local session without sending the stored request.
+
 The optional `services` mapping makes selected remote skills available through
 the existing service directory and `POST /api/org/cross-request`. A normal
 internal provider wins if it has the same service name. External requests still
@@ -137,14 +149,23 @@ the managed file and lineage path; text, data, and URL artifact parts are
 registered as metadata-only lineage records while their readable content is
 included in the child session. Stopping the local child aborts polling and sends
 an A2A cancellation to the stored remote task; if completion races cancellation,
-the remote terminal response determines the settled local state. On gateway
-startup, running outbound cross-request sessions with a stored destination and
-remote task ID resume polling that task without sending the original request
-again. Duplicate recovery attempts in one process coalesce. The stored mapping
-also lets a later local stop request propagate cancellation after restart. If the
-gateway stops before the peer returns a task ID, Cuttlefish cannot identify remote
-work to resume or cancel; the local session fails visibly rather than replaying the
-request.
+the remote terminal response determines the settled local state. Before the
+first network attempt, Cuttlefish stores the request and a stable A2A message ID
+on the local child session. On gateway startup, a request with a stored remote
+task ID resumes polling without sending again. A pre-task-ID request is replayed
+only when its destination was explicitly configured with
+`messageIdDeduplication: guaranteed`; otherwise an unknown outcome fails visibly
+without a second send. The checkpointed Agent Card URL must still match the
+current destination and the current configuration must retain the guarantee.
+Under that opt-in, cancellation requested before task identity is durable:
+recovery obtains the task identity with the same message ID and then sends one
+coalesced cancellation path. Abrupt crashes and graceful gateway restarts
+preserve eligible checkpoints and their run-ledger ownership.
+Duplicate recovery attempts in one process coalesce, and remote progress/result
+messages use deterministic local row IDs so replay after a crash does not
+duplicate them. Sessions created by an older build without either a task ID or
+the durable request checkpoint remain non-recoverable and fail visibly during
+the ordinary stale-session sweep.
 
 ## Outbound operator API
 

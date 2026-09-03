@@ -147,6 +147,8 @@ export interface A2ADestinationConfig {
   allowedOrigins?: string[];
   /** Explicit local-development escape hatch; private/reserved hosts are blocked by default. */
   allowPrivateHosts?: boolean;
+  /** Operator assertion that repeated sends with one messageId return the same logical request. */
+  messageIdDeduplication?: "guaranteed";
   /** Per-request network deadline for card, task, and stream operations. */
   timeoutMs?: number;
 }

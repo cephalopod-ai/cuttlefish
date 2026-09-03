@@ -52,6 +52,7 @@ describe("A2A configuration", () => {
         services: [{ name: "external-review", description: "Review through MADA", skillId: "review-code" }],
         allowedOrigins: ["http://127.0.0.1:9999"],
         allowPrivateHosts: true,
+        messageIdDeduplication: "guaranteed",
         timeoutMs: 30_000,
       }],
     })).toEqual([]);
@@ -83,6 +84,18 @@ describe("A2A configuration", () => {
         allowedSkills: ["review-code"],
       }],
     })).toContain("a2a.destinations[0].credentialType must be bearer or x-api-key");
+  });
+
+  it("rejects ambiguous message-ID deduplication assertions", () => {
+    expect(problems({
+      destinations: [{
+        id: "peer",
+        agentCardUrl: "https://peer.example/card",
+        token: "0123456789abcdef",
+        allowedSkills: ["review-code"],
+        messageIdDeduplication: "assumed",
+      }],
+    })).toContain("a2a.destinations[0].messageIdDeduplication must be guaranteed when set");
   });
 
   it("rejects cleartext credential transport outside explicit local development", () => {

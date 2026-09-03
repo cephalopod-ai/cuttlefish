@@ -15,6 +15,7 @@ interface GatewayCleanupDeps {
   connectors: Connector[];
   gatewayInfoFile: string;
   getRunningSessions: () => Array<{ id: string }>;
+  getPreservedRunningSessionIds?: () => ReadonlySet<string>;
   hookRegistry: HookRegistry;
   interruptSession: (sessionId: string) => void;
   killEngines: () => void;
@@ -46,6 +47,7 @@ export function createGatewayCleanup({
   connectors,
   gatewayInfoFile,
   getRunningSessions,
+  getPreservedRunningSessionIds,
   hookRegistry,
   interruptSession,
   killEngines,
@@ -134,7 +136,12 @@ export function createGatewayCleanup({
 
     try {
       const runningSessions = getRunningSessions();
+      const preservedSessionIds = getPreservedRunningSessionIds?.() ?? new Set<string>();
       for (const session of runningSessions) {
+        if (preservedSessionIds.has(session.id)) {
+          logger.info(`Preserved session ${session.id} for domain recovery after restart`);
+          continue;
+        }
         try {
           interruptSession(session.id);
           logger.info(`Marked session ${session.id} as interrupted for resume`);
