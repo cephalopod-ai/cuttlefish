@@ -76,7 +76,7 @@ describe("requestDualModelVerdict — fail-closed structure", () => {
       {} as ApiContext,
     );
     expect(result.authorized).toBe(false);
-    expect(result.claude).toMatchObject({ rung: "claude-fable-5", outcome: "error" });
+    expect(result.claude).toMatchObject({ rung: "claude-fable-5-1", outcome: "error" });
     expect(result.codex).toMatchObject({ rung: "gpt-5.6-sol", outcome: "error" });
   });
 

@@ -10,8 +10,9 @@ import { resolveBin } from "../shared/resolve-bin.js";
 import { tailTranscriptLines, type TranscriptTailer } from "./transcript-tailer.js";
 import { stripDisallowedCliFlags } from "../shared/cli-flag-policy.js";
 import { capAppend, ENGINE_LINE_BUF_MAX, ENGINE_OUTPUT_MAX } from "../shared/cap-append.js";
+import { GROK_DEFAULT_MODEL } from "../shared/grok-models.js";
 
-export const GROK_DEFAULT_MODEL = "grok-4.5";
+export { GROK_DEFAULT_MODEL };
 const LEGACY_GROK_BUILD_MODEL = "grok-build";
 export const GROK_SESSIONS_DIR = path.join(os.homedir(), ".grok", "sessions");
 

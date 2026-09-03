@@ -93,10 +93,10 @@ function buildResumePrompt(command: string, triggers: SecurityReviewTrigger[]): 
  *  trail must never claim human sign-off that didn't happen. */
 function buildAutonomousResumePrompt(command: string, triggers: SecurityReviewTrigger[], verdict: DualModelVerdictResult): string {
   return [
-    `Two independent AI reviewers (claude-fable-5, gpt-5.6-sol) both approved reconsidering this blocked Bash command:`,
+    `Two independent AI reviewers (claude-fable-5-1, gpt-5.6-sol) both approved reconsidering this blocked Bash command:`,
     command,
     `Risk categories: ${triggers.join(", ")}.`,
-    `claude-fable-5: ${verdict.claude.reason || "(no reason given)"}`,
+    `claude-fable-5-1: ${verdict.claude.reason || "(no reason given)"}`,
     `gpt-5.6-sol: ${verdict.codex.reason || "(no reason given)"}`,
     "Re-check whether the action is still necessary, explain the justification briefly, and only then retry the command if it remains appropriate.",
   ].join("\n");

@@ -520,13 +520,13 @@ function buildConfigContext(config: CuttlefishConfig, gatewayUrl: string, sessio
     lines.push(`- Codex model: ${config.engines.codex.model}`);
   }
   if (config.engines.antigravity) {
-    lines.push(`- Antigravity model: ${config.engines.antigravity.model ?? "Gemini 3.5 Flash (Medium)"}`);
+    lines.push(`- Antigravity model: ${config.engines.antigravity.model ?? "gemini-3.8-flash-medium"}`);
   }
   if (config.engines.grok) {
     lines.push(`- Grok model: ${describeGrokModelForOperator(config.engines.grok.model)}`);
   }
   if (config.engines.ollama) {
-    lines.push(`- Ollama model: ${config.engines.ollama.model ?? "gemma4"}`);
+    lines.push(`- Ollama model: ${config.engines.ollama.model ?? "gemma4:26b"}`);
   }
   if (config.engines.kilo) {
     lines.push(`- Kilo model: ${config.engines.kilo.model ?? "default"}`);

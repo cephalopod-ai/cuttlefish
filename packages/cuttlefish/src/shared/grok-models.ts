@@ -3,10 +3,11 @@ import type { ModelInfo } from "./types.js";
 import { logger } from "./logger.js";
 
 export const GROK_EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"];
+export const GROK_DEFAULT_MODEL = "grok-4.6";
 
 const GROK_MODEL_LABELS: Record<string, string> = {
+  "grok-4.6": "Grok 4.6",
   "grok-4.5": "Grok 4.5",
-  "grok-composer-2.5-fast": "Grok Composer 2.5 Fast",
 };
 
 export interface GrokModelDiscovery {
@@ -24,8 +25,8 @@ export function labelGrokModel(id: string): string {
  * retired id as though it were the model that will run.
  */
 export function describeGrokModelForOperator(model?: string): string {
-  if (model === "grok-build") return "grok-4.5 (CLI default via legacy grok-build compatibility)";
-  return model?.trim() || "grok-4.5";
+  if (model === "grok-build") return `${GROK_DEFAULT_MODEL} (CLI default via legacy grok-build compatibility)`;
+  return model?.trim() || GROK_DEFAULT_MODEL;
 }
 
 function grokModelInfo(id: string): ModelInfo {
@@ -38,20 +39,20 @@ function grokModelInfo(id: string): ModelInfo {
 }
 
 export function knownGrokModels(pinned?: string): GrokModelDiscovery {
-  const ids = ["grok-4.5", "grok-composer-2.5-fast"];
+  const ids = ["grok-4.6", "grok-4.5"];
   if (pinned && !ids.includes(pinned)) ids.unshift(pinned);
   return {
-    defaultModel: pinned || "grok-4.5",
+    defaultModel: pinned || GROK_DEFAULT_MODEL,
     models: ids.map(grokModelInfo),
   };
 }
 
 /** Parse `grok models` output:
  *
- *   Default model: grok-4.5
+ *   Default model: grok-4.6
  *   Available models:
- *     * grok-4.5 (default)
- *     - grok-composer-2.5-fast
+ *     * grok-4.6 (default)
+ *     - grok-4.5
  */
 export function parseGrokModels(output: string): GrokModelDiscovery {
   const models: ModelInfo[] = [];

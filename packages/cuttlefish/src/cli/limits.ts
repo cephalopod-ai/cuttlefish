@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { loadConfig } from "../shared/config.js";
 import { CUTTLEFISH_HOME } from "../shared/paths.js";
 import { collectEngineLimits } from "../shared/engine-limits.js";
-import { refreshCodexModels, refreshGrokModels, refreshPiModels, refreshHermesModels } from "../shared/models.js";
+import { refreshAntigravityModels, refreshCodexModels, refreshGrokModels, refreshPiModels, refreshHermesModels, refreshOllamaModels } from "../shared/models.js";
 import type { EngineLimitEngineSnapshot, EngineLimitWindow } from "../shared/types.js";
 import { printCliError } from "./output.js";
 
@@ -85,9 +85,11 @@ export async function runLimits(opts: LimitsOptions = {}): Promise<void> {
   const config = loadConfig();
   const refreshOptions = opts.json ? { quiet: true } : undefined;
   await refreshCodexModels(config, refreshOptions);
+  await refreshAntigravityModels(config, refreshOptions);
   await refreshPiModels(config, refreshOptions);
   await refreshGrokModels(config, refreshOptions);
   await refreshHermesModels(config, refreshOptions);
+  await refreshOllamaModels(config, refreshOptions);
   const snapshot = await collectEngineLimits(config, { engine: opts.engine });
 
   if (opts.json) {

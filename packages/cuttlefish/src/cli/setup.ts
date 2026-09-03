@@ -271,20 +271,29 @@ engines:
   default: claude
   claude:
     bin: claude
-    model: claude-fable-5
+    model: claude-fable-5-1
     effortLevel: medium
   codex:
     bin: codex
     model: gpt-5.6-sol
+  antigravity:
+    bin: agy
+    model: gemini-3.8-flash-medium
   grok:
     bin: grok
-    model: grok-4.5
+    model: grok-4.6
+  pi:
+    bin: pi
+    model: ollama/gemma4:12b
+  kiro:
+    bin: kiro-cli
+    model: auto
   hermes:
     bin: hermes
     model: openai-codex:gpt-5.5
   ollama:
     bin: ollama
-    model: gemma4
+    model: gemma4:26b
   kilo:
     bin: kilo
     model: default
@@ -300,10 +309,10 @@ engines:
 # to synthesize a minimal registry from engines.<name>.model.
 models:
   claude:
-    default: claude-fable-5
+    default: claude-fable-5-1
     effortMechanism: claude-flag
     models:
-      - { id: claude-fable-5, label: "Fable 5", supportsEffort: true, effortLevels: [low, medium, high], contextWindow: 1000000 }
+      - { id: claude-fable-5-1, label: "Fable 5.1", supportsEffort: true, effortLevels: [low, medium, high], contextWindow: 1000000 }
       - { id: claude-opus-5, label: "Opus 5", supportsEffort: true, effortLevels: [low, medium, high, xhigh, max], contextWindow: 1000000 }
       - { id: opus, label: "Opus (latest alias)", supportsEffort: true, effortLevels: [low, medium, high, xhigh, max], contextWindow: 1000000 }
       - { id: claude-sonnet-5, label: "Sonnet 5", supportsEffort: true, effortLevels: [low, medium, high], contextWindow: 1000000 }
@@ -312,22 +321,24 @@ models:
     default: gpt-5.6-sol
     effortMechanism: codex-config
     models:
-      - { id: gpt-5.6-sol, label: "GPT-5.6 Sol", supportsEffort: true, effortLevels: [low, medium, high, xhigh], contextWindow: 1000000 }
-      - { id: gpt-5.6-terra, label: "GPT-5.6 Terra", supportsEffort: true, effortLevels: [low, medium, high, xhigh], contextWindow: 1000000 }
-      - { id: gpt-5.6-luna, label: "GPT-5.6 Luna", supportsEffort: true, effortLevels: [low, medium, high], contextWindow: 200000 }
-      - { id: gpt-5.4-mini, label: "GPT-5.4 Mini", supportsEffort: true, effortLevels: [low, medium, high], contextWindow: 200000 }
-      - { id: gpt-5.3-codex-spark, label: "GPT-5.3 Codex Spark", supportsEffort: false, effortLevels: [], contextWindow: 128000 }
+      - { id: gpt-5.6-sol, label: "GPT-5.6 Sol", supportsEffort: true, effortLevels: [low, medium, high, xhigh, max, ultra], contextWindow: 1000000 }
+      - { id: gpt-5.6-terra, label: "GPT-5.6 Terra", supportsEffort: true, effortLevels: [low, medium, high, xhigh, max, ultra], contextWindow: 1000000 }
+      - { id: gpt-5.6-luna, label: "GPT-5.6 Luna", supportsEffort: true, effortLevels: [low, medium, high, xhigh, max], contextWindow: 200000 }
+      - { id: gpt-5.5, label: "GPT-5.5", supportsEffort: true, effortLevels: [low, medium, high, xhigh] }
+      - { id: gpt-5.4, label: "GPT-5.4", supportsEffort: true, effortLevels: [low, medium, high, xhigh] }
+      - { id: gpt-5.4-mini, label: "GPT-5.4 Mini", supportsEffort: true, effortLevels: [low, medium, high, xhigh], contextWindow: 200000 }
+      - { id: gpt-5.3-codex-spark, label: "GPT-5.3 Codex Spark", supportsEffort: true, effortLevels: [low, medium, high, xhigh], contextWindow: 128000 }
   grok:
-    default: grok-4.5
+    default: grok-4.6
     effortMechanism: grok-flag
     models:
+      - { id: grok-4.6, label: "Grok 4.6", supportsEffort: true, effortLevels: [low, medium, high, xhigh, max] }
       - { id: grok-4.5, label: "Grok 4.5", supportsEffort: true, effortLevels: [low, medium, high, xhigh, max] }
-      - { id: grok-composer-2.5-fast, label: "Grok Composer 2.5 Fast", supportsEffort: true, effortLevels: [low, medium, high, xhigh, max], contextWindow: 256000 }
   ollama:
-    default: gemma4
+    default: gemma4:26b
     effortMechanism: none
     models:
-      - { id: gemma4, label: "Gemma 4", supportsEffort: false, effortLevels: [] }
+      - { id: gemma4:26b, label: "Gemma 4 26B", supportsEffort: false, effortLevels: [] }
   kilo:
     default: default
     effortMechanism: none
@@ -347,22 +358,28 @@ models:
       - { id: codestral-2.2, label: "Codestral 2.2", supportsEffort: false, effortLevels: [] }
       - { id: mistral-small-3.5, label: "Mistral Small 3.5", supportsEffort: false, effortLevels: [] }
   antigravity:
-    default: "Gemini 3.5 Flash (Medium)"
+    default: gemini-3.8-flash-medium
     effortMechanism: none
     models:
-      - { id: "Gemini 3.5 Flash (Medium)", label: "Gemini 3.5 Flash Medium", supportsEffort: false, effortLevels: [], contextWindow: 1000000 }
-      - { id: "Gemini 3.5 Flash (High)", label: "Gemini 3.5 Flash High", supportsEffort: false, effortLevels: [], contextWindow: 1000000 }
-      - { id: "Gemini 3.5 Flash (Low)", label: "Gemini 3.5 Flash Low", supportsEffort: false, effortLevels: [], contextWindow: 1000000 }
-      - { id: "Gemini 3.1 Pro (High)", label: "Gemini 3.1 Pro High", supportsEffort: false, effortLevels: [], contextWindow: 1000000 }
-      - { id: "Gemini 3.1 Pro (Low)", label: "Gemini 3.1 Pro Low", supportsEffort: false, effortLevels: [], contextWindow: 1000000 }
-      - { id: "Claude Sonnet 4.6 (Thinking)", label: "Claude Sonnet 4.6 Thinking", supportsEffort: false, effortLevels: [], contextWindow: 200000 }
-      - { id: "Claude Opus 4.6 (Thinking)", label: "Claude Opus 4.6 Thinking", supportsEffort: false, effortLevels: [], contextWindow: 200000 }
-      - { id: "GPT-OSS 120B (Medium)", label: "GPT-OSS 120B Medium", supportsEffort: false, effortLevels: [], contextWindow: 131072 }
+      - { id: gemini-3.8-flash-high, label: "Gemini 3.8 Flash (High)", supportsEffort: false, effortLevels: [], contextWindow: 1000000 }
+      - { id: gemini-3.8-flash-medium, label: "Gemini 3.8 Flash (Medium)", supportsEffort: false, effortLevels: [], contextWindow: 1000000 }
+      - { id: gemini-3.8-flash-low, label: "Gemini 3.8 Flash (Low)", supportsEffort: false, effortLevels: [], contextWindow: 1000000 }
+      - { id: gemini-3.7-flash-high, label: "Gemini 3.7 Flash (High)", supportsEffort: false, effortLevels: [], contextWindow: 1000000 }
+      - { id: gemini-3.7-flash-medium, label: "Gemini 3.7 Flash (Medium)", supportsEffort: false, effortLevels: [], contextWindow: 1000000 }
+      - { id: gemini-3.7-flash-low, label: "Gemini 3.7 Flash (Low)", supportsEffort: false, effortLevels: [], contextWindow: 1000000 }
+      - { id: gemini-3.6-flash-high, label: "Gemini 3.6 Flash (High)", supportsEffort: false, effortLevels: [], contextWindow: 1000000 }
+      - { id: gemini-3.6-flash-medium, label: "Gemini 3.6 Flash (Medium)", supportsEffort: false, effortLevels: [], contextWindow: 1000000 }
+      - { id: gemini-3.6-flash-low, label: "Gemini 3.6 Flash (Low)", supportsEffort: false, effortLevels: [], contextWindow: 1000000 }
+      - { id: gemini-3.1-pro-high, label: "Gemini 3.1 Pro (High)", supportsEffort: false, effortLevels: [], contextWindow: 1000000 }
+      - { id: gemini-3.1-pro-low, label: "Gemini 3.1 Pro (Low)", supportsEffort: false, effortLevels: [], contextWindow: 1000000 }
+      - { id: claude-sonnet-4-6, label: "Claude Sonnet 4.6 (Thinking)", supportsEffort: false, effortLevels: [], contextWindow: 200000 }
+      - { id: claude-opus-4-6-thinking, label: "Claude Opus 4.6 (Thinking)", supportsEffort: false, effortLevels: [], contextWindow: 200000 }
+      - { id: gpt-oss-120b-medium, label: "GPT-OSS 120B (Medium)", supportsEffort: false, effortLevels: [], contextWindow: 131072 }
 modelFallback:
   enabled: true
   defaultMode: auto
   globalChain:
-    - { engine: claude, model: claude-opus-5, effortLevel: max, reason: "COO fallback when Fable 5 cannot continue" }
+    - { engine: claude, model: claude-opus-5, effortLevel: max, reason: "COO fallback when Fable 5.1 cannot continue" }
 connectors: {}
 portal: {}
 
@@ -447,13 +464,38 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
     info("Install with: npm install -g @openai/codex");
   }
 
-  // 4. Check for grok binary
+  // 4. Check for Antigravity binary
+  const antigravityPath = whichBin("agy");
+  if (antigravityPath) {
+    ok(`agy found at ${antigravityPath}`);
+  } else {
+    fail("Antigravity unavailable (missing or broken)");
+    info("Install the Antigravity CLI (agy).");
+  }
+
+  // 5. Check for grok binary
   const grokPath = whichBin("grok");
   if (grokPath) {
     ok(`grok found at ${grokPath}`);
   } else {
     fail("grok unavailable (missing or broken)");
     info("Install with: curl -fsSL https://x.ai/cli/install.sh | bash (or npm install -g @xai-official/grok)");
+  }
+
+  const piPath = whichBin("pi");
+  if (piPath) {
+    ok(`pi found at ${piPath}`);
+  } else {
+    fail("pi unavailable (missing or broken)");
+    info("Install the Pi CLI.");
+  }
+
+  const kiroPath = whichBin("kiro-cli");
+  if (kiroPath) {
+    ok(`kiro-cli found at ${kiroPath}`);
+  } else {
+    fail("kiro unavailable (missing or broken)");
+    info("Install kiro-cli, then authenticate it or set KIRO_API_KEY.");
   }
 
   // 4a. Check for hermes binary
@@ -503,9 +545,9 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
 
   // 5. Loudly warn if NO engine is installed — the gateway will start, but it
   //     cannot run any session until at least one engine CLI is on PATH.
-  if (!claudePath && !codexPath && !grokPath && !hermesPath && !ollamaPath && !kiloPath && !aiderPath && !vibePath) {
+  if (!claudePath && !codexPath && !antigravityPath && !grokPath && !piPath && !kiroPath && !hermesPath && !ollamaPath && !kiloPath && !aiderPath && !vibePath) {
     console.log("");
-    warn("No AI engine CLI found (claude, codex, grok, hermes, ollama, kilo, aider, or vibe).");
+    warn("No AI engine CLI found (claude, codex, antigravity, grok, pi, kiro, hermes, ollama, kilo, aider, or vibe).");
     warn("The gateway will start, but sessions will fail until you install one above.");
   }
 
@@ -521,10 +563,25 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
     if (ver) ok(`codex --version: ${ver}`);
     else warn("codex --version failed");
   }
+  if (antigravityPath) {
+    const ver = runVersion(antigravityPath);
+    if (ver) ok(`agy --version: ${ver}`);
+    else warn("agy --version failed");
+  }
   if (grokPath) {
     const ver = runVersion(grokPath);
     if (ver) ok(`grok --version: ${ver}`);
     else warn("grok --version failed");
+  }
+  if (piPath) {
+    const ver = runVersion(piPath);
+    if (ver) ok(`pi --version: ${ver}`);
+    else warn("pi --version failed");
+  }
+  if (kiroPath) {
+    const ver = runVersion(kiroPath);
+    if (ver) ok(`kiro-cli --version: ${ver}`);
+    else warn("kiro-cli --version failed");
   }
   if (hermesPath) {
     const ver = runVersion(hermesPath);
@@ -553,13 +610,16 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
   }
   // A successful --version does NOT mean the engine is authenticated — the #1
   // silent fresh-install failure. Nudge the login step explicitly.
-  if (claudePath || codexPath || grokPath || hermesPath || ollamaPath || kiloPath || aiderPath || vibePath) {
+  if (claudePath || codexPath || antigravityPath || grokPath || piPath || kiroPath || hermesPath || ollamaPath || kiloPath || aiderPath || vibePath) {
     warn("A successful --version does NOT mean the engine is logged in.");
     if (claudePath) info("First run? Launch `claude` once and use /login to authenticate.");
     if (codexPath) info("First run? Launch `codex` once and sign in to authenticate.");
+    if (antigravityPath) info("First run? Launch `agy` once and sign in with Google.");
     if (grokPath) info("First run? Launch `grok` once to authenticate, or configure XAI_API_KEY.");
+    if (piPath) info("First run? Launch `pi` once and configure a provider.");
+    if (kiroPath) info("First run? Launch `kiro-cli` once to authenticate, or set KIRO_API_KEY.");
     if (hermesPath) info("First run? Launch `hermes` once to authenticate, or configure your API key.");
-    if (ollamaPath) info("First run? Ensure Ollama is running and pull a model, e.g. `ollama pull gemma4`.");
+    if (ollamaPath) info("First run? Ensure Ollama is running and pull a model, e.g. `ollama pull gemma4:26b`.");
     if (kiloPath) info("First run? Launch `kilo` once and use /connect to add a provider and model.");
     if (aiderPath) info("First run? Set a provider API key for aider, e.g. ANTHROPIC_API_KEY or OPENAI_API_KEY.");
     if (vibePath) info("First run? Run `vibe --setup` to authenticate with Mistral.");
@@ -594,7 +654,10 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
   const installedEngines: SetupEngine[] = [
     claudePath ? "claude" : undefined,
     codexPath ? "codex" : undefined,
+    antigravityPath ? "antigravity" : undefined,
     grokPath ? "grok" : undefined,
+    piPath ? "pi" : undefined,
+    kiroPath ? "kiro" : undefined,
     hermesPath ? "hermes" : undefined,
     ollamaPath ? "ollama" : undefined,
     kiloPath ? "kilo" : undefined,

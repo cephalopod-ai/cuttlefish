@@ -51,7 +51,7 @@ export const DEFAULT_MODEL_LADDER: ModelLadder = [
   // Tier 0 — small / cheap / fast
   [
     { engine: "claude", model: "claude-haiku-4-5" },
-    { engine: "antigravity", model: "Gemini 3.5 Flash (High)" },
+    { engine: "antigravity", model: "gemini-3.8-flash-high" },
     { engine: "pi", model: "purdue/qwen3-coder:latest" },
     { engine: "codex", model: "gpt-5.4-mini" },
     { engine: "codex", model: "gpt-5.3-codex-spark" },
@@ -66,7 +66,7 @@ export const DEFAULT_MODEL_LADDER: ModelLadder = [
     { engine: "codex", model: "gpt-5.5" },
     { engine: "claude", model: "claude-opus-5" },
     { engine: "claude", model: "opus" },
-    { engine: "antigravity", model: "Gemini 3.1 Pro (High)" },
+    { engine: "antigravity", model: "gemini-3.1-pro-high" },
   ],
 ];
 

@@ -29,9 +29,13 @@
 ### Default COO execution profile
 
 - The virtual portal COO mirrors the saved default engine, model, and effort
-  selection. Fresh installations seed Claude Fable 5 at Medium effort, while
+  selection. Fresh installations seed Claude Fable 5.1 at Medium effort, while
   onboarding and Settings let the operator select another engine or model and
   retain that choice.
+- Fresh setup probes and seeds all 11 registered engine adapters. Codex,
+  Antigravity, Pi, Grok, Hermes, Ollama, and Aider refresh their model registry from
+  installed CLI or provider-environment discovery; the dashboard consumes the
+  resolved registry rather than maintaining a separate current-model list.
 - Fallback policy is configured separately from the selected primary model;
   an employee's own fallback policy remains the first choice for that employee.
 
@@ -585,7 +589,8 @@
   other roles, stale/replayed tokens, and model changes fail authorization.
 - Delegated human authority is restricted to `codex/gpt-5.5`,
   `codex/gpt-5.6-sol`, Claude Opus 5 (`claude-opus-5`, `claude-opus-4-8`, or `opus`), and
-  Claude Fable (`claude-fable-5`). Decisions record an actor such as
+  Claude Fable (`claude-fable-5-1`, with `claude-fable-5` retained for existing
+  configurations). Decisions record an actor such as
   `operator-delegate:cuttlefish-coo:<sessionId>` or
   `operator-delegate:program-manager:<sessionId>`.
 - The `/approvals` web UI (`packages/web/src/routes/approvals/page.tsx`) has been

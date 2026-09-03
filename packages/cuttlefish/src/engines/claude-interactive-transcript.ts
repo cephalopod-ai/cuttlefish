@@ -11,6 +11,7 @@ interface TranscriptUsage {
 
 // $/million tokens. Conservative defaults.
 const MODEL_PRICES: Record<string, { in: number; out: number }> = {
+  "claude-fable-5-1": { in: 10, out: 50 },
   "claude-fable-5": { in: 10, out: 50 },
   // The current Opus tier prices at 5/25, not the 15/75 of the retired Opus 4.
   "claude-opus-5": { in: 5, out: 25 },

@@ -29,16 +29,26 @@ describe("fresh-install: talk seeding + config guidance", () => {
     );
   });
 
-  it("seeds the COO on Fable 5 Medium with Opus 5 Max as its fallback", () => {
+  it("seeds the COO on Fable 5.1 Medium with Opus 5 Max as its fallback", () => {
     const setup = readFileSync(SETUP, "utf-8");
-    expect(setup).toMatch(/claude:\s+bin: claude\s+model: claude-fable-5\s+effortLevel: medium/s);
-    expect(setup).toMatch(/claude:\s+default: claude-fable-5/s);
+    expect(setup).toMatch(/claude:\s+bin: claude\s+model: claude-fable-5-1\s+effortLevel: medium/s);
+    expect(setup).toMatch(/claude:\s+default: claude-fable-5-1/s);
     expect(setup).toMatch(/id: claude-opus-5, label: "Opus 5".*effortLevels: \[low, medium, high, xhigh, max\]/);
     // The alias row is advertised as the latest Opus, so its effort ladder must
     // match the pinned row — `resolveModelAlias` preserves the literal `opus`
     // against this registry, and effort validation then reads THIS row.
     expect(setup).toMatch(/id: opus, label: "Opus \(latest alias\)".*effortLevels: \[low, medium, high, xhigh, max\]/);
     expect(setup).toMatch(/globalChain:\s+- \{ engine: claude, model: claude-opus-5, effortLevel: max/s);
+  });
+
+  it("seeds every registered engine and canonical Antigravity model ids", () => {
+    const setup = readFileSync(SETUP, "utf-8");
+    for (const engine of ["claude", "codex", "antigravity", "grok", "pi", "kiro", "hermes", "ollama", "kilo", "aider", "vibe"]) {
+      expect(setup).toMatch(new RegExp(`\\n  ${engine}:`));
+    }
+    expect(setup).toMatch(/antigravity:\s+bin: agy\s+model: gemini-3\.8-flash-medium/s);
+    expect(setup).toMatch(/id: gemini-3\.8-flash-high, label: "Gemini 3\.8 Flash \(High\)"/);
+    expect(setup).not.toMatch(/Gemini 3\.5 Flash/);
   });
 
   it("guides engine authentication after the version probe", () => {

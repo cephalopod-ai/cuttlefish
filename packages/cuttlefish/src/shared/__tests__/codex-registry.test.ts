@@ -130,7 +130,7 @@ describe("Codex model registry refresh", () => {
     expect(contextWindowForModel(config, "codex", "gpt-5.5")).toBeUndefined();
   });
 
-  it("keeps the pinned Codex model as a fallback entry when discovery omits it", async () => {
+  it("does not advertise a pinned Codex model that discovery omits", async () => {
     discoverCodexModels.mockResolvedValue({
       defaultModel: "gpt-5.6",
       models: [
@@ -144,14 +144,13 @@ describe("Codex model registry refresh", () => {
     await refreshCodexModels(config);
     const entry = getModelRegistry(config).codex;
 
-    expect(entry.defaultModel).toBe("gpt-5.5");
+    expect(entry.defaultModel).toBe("gpt-5.6");
     expect(entry.models).toEqual([
       { id: "gpt-5.6", label: "GPT-5.6", supportsEffort: true, effortLevels: ["low", "high"] },
-      { id: "gpt-5.5", label: "gpt-5.5", supportsEffort: false, effortLevels: [] },
     ]);
   });
 
-  it("preserves explicit pinned Codex capabilities from config when discovery omits that model", async () => {
+  it("does not append a configured Codex model that discovery omits", async () => {
     discoverCodexModels.mockResolvedValue({
       defaultModel: "gpt-5.6",
       models: [
@@ -173,12 +172,11 @@ describe("Codex model registry refresh", () => {
     await refreshCodexModels(config);
     const entry = getModelRegistry(config).codex;
 
-    expect(entry.defaultModel).toBe("gpt-5.5");
+    expect(entry.defaultModel).toBe("gpt-5.6");
     expect(entry.models).toEqual([
       { id: "gpt-5.6", label: "GPT-5.6", supportsEffort: true, effortLevels: ["low", "high"] },
-      { id: "gpt-5.5", label: "Pinned GPT-5.5", supportsEffort: true, effortLevels: ["medium"], contextWindow: 1050000 },
     ]);
-    expect(contextWindowForModel(config, "codex", "gpt-5.5")).toBe(1050000);
+    expect(contextWindowForModel(config, "codex", "gpt-5.5")).toBeUndefined();
   });
 
   it("falls back to the configured/synthesized Codex entry when discovery fails, preserving contextWindow", async () => {

@@ -39,15 +39,26 @@ function readYaml(subdir: string, filename: string): any {
   return yaml.load(fs.readFileSync(path.join(tmpDir, subdir, filename), "utf-8"));
 }
 
-// Minimal config with two claude models so we can exercise valid/invalid model changes.
+// Minimal config with explicit Claude and Codex catalogs so model validation
+// does not depend on whichever provider default the shipped setup currently uses.
 const testConfig = {
-  engines: { default: "claude" },
+  engines: {
+    default: "claude",
+    claude: { bin: "claude", model: "opus" },
+    codex: { bin: "codex", model: "gpt-5.5" },
+  },
   models: {
     claude: {
       default: "opus",
       models: [
         { id: "opus", supportsEffort: true, effortLevels: ["low", "medium", "high"] },
         { id: "sonnet", supportsEffort: true, effortLevels: ["low", "medium", "high"] },
+      ],
+    },
+    codex: {
+      default: "gpt-5.5",
+      models: [
+        { id: "gpt-5.5", supportsEffort: true, effortLevels: ["low", "medium", "high", "xhigh"] },
       ],
     },
   },

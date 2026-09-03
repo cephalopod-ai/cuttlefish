@@ -44,6 +44,7 @@ describe("operator delegation directives", () => {
       ["claude", "claude-opus-4-8"],
       ["claude", "opus"],
       ["claude", "claude-fable-5"],
+      ["claude", "claude-fable-5-1"],
     ]) expect(isHumanDelegationModelAllowed(engine, model)).toBe(true);
 
     for (const [engine, model] of [

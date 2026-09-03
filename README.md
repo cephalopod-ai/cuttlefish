@@ -281,14 +281,17 @@ engines:
   default: claude        # claude | codex | grok | antigravity | pi | hermes | kiro | ollama | kilo | aider | vibe
   claude:
     bin: claude          # binary on your PATH (override to point elsewhere)
-    model: claude-fable-5
+    model: claude-fable-5-1
     effortLevel: medium
   codex:
     bin: codex
     model: gpt-5.6-sol
+  antigravity:
+    bin: agy
+    model: gemini-3.8-flash-medium
   ollama:
     bin: ollama
-    model: gemma4
+    model: gemma4:26b
   kilo:
     bin: kilo
     model: default

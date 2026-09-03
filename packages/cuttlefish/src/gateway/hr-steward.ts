@@ -386,7 +386,7 @@ export function recordHrDecisionMessage(
   // autonomous dual-model resolution is attributed to the two AI reviewers,
   // mirroring security-review.ts's buildAutonomousResumePrompt.
   const approvedLine = opts.autonomous
-    ? `Autonomous approval: two independent AI reviewers (claude-fable-5, gpt-5.6-sol) both approved ${changeLabel}. Applying the approved change now.`
+    ? `Autonomous approval: two independent AI reviewers (claude-fable-5-1, gpt-5.6-sol) both approved ${changeLabel}. Applying the approved change now.`
     : `Human approval received from ${actor} for ${changeLabel}. Applying the approved change now.`;
   const content =
     opts.action === "approved"
