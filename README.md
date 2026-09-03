@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.23.8-7c3aed" alt="version 0.23.8" />
+  <img src="https://img.shields.io/badge/version-0.23.9-7c3aed" alt="version 0.23.9" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-7c3aed" alt="license: MIT" /></a>
   <img src="https://img.shields.io/badge/node-%E2%89%A524%20%3C25-7c3aed" alt="node >=24 <25" />
   <img src="https://img.shields.io/badge/status-beta-7c3aed" alt="status: beta" />
@@ -95,11 +95,10 @@ Each [GitHub Release](https://github.com/cephalopod-ai/cuttlefish/releases) that
 
 Then open **[http://localhost:8888](http://localhost:8888)**, send your first message, and watch your COO delegate.
 
-> **Package availability.** `cuttlefish-cli` is available from npm; `0.23.6`
-> remains the last verified installable registry/Homebrew version while
-> `v0.23.8` is prepared as the recovery release for incomplete `v0.23.7`.
-> Treat `0.23.8` as installable only after npm and the GitHub Release assets
-> both list it. The pipeline publishes npm first, then archives and Homebrew.
+> **Package availability.** `v0.23.9` is the current recovery release for the
+> incomplete `v0.23.7` publication and unpublished `v0.23.8` candidate. Its
+> pipeline publishes npm first, then platform archives and Homebrew; verify the
+> requested package or asset is listed before a pinned install.
 > See [`docs/RELEASING.md`](docs/RELEASING.md) and
 > [`docs/INSTALL.md`](docs/INSTALL.md).
 

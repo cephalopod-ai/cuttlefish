@@ -73,6 +73,9 @@ therefore remain at `0.23.6`. Restore the npm credential or trusted-publisher
 connection before choosing the immutable-version-safe recovery path; reconcile
 the duplicate draft and public release only with explicit release authority.
 
-`v0.23.8` is the selected immutable-version-safe recovery version. Do not
-publish its GitHub Release until npm authority has been restored; publication
-is the event that starts the npm and downstream artifact/formula workflows.
+`v0.23.8` was selected as an immutable-version-safe recovery candidate but was
+never tagged or published. `v0.23.9` supersedes it and includes both that
+candidate's changes and the current CLI/model compatibility refresh. Do not
+publish its GitHub Release until npm authority has been restored or
+independently proven; publication is the event that starts the npm and
+downstream artifact/formula workflows.

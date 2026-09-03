@@ -2,12 +2,43 @@
 
 ## [Unreleased]
 
+## [0.23.9] - 2026-09-03
+
+Cuttlefish 0.23.9 publishes the accumulated A2A, Vibe, security, reliability,
+and architecture work from the unpublished 0.23.8 candidate, then adds a
+provider-driven CLI/model compatibility refresh. It supersedes the incomplete
+`v0.23.7` publication and the never-published `v0.23.8` candidate.
+
+### Engine and Model Compatibility
+- **Current model catalogs.** Fresh configuration now uses Claude Fable 5.1,
+  Gemini 3.8 Flash Medium, Grok 4.6, and the exact `gemma4:26b` Ollama tag.
+  Antigravity's Gemini 3.8/3.7/3.6 identifiers match `agy models`, and the
+  Grok catalog includes the provider-listed 4.6 and 4.5 models.
+- **Provider-authoritative discovery.** Codex, Antigravity, Grok, and Ollama
+  model refreshes are bounded and provider-driven. When live Codex or Grok
+  discovery succeeds, stale configured IDs omitted by the CLI are no longer
+  appended back into the registry.
+- **Ollama completion filtering.** Discovery preserves exact local model tags,
+  reads bounded `ollama show` metadata, records context length, and excludes
+  embedding-only models from completion selection.
+- **Complete setup coverage.** Setup now seeds and probes all 11 registered
+  engine adapters, including Antigravity, Pi, and Kiro, while continuing to
+  hide optional CLIs that are not installed.
+
+### Included from the 0.23.8 Candidate
+- Bidirectional A2A Protocol 1.0 HTTP+JSON federation with authenticated,
+  service-allowlisted inbound and outbound routing, durable restart recovery,
+  bounded task projection, approval preservation, and hardened SSRF/origin
+  handling.
+- Mistral Vibe as a first-class ACP engine; focused gateway route and
+  configuration-schema modules; dependency, MCP-cleanup, and chat-scroll
+  maintenance described in the 0.23.8 candidate notes below.
+
 ## [0.23.8] - 2026-09-02
 
-Cuttlefish 0.23.8 adds bidirectional A2A Protocol 1.0 federation and the Vibe
-engine, hardens network and operator trust boundaries, and improves recovery,
-data integrity, and gateway architecture. It is the immutable-version-safe
-successor to the incomplete `v0.23.7` publication.
+Cuttlefish 0.23.8 was prepared but never tagged or published. Its bidirectional
+A2A Protocol 1.0 federation, Vibe engine, network/operator hardening, recovery,
+data-integrity, and gateway-architecture work is incorporated into v0.23.9.
 
 ### Features
 - **A2A Protocol 1.0 federation.** An opt-in HTTP+JSON adapter now supports
