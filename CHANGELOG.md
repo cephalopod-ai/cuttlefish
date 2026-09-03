@@ -2,7 +2,19 @@
 
 ## [Unreleased]
 
+## [0.23.8] - 2026-09-02
+
+Cuttlefish 0.23.8 adds bidirectional A2A Protocol 1.0 federation and the Vibe
+engine, hardens network and operator trust boundaries, and improves recovery,
+data integrity, and gateway architecture. It is the immutable-version-safe
+successor to the incomplete `v0.23.7` publication.
+
 ### Features
+- **A2A Protocol 1.0 federation.** An opt-in HTTP+JSON adapter now supports
+  authenticated Agent Card discovery, inbound task execution and streaming,
+  outbound allowlisted peers, and cross-department service routing through
+  remote A2A agents. Multipart text, structured data, bounded raw files, and
+  read-only URL references retain lineage without exposing server paths.
 - **Vibe engine (Mistral AI).** Cuttlefish now drives Mistral's `vibe` CLI as
   a first-class engine via its dedicated `vibe-acp` stdio entrypoint — real
   Agent Client Protocol, the same shape as the Hermes engine and sharing its
@@ -11,6 +23,11 @@
   `vibe-acp` is on your `PATH`. See `packages/cuttlefish/src/engines/vibe-acp.ts`.
 
 ### Security
+- A2A federation keeps inbound clients in per-client service allowlists,
+  denies operator-authority delegation, masks approval details, exports
+  generated files as metadata only, confines outbound credentials to exact
+  HTTPS origins, validates redirects, blocks private-network SSRF, and pins
+  DNS results through connection setup.
 - Server-side file fetches now pin each DNS-validated address into an Undici
   dispatcher while preserving the original hostname for HTTP/TLS, closing the
   DNS-rebinding gap across initial and redirected requests.
@@ -21,6 +38,11 @@
   `1.1.18` and `5.0.9` versions.
 
 ### Reliability and Architecture
+- A2A task storage applies owner/context pagination in SQLite and bounds live
+  status projection. Outbound cross-request checkpoints, deduplicated progress
+  persistence, cancel intent, and startup recovery close daemon-restart windows
+  without replaying remote work unless a peer explicitly guarantees message-ID
+  deduplication.
 - Chat threads distinguish resize-induced scroll drift from user read-up intent,
   keeping a pinned thread at the bottom when the viewport or mobile keyboard
   changes height.
@@ -29,6 +51,9 @@
   a source boundary test prevents those primitives from returning to routers.
 - MCP secret-bearing temp-config cleanup and stale-directory sweep failures now
   emit non-secret-bearing warnings instead of disappearing silently.
+- Configuration validation is split into focused schema modules behind the
+  existing facade, preserving public configuration behavior while reducing
+  change coupling.
 
 ## [0.23.7] - 2026-08-12
 

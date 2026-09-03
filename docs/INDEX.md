@@ -16,12 +16,16 @@ artifacts unless explicitly published.
 - `docs/RELEASING.md`: release contract for the npm package, GitHub platform
   archives, and Homebrew formula; documents the historical failed `v0.1.0`
   pre-release accurately.
+- `docs/changes/releases/v0.23.8.md`: v0.23.8 release statement covering A2A
+  federation, Vibe, security and recovery hardening, and the package publication
+  recovery path; it remains a candidate until the release pipeline completes.
 - `docs/changes/releases/v0.23.7.md`: v0.23.7 public release statement covering
   trust-boundary hardening, runtime/data-integrity repairs, Windows readiness,
   and operator-impacting upgrade notes; currently marked incomplete because
   npm, platform assets, and Homebrew remain at v0.23.6.
 - `docs/changes/releases/`: per-release statements for prior versions
-  ([v0.23.6](changes/releases/v0.23.6.md), [v0.23.5](changes/releases/v0.23.5.md),
+  ([v0.23.7](changes/releases/v0.23.7.md), [v0.23.6](changes/releases/v0.23.6.md),
+  [v0.23.5](changes/releases/v0.23.5.md),
   [v0.23.4](changes/releases/v0.23.4.md), [v0.1.0](changes/releases/v0.1.0.md),
   [v0.0.3](changes/releases/v0.0.3_resource_mgt_improve.md),
   [v0.0.2](changes/releases/v0.0.2-workinprogress.md),

@@ -72,3 +72,7 @@ for missing/expired authority. npm, platform archives, and the Homebrew formula
 therefore remain at `0.23.6`. Restore the npm credential or trusted-publisher
 connection before choosing the immutable-version-safe recovery path; reconcile
 the duplicate draft and public release only with explicit release authority.
+
+`v0.23.8` is the selected immutable-version-safe recovery version. Do not
+publish its GitHub Release until npm authority has been restored; publication
+is the event that starts the npm and downstream artifact/formula workflows.

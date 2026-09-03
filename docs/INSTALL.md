@@ -14,7 +14,7 @@ Override with `CUTTLEFISH_HOME`.
 |------|----------|--------|
 | **npm** `npm install -g cuttlefish-cli` | Everyday installs | Public package; current installable version is `0.23.6` |
 | **Homebrew** (macOS/Linux) | Formula users | Current formula is `0.23.6`; updated automatically after a successful npm publish |
-| **GitHub Release archive** | Offline / pinned platform trees with native modules prebuilt | Use a release that actually lists the platform asset; `v0.23.7` is incomplete and has none |
+| **GitHub Release archive** | Offline / pinned platform trees with native modules prebuilt | Use a release that actually lists the platform asset; `v0.23.8` is the recovery candidate for incomplete `v0.23.7` |
 | **Source** | Contributors and pre-publish installs | Always works |
 
 ---
@@ -146,9 +146,10 @@ Known Windows differences and limitations:
 
 ## macOS / Linux
 
-> **Current release state (2026-08-13):** GitHub `v0.23.7` is visible, but npm
+> **Current release state (2026-09-02):** GitHub `v0.23.7` is visible, but npm
 > publication failed and its downstream archives/formula update did not run.
-> Install `0.23.6` until a completed release supersedes or repairs that state.
+> `v0.23.8` is the recovery candidate. Install `0.23.6` until npm and the
+> `v0.23.8` GitHub Release assets confirm that its pipeline completed.
 
 ### npm (after publication)
 

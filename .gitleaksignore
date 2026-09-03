@@ -5,3 +5,31 @@ docs/cloud-audit/PLAYTEST-THEME-2026-07-01.md:generic-api-key:36
 # Reviewed false positive: intentionally fake sk-proj value used to assert that
 # the redaction helper removes OpenAI-style credential text.
 packages/cuttlefish/src/shared/__tests__/redact.test.ts:generic-api-key:9
+
+# Reviewed false positives: intentionally low-entropy hexadecimal fixtures used
+# to exercise the A2A minimum credential length, authentication, and redaction
+# paths. These values are repeated test data, not live credentials.
+packages/cuttlefish/src/a2a/__tests__/adapter.test.ts:generic-api-key:22
+packages/cuttlefish/src/a2a/__tests__/adapter.test.ts:generic-api-key:68
+packages/cuttlefish/src/a2a/__tests__/config.test.ts:generic-api-key:16
+packages/cuttlefish/src/a2a/__tests__/config.test.ts:generic-api-key:49
+packages/cuttlefish/src/a2a/__tests__/config.test.ts:generic-api-key:65
+packages/cuttlefish/src/a2a/__tests__/config.test.ts:generic-api-key:81
+packages/cuttlefish/src/a2a/__tests__/config.test.ts:generic-api-key:93
+packages/cuttlefish/src/a2a/__tests__/config.test.ts:generic-api-key:94
+packages/cuttlefish/src/a2a/__tests__/config.test.ts:generic-api-key:108
+packages/cuttlefish/src/a2a/__tests__/config.test.ts:generic-api-key:125
+packages/cuttlefish/src/a2a/__tests__/config.test.ts:generic-api-key:132
+packages/cuttlefish/src/a2a/__tests__/lifecycle-invariants.test.ts:generic-api-key:194
+packages/cuttlefish/src/a2a/__tests__/outbound.test.ts:generic-api-key:43
+packages/cuttlefish/src/gateway/__tests__/config-redaction-security.test.ts:generic-api-key:115
+packages/cuttlefish/src/gateway/__tests__/org-cross-request-route.test.ts:generic-api-key:101
+packages/cuttlefish/src/gateway/__tests__/org-cross-request-route.test.ts:generic-api-key:152
+packages/cuttlefish/src/gateway/__tests__/org-cross-request-route.test.ts:generic-api-key:255
+packages/cuttlefish/src/gateway/__tests__/org-cross-request-route.test.ts:generic-api-key:321
+packages/cuttlefish/src/gateway/__tests__/org-cross-request-route.test.ts:generic-api-key:345
+packages/cuttlefish/src/gateway/__tests__/org-cross-request-route.test.ts:generic-api-key:382
+packages/cuttlefish/src/gateway/__tests__/org-cross-request-route.test.ts:generic-api-key:402
+packages/cuttlefish/src/gateway/__tests__/org-cross-request-route.test.ts:generic-api-key:596
+packages/cuttlefish/src/gateway/__tests__/org-cross-request-route.test.ts:generic-api-key:693
+packages/cuttlefish/src/gateway/__tests__/org-cross-request-route.test.ts:generic-api-key:821
