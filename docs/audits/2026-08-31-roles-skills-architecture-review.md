@@ -655,16 +655,18 @@ design, including its already-shipped skills subsystem.
   explicitly instructed two patches, so this change set is not purely
   analytical:
   1. **`e2e/collaboration.spec.ts`** — two unscoped `getByText` assertions on
-     just-sent message bodies (lines 24 and 42) are now scoped to
-     `page.getByRole("feed")`, fixing a Playwright strict-mode race.
+     just-sent message bodies are now scoped to `page.getByRole("feed")`, fixing
+     a Playwright strict-mode race. They are the assertions on
+     `"Browser structured Team send"` (:28) and `"Explicit COO authority turn"`
+     (:46).
      **A first attempt was incomplete:** it fixed only the Team-lane assertion
      and left the identical pattern in the Management test, which then failed CI
      on the next push. The corrected fix scopes to the feed container, which
      `collaboration-pane.tsx` renders as a *sibling* of the composer (:184
      vs :194), so the composer is excluded **structurally rather than by
      timing** — and applies it to both call sites. The third `composer.fill`
-     (line 33) is never asserted by body text, only by its status string, so it
-     cannot collide.
+     — `"Default management route"` (:37) — is never asserted by body text, only
+     by its status string, so it cannot collide.
      **Validated:** full e2e suite **9/9 passed**, plus two further isolated runs
      of `collaboration.spec.ts` against fresh servers, all green.
      Note that `pnpm lint` and `pnpm typecheck` do **not** cover this file —
