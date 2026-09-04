@@ -2,6 +2,9 @@ import { describe, it, expect } from "vitest";
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { load } from "js-yaml";
+import { CODEX_DEFAULT_MODEL } from "../../shared/models.js";
+import type { CuttlefishConfig } from "../../shared/types.js";
 
 // Resolve packages/cuttlefish/ from this test file (…/src/cli/__tests__/) — never touch
 // the real ~/.cuttlefish; assert against the shipped sources statically.
@@ -10,6 +13,23 @@ const TEMPLATE = join(PKG, "template");
 const SETUP = join(PKG, "src", "cli", "setup.ts");
 
 describe("fresh-install: talk seeding + config guidance", () => {
+  it("seeds Astra as the Codex default while retaining selectable GPT-5.6 models", () => {
+    const source = readFileSync(SETUP, "utf-8");
+    const raw = source.match(/const DEFAULT_CONFIG = `([\s\S]*?)`;/)?.[1];
+    expect(raw).toBeDefined();
+    const config = load(raw!) as CuttlefishConfig;
+    expect(CODEX_DEFAULT_MODEL).toBe("gpt-6-astra");
+    expect(config.engines.codex.model).toBe(CODEX_DEFAULT_MODEL);
+    expect(config.models?.codex.default).toBe(CODEX_DEFAULT_MODEL);
+    expect(config.models?.codex.models.slice(0, 4).map((m) => m.id)).toEqual([
+      "gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
+    ]);
+    expect(config.models?.codex.models[0]).toMatchObject({
+      contextWindow: 272000,
+      effortLevels: ["low", "medium", "high", "xhigh", "max", "ultra"],
+    });
+  });
+
   it("ships the AURA voice persona + card-reference sidecar in the template", () => {
     expect(existsSync(join(TEMPLATE, "talk", "orchestrator-persona.md"))).toBe(true);
     expect(existsSync(join(TEMPLATE, "talk", "card-reference.md"))).toBe(true);

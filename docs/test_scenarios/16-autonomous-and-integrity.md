@@ -29,7 +29,7 @@ is unavailable, execute the fail-closed branch and mark the consensus branch
 - Observe: `authorizationsToday` is a dashboard convenience counter that resets on process restart; the durable approval history, not that counter, must remain the audit source.
 
 ### AI-02 — Two-model tool authorization: consensus once, every other outcome fails closed
-- Goal: a gated tool action auto-resolves only when the fixed Claude Fable 5 and Codex gpt-5.6-sol judges both approve it.
+- Goal: a gated tool action auto-resolves only when the fixed Claude Fable 5 and Codex gpt-6-astra judges both approve it.
 - Category: authorization / interruption / recovery
 - Preconditions: AI-01 active for the exact test-project `cwd`; `toolReview: true`; a disposable employee whose security policy gates a harmless Bash pattern; both judge engines signed in for the consensus trial.
 - Steps:

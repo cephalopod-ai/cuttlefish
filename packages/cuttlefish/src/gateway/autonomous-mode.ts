@@ -23,7 +23,7 @@
  *   - Structurally confined to at most ONE workspace profile (config-load
  *     invalidates a config with 2+ profiles enabled — see config-schema.ts).
  *   - Requires BOTH an independent Claude (claude-fable-5-1) and Codex
- *     (gpt-5.6-sol) verdict to agree — fail-closed on any disagreement,
+ *     (gpt-6-astra) verdict to agree — fail-closed on any disagreement,
  *     error, timeout, or unparseable output (dual-model-verdict.ts).
  *   - Every autonomous resolution is stamped with a code-owned, non-spoofable
  *     `resolvedByKind: "autonomous_dual_model"` column — never settable via
@@ -43,7 +43,7 @@ import type { CuttlefishConfig, WorkspaceProfileConfig } from "../shared/types.j
 /** The `actor` value stamped on every autonomously-resolved approval/checkpoint.
  *  Human-readable audit context only — resolvedByKind is the authoritative,
  *  non-spoofable discriminator (see resolveApprovalAsAutonomous in approvals.ts). */
-export const AUTONOMOUS_ACTOR_SENTINEL = "autonomous:claude-fable-5-1+gpt-5.6-sol";
+export const AUTONOMOUS_ACTOR_SENTINEL = "autonomous:claude-fable-5-1+gpt-6-astra";
 
 export interface AutonomousProject {
   profileId: string;

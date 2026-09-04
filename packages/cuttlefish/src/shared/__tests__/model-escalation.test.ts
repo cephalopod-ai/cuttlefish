@@ -24,14 +24,34 @@ describe("resolveModelEscalation — a rung the install cannot run is skipped", 
 });
 
 describe("resolveModelEscalation (default ladder)", () => {
-  it("user example: a small model (haiku) climbs to the mid tier (gpt-5.4 first)", () => {
+  it.each([
+    ["gpt-5.6-terra", "gpt-5.6-sol"],
+    ["gpt-5.6-luna", "gpt-5.6-sol"],
+    ["gpt-5.6-sol", "gpt-6-astra"],
+  ])("escalates %s to %s", (fromModel, model) => {
+    expect(resolveModelEscalation({
+      fromEngine: "codex", fromModel,
+      triedRungs: new Set([rungKey("codex", fromModel)]),
+      isAvailable: allAvailable,
+    })).toEqual({ engine: "codex", model, via: "higher" });
+  });
+
+  it("does not downgrade Astra to another Codex model when no peer provider is available", () => {
+    expect(resolveModelEscalation({
+      fromEngine: "codex", fromModel: "gpt-6-astra",
+      triedRungs: new Set([rungKey("codex", "gpt-6-astra")]),
+      isAvailable: (engine) => engine === "codex",
+    })).toBeNull();
+  });
+
+  it("user example: a small model (haiku) climbs to the mid tier (Sol first)", () => {
     const got = resolveModelEscalation({
       fromEngine: "claude",
       fromModel: "claude-haiku-4-5",
       triedRungs: new Set([rungKey("claude", "claude-haiku-4-5")]),
       isAvailable: allAvailable,
     });
-    expect(got).toEqual({ engine: "codex", model: "gpt-5.4", via: "higher" });
+    expect(got).toEqual({ engine: "codex", model: "gpt-5.6-sol", via: "higher" });
   });
 
   it("user example: gemini-flash (small) climbs to the mid tier", () => {
@@ -42,21 +62,21 @@ describe("resolveModelEscalation (default ladder)", () => {
       isAvailable: allAvailable,
     });
     expect(got?.via).toBe("higher");
-    expect(got).toEqual({ engine: "codex", model: "gpt-5.4", via: "higher" });
+    expect(got).toEqual({ engine: "codex", model: "gpt-5.6-sol", via: "higher" });
   });
 
-  it("user example: sonnet (mid) climbs to the large tier (gpt-5.5 first)", () => {
+  it("user example: sonnet (mid) climbs to the large tier (Astra first)", () => {
     const got = resolveModelEscalation({
       fromEngine: "claude",
       fromModel: "claude-sonnet-5",
       triedRungs: new Set([rungKey("claude", "claude-sonnet-5")]),
       isAvailable: allAvailable,
     });
-    expect(got).toEqual({ engine: "codex", model: "gpt-5.5", via: "higher" });
+    expect(got).toEqual({ engine: "codex", model: "gpt-6-astra", via: "higher" });
   });
 
   it("usage exhaustion: excluding the current engine forces a higher model on another provider", () => {
-    // sonnet on claude is rate-limited → exclude claude → large tier, non-claude → gpt-5.5.
+    // sonnet on claude is rate-limited → exclude claude → large tier, non-claude → Astra.
     const got = resolveModelEscalation({
       fromEngine: "claude",
       fromModel: "claude-sonnet-5",
@@ -64,7 +84,7 @@ describe("resolveModelEscalation (default ladder)", () => {
       excludeEngines: new Set(["claude"]),
       isAvailable: allAvailable,
     });
-    expect(got).toEqual({ engine: "codex", model: "gpt-5.5", via: "higher" });
+    expect(got).toEqual({ engine: "codex", model: "gpt-6-astra", via: "higher" });
   });
 
   it("usage exhaustion from a cheap codex model rolls to sonnet (codex excluded)", () => {
@@ -79,14 +99,14 @@ describe("resolveModelEscalation (default ladder)", () => {
     expect(got).toEqual({ engine: "claude", model: "claude-sonnet-5", via: "higher" });
   });
 
-  it("stall from gpt-5.4 (mid) climbs to gpt-5.5 on the SAME engine (no exclusion)", () => {
+  it("stall from gpt-5.4 (mid) climbs to Astra on the SAME engine (no exclusion)", () => {
     const got = resolveModelEscalation({
       fromEngine: "codex",
       fromModel: "gpt-5.4",
-      triedRungs: new Set([rungKey("codex", "gpt-5.4")]),
+      triedRungs: new Set([rungKey("codex", "gpt-5.4"), rungKey("codex", "gpt-5.6-sol")]),
       isAvailable: allAvailable,
     });
-    expect(got).toEqual({ engine: "codex", model: "gpt-5.5", via: "higher" });
+    expect(got).toEqual({ engine: "codex", model: "gpt-6-astra", via: "higher" });
   });
 
   it("top tier whose engine is exhausted falls sideways to a same-tier peer (sibling)", () => {
@@ -115,12 +135,12 @@ describe("resolveModelEscalation (default ladder)", () => {
   });
 
   it("skips already-tried rungs so repeated escalations keep climbing", () => {
-    // Already tried gpt-5.4 (mid). Next escalation from haiku should skip it and
+    // Already tried Sol and gpt-5.4 (mid). Next escalation from haiku should skip it and
     // take the other mid rung (sonnet) before climbing further.
     const got = resolveModelEscalation({
       fromEngine: "claude",
       fromModel: "claude-haiku-4-5",
-      triedRungs: new Set([rungKey("claude", "claude-haiku-4-5"), rungKey("codex", "gpt-5.4")]),
+      triedRungs: new Set([rungKey("claude", "claude-haiku-4-5"), rungKey("codex", "gpt-5.4"), rungKey("codex", "gpt-5.6-sol")]),
       isAvailable: allAvailable,
     });
     expect(got).toEqual({ engine: "claude", model: "claude-sonnet-5", via: "higher" });
@@ -134,7 +154,7 @@ describe("resolveModelEscalation (default ladder)", () => {
       isAvailable: allAvailable,
     });
     expect(got?.via).toBe("higher");
-    expect(got).toEqual({ engine: "codex", model: "gpt-5.4", via: "higher" });
+    expect(got).toEqual({ engine: "codex", model: "gpt-5.6-sol", via: "higher" });
   });
 
   it("honors a custom ladder override", () => {

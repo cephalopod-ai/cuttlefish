@@ -197,6 +197,23 @@ describe("CodexEngine — child process environment", () => {
   });
 });
 
+describe("CodexEngine — current Codex model calls", () => {
+  it.each(["gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra"])("forwards %s unchanged for fresh and resumed turns", async (model) => {
+    for (const resumeSessionId of [undefined, "existing-thread"]) {
+      const { call, result } = await runWith(
+        { model, effortLevel: "high", resumeSessionId, restrictToJudgeOnly: true },
+        [threadStarted(resumeSessionId ?? "new-thread"), agentMessage("ok"), turnCompleted({})],
+      );
+      expect(call.args[call.args.indexOf("--model") + 1]).toBe(model);
+      expect(call.args).toContain('model_reasoning_effort="high"');
+      expect(call.args.slice(0, 5)).toEqual(["--sandbox", "read-only", "--ask-for-approval", "never", "exec"]);
+      expect(call.args.includes("resume")).toBe(!!resumeSessionId);
+      expect(result.result).toBe("ok");
+      expect(result.error).toBeUndefined();
+    }
+  });
+});
+
 describe("CodexEngine — JSONL stream parsing into deltas", () => {
   it("maps an agent_message item to a text delta via onStream", async () => {
     const { deltas } = await runWith({}, [threadStarted("t1"), agentMessage("Hello world")]);

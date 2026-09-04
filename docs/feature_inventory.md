@@ -587,7 +587,7 @@
   that prompt hash in both live session state and the signed session token, and
   is expired in the dispatch `finally` path. Agent messages, quoted directives,
   other roles, stale/replayed tokens, and model changes fail authorization.
-- Delegated human authority is restricted to `codex/gpt-5.5`,
+- Delegated human authority is restricted to `codex/gpt-6-astra`, `codex/gpt-5.5`,
   `codex/gpt-5.6-sol`, Claude Opus 5 (`claude-opus-5`, `claude-opus-4-8`, or `opus`), and
   Claude Fable (`claude-fable-5-1`, with `claude-fable-5` retained for existing
   configurations). Decisions record an actor such as
@@ -729,6 +729,23 @@
   - This source tree does not contain a scheduler/provider map architecture for routing Kiro to AWS. No Kiro-to-AWS provider mapping was added.
 
 ### Codex CLI compatibility
+
+- New installs default to `gpt-6-astra` (GPT-6 Astra). Sol, Terra and Luna remain
+  selectable by their exact GPT-5.6 ids. Live discovery remains authoritative
+  for availability and effort support; explicit engine/catalog defaults still
+  take precedence over the shipped default.
+- The built-in escalation ladder prefers Terra in the small tier, Sol in the
+  middle tier and Astra in the top tier. Same-tier recovery uses another
+  provider; it does not downgrade Astra to an older Codex model. Explicit
+  agent/global fallback chains retain their configured order.
+- Autonomous authorization pairs the fixed `claude-fable-5-1` and
+  `gpt-6-astra` reviewers, retaining judge-only execution and the requirement
+  that both approve. Historical approval badges describe the independent
+  reviewers generically so old Sol decisions are not relabeled as Astra.
+- The Astra setup context budget is a conservative 272,000 tokens, matching
+  local Codex CLI metadata observed on 2026-09-04; operators can override
+  `models.codex.models[].contextWindow`. This is not a claim about an API limit.
+
 - `packages/cuttlefish/src/engines/codex.ts`
 - Headless Codex turns place workspace sandbox and approval-policy options at
   the CLI's top level before `exec` or `exec resume`, matching current Codex

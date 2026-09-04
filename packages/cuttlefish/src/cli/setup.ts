@@ -275,7 +275,7 @@ engines:
     effortLevel: medium
   codex:
     bin: codex
-    model: gpt-5.6-sol
+    model: gpt-6-astra
   antigravity:
     bin: agy
     model: gemini-3.8-flash-medium
@@ -318,9 +318,10 @@ models:
       - { id: claude-sonnet-5, label: "Sonnet 5", supportsEffort: true, effortLevels: [low, medium, high], contextWindow: 1000000 }
       - { id: claude-haiku-4-5, label: "Haiku 4.5", supportsEffort: true, effortLevels: [low, medium, high], contextWindow: 200000 }
   codex:
-    default: gpt-5.6-sol
+    default: gpt-6-astra
     effortMechanism: codex-config
     models:
+      - { id: gpt-6-astra, label: "GPT-6 Astra", supportsEffort: true, effortLevels: [low, medium, high, xhigh, max, ultra], contextWindow: 272000 }
       - { id: gpt-5.6-sol, label: "GPT-5.6 Sol", supportsEffort: true, effortLevels: [low, medium, high, xhigh, max, ultra], contextWindow: 1000000 }
       - { id: gpt-5.6-terra, label: "GPT-5.6 Terra", supportsEffort: true, effortLevels: [low, medium, high, xhigh, max, ultra], contextWindow: 1000000 }
       - { id: gpt-5.6-luna, label: "GPT-5.6 Luna", supportsEffort: true, effortLevels: [low, medium, high, xhigh, max], contextWindow: 200000 }

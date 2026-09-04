@@ -160,7 +160,15 @@ Cuttlefish detects whichever agent CLIs are on your `PATH` and makes them interc
 | **aider** | [Aider](https://aider.chat) AI pair-programmer | `python -m pip install aider-install && aider-install` (or `pipx install aider-chat`), then set a provider API key | Chat · CLI (xterm) | - |
 | **vibe** | Mistral AI Vibe CLI - open-source, ACP-native | see [Mistral AI](https://mistral.ai), then run `vibe --setup` to authenticate | Chat (ACP streaming) | - |
 
-The picker shows real model names out of the box (Opus 5, GPT-5.6 Sol, Gemini 3.x…). Those labels live in your `config.yaml`, so a fresh install looks polished day one - while Grok, Pi, and Hermes report their model lists live at session start, and Aider surfaces the models for whichever provider API keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …) are present in the gateway env.
+The picker shows real model names out of the box (Opus 5, GPT-6 Astra, Gemini 3.x…). Those labels live in your `config.yaml`, so a fresh install looks polished day one - while Grok, Pi, and Hermes report their model lists live at session start, and Aider surfaces the models for whichever provider API keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …) are present in the gateway env.
+
+New installs use GPT-6 Astra as the Codex default. Existing homes keep explicit
+model selections: to adopt Astra, set `engines.codex.model` and
+`models.codex.default` to `gpt-6-astra`, and add its catalog entry if absent.
+For a tier upgrade, change agent and fallback assignments once: Sol → Astra,
+Terra → Sol, Luna → Terra. Keep the catalog ids unchanged so each model stays
+selectable. Astra must be available to the signed-in Codex account; see the
+[OpenAI model documentation](https://learn.chatgpt.com/docs/models).
 
 > **Hermes cost note.** Unlike the subscription-wrapped engines, Hermes owns its own model loop and bills **per token** on the provider configured in `~/.hermes`. It streams over the Agent Client Protocol (ACP) and runs fully auto-approved. See [`docs/engines-hermes.md`](docs/engines-hermes.md).
 
@@ -284,7 +292,7 @@ engines:
     effortLevel: medium
   codex:
     bin: codex
-    model: gpt-5.6-sol
+    model: gpt-6-astra
   antigravity:
     bin: agy
     model: gemini-3.8-flash-medium

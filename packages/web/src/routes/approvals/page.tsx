@@ -84,7 +84,7 @@ function AutonomousBadge({ resolvedByKind }: { resolvedByKind?: 'human' | 'auton
   return (
     <span
       className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium text-violet-600 bg-violet-500/10"
-      title="Resolved autonomously — both claude-fable-5-1 and gpt-5.6-sol agreed, no human clicked approve."
+      title="Resolved autonomously — both independent model reviewers agreed, no human clicked approve."
     >
       <Bot className="size-3" />
       Auto

@@ -82,7 +82,7 @@ const EFFORT_MECHANISM: Record<EngineName, EffortMechanism> = {
   vibe: "none",
 };
 
-export const CODEX_DEFAULT_MODEL = "gpt-5.6-sol";
+export const CODEX_DEFAULT_MODEL = "gpt-6-astra";
 
 /** Conservative per-engine defaults used when synthesizing (no `models:` block). */
 const SYNTH_DEFAULTS: Record<EngineName, { supportsEffort: boolean; effortLevels: string[]; fallbackModel: string }> = {
@@ -490,6 +490,7 @@ function buildCodexEntry(
     const defaultModel =
       valid(pinned) ??
       valid(codexBlock?.default) ??
+      valid(CODEX_DEFAULT_MODEL) ??
       valid(discoveredCodexModels.defaultModel) ??
       models[0].id;
     return { name: "codex", available, defaultModel, effortMechanism: "codex-config", models };

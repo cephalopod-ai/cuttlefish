@@ -47,6 +47,33 @@ describe("Codex model registry refresh", () => {
     isInstalled.mockImplementation((bin: string) => bin === "codex" || bin === "claude");
   });
 
+  it("prefers Astra when discovery advertises it and no model is pinned", async () => {
+    discoverCodexModels.mockResolvedValue({
+      defaultModel: "gpt-5.6-sol",
+      models: [
+        { id: "gpt-5.6-sol", label: "Sol", supportsEffort: true, effortLevels: ["low", "high"] },
+        { id: "gpt-6-astra", label: "Astra", supportsEffort: true, effortLevels: ["low", "medium", "high", "xhigh", "max", "ultra"] },
+      ],
+    });
+    const { refreshCodexModels, getModelRegistry, invalidateModelRegistry } = await import("../models.js");
+    const config = cfg({ codex: undefined });
+    await refreshCodexModels(config);
+    expect(getModelRegistry(config).codex.defaultModel).toBe("gpt-6-astra");
+    // A deliberate selection of Sol must still win over the shipped default.
+    const pinned = cfg({ codex: { bin: "codex", model: "gpt-5.6-sol" } });
+    invalidateModelRegistry();
+    expect(getModelRegistry(pinned).codex.defaultModel).toBe("gpt-5.6-sol");
+  });
+
+  it("uses Astra for an unconfigured install when discovery fails", async () => {
+    discoverCodexModels.mockRejectedValue(new Error("discovery unavailable"));
+    const { refreshCodexModels, getModelRegistry } = await import("../models.js");
+    const config = cfg({ codex: undefined });
+    await refreshCodexModels(config);
+    expect(getModelRegistry(config).codex.defaultModel).toBe("gpt-6-astra");
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("discovery unavailable"));
+  });
+
   it("refreshes the registry from discovered Codex models", async () => {
     discoverCodexModels.mockResolvedValue({
       defaultModel: "gpt-5.6",

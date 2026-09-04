@@ -38,6 +38,7 @@ describe("operator delegation directives", () => {
     expect(isHumanDelegateRole("engineering-manager", "web")).toBe(false);
 
     for (const [engine, model] of [
+      ["codex", "gpt-6-astra"],
       ["codex", "gpt-5.5"],
       ["codex", "gpt-5.6-sol"],
       ["claude", "claude-opus-5"],
@@ -50,6 +51,9 @@ describe("operator delegation directives", () => {
     for (const [engine, model] of [
       ["codex", "gpt-5.4"],
       ["codex", "gpt-5.6"],
+      ["codex", "gpt-5.6-terra"],
+      ["codex", "gpt-5.6-luna"],
+      ["claude", "gpt-6-astra"],
       ["claude", "sonnet"],
       ["claude", "claude-opus-4-7"],
       ["openai-codex", "gpt-5.5"],

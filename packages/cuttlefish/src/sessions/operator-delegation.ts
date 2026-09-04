@@ -14,6 +14,7 @@ export interface OperatorDelegationGrant {
 
 const PROGRAM_MANAGER_NAME = "program-manager";
 const ALLOWED_MODELS = new Set([
+  "codex::gpt-6-astra",
   "codex::gpt-5.5",
   "codex::gpt-5.6-sol",
   "claude::claude-opus-5",

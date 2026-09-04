@@ -6,9 +6,9 @@
  * the slice UP a capability ladder to a stronger model (often on a different
  * provider) before the work is escalated to a human:
  *
- *   small  (haiku / gemini-flash / qwen / gpt-mini)
- *     → mid   (gpt-5.4 / sonnet)
- *       → large (gpt-5.5 / opus / gemini-pro)
+ *   small  (terra / haiku / gemini-flash / qwen / gpt-mini)
+ *     → mid   (sol / sonnet)
+ *       → large (astra / opus / gemini-pro)
  *
  * Pure resolver (no I/O) so it is exhaustively unit-testable; the caller supplies
  * availability and performs the re-dispatch. The ladder is overridable via config
@@ -50,6 +50,8 @@ export interface ResolveEscalationOpts {
 export const DEFAULT_MODEL_LADDER: ModelLadder = [
   // Tier 0 — small / cheap / fast
   [
+    { engine: "codex", model: "gpt-5.6-terra" },
+    { engine: "codex", model: "gpt-5.6-luna" },
     { engine: "claude", model: "claude-haiku-4-5" },
     { engine: "antigravity", model: "gemini-3.8-flash-high" },
     { engine: "pi", model: "purdue/qwen3-coder:latest" },
@@ -58,11 +60,13 @@ export const DEFAULT_MODEL_LADDER: ModelLadder = [
   ],
   // Tier 1 — mid / balanced
   [
+    { engine: "codex", model: "gpt-5.6-sol" },
     { engine: "codex", model: "gpt-5.4" },
     { engine: "claude", model: "claude-sonnet-5" },
   ],
   // Tier 2 — large / most capable
   [
+    { engine: "codex", model: "gpt-6-astra" },
     { engine: "codex", model: "gpt-5.5" },
     { engine: "claude", model: "claude-opus-5" },
     { engine: "claude", model: "opus" },
@@ -113,6 +117,7 @@ export function resolveModelEscalation(opts: ResolveEscalationOpts): EscalationC
 
   const curKey = rungKey(opts.fromEngine, fromModel);
   for (const c of candidates) {
+    if (c.via === "sibling" && norm(c.engine) === norm(opts.fromEngine)) continue;
     const key = rungKey(c.engine, c.model);
     if (key === curKey) continue;
     if (opts.triedRungs.has(key)) continue;

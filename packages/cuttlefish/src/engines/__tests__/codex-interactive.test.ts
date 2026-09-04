@@ -228,6 +228,18 @@ describe("CodexInteractiveEngine — effort/model PTY args + respawn", () => {
     return spawnCalls[spawnCalls.length - 1]!.args;
   }
 
+  it.each(["gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra"])("forwards %s through fresh and resumed terminal launches", (model) => {
+    for (const engineSessionId of [undefined, "existing-thread"]) {
+      engine.ensureIdleSpawn(`current-${engineSessionId ?? "fresh"}`, { model, effortLevel: "ultra", engineSessionId, cwd: "/tmp" });
+      const args = lastArgs();
+      expect(args[args.indexOf("--model") + 1]).toBe(model);
+      expect(reasoningEffortArg(args)).toBe("ultra");
+      expect(args.includes("resume")).toBe(!!engineSessionId);
+      if (engineSessionId) expect(args).toContain(engineSessionId);
+    }
+    lifecycle.dispose();
+  });
+
   it("forwards model and effortLevel into the idle-spawned codex CLI args", () => {
     engine.ensureIdleSpawn("sess-1", {
       model: "gpt-5.5",

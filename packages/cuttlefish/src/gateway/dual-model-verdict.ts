@@ -8,7 +8,7 @@
  * Dual-model autonomous verdict primitive.
  *
  * Spawns two independent, judge-only, non-employee-bound child sessions —
- * always Claude `claude-fable-5-1` and always Codex `gpt-5.6-sol`, with no
+ * always Claude `claude-fable-5-1` and always Codex `gpt-6-astra`, with no
  * fallback-chain lookup of any kind — and requires BOTH to independently
  * return `{approved: true}` before treating a pending approval/checkpoint as
  * autonomously authorized. This is the one thing deliberately NOT reused from
@@ -48,7 +48,7 @@ export interface DualModelVerdictRequest {
 export type VerdictOutcome = "approved" | "not_approved" | "error" | "unparseable" | "timeout";
 
 export interface SingleModelVerdict {
-  rung: "claude-fable-5-1" | "gpt-5.6-sol";
+  rung: "claude-fable-5-1" | "gpt-6-astra";
   outcome: VerdictOutcome;
   reason: string;
   /** Last raw assistant text, kept for the audit trail even when unparseable. */
@@ -70,7 +70,7 @@ interface Rung {
 // No `?? employee.engine` / `?? session.model` fallback, ever — see module docblock.
 const RUNGS: readonly [Rung, Rung] = [
   { rung: "claude-fable-5-1", engine: "claude", model: "claude-fable-5-1" },
-  { rung: "gpt-5.6-sol", engine: "codex", model: "gpt-5.6-sol" },
+  { rung: "gpt-6-astra", engine: "codex", model: "gpt-6-astra" },
 ];
 
 // Shorter than employee-execution.ts's 300s implementer budget — a verdict
@@ -280,7 +280,7 @@ export async function requestDualModelVerdict(
     return {
       authorized: false,
       claude: { rung: "claude-fable-5-1", outcome: "error", reason },
-      codex: { rung: "gpt-5.6-sol", outcome: "error", reason },
+      codex: { rung: "gpt-6-astra", outcome: "error", reason },
     };
   }
 
