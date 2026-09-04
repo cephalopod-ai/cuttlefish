@@ -15,7 +15,17 @@ test("Team project feed supports inspection, structured mention routing, and rel
   await page.getByRole("menuitemcheckbox", { name: /Builder/ }).click()
   await composer.fill("Browser structured Team send")
   await page.getByRole("button", { name: "Send collaboration message" }).click()
-  await expect(page.getByText("Browser structured Team send")).toBeVisible()
+  // Scope sent-message assertions to the feed. Until onSend resolves the
+  // composer is disabled but still holds the text (collaboration-composer.tsx
+  // clears it only after the await), so an unscoped getByText matches both the
+  // feed bubble and the textarea and trips strict mode. React renders a
+  // controlled textarea's value as a text child node, so getByText does match
+  // it — verified by probe: filling the composer without sending gives
+  // getByText(probe).count() === 1 and getByRole("feed").getByText(probe)
+  // .count() === 0. The composer is a sibling of the feed in
+  // collaboration-pane.tsx, so role="feed" excludes it structurally rather
+  // than by timing.
+  await expect(page.getByRole("feed").getByText("Browser structured Team send")).toBeVisible()
   await expect(page.getByText("builder: queued")).toBeVisible()
 })
 
@@ -32,6 +42,7 @@ test("Management defaults safely and exposes explicit one-turn authority", async
   await page.getByRole("checkbox", { name: "approve" }).check()
   await composer.fill("Explicit COO authority turn")
   await page.getByRole("button", { name: "Send collaboration message" }).click()
-  await expect(page.getByText("Explicit COO authority turn")).toBeVisible()
+  // Feed-scoped for the same reason as the Team case above.
+  await expect(page.getByRole("feed").getByText("Explicit COO authority turn")).toBeVisible()
   await expect(page.getByText("cuttlefish: queued")).toBeVisible()
 })

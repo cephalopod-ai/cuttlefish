@@ -2,7 +2,10 @@
 
 This index lists operator-facing docs that are maintained in this checkout.
 Audit and session logs under `docs/audits/` and `docs/logs/` are local-only
-artifacts unless explicitly published.
+artifacts unless explicitly published. Both trees are listed in `.gitignore`,
+which suppresses only *untracked* files, so a file deliberately added there
+stays tracked and published; the audit files linked individually below are
+those deliberate cases.
 
 ## Current Operator Docs
 
@@ -88,6 +91,11 @@ artifacts unless explicitly published.
 - `docs/a2a-federation.md`: opt-in A2A 1.0 HTTP+JSON federation, inbound and
   outbound allowlists, authentication, task-state translation, operator routes,
   interoperability evidence, and current transport limits.
+- `docs/audits/2026-08-31-roles-skills-architecture-review.md`: source-grounded
+  review of an external "MODE / ROLE / SKILLS" proposal against the shipped
+  orchestration role model and skills subsystem, with findings, courses of
+  action, and mitigations. One of the deliberately published audit files (see
+  the retention note above); records no decision.
 
 ## Session and Audit Log Summaries
 
