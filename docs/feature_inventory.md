@@ -32,6 +32,11 @@
   selection. Fresh installations seed Claude Fable 5.1 at Medium effort, while
   onboarding and Settings let the operator select another engine or model and
   retain that choice.
+- Settings can reopen the onboarding wizard after setup is complete. When no
+  engine is available, the wizard shows installation/binary-path guidance and
+  saves preferences without creating an initial chat session.
+- Explicit `engines.<name>.bin` paths govern both execution and availability:
+  an unusable override is unavailable even if the default CLI exists on `PATH`.
 - Fresh setup probes and seeds all 11 registered engine adapters. Codex,
   Antigravity, Pi, Grok, Hermes, Ollama, and Aider refresh their model registry from
   installed CLI or provider-environment discovery; the dashboard consumes the

@@ -1,7 +1,13 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { resolveEffort } from "../effort.js";
 import { effortLevelsForModel, invalidateModelRegistry } from "../models.js";
 import type { CuttlefishConfig } from "../types.js";
+
+// Effort metadata does not depend on whether a host CLI can start.
+vi.mock("../resolve-bin.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../resolve-bin.js")>(),
+  isInstalled: () => true,
+}));
 
 const CLAUDE = ["low", "medium", "high"];
 const CODEX = ["low", "medium", "high", "xhigh"];

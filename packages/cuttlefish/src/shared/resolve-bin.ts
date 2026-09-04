@@ -127,7 +127,10 @@ export function isInstalled(name: string, override?: string): boolean {
   if (override && override.trim()) {
     const o = override.trim();
     if (o.includes("/") || o.includes(path.sep)) {
-      bin = isExecutableFile(o) ? o : null;
+      // Execution honors explicit paths even when broken. Do not advertise
+      // a different PATH installation that the engine will never invoke.
+      if (!isExecutableFile(o)) return false;
+      bin = o;
     } else {
       name = o;
     }

@@ -45,6 +45,20 @@ describe("shipped orchestration CLI registration (TS-RIG-001)", () => {
     expect(result.stderr).toBe("");
   });
 
+  it("prints usage errors once and preserves JSON error output", () => {
+    for (const args of [["start", "--bogus-flag"], ["status", "extra"], ["skills", "add"]]) {
+      const result = runCli(args);
+      expect(result.status).toBe(1);
+      expect(result.stdout).toBe("");
+      expect(result.stderr.trim().split("\n")).toHaveLength(1);
+      expect(result.stderr).toContain("error:");
+    }
+    const jsonResult = runCli(["limits", "--bogus-flag", "--json"]);
+    expect(jsonResult.status).toBe(1);
+    expect(jsonResult.stderr).toBe("");
+    expect(JSON.parse(jsonResult.stdout)).toEqual(expect.objectContaining({ status: "error" }));
+  });
+
   it("runs workers, allocation dry-run, and simulation commands as JSON without durable scheduler state", () => {
     const workers = runCli(["workers", "list", "--config-dir", orchestrationExamples, "--json"]);
     const allocation = runCli([

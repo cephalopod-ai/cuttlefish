@@ -1,5 +1,5 @@
 import { Check, RotateCcw, Trash2 } from "lucide-react"
-import { useState } from "react"
+import { lazy, Suspense, useState } from "react"
 import { EmojiPicker } from "@/components/ui/emoji-picker"
 import { RemoteAccessPanel } from "@/components/auth/remote-access-panel"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
@@ -12,6 +12,8 @@ import { Section, FieldRow, FieldHint, ToggleSwitch } from "./settings-fields"
 import { DEFAULT_PORTAL_ICON, type NotificationEventClass, type NotificationChannel, type NotificationPreferences } from "@/lib/settings"
 import { EmployeeAvatar } from "@/components/ui/employee-avatar"
 import { iconPatchFromPickerValue } from "@/lib/employee-icon"
+
+const OnboardingWizard = lazy(() => import("@/components/onboarding-wizard").then(m => ({ default: m.OnboardingWizard })))
 
 const LANGUAGE_OPTIONS = [
   "English",
@@ -439,6 +441,7 @@ interface ResetSectionProps {
 
 export function ResetSection({ resetAll, navOrderCustomized, resetNavOrder }: ResetSectionProps) {
   const [confirmResetOpen, setConfirmResetOpen] = useState(false)
+  const [onboardingOpen, setOnboardingOpen] = useState(false)
 
   return (
     <Section title="Reset">
@@ -453,10 +456,7 @@ export function ResetSection({ resetAll, navOrderCustomized, resetNavOrder }: Re
           </button>
         )}
         <button
-          onClick={() => {
-            localStorage.removeItem("cuttlefish-onboarded")
-            window.location.reload()
-          }}
+          onClick={() => setOnboardingOpen(true)}
           className="px-[var(--space-5)] py-[var(--space-2)] rounded-[var(--radius-md)] bg-[var(--accent)] text-[var(--accent-contrast)] border-none cursor-pointer text-[length:var(--text-footnote)] font-[var(--weight-semibold)] transition-all duration-150 ease-[var(--ease-spring)] inline-flex items-center gap-[var(--space-2)]"
         >
           <RotateCcw size={14} />
@@ -470,6 +470,11 @@ export function ResetSection({ resetAll, navOrderCustomized, resetNavOrder }: Re
           Reset All Settings
         </button>
       </div>
+      {onboardingOpen && (
+        <Suspense fallback={null}>
+          <OnboardingWizard forceOpen onClose={() => setOnboardingOpen(false)} />
+        </Suspense>
+      )}
       <ConfirmDialog
         open={confirmResetOpen}
         title="Reset all settings?"

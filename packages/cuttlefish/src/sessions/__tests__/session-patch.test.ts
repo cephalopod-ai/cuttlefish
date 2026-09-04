@@ -1,7 +1,13 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { CuttlefishConfig } from "../../shared/types.js";
 import { validateNewSessionSelection, validateSessionPatch } from "../session-patch.js";
 import { invalidateModelRegistry } from "../../shared/models.js";
+
+// Validate registry selections independently of installed host CLIs.
+vi.mock("../../shared/resolve-bin.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../shared/resolve-bin.js")>(),
+  isInstalled: () => true,
+}));
 
 function cfg(): CuttlefishConfig {
   return {

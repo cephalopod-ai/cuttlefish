@@ -5,6 +5,12 @@ import path from "node:path";
 import type { ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 
+// Manager authorization uses fixture models, independently of host CLIs.
+vi.mock("../../shared/resolve-bin.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../shared/resolve-bin.js")>(),
+  isInstalled: () => true,
+}));
+
 function makeRes() {
   let status = 200;
   const chunks: Buffer[] = [];

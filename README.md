@@ -146,6 +146,8 @@ Three ideas make Cuttlefish click:
 
 Cuttlefish detects whichever agent CLIs are on your `PATH` and makes them interchangeable engines. Switch per session or per employee in the dashboard; engines whose binary isn't installed are simply hidden. Model discovery is best-effort: supported CLIs are queried at boot, while configured and conservative built-in catalogs keep other engines usable when discovery is unavailable.
 
+An explicit `engines.<name>.bin` path must point to an executable that can start. A missing or unusable override marks that engine unavailable even when another installation exists on `PATH`. Onboarding explains how to recover when no engines are available and lets you finish setup without starting a chat.
+
 | Engine | What it is | Install | Modes | Effort |
 |--------|-----------|---------|-------|--------|
 | **claude** | Anthropic Claude Code - first-party, subscription-friendly | `npm install -g @anthropic-ai/claude-code` | Chat (PTY + live stream) · CLI (xterm) | low / medium / high |

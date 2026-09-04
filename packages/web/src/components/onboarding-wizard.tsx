@@ -239,8 +239,10 @@ export function OnboardingWizard({ forceOpen, onClose }: OnboardingWizardProps) 
             model: engineChoice.model,
             effortLevel: engineChoice.effortLevel,
           })
-          const session = (await api.createSession(params)) as { id?: string }
-          launchSessionId = session?.id
+          if (engineChoice.engine && enginesData?.engines[engineChoice.engine]?.available) {
+            const session = (await api.createSession(params)) as { id?: string }
+            launchSessionId = session?.id
+          }
         } catch {
           // fall through — navigate to home
         }
@@ -286,6 +288,7 @@ export function OnboardingWizard({ forceOpen, onClose }: OnboardingWizardProps) 
     setLanguage,
     navigate,
     engineChoice,
+    enginesData,
   ])
 
   const handleBack = useCallback(() => {
@@ -535,10 +538,12 @@ export function OnboardingWizard({ forceOpen, onClose }: OnboardingWizardProps) 
                 <div className="text-[length:var(--text-subheadline)] text-[var(--text-tertiary)] py-[var(--space-4)] text-center">
                   Loading engine options…
                 </div>
-              ) : !enginesData || Object.values(enginesData.engines ?? {}).every(e => !e.models?.length) ? (
-                /* Registry fetch failed or no models available — safe fallback */
+              ) : !enginesData || !Object.values(enginesData.engines ?? {}).some(e => e.available && e.models?.length) ? (
+                /* Catalog entries alone do not mean an engine can run. */
                 <div className="px-[var(--space-4)] py-[var(--space-3)] rounded-[var(--radius-md)] bg-[var(--fill-quaternary)] border border-[var(--separator)] text-[length:var(--text-subheadline)] text-[var(--text-secondary)]">
-                  Using your default engine — you can configure models in Settings anytime.
+                  {enginesData
+                    ? "No AI engine is available. Install and sign in to an engine CLI, or repair its binary path in Settings, then retry. You can finish setup now without starting a chat."
+                    : "Couldn't load engine options. You can finish setup now and configure an engine in Settings before starting a chat."}
                 </div>
               ) : (
                 <>

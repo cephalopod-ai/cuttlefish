@@ -638,5 +638,9 @@ try {
 } catch (err) {
   const code = (err as { code?: unknown } | null)?.code;
   if (code === "commander.helpDisplayed" || code === "commander.version") process.exitCode = 0;
+  else if (typeof code === "string" && code.startsWith("commander.") && !process.argv.includes("--json")) {
+    // Commander already wrote the usage error before exitOverride threw it.
+    process.exitCode = 1;
+  }
   else printCliError(err, process.argv.includes("--json"));
 }

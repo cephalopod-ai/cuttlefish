@@ -5,6 +5,12 @@ import type { CuttlefishConfig, Engine } from "../../shared/types.js";
 import fs from "node:fs";
 import path from "node:path";
 
+// Accounting uses fake engines; host CLI probes are outside this fixture.
+vi.mock("../../shared/resolve-bin.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../shared/resolve-bin.js")>(),
+  isInstalled: () => true,
+}));
+
 const { home } = withStaticTempCuttlefishHome("cuttlefish-web-session-accounting-");
 
 function fakeEngine(run: Engine["run"], extra: Partial<Engine> = {}): Engine {

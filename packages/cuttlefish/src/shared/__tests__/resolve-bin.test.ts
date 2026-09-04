@@ -82,6 +82,25 @@ describe.skipIf(process.platform === "win32")("resolveBin", () => {
     expect(isInstalled("agy", exePath)).toBe(true);
     expect(isInstalled("agy", broken)).toBe(false);
   });
+
+  it("does not substitute a PATH installation for an unusable explicit override", () => {
+    const prev = process.env.PATH;
+    process.env.PATH = `${tmpDir}${path.delimiter}${prev ?? ""}`;
+    const nonExecutable = path.join(tmpDir, "not-executable");
+    fs.writeFileSync(nonExecutable, "#!/bin/sh\necho version\n", { mode: 0o644 });
+    try {
+      expect(isInstalled(NAME)).toBe(true);
+      for (const override of [path.join(tmpDir, "missing"), nonExecutable, tmpDir]) {
+        expect(resolveBin(NAME, override)).toBe(override);
+        expect(isInstalled(NAME, override)).toBe(false);
+      }
+      expect(isInstalled(NAME, exePath)).toBe(true);
+      expect(isInstalled("other-engine", NAME)).toBe(true);
+      expect(isInstalled(NAME, "  ")).toBe(true);
+    } finally {
+      process.env.PATH = prev;
+    }
+  });
 });
 
 describe("resolveBin on Windows", () => {

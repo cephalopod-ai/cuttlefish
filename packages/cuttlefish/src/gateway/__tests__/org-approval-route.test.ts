@@ -2,6 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ServerResponse } from "node:http";
 import { withTempCuttlefishHome } from "../../test-utils/cuttlefish-home.js";
 
+// Approval application uses a stub session manager; engine availability must
+// not depend on the operator's installed CLIs or their --version latency.
+vi.mock("../../shared/resolve-bin.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../shared/resolve-bin.js")>(),
+  isInstalled: () => true,
+}));
+
 function makeRes() {
   let status = 200;
   const chunks: Buffer[] = [];

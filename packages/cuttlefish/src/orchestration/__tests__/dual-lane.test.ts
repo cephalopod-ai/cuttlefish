@@ -9,6 +9,13 @@ import { withTempCuttlefishHome } from "../../test-utils/cuttlefish-home.js";
 import type { OrchestrationConfig, Worker } from "../types.js";
 import type { DualLaneRunLane } from "../dual-lane.js";
 
+// These runs use LaneWritingEngine, so local CLI installations are not part
+// of the fixture. Avoid synchronous --version probes against the host.
+vi.mock("../../shared/resolve-bin.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../shared/resolve-bin.js")>(),
+  isInstalled: () => true,
+}));
+
 let tmpHome: string;
 const testHome = withTempCuttlefishHome("cuttlefish-dual-lane-");
 

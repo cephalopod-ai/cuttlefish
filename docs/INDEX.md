@@ -105,6 +105,13 @@ and per `docs/DOC_MAINTENANCE.md` they are not published unless a maintainer
 explicitly selects and reviews them. Do not treat this index as a list of
 tracked audit/session files.
 
+September 2026: the local `2026-09-04-playtest-repairs` audit and session handoff
+record a disposable gateway/dashboard playtest and repairs to engine availability,
+onboarding, and CLI error rendering. Coverage is partial: signed-in engine,
+connector, and active-work scenarios require a separate equipped environment.
+Detailed evidence remains under the local audit/session trees; the repair record
+is also captured in `.giles/feature-ledger/`.
+
 One tracked baseline pair was force-added before the ignore rule and remains
 in the checkout:
 
