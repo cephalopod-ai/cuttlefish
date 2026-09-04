@@ -19,6 +19,7 @@ const ALLOWED_MODELS = new Set([
   "claude::claude-opus-5",
   "claude::claude-opus-4-8",
   "claude::opus",
+  "claude::claude-fable-5-1",
   "claude::claude-fable-5",
 ]);
 

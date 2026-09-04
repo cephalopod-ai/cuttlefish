@@ -19,12 +19,19 @@ those deliberate cases.
 - `docs/RELEASING.md`: release contract for the npm package, GitHub platform
   archives, and Homebrew formula; documents the historical failed `v0.1.0`
   pre-release accurately.
+- `docs/changes/releases/v0.23.9.md`: current release statement covering the
+  A2A/Vibe recovery content plus provider-driven CLI and model compatibility.
+- `docs/changes/releases/v0.23.8.md`: historical statement for the unpublished
+  A2A/Vibe recovery candidate incorporated into v0.23.9.
 - `docs/changes/releases/v0.23.7.md`: v0.23.7 public release statement covering
   trust-boundary hardening, runtime/data-integrity repairs, Windows readiness,
   and operator-impacting upgrade notes; currently marked incomplete because
   npm, platform assets, and Homebrew remain at v0.23.6.
 - `docs/changes/releases/`: per-release statements for prior versions
-  ([v0.23.6](changes/releases/v0.23.6.md), [v0.23.5](changes/releases/v0.23.5.md),
+  ([v0.23.9](changes/releases/v0.23.9.md),
+  [v0.23.8](changes/releases/v0.23.8.md),
+  [v0.23.7](changes/releases/v0.23.7.md), [v0.23.6](changes/releases/v0.23.6.md),
+  [v0.23.5](changes/releases/v0.23.5.md),
   [v0.23.4](changes/releases/v0.23.4.md), [v0.1.0](changes/releases/v0.1.0.md),
   [v0.0.3](changes/releases/v0.0.3_resource_mgt_improve.md),
   [v0.0.2](changes/releases/v0.0.2-workinprogress.md),
@@ -81,6 +88,9 @@ those deliberate cases.
   foundation, durable scheduler state, adapter contracts, CLI dry-run/observe
   commands, opt-in live run modes, git worktree execution, and orchestration
   HTTP routes.
+- `docs/a2a-federation.md`: opt-in A2A 1.0 HTTP+JSON federation, inbound and
+  outbound allowlists, authentication, task-state translation, operator routes,
+  interoperability evidence, and current transport limits.
 - `docs/audits/2026-08-31-roles-skills-architecture-review.md`: source-grounded
   review of an external "MODE / ROLE / SKILLS" proposal against the shipped
   orchestration role model and skills subsystem, with findings, courses of

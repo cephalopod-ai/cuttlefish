@@ -2,7 +2,50 @@
 
 ## [Unreleased]
 
+## [0.23.9] - 2026-09-03
+
+Cuttlefish 0.23.9 publishes the accumulated A2A, Vibe, security, reliability,
+and architecture work from the unpublished 0.23.8 candidate, then adds a
+provider-driven CLI/model compatibility refresh. It supersedes the incomplete
+`v0.23.7` publication and the never-published `v0.23.8` candidate.
+
+### Engine and Model Compatibility
+- **Current model catalogs.** Fresh configuration now uses Claude Fable 5.1,
+  Gemini 3.8 Flash Medium, Grok 4.6, and the exact `gemma4:26b` Ollama tag.
+  Antigravity's Gemini 3.8/3.7/3.6 identifiers match `agy models`, and the
+  Grok catalog includes the provider-listed 4.6 and 4.5 models.
+- **Provider-authoritative discovery.** Codex, Antigravity, Grok, and Ollama
+  model refreshes are bounded and provider-driven. When live Codex or Grok
+  discovery succeeds, stale configured IDs omitted by the CLI are no longer
+  appended back into the registry.
+- **Ollama completion filtering.** Discovery preserves exact local model tags,
+  reads bounded `ollama show` metadata, records context length, and excludes
+  embedding-only models from completion selection.
+- **Complete setup coverage.** Setup now seeds and probes all 11 registered
+  engine adapters, including Antigravity, Pi, and Kiro, while continuing to
+  hide optional CLIs that are not installed.
+
+### Included from the 0.23.8 Candidate
+- Bidirectional A2A Protocol 1.0 HTTP+JSON federation with authenticated,
+  service-allowlisted inbound and outbound routing, durable restart recovery,
+  bounded task projection, approval preservation, and hardened SSRF/origin
+  handling.
+- Mistral Vibe as a first-class ACP engine; focused gateway route and
+  configuration-schema modules; dependency, MCP-cleanup, and chat-scroll
+  maintenance described in the 0.23.8 candidate notes below.
+
+## [0.23.8] - 2026-09-02
+
+Cuttlefish 0.23.8 was prepared but never tagged or published. Its bidirectional
+A2A Protocol 1.0 federation, Vibe engine, network/operator hardening, recovery,
+data-integrity, and gateway-architecture work is incorporated into v0.23.9.
+
 ### Features
+- **A2A Protocol 1.0 federation.** An opt-in HTTP+JSON adapter now supports
+  authenticated Agent Card discovery, inbound task execution and streaming,
+  outbound allowlisted peers, and cross-department service routing through
+  remote A2A agents. Multipart text, structured data, bounded raw files, and
+  read-only URL references retain lineage without exposing server paths.
 - **Vibe engine (Mistral AI).** Cuttlefish now drives Mistral's `vibe` CLI as
   a first-class engine via its dedicated `vibe-acp` stdio entrypoint — real
   Agent Client Protocol, the same shape as the Hermes engine and sharing its
@@ -11,6 +54,11 @@
   `vibe-acp` is on your `PATH`. See `packages/cuttlefish/src/engines/vibe-acp.ts`.
 
 ### Security
+- A2A federation keeps inbound clients in per-client service allowlists,
+  denies operator-authority delegation, masks approval details, exports
+  generated files as metadata only, confines outbound credentials to exact
+  HTTPS origins, validates redirects, blocks private-network SSRF, and pins
+  DNS results through connection setup.
 - Server-side file fetches now pin each DNS-validated address into an Undici
   dispatcher while preserving the original hostname for HTTP/TLS, closing the
   DNS-rebinding gap across initial and redirected requests.
@@ -21,6 +69,11 @@
   `1.1.18` and `5.0.9` versions.
 
 ### Reliability and Architecture
+- A2A task storage applies owner/context pagination in SQLite and bounds live
+  status projection. Outbound cross-request checkpoints, deduplicated progress
+  persistence, cancel intent, and startup recovery close daemon-restart windows
+  without replaying remote work unless a peer explicitly guarantees message-ID
+  deduplication.
 - Chat threads distinguish resize-induced scroll drift from user read-up intent,
   keeping a pinned thread at the bottom when the viewport or mobile keyboard
   changes height.
@@ -29,6 +82,9 @@
   a source boundary test prevents those primitives from returning to routers.
 - MCP secret-bearing temp-config cleanup and stale-directory sweep failures now
   emit non-secret-bearing warnings instead of disappearing silently.
+- Configuration validation is split into focused schema modules behind the
+  existing facade, preserving public configuration behavior while reducing
+  change coupling.
 
 ## [0.23.7] - 2026-08-12
 

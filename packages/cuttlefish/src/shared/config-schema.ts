@@ -29,6 +29,7 @@
  * and a call in the same relative position, not reordering the existing calls.
  */
 import { validateKnowledge } from "./config-schema-knowledge.js";
+import { validateA2A } from "./config-schema-a2a.js";
 import {
   isPlainObject,
   pushUnknownKeys,
@@ -97,6 +98,7 @@ export function validateConfigShape(config: unknown): string[] {
     "context",
     "stt",
     "talk",
+    "a2a",
     "knowledge",
     "remotes",
     "policy",
@@ -132,6 +134,7 @@ export function validateConfigShape(config: unknown): string[] {
   if (c.context !== undefined) validateContext(problems, c.context);
   if (c.stt !== undefined) validateStt(problems, c.stt);
   if (c.talk !== undefined) validateTalk(problems, c.talk);
+  if (c.a2a !== undefined) validateA2A(problems, c.a2a);
   if (c.knowledge !== undefined) validateKnowledge(problems, c.knowledge, { pushUnknownKeys, validateString, validateNumber });
   if (c.remotes !== undefined) validateRemotes(problems, c.remotes);
   if (c.policy !== undefined) validatePolicy(problems, c.policy);

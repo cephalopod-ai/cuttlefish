@@ -107,4 +107,14 @@ describe("GET /api/config redaction", () => {
     });
     expect((merged.email as { inboxes: Array<{ password: string }> }).inboxes[0].password).toBe("imap-secret");
   });
+
+  it("redacts A2A client bearer credentials and preserves client identity", () => {
+    const sanitized = sanitizeConfigForApi({
+      a2a: {
+        enabled: true,
+        clients: [{ id: "partner-a", token: "0123456789abcdef" }],
+      },
+    });
+    expect(sanitized.a2a.clients).toEqual([{ id: "partner-a", token: "***" }]);
+  });
 });

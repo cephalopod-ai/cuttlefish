@@ -43,7 +43,8 @@ function build(opts: BuildOpts = {}) {
     claudeLifecycle: { dispose: vi.fn() } as unknown as PtyLifecycleManager,
     connectors: [] as Connector[],
     gatewayInfoFile: "/tmp/gateway-info.json",
-    getRunningSessions: vi.fn(() => []),
+    getRunningSessions: vi.fn((): Array<{ id: string }> => []),
+    getPreservedRunningSessionIds: vi.fn(() => new Set<string>()),
     hookRegistry: { dispose: vi.fn() } as unknown as HookRegistry,
     interruptSession: vi.fn(),
     killEngines,
@@ -98,6 +99,21 @@ describe("createGatewayCleanup fault isolation", () => {
     expect(deps.stopWatchers).toHaveBeenCalledTimes(1);
     expect(deps.stopPolicyWatcher).toHaveBeenCalledTimes(1);
     expect(deps.stopWsHeartbeat).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves domain-recoverable running sessions during graceful shutdown", async () => {
+    const { cleanup, deps } = build();
+    deps.getRunningSessions.mockReturnValue([
+      { id: "ordinary-session" },
+      { id: "recoverable-a2a-session" },
+    ]);
+    deps.getPreservedRunningSessionIds.mockReturnValue(new Set(["recoverable-a2a-session"]));
+
+    await expect(cleanup()).resolves.toBeUndefined();
+
+    expect(deps.interruptSession).toHaveBeenCalledTimes(1);
+    expect(deps.interruptSession).toHaveBeenCalledWith("ordinary-session");
+    expect(deps.interruptSession).not.toHaveBeenCalledWith("recoverable-a2a-session");
   });
 
   it("still calls killEngines when killEngines itself is downstream of a throwing sleep guard", async () => {

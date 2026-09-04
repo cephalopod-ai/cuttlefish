@@ -29,6 +29,7 @@ import { handleStatusRoutes } from "./api/routes/status.js";
 import { handleSystemRoutes } from "./api/routes/system.js";
 import { handleInspectRoutes } from "./api/routes/inspect.js";
 import { handleCollaborationRoutes } from "./api/routes/collaboration.js";
+import { handleA2AOutboundRoutes } from "./api/routes/a2a-outbound.js";
 
 export type { ApiContext } from "./api/context.js";
 export { normalizeBlockDeltaForTurn, shouldPersistFinalAssistantMessage, finalBlocksForAssistantMessage } from "./api/block-finalize.js";
@@ -70,6 +71,7 @@ export async function handleApiRequest(
     if (await handleOrchestrationRoutes(method, pathname, res, context, req)) return;
     if (await handleStatusRoutes(method, pathname, res, context)) return;
     if (await handleCollaborationRoutes(method, pathname, req, url, res, context)) return;
+    if (await handleA2AOutboundRoutes(method, pathname, req, res, context)) return;
     if (await handleSessionQueryRoutes(method, pathname, url, res, context, SESSION_LIST_PER_GROUP)) return;
     if (await handleArchiveRoutes(method, pathname, req, res, context)) return;
     if (await handleSessionWriteRoutes(method, pathname, req, res, context)) return;

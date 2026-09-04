@@ -29,9 +29,13 @@
 ### Default COO execution profile
 
 - The virtual portal COO mirrors the saved default engine, model, and effort
-  selection. Fresh installations seed Claude Fable 5 at Medium effort, while
+  selection. Fresh installations seed Claude Fable 5.1 at Medium effort, while
   onboarding and Settings let the operator select another engine or model and
   retain that choice.
+- Fresh setup probes and seeds all 11 registered engine adapters. Codex,
+  Antigravity, Pi, Grok, Hermes, Ollama, and Aider refresh their model registry from
+  installed CLI or provider-environment discovery; the dashboard consumes the
+  resolved registry rather than maintaining a separate current-model list.
 - Fallback policy is configured separately from the selected primary model;
   an employee's own fallback policy remains the first choice for that employee.
 
@@ -229,9 +233,21 @@
 ### Cross-department service requests
 - `packages/cuttlefish/src/gateway/api/routes/org.ts`
 - Employees can declare services with `provides: [{ name, description }]` in their org YAML.
-- `GET /api/org/services` returns active service providers, deduped by service name with higher-rank providers winning ties.
-- `POST /api/org/cross-request` accepts `{ fromEmployee, service, prompt, parentSessionId? }`, resolves the active provider for the service, creates a provider-owned web session with a cross-service brief, dispatches it on the provider's configured engine/model, and returns `{ sessionId, provider, route, managers, service }`. When no active provider offers the requested service, it returns `422` with `code: "no_service_provider"`, the requested service, and the available-service inventory.
+- `GET /api/org/services` returns active internal service providers plus explicitly configured external A2A service mappings. Internal providers are deduped by service name with higher-rank providers winning ties, and an internal provider takes precedence over an external mapping with the same name.
+- `POST /api/org/cross-request` accepts `{ fromEmployee, service, prompt, parentSessionId? }`, resolves the active internal or explicitly configured external A2A provider, creates a provider-owned session with a cross-service brief, dispatches it through the matching transport, and returns `{ sessionId, provider, route, managers, service }`. When no provider offers the requested service, it returns `422` with `code: "no_service_provider"`, the requested service, and the available-service inventory.
 - The created session records `transportMeta.crossRequest` with the requester, service, provider, route, and manager chain for traceability.
+
+### External A2A federation
+- `packages/cuttlefish/src/a2a/`
+- `packages/cuttlefish/src/gateway/api/routes/a2a-outbound.ts`
+- `docs/a2a-federation.md`
+- Opt-in A2A Protocol 1.0 HTTP+JSON support exposes one organization-level Agent Card at `/.well-known/agent-card.json` and the protocol endpoint at `/a2a` (or the explicitly configured public URL). It does not replace Cuttlefish's internal collaboration model.
+- Public discovery is the intersection of active employee `provides` declarations and `a2a.allowedServices`; invocation is narrowed again by the authenticated client's optional service allowlist. Bearer and `x-api-key` credentials map callers to owner-scoped durable tasks.
+- Initial and follow-up message IDs have durable, owner-scoped at-most-once dispatch receipts. Confirmed duplicate submissions replay their mapped task. A restart during the unconfirmed reserve-to-queue window stops any mapped work and durably fails the task, requiring a new message ID instead of risking duplicate execution. Task/context/session mappings survive restart, same-context tasks converge on an atomic canonical root, and internal session/job, approval, completion, failure, and cancellation state is projected into A2A task lifecycle states. Cancellation propagates through the backing Cuttlefish session tree.
+- Text, structured data, managed raw-file inputs, read-only URL references, ordered status/artifact streaming, task listing, continuation, cancellation, and in-process stream resubscription are implemented. Generated files are exported as metadata-only artifacts; external callers cannot resolve internal approvals.
+- Outbound destinations are independently origin-, credential-, skill-, response-size-, and timeout-confined. Redirects are revalidated and DNS-pinned; private hosts require an explicit local-development opt-in, and credential-bearing public peers require HTTPS. Operator routes support card discovery, send/continue, SSE streaming, task lookup, and cancellation, and session-scoped credentials are denied.
+- Optional destination `services` mappings route existing internal cross-requests to remote A2A peers through normal local child sessions. Native Cuttlefish providers retain precedence. Remote polling progress updates the local session, raw outputs enter managed artifact storage and lineage, text/data/URL outputs receive metadata-only lineage records, and stopping the child propagates A2A cancellation with remote terminal settlement winning a cancel/completion race. Each new cross-request durably stores its request and stable A2A message ID before the first network attempt. Abrupt and graceful restart recovery polls a stored remote task ID without another send. Because A2A Send Message idempotency is optional, pre-task-ID replay is fail-closed by default and is enabled only by the per-destination `messageIdDeduplication: guaranteed` operator assertion; that path reuses one logical message ID and stops after three reconciliation failures. Its checkpoint pins the canonical Agent Card URL, and every replay requires the current destination to retain both that peer identity and the guarantee; configuration drift fails visibly without sending stored content. Duplicate in-process recovery attempts and cancellation paths coalesce, and deterministic local IDs make remote progress/result message persistence idempotent across replay. Older local sessions that lack both a task ID and request checkpoint fail visibly instead of guessing remote identity.
+- The first binding does not implement JSON-RPC, gRPC, push notifications/webhooks, per-employee cards, or transfer of raw Cuttlefish-generated files to inbound peers. Targeted official-TCK HTTP+JSON checks and an independent official-Python-SDK peer passed; this is not a full-conformance claim.
 
 ### Multi-role employee execution
 - `packages/cuttlefish/src/gateway/employee-execution.ts`
@@ -573,7 +589,8 @@
   other roles, stale/replayed tokens, and model changes fail authorization.
 - Delegated human authority is restricted to `codex/gpt-5.5`,
   `codex/gpt-5.6-sol`, Claude Opus 5 (`claude-opus-5`, `claude-opus-4-8`, or `opus`), and
-  Claude Fable (`claude-fable-5`). Decisions record an actor such as
+  Claude Fable (`claude-fable-5-1`, with `claude-fable-5` retained for existing
+  configurations). Decisions record an actor such as
   `operator-delegate:cuttlefish-coo:<sessionId>` or
   `operator-delegate:program-manager:<sessionId>`.
 - The `/approvals` web UI (`packages/web/src/routes/approvals/page.tsx`) has been

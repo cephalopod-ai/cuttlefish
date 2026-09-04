@@ -39,6 +39,17 @@ describe("messages.media column", () => {
     expect(msgs[1].media).toEqual(media);
   });
 
+  it("inserts a caller-keyed message only once", () => {
+    const session = reg.createSession({ engine: "a2a", source: "web", sourceRef: "web:keyed-message" });
+
+    expect(reg.insertMessageOnce(session.id, "stable-message-row", "assistant", "first copy")).toBe(true);
+    expect(reg.insertMessageOnce(session.id, "stable-message-row", "assistant", "duplicate copy")).toBe(false);
+
+    expect(reg.getMessages(session.id)).toEqual([
+      expect.objectContaining({ id: "stable-message-row", content: "first copy" }),
+    ]);
+  });
+
   it("migrates an existing message DB that predates the media column", () => {
     // Build a legacy DB by hand (no media column), then run the migration.
     const legacyPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "cuttlefish-legacy-")), "legacy.db");

@@ -37,6 +37,8 @@ describe("scopedTokenForbidden — operator control plane", () => {
     expect(scopedTokenForbidden("POST", "/api/orchestration/run")).toBe(true);
     expect(scopedTokenForbidden("GET", "/api/cron")).toBe(true);
     expect(scopedTokenForbidden("GET", "/api/orchestration/status")).toBe(true);
+    expect(scopedTokenForbidden("POST", "/api/a2a/outbound/mada/messages")).toBe(true);
+    expect(scopedTokenForbidden("GET", "/api/a2a/outbound/mada/card")).toBe(true);
   });
 
   it("still allows the endpoints an agent legitimately needs", () => {

@@ -421,7 +421,7 @@ export function EngineConfigurationSection({
           value={claudeModel}
           onChange={(v) => updateConfig(["engines", "claude", "model"], v)}
           options={modelOptions("claude", [
-            { value: "claude-fable-5", label: "Fable 5" },
+            { value: "claude-fable-5-1", label: "Fable 5.1" },
             { value: "claude-opus-5", label: "Opus 5" },
             { value: "opus", label: "Opus" },
             { value: "sonnet", label: "Sonnet" },
@@ -488,11 +488,11 @@ export function EngineConfigurationSection({
       </FieldRow>
       <FieldRow label="Model">
         <SettingsSelect
-          value={config.engines?.grok?.model === "grok-build" ? "grok-4.5" : config.engines?.grok?.model ?? "grok-4.5"}
+          value={config.engines?.grok?.model === "grok-build" ? "grok-4.6" : config.engines?.grok?.model ?? "grok-4.6"}
           onChange={(v) => updateConfig(["engines", "grok", "model"], v)}
           options={modelOptions("grok", [
+            { value: "grok-4.6", label: "Grok 4.6" },
             { value: "grok-4.5", label: "Grok 4.5" },
-            { value: "grok-composer-2.5-fast", label: "Grok Composer 2.5 Fast" },
           ])}
         />
       </FieldRow>
@@ -511,10 +511,10 @@ export function EngineConfigurationSection({
       </FieldRow>
       <FieldRow label="Model">
         <SettingsSelect
-          value={config.engines?.ollama?.model ?? "gemma4"}
+          value={config.engines?.ollama?.model ?? "gemma4:26b"}
           onChange={(v) => updateConfig(["engines", "ollama", "model"], v)}
           options={modelOptions("ollama", [
-            { value: "gemma4", label: "Gemma 4" },
+            { value: "gemma4:26b", label: "Gemma 4 26B" },
           ])}
         />
       </FieldRow>

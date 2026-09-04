@@ -37,8 +37,8 @@ describe("resolveModelEscalation (default ladder)", () => {
   it("user example: gemini-flash (small) climbs to the mid tier", () => {
     const got = resolveModelEscalation({
       fromEngine: "antigravity",
-      fromModel: "Gemini 3.5 Flash (High)",
-      triedRungs: new Set([rungKey("antigravity", "Gemini 3.5 Flash (High)")]),
+      fromModel: "gemini-3.8-flash-high",
+      triedRungs: new Set([rungKey("antigravity", "gemini-3.8-flash-high")]),
       isAvailable: allAvailable,
     });
     expect(got?.via).toBe("higher");

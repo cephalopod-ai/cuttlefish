@@ -15,6 +15,7 @@ import { isBlockedCrossSiteWrite, isHostAllowed, isPtyUpgradeAllowed } from "./r
 import { resolvePrincipalGate } from "./auth-gate.js";
 import type { GatewayPrincipal } from "../scoped-token.js";
 import { engineAvailable, engineUnavailableMessage, isKnownEngine } from "../../shared/models.js";
+import type { CuttlefishA2AAdapter } from "../../a2a/index.js";
 
 export type GatewayWebSocket = WebSocket & { cuttlefishPrincipal?: GatewayPrincipal };
 
@@ -32,6 +33,7 @@ interface GatewayTransportDeps {
   getSession: (id: string) => { engine: string } | undefined;
   webDir: string;
   wsClients: Set<GatewayWebSocket>;
+  a2aAdapter: CuttlefishA2AAdapter;
 }
 
 export function createGatewayTransports({
@@ -48,6 +50,7 @@ export function createGatewayTransports({
   getSession,
   webDir,
   wsClients,
+  a2aAdapter,
 }: GatewayTransportDeps) {
   const boundLoopback = isLoopbackHost(host);
 
@@ -94,6 +97,13 @@ export function createGatewayTransports({
     if (isBlockedCrossSiteWrite(req.method, req.headers["sec-fetch-site"] as string | undefined)) {
       res.writeHead(403, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "Cross-site write blocked" }));
+      return;
+    }
+
+    // A2A authenticates with its own per-client bearer credentials. Route it
+    // after the shared network/request guards but before operator gateway auth.
+    if (a2aAdapter.handles(pathname)) {
+      a2aAdapter.handle(req, res);
       return;
     }
 

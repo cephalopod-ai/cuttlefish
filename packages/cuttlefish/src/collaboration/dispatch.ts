@@ -6,6 +6,7 @@ import type {
 import type { Employee, Session } from "../shared/types.js";
 import {
   createSession,
+  getOrCreateSessionBySessionKey,
   insertCommunicationEvent,
   patchSessionTransportMeta,
   type CommunicationEventInput,
@@ -17,10 +18,12 @@ import type { ApiContext } from "../gateway/api/context.js";
 import { logger } from "../shared/logger.js";
 import { COO_RECIPIENT_ID } from "./recipient-resolution.js";
 
-interface DispatchTarget {
+export interface DispatchTarget {
   recipientId: string;
   session?: Session;
   employee?: Employee;
+  /** Stable boundary key used to recover a session created just before a process crash. */
+  sessionKey?: string;
 }
 
 type InternalDelivery = DeliveryReceipt & { messageId?: string };
@@ -34,6 +37,16 @@ export interface CollaborationDispatchInput {
   principal?: GatewayPrincipal;
   userId?: string | null;
   operatorDelegationScopes?: OperatorDelegationScope[];
+  /** Attribution used for durable collaboration events. Defaults to the web operator. */
+  author?: CommunicationEventInput["author"];
+  /**
+   * Runs after a new/existing target session is resolved and before its turn is
+   * dispatched. Boundary adapters use this to durably link protocol state to
+   * the Cuttlefish session without reimplementing collaboration delivery.
+   */
+  beforeDispatch?: (input: { session: Session; target: DispatchTarget }) => void | Promise<void>;
+  /** Additional safe fields passed to the existing continuation path. */
+  turnBody?: Record<string, unknown>;
   recordEvent?: (event: CommunicationEventInput) => unknown;
   dispatchTurn?: typeof continueSession;
 }
@@ -75,10 +88,10 @@ function createManagementSession(
   target: DispatchTarget,
   profile: NonNullable<ReturnType<typeof resolveTargetProfile>>,
   input: CollaborationDispatchInput,
-): Session {
+): { session: Session; created: boolean } {
   const isHr = profile.employee === HR_EMPLOYEE_NAME;
-  const sessionKey = isHr ? HR_SESSION_KEY : `web:management:${target.recipientId}:${Date.now()}`;
-  const session = createSession({
+  const sessionKey = isHr ? HR_SESSION_KEY : target.sessionKey ?? `web:management:${target.recipientId}:${Date.now()}`;
+  const opts = {
     engine: profile.engine,
     model: profile.model,
     effortLevel: profile.effortLevel,
@@ -93,9 +106,12 @@ function createManagementSession(
     promptExcerpt: input.message,
     portalName: input.context.getConfig().portal?.portalName,
     ...(input.projectRootSessionId ? { transportMeta: { managementProjectRootSessionId: input.projectRootSessionId } } : {}),
-  });
-  input.context.emit("session:created", { sessionId: session.id });
-  return session;
+  };
+  const resolved = target.sessionKey
+    ? getOrCreateSessionBySessionKey(sessionKey, opts)
+    : { session: createSession(opts), created: true };
+  if (resolved.created) input.context.emit("session:created", { sessionId: resolved.session.id });
+  return resolved;
 }
 
 export async function dispatchCollaborationMessage(
@@ -122,14 +138,15 @@ export async function dispatchCollaborationMessage(
     if (!input.context.sessionManager.getEngine(profile!.engine)) {
       return { recipientId: target.recipientId, state: "unavailable", error: `Engine "${profile!.engine}" is unavailable` };
     }
-    const session = target.session ?? createManagementSession(target, profile!, input);
+    const session = target.session ?? createManagementSession(target, profile!, input).session;
     if (input.lane === "management" && input.projectRootSessionId && target.session) {
       patchSessionTransportMeta(session.id, { managementProjectRootSessionId: input.projectRootSessionId });
     }
     try {
+      await input.beforeDispatch?.({ session, target });
       const result = await (input.dispatchTurn ?? continueSession)({
         sessionId: session.id,
-        body: { message: input.message },
+        body: { ...input.turnBody, message: input.message },
         context: input.context,
         principal: input.principal,
         userId: input.userId,
@@ -170,7 +187,7 @@ export async function dispatchCollaborationMessage(
       lane: input.lane,
       projectRootSessionId: input.projectRootSessionId,
       kind: "message",
-      author: { kind: "operator", id: input.userId ?? undefined, displayName: "You" },
+      author: input.author ?? { kind: "operator", id: input.userId ?? undefined, displayName: "You" },
       recipients: input.targets.map((target) => target.recipientId),
       content: input.message,
       deliveryReceipts: receipts,

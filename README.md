@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.23.7-7c3aed" alt="version 0.23.7" />
+  <img src="https://img.shields.io/badge/version-0.23.9-7c3aed" alt="version 0.23.9" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-7c3aed" alt="license: MIT" /></a>
   <img src="https://img.shields.io/badge/node-%E2%89%A524%20%3C25-7c3aed" alt="node >=24 <25" />
   <img src="https://img.shields.io/badge/status-beta-7c3aed" alt="status: beta" />
@@ -95,12 +95,12 @@ Each [GitHub Release](https://github.com/cephalopod-ai/cuttlefish/releases) that
 
 Then open **[http://localhost:8888](http://localhost:8888)**, send your first message, and watch your COO delegate.
 
-> **Package availability.** `cuttlefish-cli` is available from npm; the current
-> installable registry/Homebrew version is `0.23.6`. GitHub release `v0.23.7`
-> is incomplete: its npm publication failed, so it has no platform archives and
-> the formula was not advanced. A successful release publishes npm first, then
-> updates archives and Homebrew. See [`docs/RELEASING.md`](docs/RELEASING.md)
-> and [`docs/INSTALL.md`](docs/INSTALL.md).
+> **Package availability.** `v0.23.9` is the current recovery release for the
+> incomplete `v0.23.7` publication and unpublished `v0.23.8` candidate. Its
+> pipeline publishes npm first, then platform archives and Homebrew; verify the
+> requested package or asset is listed before a pinned install.
+> See [`docs/RELEASING.md`](docs/RELEASING.md) and
+> [`docs/INSTALL.md`](docs/INSTALL.md).
 
 > **`--version` ≠ signed in.** Cuttlefish drives the official engine CLIs, so authenticate each one *before* `cuttlefish start` (run `claude` → `/login`, run `codex` to sign in, etc.). Without this, sessions can't reach the models - the most common fresh-install gotcha.
 
@@ -280,14 +280,17 @@ engines:
   default: claude        # claude | codex | grok | antigravity | pi | hermes | kiro | ollama | kilo | aider | vibe
   claude:
     bin: claude          # binary on your PATH (override to point elsewhere)
-    model: claude-fable-5
+    model: claude-fable-5-1
     effortLevel: medium
   codex:
     bin: codex
     model: gpt-5.6-sol
+  antigravity:
+    bin: agy
+    model: gemini-3.8-flash-medium
   ollama:
     bin: ollama
-    model: gemma4
+    model: gemma4:26b
   kilo:
     bin: kilo
     model: default
@@ -314,11 +317,21 @@ Everything is human-readable files you own - `cat` it, edit it, commit it. Set
 `CUTTLEFISH_HOME` before invoking the CLI to use an isolated runtime home;
 lifecycle commands and `cuttlefish list` use that same active home.
 
+### External A2A federation
+
+Cuttlefish can expose an explicitly allowlisted subset of employee `provides`
+services and invoke explicitly configured remote skills using A2A 1.0 over
+HTTP+JSON. The adapter translates at the gateway boundary; Cuttlefish sessions,
+collaboration events, approvals, and artifact lineage remain the source of
+truth. Federation is off by default and requires per-peer credentials and
+allowlists. See [A2A Federation](docs/a2a-federation.md) for setup, security
+controls, supported operations, and current transport limits.
+
 ---
 
 ## Roadmap
 
-Cuttlefish is in active development. Shipped recently: the orchestration Command Center, approval gates, the run ledger and artifact-lineage provenance stores, ten-engine support, file attachments, agent-to-agent messaging, shared memory, and live streaming. On deck:
+Cuttlefish is in active development. Shipped recently: the orchestration Command Center, approval gates, the run ledger and artifact-lineage provenance stores, ten-engine support, file attachments, internal agent-to-agent messaging, opt-in external A2A HTTP+JSON federation, shared memory, and live streaming. On deck:
 
 - **Engines** - deeper local-model support (llama.cpp and richer local-agent adapters), engine fallback chains.
 - **Connectors** - iMessage, outbound email/reply workflows, generic webhooks.

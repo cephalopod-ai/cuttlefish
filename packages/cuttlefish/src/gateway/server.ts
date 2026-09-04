@@ -10,7 +10,7 @@ import { configureLogger, logger } from "../shared/logger.js";
 import { buildKnowledgeReadProvider } from "../knowledge/read/index.js";
 import { buildKnowledgeSink } from "../knowledge/sinks/index.js";
 import { knowledgeRelayOptions, relayPendingKnowledgeOutbox } from "../knowledge/outbox-service.js";
-import { invalidateModelRegistry, refreshAiderModels, refreshCodexModels, refreshGrokModels, refreshHermesModels, refreshPiModels } from "../shared/models.js";
+import { invalidateModelRegistry, refreshAiderModels, refreshAntigravityModels, refreshCodexModels, refreshGrokModels, refreshHermesModels, refreshOllamaModels, refreshPiModels } from "../shared/models.js";
 import { CLAUDE_SETTINGS_DIR, GATEWAY_INFO_FILE, HOOK_RELAY_SCRIPT, CUTTLEFISH_HOME, ORCH_DB, ORG_DIR } from "../shared/paths.js";
 import { Semaphore } from "../shared/async-lock.js";
 import { CodexEngine } from "../engines/codex.js";
@@ -83,6 +83,12 @@ import { bindOrchestrationRuntimeHandlers } from "./server/orchestration.js";
 import { createGatewayTransports, type GatewayWebSocket } from "./server/transports.js";
 import { recoverOrphanedRunsAtStartup } from "../shared/run-recovery.js";
 import { canSendWsEventToPrincipal } from "./ws-event-scope.js";
+import { createA2AAdapter } from "../a2a/index.js";
+import { OutboundA2AService } from "../a2a/outbound.js";
+import {
+  recoverExternalA2ACrossRequests,
+  recoverableExternalA2ACrossRequestSessionIds,
+} from "./external-a2a-cross-request.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -146,7 +152,12 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
   }, 24 * 60 * 60 * 1000);
   mcpConfigSweepTimer.unref?.();
 
-  const recovered = recoverStaleSessions();
+  // Durable outbound A2A task identities and pre-task request checkpoints are
+  // resumed after ApiContext exists.
+  // Preserve those sessions here so the generic stale-run sweep does not make
+  // the later domain recovery unreachable.
+  const recoverableExternalA2ASessionIds = recoverableExternalA2ACrossRequestSessionIds();
+  const recovered = recoverStaleSessions({ excludeSessionIds: recoverableExternalA2ASessionIds });
   if (recovered > 0) {
     logger.info(`Recovered ${recovered} stale session(s) — marked as "interrupted" for resume`);
   }
@@ -167,7 +178,10 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
   // live session or orchestration allocation gets marked `interrupted`.
   // Orchestration-engine runs are skipped only when the orchestration runtime
   // is enabled, because it performs its own finer-grained boot-time sweep.
-  const liveSessionIds = new Set(listSessions({ status: 'running' }).map((s) => s.id));
+  const liveSessionIds = new Set([
+    ...listSessions({ status: 'running' }).map((s) => s.id),
+    ...recoverableExternalA2ASessionIds,
+  ]);
   recoverOrphanedRunsAtStartup(liveSessionIds, config.orchestration?.enabled === true);
   if (sweptPartials > 0) {
     logger.info(`Swept ${sweptPartials} stranded mid-turn partial message(s) from previous run`);
@@ -380,7 +394,7 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
   };
 
   const refreshDynamicModels = (cfg: CuttlefishConfig): void => {
-    void Promise.all([refreshCodexModels(cfg), refreshPiModels(cfg), refreshGrokModels(cfg), refreshHermesModels(cfg), refreshAiderModels(cfg)])
+    void Promise.all([refreshCodexModels(cfg), refreshAntigravityModels(cfg), refreshPiModels(cfg), refreshGrokModels(cfg), refreshHermesModels(cfg), refreshOllamaModels(cfg), refreshAiderModels(cfg)])
       .finally(() => emit("engines:updated", {}));
   };
   refreshDynamicModels(currentConfig);
@@ -456,6 +470,7 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
     browserBootstrap,
     runSemaphore,
   };
+  apiContext.a2aOutbound = new OutboundA2AService(() => currentConfig);
   const emailService = new EmailService(currentConfig.email, {
     client: new ImapEmailMailboxClient(),
     onAutoIngest: async (message) => {
@@ -695,6 +710,10 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
     bindOrchestrationRuntimeHandlers(orchestrationRuntime, apiContext);
   };
 
+  const recoveredExternalA2ARequests = recoverExternalA2ACrossRequests(apiContext);
+  if (recoveredExternalA2ARequests > 0) {
+    logger.info(`Resumed ${recoveredExternalA2ARequests} outbound A2A cross-request watcher(s)`);
+  }
   void resumePendingWebQueueItems(apiContext);
   reconcileOrphanedTickets({ engines, orgDir: ORG_DIR, getSession, listSessions, emit, cause: "startup" });
   logBoardSummary(ORG_DIR, (msg) => logger.info(msg));
@@ -719,6 +738,7 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
 
   const webDir = path.resolve(__dirname, "..", "..", "web");
   const authRequiredNow = (): boolean => shouldRequireGatewayAuth(currentConfig);
+  const a2aAdapter = createA2AAdapter(apiContext);
   const transports = createGatewayTransports({
     apiContext,
     authRequiredNow,
@@ -733,6 +753,7 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
     getSession,
     webDir,
     wsClients,
+    a2aAdapter,
   });
 
   syncSkillSymlinks();
@@ -817,6 +838,7 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
     connectors,
     gatewayInfoFile: GATEWAY_INFO_FILE,
     getRunningSessions: () => listSessions({ status: "running" }),
+    getPreservedRunningSessionIds: recoverableExternalA2ACrossRequestSessionIds,
     hookRegistry,
     interruptSession: (sessionId) => {
       updateSession(sessionId, {

@@ -121,6 +121,57 @@ export interface KnowledgeConfig {
   readProvider?: KnowledgeReadProviderConfig;
 }
 
+export interface A2AClientConfig {
+  /** Stable external caller identity used to scope durable A2A tasks. */
+  id: string;
+  /** Bearer or x-api-key credential. Keep the config file private; this value is never advertised. */
+  token: string;
+  /** Optional per-caller narrowing of the organization-level service allowlist. */
+  allowedServices?: string[];
+}
+
+export interface A2ADestinationConfig {
+  /** Stable local name used by outbound workflows and API routes. */
+  id: string;
+  /** Absolute URL of the remote A2A Agent Card. */
+  agentCardUrl: string;
+  /** Credential sent only to explicitly allowed origins. */
+  token: string;
+  /** Credential form expected by the peer. MADA's `api_key` option uses `x-api-key`. */
+  credentialType?: "bearer" | "x-api-key";
+  /** Remote Agent Card skill ids this Cuttlefish instance may invoke. */
+  allowedSkills: string[];
+  /** Optional local service names that make selected remote skills available to internal cross-requests. */
+  services?: Array<{ name: string; description: string; skillId: string }>;
+  /** Additional exact origins allowed for card-advertised A2A interfaces. */
+  allowedOrigins?: string[];
+  /** Explicit local-development escape hatch; private/reserved hosts are blocked by default. */
+  allowPrivateHosts?: boolean;
+  /** Operator assertion that repeated sends with one messageId return the same logical request. */
+  messageIdDeduplication?: "guaranteed";
+  /** Per-request network deadline for card, task, and stream operations. */
+  timeoutMs?: number;
+}
+
+export interface A2AConfig {
+  /** A2A is opt-in; disabled or absent configurations expose no A2A routes. */
+  enabled?: boolean;
+  /** Absolute URL advertised for the HTTP+JSON interface (normally ends in /a2a). */
+  publicUrl?: string;
+  /** Explicit organization service names eligible for Agent Card publication. */
+  allowedServices?: string[];
+  /** Authenticated external callers. Duplicate ids or tokens are rejected. */
+  clients?: A2AClientConfig[];
+  /** Explicit outbound peers. Each destination is origin- and skill-confined. */
+  destinations?: A2ADestinationConfig[];
+  /** Bound on decoded text/structured input accepted per A2A message. */
+  maxInputBytes?: number;
+  /** Bound on the combined decoded raw-file parts accepted per A2A message. */
+  maxArtifactBytes?: number;
+  /** Session projection cadence while a blocking or streaming request is active. */
+  pollIntervalMs?: number;
+}
+
 export interface CuttlefishConfig {
   cuttlefish?: { version?: string };
   workspaces?: {
@@ -257,6 +308,8 @@ export interface CuttlefishConfig {
       sidecarPort?: number;
     };
   };
+  /** Official Agent2Agent Protocol boundary adapter. Internal orchestration remains unchanged. */
+  a2a?: A2AConfig;
   knowledge?: KnowledgeConfig;
   remotes?: Record<string, { url: string; label?: string; token?: string }>;
   /** Feature flags (kill switches and opt-ins for in-progress features). */

@@ -291,6 +291,63 @@ CREATE INDEX IF NOT EXISTS idx_communication_events_session
 ON communication_events (session_id, timestamp DESC, id DESC)
 `;
 
+export const CREATE_A2A_CONTEXTS_TABLE = `
+CREATE TABLE IF NOT EXISTS a2a_contexts (
+  context_id TEXT NOT NULL,
+  owner_id TEXT NOT NULL,
+  root_session_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (context_id, owner_id),
+  FOREIGN KEY (root_session_id) REFERENCES sessions(id) ON DELETE SET NULL
+)
+`;
+
+export const CREATE_A2A_TASKS_TABLE = `
+CREATE TABLE IF NOT EXISTS a2a_tasks (
+  task_id TEXT PRIMARY KEY,
+  context_id TEXT NOT NULL,
+  owner_id TEXT NOT NULL,
+  initial_message_id TEXT NOT NULL,
+  input_hash TEXT NOT NULL,
+  session_id TEXT UNIQUE,
+  task_json TEXT NOT NULL,
+  canceled_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (owner_id, initial_message_id),
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE SET NULL
+)
+`;
+
+export const CREATE_A2A_TASKS_OWNER_INDEX = `
+CREATE INDEX IF NOT EXISTS idx_a2a_tasks_owner_updated
+ON a2a_tasks (owner_id, updated_at DESC, task_id DESC)
+`;
+
+export const CREATE_A2A_TASKS_CONTEXT_INDEX = `
+CREATE INDEX IF NOT EXISTS idx_a2a_tasks_context
+ON a2a_tasks (owner_id, context_id, updated_at DESC)
+`;
+
+export const CREATE_A2A_MESSAGES_TABLE = `
+CREATE TABLE IF NOT EXISTS a2a_messages (
+  owner_id TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  input_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  dispatched_at TEXT,
+  PRIMARY KEY (owner_id, message_id),
+  FOREIGN KEY (task_id) REFERENCES a2a_tasks(task_id) ON DELETE CASCADE
+)
+`;
+
+export const CREATE_A2A_MESSAGES_TASK_INDEX = `
+CREATE INDEX IF NOT EXISTS idx_a2a_messages_task
+ON a2a_messages (task_id, created_at)
+`;
+
 export const CREATE_FTS = `
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(content, content='messages', content_rowid='rowid', tokenize='unicode61');
 CREATE TRIGGER IF NOT EXISTS messages_fts_ai AFTER INSERT ON messages WHEN new.role IN ('user','assistant') BEGIN
@@ -370,5 +427,16 @@ export function installPostMigrationSchema(db: Database.Database): void {
   db.exec(CREATE_COMMUNICATION_EVENTS_TABLE);
   db.exec(CREATE_COMMUNICATION_EVENTS_FEED_INDEX);
   db.exec(CREATE_COMMUNICATION_EVENTS_SESSION_INDEX);
+  db.exec(CREATE_A2A_CONTEXTS_TABLE);
+  db.exec(CREATE_A2A_TASKS_TABLE);
+  db.exec(CREATE_A2A_TASKS_OWNER_INDEX);
+  db.exec(CREATE_A2A_TASKS_CONTEXT_INDEX);
+  db.exec(CREATE_A2A_MESSAGES_TABLE);
+  try {
+    db.exec("ALTER TABLE a2a_messages ADD COLUMN dispatched_at TEXT");
+  } catch {
+    // Column already exists on new and previously upgraded homes.
+  }
+  db.exec(CREATE_A2A_MESSAGES_TASK_INDEX);
   db.exec(`UPDATE email_messages SET received_at = created_at WHERE received_at IS NULL`);
 }

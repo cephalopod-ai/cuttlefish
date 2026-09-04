@@ -1,6 +1,6 @@
 {
   "name": "cuttlefish-cli",
-  "version": "0.23.7",
+  "version": "0.23.9",
   "description": "Cuttlefish AI gateway daemon orchestrating professional AI coding CLIs",
   "license": "MIT",
   "type": "module",
@@ -32,6 +32,7 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
+    "@a2a-js/sdk": "1.1.0",
     "@cuttlefish/contracts": "0.1.0",
     "@qdrant/js-client-rest": "^1.19.0",
     "@slack/bolt": "^4.3.0",
@@ -40,6 +41,7 @@
     "busboy": "^1.6.0",
     "chokidar": "^5.0.0",
     "commander": "^15.0.0",
+    "express": "5.1.0",
     "imapflow": "^1.7.1",
     "js-yaml": "^5.3.0",
     "mailparser": "^3.9.15",
@@ -55,6 +57,7 @@
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
     "@types/busboy": "^1.5.4",
+    "@types/express": "5.0.3",
     "@types/node": "^26.2.0",
     "@types/qrcode": "^1.5.6",
     "@types/ws": "^8.5.0",

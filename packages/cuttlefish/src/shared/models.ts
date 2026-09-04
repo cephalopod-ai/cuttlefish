@@ -24,13 +24,20 @@ import {
 import { discoverAiderModels, knownAiderModels, type AiderModelDiscovery } from "./aider-models.js";
 import { discoverCodexModels, type CodexModelDiscovery } from "./codex-models.js";
 import { knownVibeModels, VIBE_EFFORT_LEVELS } from "./vibe-models.js";
+import {
+  ANTIGRAVITY_DEFAULT_MODEL,
+  discoverAntigravityModels,
+  knownAntigravityModels,
+  type AntigravityModelDiscovery,
+} from "./antigravity-models.js";
+import { discoverOllamaModels, type OllamaModelDiscovery } from "./ollama-models.js";
 
 /**
  * Model + capability registry — the single source of truth for which engines and
  * models exist and what they support (effort levels, availability).
  *
  * Sources, in precedence order per engine:
- *   1. Dynamic discovery (codex/pi/grok/hermes/aider), refreshed at boot and on
+ *   1. Dynamic discovery (codex/antigravity/pi/grok/hermes/ollama/aider), refreshed at boot and on
  *      config reload into
  *      snapshots that the (synchronous) registry reads.
  *   2. The optional `models:` block in config.yaml.
@@ -75,20 +82,20 @@ const EFFORT_MECHANISM: Record<EngineName, EffortMechanism> = {
   vibe: "none",
 };
 
-export const CODEX_DEFAULT_MODEL = "gpt-5.5";
+export const CODEX_DEFAULT_MODEL = "gpt-5.6-sol";
 
 /** Conservative per-engine defaults used when synthesizing (no `models:` block). */
 const SYNTH_DEFAULTS: Record<EngineName, { supportsEffort: boolean; effortLevels: string[]; fallbackModel: string }> = {
   claude: { supportsEffort: true, effortLevels: ["low", "medium", "high"], fallbackModel: "opus" },
-  codex: { supportsEffort: true, effortLevels: ["low", "medium", "high", "xhigh"], fallbackModel: CODEX_DEFAULT_MODEL },
-  antigravity: { supportsEffort: false, effortLevels: [], fallbackModel: "Gemini 3.5 Flash (Medium)" },
-  grok: { supportsEffort: true, effortLevels: GROK_EFFORT_LEVELS, fallbackModel: "grok-4.5" },
+  codex: { supportsEffort: true, effortLevels: ["low", "medium", "high", "xhigh", "max", "ultra"], fallbackModel: CODEX_DEFAULT_MODEL },
+  antigravity: { supportsEffort: false, effortLevels: [], fallbackModel: ANTIGRAVITY_DEFAULT_MODEL },
+  grok: { supportsEffort: true, effortLevels: GROK_EFFORT_LEVELS, fallbackModel: "grok-4.6" },
   // Placeholder shown only in the brief window before pi discovery completes; the
   // provider/id form keeps it well-typed for the engine's split.
   pi: { supportsEffort: false, effortLevels: [], fallbackModel: "ollama/gemma4:12b" },
   kiro: { supportsEffort: true, effortLevels: ["low", "medium", "high"], fallbackModel: "auto" },
   hermes: { supportsEffort: false, effortLevels: HERMES_EFFORT_LEVELS, fallbackModel: "openai-codex:gpt-5.5" },
-  ollama: { supportsEffort: false, effortLevels: [], fallbackModel: "gemma4" },
+  ollama: { supportsEffort: false, effortLevels: [], fallbackModel: "gemma4:26b" },
   kilo: { supportsEffort: false, effortLevels: [], fallbackModel: "default" },
   // Aider auto-detects its model from whichever API key is in env; "default" is a
   // sentinel meaning "don't pass --model" (the engine omits the flag for it).
@@ -123,7 +130,7 @@ const ENGINE_INSTALL_HINT: Record<EngineName, string> = {
   pi: "install the Pi CLI",
   kiro: "install kiro-cli, then authenticate it or set KIRO_API_KEY",
   hermes: "install the Hermes CLI: curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
-  ollama: "install Ollama from https://ollama.com/download and pull a model, e.g. `ollama pull gemma4`",
+  ollama: "install Ollama from https://ollama.com/download and pull a model, e.g. `ollama pull gemma4:26b`",
   kilo: "npm install -g @kilocode/cli, then run `kilo` and use /connect to add a provider",
   aider: "install Aider (`python -m pip install aider-install && aider-install`, or `pipx install aider-chat`), then set an API key (e.g. ANTHROPIC_API_KEY or OPENAI_API_KEY)",
   vibe: "install the Mistral Vibe CLI (see https://mistral.ai for install instructions), then run `vibe --setup` to authenticate",
@@ -139,10 +146,14 @@ export function engineUnavailableMessage(config: CuttlefishConfig, name: EngineN
 let discoveredPiModels: ModelInfo[] | null = null;
 /** Snapshot of dynamically-discovered Codex models (null until first discovery). */
 let discoveredCodexModels: CodexModelDiscovery | null = null;
+/** Snapshot of dynamically-discovered Antigravity models (null until first discovery). */
+let discoveredAntigravityModels: AntigravityModelDiscovery | null = null;
 /** Snapshot of dynamically-discovered Grok models (null until first discovery). */
 let discoveredGrokModels: GrokModelDiscovery | null = null;
 /** Snapshot of dynamically-discovered Hermes models (null until first discovery). */
 let discoveredHermesModels: HermesModelDiscovery | null = null;
+/** Snapshot of locally installed completion-capable Ollama models. */
+let discoveredOllamaModels: OllamaModelDiscovery | null = null;
 /** Snapshot of env-derived Aider models (null until first discovery). */
 let discoveredAiderModels: AiderModelDiscovery | null = null;
 
@@ -167,6 +178,25 @@ export async function refreshCodexModels(config: CuttlefishConfig, options: Mode
   } catch (err) {
     if (!options.quiet) logger.warn(`Codex model discovery failed: ${err instanceof Error ? err.message : err}`);
     discoveredCodexModels = null;
+  } finally {
+    invalidateModelRegistry();
+  }
+}
+
+/** Discover the canonical model ids exposed by the installed Antigravity CLI. */
+export async function refreshAntigravityModels(config: CuttlefishConfig, options: ModelRefreshOptions = {}): Promise<void> {
+  if (!engineAvailable(config, "antigravity")) {
+    discoveredAntigravityModels = null;
+    invalidateModelRegistry();
+    return;
+  }
+  try {
+    const bin = resolveBin("agy", engineBinOverride(config, "antigravity"));
+    discoveredAntigravityModels = await discoverAntigravityModels(bin);
+    if (!options.quiet) logger.info(`Antigravity model discovery: ${discoveredAntigravityModels.models.length} model(s)`);
+  } catch (err) {
+    if (!options.quiet) logger.warn(`Antigravity model discovery failed: ${err instanceof Error ? err.message : err}`);
+    discoveredAntigravityModels = null;
   } finally {
     invalidateModelRegistry();
   }
@@ -236,6 +266,25 @@ export async function refreshHermesModels(config: CuttlefishConfig, options: Mod
   } catch (err) {
     if (!options.quiet) logger.warn(`Hermes model discovery failed: ${err instanceof Error ? err.message : err}`);
     discoveredHermesModels = null;
+  } finally {
+    invalidateModelRegistry();
+  }
+}
+
+/** Discover exact local Ollama tags and exclude embedding-only models. */
+export async function refreshOllamaModels(config: CuttlefishConfig, options: ModelRefreshOptions = {}): Promise<void> {
+  if (!engineAvailable(config, "ollama")) {
+    discoveredOllamaModels = null;
+    invalidateModelRegistry();
+    return;
+  }
+  try {
+    const bin = resolveBin("ollama", engineBinOverride(config, "ollama"));
+    discoveredOllamaModels = await discoverOllamaModels(bin);
+    if (!options.quiet) logger.info(`Ollama model discovery: ${discoveredOllamaModels.models.length} completion model(s)`);
+  } catch (err) {
+    if (!options.quiet) logger.warn(`Ollama model discovery failed: ${err instanceof Error ? err.message : err}`);
+    discoveredOllamaModels = null;
   } finally {
     invalidateModelRegistry();
   }
@@ -339,6 +388,10 @@ export function buildRegistry(config: CuttlefishConfig): ModelRegistry {
       registry[name] = buildCodexEntry(config, block?.codex, synthesized[name], available);
       continue;
     }
+    if (name === "antigravity") {
+      registry[name] = buildAntigravityEntry(config, block?.antigravity, synthesized[name], available);
+      continue;
+    }
     if (name === "pi") {
       registry[name] = buildPiEntry(config, block?.pi, synthesized[name], available);
       continue;
@@ -349,6 +402,10 @@ export function buildRegistry(config: CuttlefishConfig): ModelRegistry {
     }
     if (name === "hermes") {
       registry[name] = buildHermesEntry(config, block?.hermes, synthesized[name], available);
+      continue;
+    }
+    if (name === "ollama") {
+      registry[name] = buildOllamaEntry(config, block?.ollama, synthesized[name], available);
       continue;
     }
     if (name === "aider") {
@@ -367,6 +424,58 @@ export function buildRegistry(config: CuttlefishConfig): ModelRegistry {
   return registry;
 }
 
+/** Ollama registry entry: exact locally installed completion models > config > synthesized. */
+function buildOllamaEntry(
+  config: CuttlefishConfig,
+  ollamaBlock: EngineModelsConfig | undefined,
+  synthEntry: EngineRegistryEntry,
+  available: boolean,
+): EngineRegistryEntry {
+  const pinned = config.engines.ollama?.model;
+  if (discoveredOllamaModels && discoveredOllamaModels.models.length > 0) {
+    const configured = new Map(ollamaBlock?.models.map((model) => [model.id, model]) ?? []);
+    const models = discoveredOllamaModels.models.map((model) => {
+      const contextWindow = configured.get(model.id)?.contextWindow ?? model.contextWindow;
+      return typeof contextWindow === "number" ? { ...model, contextWindow } : model;
+    });
+    const valid = (id?: string) => (id && models.some((model) => model.id === id) ? id : undefined);
+    const defaultModel = valid(pinned) ?? valid(ollamaBlock?.default) ?? models[0].id;
+    return { name: "ollama", available, defaultModel, effortMechanism: "none", models };
+  }
+  if (ollamaBlock) return fromEngineModelsConfig("ollama", ollamaBlock, available, pinned);
+  return { ...synthEntry, available };
+}
+
+/** Antigravity registry entry: discovered models > config block > known catalog. */
+function buildAntigravityEntry(
+  config: CuttlefishConfig,
+  antigravityBlock: EngineModelsConfig | undefined,
+  synthEntry: EngineRegistryEntry,
+  available: boolean,
+): EngineRegistryEntry {
+  const pinned = config.engines.antigravity?.model;
+  if (discoveredAntigravityModels && discoveredAntigravityModels.models.length > 0) {
+    const configured = new Map(antigravityBlock?.models.map((model) => [model.id, model]) ?? []);
+    const models = discoveredAntigravityModels.models.map((model) => {
+      const contextWindow = configured.get(model.id)?.contextWindow;
+      return typeof contextWindow === "number" ? { ...model, contextWindow } : model;
+    });
+    const valid = (id?: string) => (id && models.some((model) => model.id === id) ? id : undefined);
+    const defaultModel = valid(pinned) ?? valid(antigravityBlock?.default) ?? valid(ANTIGRAVITY_DEFAULT_MODEL) ?? models[0].id;
+    return { name: "antigravity", available, defaultModel, effortMechanism: "none", models };
+  }
+  if (antigravityBlock) return fromEngineModelsConfig("antigravity", antigravityBlock, available, pinned);
+  const known = knownAntigravityModels(pinned);
+  const validDefault = (id?: string) => (id && known.models.some((model) => model.id === id) ? id : undefined);
+  return {
+    name: "antigravity",
+    available,
+    defaultModel: validDefault(pinned) ?? validDefault(ANTIGRAVITY_DEFAULT_MODEL) ?? synthEntry.defaultModel,
+    effortMechanism: "none",
+    models: known.models,
+  };
+}
+
 /** Codex registry entry: discovered models > config `models.codex` block > synthesized. */
 function buildCodexEntry(
   config: CuttlefishConfig,
@@ -376,7 +485,7 @@ function buildCodexEntry(
 ): EngineRegistryEntry {
   const pinned = config.engines.codex?.model;
   if (discoveredCodexModels && discoveredCodexModels.models.length > 0) {
-    const models = mergeDiscoveredCodexModels(discoveredCodexModels.models, codexBlock, pinned);
+    const models = mergeDiscoveredCodexModels(discoveredCodexModels.models, codexBlock);
     const valid = (id?: string) => (id && models.some((m) => m.id === id) ? id : undefined);
     const defaultModel =
       valid(pinned) ??
@@ -495,7 +604,7 @@ function mergeDiscoveredAiderModels(
 }
 
 /**
- * Union the discovered Codex models with any `models.codex` block entries and a pinned id.
+ * Enrich discovered Codex models with matching configured context windows.
  * Discovery stays authoritative for model availability, label, and effort support — the
  * app-server protocol has no context-window field, so a matching configured entry's
  * `contextWindow` is overlaid onto the discovered model to keep Cuttlefish's own context
@@ -504,31 +613,12 @@ function mergeDiscoveredAiderModels(
 function mergeDiscoveredCodexModels(
   discovered: ModelInfo[],
   block: EngineModelsConfig | undefined,
-  pinned: string | undefined,
 ): ModelInfo[] {
   const configured = new Map(block?.models.map((m) => [m.id, m]) ?? []);
-  const seen = new Set<string>();
-  const models = discovered.map((model) => {
-    seen.add(model.id);
+  return discovered.map((model) => {
     const contextWindow = configured.get(model.id)?.contextWindow;
     return typeof contextWindow === "number" ? { ...model, contextWindow } : model;
   });
-  if (block) {
-    for (const m of block.models) {
-      if (seen.has(m.id)) continue;
-      seen.add(m.id);
-      models.push(modelInfoFromConfigEntry(m));
-    }
-  }
-  if (pinned && !seen.has(pinned)) {
-    models.push({
-      id: pinned,
-      label: pinned,
-      supportsEffort: false,
-      effortLevels: [],
-    });
-  }
-  return models;
 }
 
 /** Pi registry entry: discovered models > config `models.pi` block > synthesized. */
@@ -563,6 +653,17 @@ export function synthesizeFromEngineConfig(config: CuttlefishConfig): ModelRegis
     const defaults = SYNTH_DEFAULTS[name];
     const engineCfg = (config.engines as unknown as Record<string, { model?: string } | undefined>)[name];
     const modelId = engineCfg?.model || defaults.fallbackModel;
+    if (name === "antigravity") {
+      const known = knownAntigravityModels(modelId);
+      registry[name] = {
+        name,
+        available: engineAvailable(config, name),
+        defaultModel: modelId,
+        effortMechanism: EFFORT_MECHANISM[name],
+        models: known.models,
+      };
+      continue;
+    }
     if (name === "grok") {
       const known = knownGrokModels(modelId);
       registry[name] = {
@@ -626,9 +727,7 @@ function mergeDiscoveredGrokModels(discovered: ModelInfo[], block: EngineModelsC
   if (!block) return discovered;
 
   const configured = new Map(block.models.map((m) => [m.id, m]));
-  const seen = new Set<string>();
-  const merged = discovered.map((model) => {
-    seen.add(model.id);
+  return discovered.map((model) => {
     const configuredModel = configured.get(model.id);
     if (!configuredModel) return model;
 
@@ -646,9 +745,4 @@ function mergeDiscoveredGrokModels(discovered: ModelInfo[], block: EngineModelsC
     };
   });
 
-  for (const configuredModel of block.models) {
-    if (!seen.has(configuredModel.id)) merged.push(modelInfoFromConfigEntry(configuredModel));
-  }
-
-  return merged;
 }

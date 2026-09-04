@@ -24,11 +24,11 @@ describe("synthesizeFromEngineConfig (backward-compat fallback)", () => {
     expect(reg.claude.models[0].id).toBe("opus");
     expect(reg.claude.defaultModel).toBe("opus");
     expect(reg.codex.models[0].id).toBe("gpt-5.5");
-    expect(reg.antigravity.models[0].id).toBe("Gemini 3.5 Flash (Medium)");
-    expect(reg.grok.defaultModel).toBe("grok-4.5");
-    expect(reg.grok.models.map((m) => m.id)).toEqual(["grok-4.5", "grok-composer-2.5-fast"]);
-    expect(reg.grok.models.map((m) => m.label)).toEqual(["Grok 4.5", "Grok Composer 2.5 Fast"]);
-    expect(reg.ollama.models[0].id).toBe("gemma4");
+    expect(reg.antigravity.models.map((m) => m.id)).toContain("gemini-3.8-flash-medium");
+    expect(reg.grok.defaultModel).toBe("grok-4.6");
+    expect(reg.grok.models.map((m) => m.id)).toEqual(["grok-4.6", "grok-4.5"]);
+    expect(reg.grok.models.map((m) => m.label)).toEqual(["Grok 4.6", "Grok 4.5"]);
+    expect(reg.ollama.models[0].id).toBe("gemma4:26b");
     expect(reg.kilo.models[0].id).toBe("default");
   });
 
@@ -50,9 +50,9 @@ describe("synthesizeFromEngineConfig (backward-compat fallback)", () => {
   });
 
   it("uses the pinned Grok model as default while keeping the known Grok catalog", () => {
-    const reg = synthesizeFromEngineConfig(cfg({ grok: { bin: "grok", model: "grok-composer-2.5-fast" } }));
-    expect(reg.grok.defaultModel).toBe("grok-composer-2.5-fast");
-    expect(reg.grok.models.map((m) => m.id)).toEqual(["grok-4.5", "grok-composer-2.5-fast"]);
+    const reg = synthesizeFromEngineConfig(cfg({ grok: { bin: "grok", model: "grok-4.5" } }));
+    expect(reg.grok.defaultModel).toBe("grok-4.5");
+    expect(reg.grok.models.map((m) => m.id)).toEqual(["grok-4.6", "grok-4.5"]);
   });
 });
 

@@ -144,7 +144,7 @@ export class OllamaEngine implements InterruptibleEngine {
   async run(opts: EngineRunOpts): Promise<EngineResult> {
     const trackingId = opts.sessionId || opts.resumeSessionId || `ollama-${Date.now()}`;
     const bin = resolveBin("ollama", opts.bin);
-    const model = opts.model || "gemma4";
+    const model = opts.model || "gemma4:26b";
     const history = opts.historyMessages ?? (opts.sessionId ? getMessages(opts.sessionId) : []);
     const prompt = buildOllamaPrompt(opts, history);
     // The CLI otherwise prints model reasoning and terminal word-wrap cursor

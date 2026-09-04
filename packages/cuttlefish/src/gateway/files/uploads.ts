@@ -106,6 +106,7 @@ interface UploadResult {
   id: string;
   filename: string;
   buffer: Buffer;
+  mimetype?: string | null;
   customPath: string | null;
   open: boolean;
   sessionId?: string | null;
@@ -138,7 +139,7 @@ export async function saveFile(result: UploadResult, context: ApiContext): Promi
     : `${FILES_DIR}/${result.id}`;
   const storagePath = path.join(storageDir, safeName);
 
-  const mimetype = mimeFromFilename(safeName);
+  const mimetype = result.mimetype?.trim() || mimeFromFilename(safeName);
   const sha256 = crypto.createHash("sha256").update(result.buffer).digest("hex");
   let wroteStorage = false;
   let wroteCustom = false;

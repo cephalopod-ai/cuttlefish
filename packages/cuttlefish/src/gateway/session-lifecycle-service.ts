@@ -23,6 +23,7 @@ import {
 import { serializeSession } from "./api/serialize-session.js";
 import { deleteSessionsWithBoardCleanup } from "./lifecycle-delete.js";
 import { attachResourcesToSession } from "./session-resources.js";
+import { requestExternalA2ACrossRequestStop } from "./external-a2a-cross-request.js";
 
 export interface SessionMutationResult {
   statusCode: number;
@@ -114,12 +115,15 @@ export function stopSession(sessionId: string, context: ApiContext): SessionMuta
   if (!session) return notFound();
 
   const wasRunning = session.status === "running";
+  const externalInterruptible = session.engine === "a2a" && (session.status === "running" || session.status === "waiting")
+    ? requestExternalA2ACrossRequestStop(sessionId, context)
+    : false;
   const killResult = killSessionEngines(context, session, "Interrupted by user");
   context.sessionManager.getQueue().clearQueue(session.sessionKey || session.sourceRef || session.id);
-  const stopped = killResult.interruptible > 0 || session.status !== "running";
+  const stopped = externalInterruptible || killResult.interruptible > 0 || session.status !== "running";
   if (stopped) {
     updateSession(sessionId, {
-      status: "idle",
+      status: externalInterruptible ? "waiting" : "idle",
       lastActivity: new Date().toISOString(),
       lastError: null,
       ...(wasRunning && session.engine === "grok" ? { engineSessionId: null } : {}),
@@ -133,6 +137,7 @@ export function stopSession(sessionId: string, context: ApiContext): SessionMuta
       stopped,
       wasRunning,
       interruptible: killResult.interruptible > 0,
+      externalInterruptible,
       sessionId,
     },
   };

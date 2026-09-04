@@ -19,6 +19,7 @@ import {
   listConvDirs,
 } from "./antigravity-protocol.js";
 import { neutralizeForPaste } from "../shared/skill-commands.js";
+import { ANTIGRAVITY_DEFAULT_MODEL } from "../shared/antigravity-models.js";
 
 /**
  * Antigravity (`agy`) engine — PTY-interactive, modeled on InteractiveClaudeEngine.
@@ -37,7 +38,7 @@ import { neutralizeForPaste } from "../shared/skill-commands.js";
  * spawn so the interactive "trust this folder?" gate never blocks us.
  */
 
-export const ANTIGRAVITY_DEFAULT_MODEL = "Gemini 3.5 Flash (Medium)";
+export { ANTIGRAVITY_DEFAULT_MODEL };
 const TURN_TIMEOUT_MS = 14 * 24 * 60 * 60 * 1000;
 const TURN_FINAL_QUIET_MS = 1200;      // terminal text/no-tool row: finish promptly
 const TURN_QUIET_DONE_MS = 6000;       // fallback: wait longer around tool/ambiguous rows

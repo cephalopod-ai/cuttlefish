@@ -103,7 +103,7 @@ function buildMigrateArgs(engine: string, prompt: string, model?: string, claude
         prompt,
       ];
     case "ollama":
-      return ["run", model || "gemma4", prompt];
+      return ["run", model || "gemma4:26b", prompt];
     case "codex":
       // `codex exec` is Codex's own non-interactive mode (not a claude `-p`).
       return ["exec", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", prompt];
