@@ -46,12 +46,14 @@ daemon symlinks *every* installed skill into two **instance-local** directories 
 `~/.cuttlefish/.claude/skills` by default (`gateway/watcher.ts`,
 `shared/paths.ts:95-96`) — with no filtering by role or session. Whether an
 engine sees them then depends on its **working directory**, and per F6 the
-window is narrow: no dispatcher gives the engine `CUTTLEFISH_HOME` as its cwd by
-default, so on the evidence the synced skills reach an engine only where that
-cwd is arrived at deliberately — an orchestrated run with no task cwd and no
-`workspaces.defaultCwd`, or a session an operator has explicitly pointed there.
-Either way the delivery is all-or-nothing: unfiltered where it reaches, absent
-where it does not. There is no enforcement point where "role `reviewer` gets skills
+window splits by path: **interactive sessions never see them by default**
+(their implicit workspace is a sibling directory), while the **default
+orchestration path does** — no shipped example task sets `cwd` and setup seeds
+no `workspaces.defaultCwd`, so `resolveTaskBaseCwd` falls through to
+`CUTTLEFISH_HOME`. Skill delivery therefore works out of the box for
+`cuttlefish run` and stops the moment an operator points a task at a real
+repository. Either way the delivery is all-or-nothing: unfiltered where it
+reaches, absent where it does not. There is no enforcement point where "role `reviewer` gets skills
 `code-review`, `adversarial-review`" could take effect. The proposal's central
 mechanism — the skill differentiating the role — is the one piece of machinery
 that does not exist yet.
@@ -68,7 +70,7 @@ traits), deferring the full three-axis model.
 | C1 | "Cuttlefish … already integrates Tagteam" | **Not found.** A case-insensitive search for `tag.?team` across the repo (excluding `node_modules`/`.git`) returns zero matches. The capabilities attributed to Tagteam (run loop, artifacts, role dispatch, capability routing, recovery, quality gates) all exist — inside Cuttlefish's own `orchestration` package. | `packages/cuttlefish/src/orchestration/{scheduler,coordinator,artifacts,recovery-requeue,store-recovery}.ts` |
 | C2 | "Tagteam's current architecture already has a closed Role vocabulary" | **Inverted.** The role vocabulary is *open*: roles are parsed from an operator-supplied `roles.yaml`, and `RoleDefinition.id` is a free string. What *is* closed is the **mode** vocabulary — five allocation modes and five live-run modes. | `orchestration/config.ts:42`; `orchestration/types.ts` (`RoleDefinition`); `orchestration/coordinator.ts:15`; `orchestration/live-run.ts:1` |
 | C3 | "supervisor / worker / scout" are the current Tagteam roles | **Not the shipped vocabulary.** The template roles are `architect`, `seniorImplementer`, `independentReviewer`, `adversarialReviewer`, `qaGate`, `localTriage`. `supervisor` is a concept in the *org* system (`reportsTo` chains), not the orchestration role set; `scout` does not appear. | `docs/orchestration/examples/roles.yaml`; `packages/cuttlefish/template/orchestration/roles.yaml`; `gateway/org-validation.ts:36,388` |
-| C4 | "I would make Skills the main extension … implement Skills before adding more roles" | **Already shipped, in part.** Skills exist as a CLI (`add`/`find`/`list`/`update`), a provenance manifest (not a content pin — see F5), a filesystem convention, live hot-reload, HTTP routes, and a dashboard catalog. (A prompt-injection screening module exists, but per F5 it is **not** invoked on skill install, sync, or native discovery.) | `cli/skills.ts` (400 lines); `gateway/api/routes/skills.ts`; `gateway/watcher.ts:123-137`; `gateway/content-screening.ts`; `docs/USER_MANUAL.md:91-102`; `README.md:307` |
+| C4 | "I would make Skills the main extension … implement Skills before adding more roles" | **Already shipped, in part.** Skills exist as a CLI (`add`/`find`/`list`/`update`), a provenance manifest (not a content pin — see F5), a filesystem convention, live hot-reload, HTTP routes, and a dashboard catalog. (A prompt-injection screening module exists, but per F5 it is **not** invoked on skill install, sync, or native discovery.) | `cli/skills.ts` (400 lines); `gateway/api/routes/skills.ts`; `gateway/watcher.ts:123-137`; `gateway/content-screening.ts`; `docs/USER_MANUAL.md:91-102`; `README.md:310` |
 | C5 | "skills should be provider-independent … the provider supplies intelligence" | **True in format, not in delivery.** Skills *are* provider-neutral Markdown (`SKILL.md`). Delivery is provider-*specific* **and working-directory-dependent**: the sync writes symlinks into two instance-local directories under `CUTTLEFISH_HOME`, which an engine discovers only when its cwd is that home (see F6). | `gateway/watcher.ts:29`; `shared/paths.ts:95-96`; `shared/instance-home.ts`; `engines/claude-interactive.ts:463,527` |
 
 **C1 is the one to resolve first.** Three of the proposal's design decisions
@@ -270,7 +272,7 @@ the first**.
   must not confer trust.
 - **What screening does *not* cover:** that provenance logic runs only where
   content is explicitly processed — inbound text and run attachments
-  (`gateway/server.ts:483,567`, `gateway/run-attachments.ts:17`,
+  (`gateway/server.ts:498,582`, `gateway/run-attachments.ts:17`,
   `gateway/ticket-dispatch.ts:23`). Neither `skillsAdd()` nor
   `syncSkillSymlinks()` invokes it, and an engine reading `SKILL.md` from its
   own skills home never passes through Cuttlefish at all. Installed skill
@@ -343,19 +345,27 @@ the first**.
     `engines/claude-interactive.ts:463,527` reads `cwd: opts.cwd ||
     CUTTLEFISH_HOME`, but every dispatcher above supplies `opts.cwd`, so the
     `CUTTLEFISH_HOME` default does not apply to them.
-  - **Orchestrated runs — the one discovering case.** `run-mode.ts:325-335`
-    creates the session with `cwd: opts.workspace.cwd`, resolved by
-    `resolveTaskBaseCwd` as
+  - **Orchestrated runs — discovering, and that is the *default*.**
+    `run-mode.ts:325-335` creates the session with `cwd: opts.workspace.cwd`,
+    resolved by `resolveTaskBaseCwd` as
     `task.cwd ?? config.workspaces?.defaultCwd ?? CUTTLEFISH_HOME`
-    (`orchestration/worktree.ts:67-68`). Only when **neither** a task cwd nor a
-    `workspaces.defaultCwd` is configured does the cwd land on
-    `CUTTLEFISH_HOME` and the skills become discoverable.
-- **Consequence — the filesystem delivery path is narrower than it looks.** On
-  the evidence above, the synced skills reach an engine only where the cwd
-  lands on `CUTTLEFISH_HOME`: an orchestrated run with no task cwd and no
-  `workspaces.defaultCwd`, or a session an operator has explicitly pointed at
-  that directory. Neither is a default — ordinary interactive sessions do not
-  see them via this route. A user's own
+    (`orchestration/worktree.ts:67-68`). The fall-through is not a corner case:
+    **none of the four shipped example tasks declares `cwd`**
+    (`docs/orchestration/examples/task-{standard,live,architecture,local-heavy}.yaml`)
+    and `cuttlefish setup` seeds no `workspaces.defaultCwd` — the template
+    config has no `workspaces` block at all. So the documented out-of-box
+    `cuttlefish run` path lands on `CUTTLEFISH_HOME` and **does** discover the
+    synced skills. Discovery stops once an operator sets a task `cwd` or a
+    `defaultCwd`, i.e. as soon as a task points at a real repository.
+- **Consequence — delivery is path-dependent, not uniformly absent.** The
+  synced skills reach an engine wherever the cwd lands on `CUTTLEFISH_HOME`,
+  which on the evidence above means: **yes** on the default orchestration path
+  (shipped examples set no `cwd`, setup seeds no `defaultCwd`), **no** for
+  ordinary interactive sessions, and **no** for any task pointed at a real
+  repository. So the mechanism works precisely where it is least exercised —
+  a default `cuttlefish run` — and silently stops in the configurations real
+  work uses. That asymmetry, rather than blanket absence, is what makes it
+  unsuitable as the substrate for role↔skill binding. A user's own
   `~/.claude/skills` is a separate matter — engines read it, but the daemon
   never writes there (see the asymmetry below), so anything found that way was
   installed by the user, not synced by Cuttlefish.
@@ -409,7 +419,7 @@ the first**.
   `holds`, `artifacts`, `continuations`, and `recovery`. A regression test
   pins this: `src/cli/__tests__/orchestration-cli-registration.test.ts`
   (TS-RIG-001) builds the shipped binary and asserts all eleven groups appear
-  in `--help`. `docs/feature_inventory.md:381-403` documents the commands as
+  in `--help`. `docs/feature_inventory.md:397-419` documents the commands as
   available.
 - **The actual defect:** `docs/orchestration/README.md:3-8` still carries a
   *"CLI exposure note (verified 2026-07-20)"* stating that the binary "does not
@@ -489,7 +499,7 @@ reach and trust, and no single option has both properties:**
   content screening, and the engine reads `SKILL.md` from its own home without
   Cuttlefish seeing it. `screenUntrustedText` / `screenAttachmentContent` are
   wired into inbound text and run attachments
-  (`gateway/server.ts:483,567`, `gateway/run-attachments.ts:17`,
+  (`gateway/server.ts:498,582`, `gateway/run-attachments.ts:17`,
   `gateway/ticket-dispatch.ts:23`), not into skill installation or sync. So B2a
   leaves F5's *surface* unchanged while inheriting an already-unscreened route;
   F5's human review gate is needed either way, and an earlier revision of this
@@ -524,7 +534,7 @@ reach and trust, and no single option has both properties:**
   silently — but build the catalogue from **`SKILLS_DIR` on disk**, using
   `skills.json` only as optional source metadata. Manifest-only validation
   would reject legitimately installed skills: `cuttlefish setup` copies the ten
-  bundled template skills into `SKILLS_DIR` (`cli/setup.ts:716`) while seeding
+  bundled template skills into `SKILLS_DIR` (`cli/setup.ts:788`) while seeding
   `skills.json` as `{"installed": {}}` (`template/skills.json`), and
   `skillsList()` already treats a directory with no manifest entry as a valid
   `(local)` skill (`cli/skills.ts:293-326`). On a fresh install, manifest-only
@@ -631,7 +641,7 @@ design, including its already-shipped skills subsystem.
    `RoleDefinition` are two separate answers to "who is this agent". The
    proposal addresses only the second. Left unreconciled, operators will have to
    configure the same intent twice.
-7. **Skill versioning.** `README.md:327` lists skill versioning as roadmap, not
+7. **Skill versioning.** `README.md:340` lists skill versioning as roadmap, not
    shipped. Binding roles to skill *names* without versions means a
    `skills update` can change a role's behaviour with no diff in the role
    config. Pin skills in `skills.json` if roles depend on them.
