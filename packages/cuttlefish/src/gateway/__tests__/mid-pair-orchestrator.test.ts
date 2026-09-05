@@ -341,6 +341,70 @@ describe("dispatchEmployeeSessionRun — review loop", () => {
     expect(completed[completed.length - 1].payload).toMatchObject({ sessionId: top.id, error: null });
   });
 
+  it("records that an approval came from the implementer's own model, not an independent one (A-F7)", async () => {
+    // The reviewer falls back to `employee.engine`/`employee.model` when the
+    // operator configured no reviewer override, so the default mid_pair setup
+    // reviews Claude/sonnet work with Claude/sonnet. That is a second sample
+    // from one model, not a second opinion — and nothing used to say so.
+    const top = hoisted.seedTopSession();
+    hoisted.script.push({ status: "idle", assistantText: "implemented the feature" });
+    hoisted.script.push({ status: "idle", assistantText: approvedVerdict });
+    const context = makeContext([]);
+
+    await dispatchEmployeeSessionRun(top as any, "add healthz endpoint", fakeEngine(), baseConfig(), context, midPairEmployee());
+
+    const meta = hoisted.sessionsById.get(top.id)!.transportMeta as any;
+    expect(meta.executionPhase).toBe("done");
+    expect(meta.executionReviewIndependence).toBe("same_model");
+    expect(meta.executionReviewerEngine).toBe("claude");
+    expect(meta.executionReviewerModel).toBe("sonnet");
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("agreement is a second sample from the same model"),
+    );
+  });
+
+  it("marks a review independent when the reviewer override is a different engine (A-F7)", async () => {
+    const top = hoisted.seedTopSession();
+    hoisted.script.push({ status: "idle", assistantText: "implemented the feature" });
+    hoisted.script.push({ status: "idle", assistantText: approvedVerdict });
+    const context = makeContext([]);
+
+    await dispatchEmployeeSessionRun(
+      top as any,
+      "add healthz endpoint",
+      fakeEngine(),
+      baseConfig(),
+      context,
+      midPairEmployee({ execution: { tier: "mid_pair", roles: { reviewer: { override: { engine: "codex", model: "gpt-5.5" } } } } }),
+    );
+
+    const meta = hoisted.sessionsById.get(top.id)!.transportMeta as any;
+    expect(meta.executionPhase).toBe("done");
+    expect(meta.executionReviewIndependence).toBe("independent");
+    expect(meta.executionReviewerEngine).toBe("codex");
+    expect(meta.executionReviewerModel).toBe("gpt-5.5");
+  });
+
+  it("marks a same-engine, different-model review as partially independent (A-F7)", async () => {
+    const top = hoisted.seedTopSession();
+    hoisted.script.push({ status: "idle", assistantText: "implemented the feature" });
+    hoisted.script.push({ status: "idle", assistantText: approvedVerdict });
+    const context = makeContext([]);
+
+    await dispatchEmployeeSessionRun(
+      top as any,
+      "add healthz endpoint",
+      fakeEngine(),
+      baseConfig(),
+      context,
+      midPairEmployee({ execution: { tier: "mid_pair", roles: { reviewer: { override: { engine: "claude", model: "opus" } } } } }),
+    );
+
+    const meta = hoisted.sessionsById.get(top.id)!.transportMeta as any;
+    expect(meta.executionReviewIndependence).toBe("same_engine");
+    expect(meta.executionReviewerModel).toBe("opus");
+  });
+
   it("keeps the parent running until an in-flight reviewer settles", async () => {
     const top = hoisted.seedTopSession();
     let reviewerStarted!: () => void;

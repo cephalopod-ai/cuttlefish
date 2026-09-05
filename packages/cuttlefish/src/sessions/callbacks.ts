@@ -15,9 +15,31 @@ type ParentNotificationResult = { result?: string | null; error?: string | null;
 type DeferredParentNotification = {
   result: ParentNotificationResult;
   options?: { alwaysNotify?: boolean } & SessionNotificationOptions;
+  timer?: NodeJS.Timeout;
 };
 
 const deferredParentNotifications = new Map<string, DeferredParentNotification>();
+
+/**
+ * Hard ceiling on how long one callback may stay parked waiting for background
+ * work to drain.
+ *
+ * The park has exactly one normal release: the interactive Claude engine's
+ * background-activity drain event (`server.ts` -> onBackgroundActivity ->
+ * flushDeferredParentNotification). If that event never arrives — the engine
+ * process dies mid-turn, the PTY is killed, the proxy stops reporting — the
+ * callback waits forever and the report is never delivered.
+ *
+ * The leader-ack reconciler catches that for a child that has a parent, but
+ * `markLeaderAckPending` is a no-op without one (`leader-ack.ts`), so a
+ * parentless child whose only listeners are attached talk sessions had no net
+ * at all: its wake is parked here and nothing ever fires it.
+ *
+ * This bound turns "silent forever" into "late, and recorded". It is
+ * deliberately longer than any normal drain (the engine's own quiet window is
+ * seconds) so it never pre-empts the accurate path.
+ */
+export const DEFERRED_CALLBACK_MAX_PARK_MS = 10 * 60_000;
 
 /**
  * Notify the parent session that a child session has replied.
@@ -27,14 +49,30 @@ const deferredParentNotifications = new Map<string, DeferredParentNotification>(
 export function notifyParentSession(
   childSession: Session,
   result: ParentNotificationResult,
-  options?: { alwaysNotify?: boolean } & SessionNotificationOptions,
+  options?: { alwaysNotify?: boolean; skipBackgroundDefer?: boolean } & SessionNotificationOptions,
 ): void {
   // A Claude Stop can settle the foreground turn while background agents still
   // have upstream requests in flight. That is progress, not a finished handoff:
   // hold one latest callback until the engine's existing quiet-window signal
   // confirms background work has drained.
-  if (hasSessionBackgroundActivity(childSession.id)) {
-    deferredParentNotifications.set(childSession.id, { result, options });
+  //
+  // `skipBackgroundDefer` is set only by the park-expiry flush. Without it the
+  // expiry would re-enter this branch (background activity is still reported —
+  // that is precisely why it expired), park the callback again with a fresh
+  // timer, and loop forever instead of delivering.
+  if (!options?.skipBackgroundDefer && hasSessionBackgroundActivity(childSession.id)) {
+    // Replacing an existing park: drop its timer first so the map and the timer
+    // set never disagree about which callback is pending.
+    clearDeferredTimer(childSession.id);
+    const timer = setTimeout(() => {
+      logger.warn(
+        `[callbacks] background drain never reported for ${childSession.id} after ` +
+        `${DEFERRED_CALLBACK_MAX_PARK_MS}ms — delivering the parked callback anyway`,
+      );
+      flushDeferredParentNotification(childSession.id, { force: true });
+    }, DEFERRED_CALLBACK_MAX_PARK_MS);
+    timer.unref?.();
+    deferredParentNotifications.set(childSession.id, { result, options, timer });
     // Arm the leader-ack record BEFORE parking the callback. The deferral map is
     // process-local and its only flush trigger is the engine's drain event, so a
     // crashed engine or a gateway restart drops the callback with no trace. Every
@@ -87,10 +125,24 @@ export function notifyParentSession(
   });
 }
 
-/** Flush the one callback held while a worker's background activity drained. */
-export function flushDeferredParentNotification(sessionId: string): boolean {
+function clearDeferredTimer(sessionId: string): void {
+  const existing = deferredParentNotifications.get(sessionId);
+  if (existing?.timer) clearTimeout(existing.timer);
+}
+
+/**
+ * Flush the one callback held while a worker's background activity drained.
+ *
+ * `force` is the expiry path: it delivers even though background activity is
+ * still reported, because at that point the report being late is strictly
+ * better than the report being lost. Normal drain-triggered flushes stay
+ * conditional.
+ */
+export function flushDeferredParentNotification(sessionId: string, opts?: { force?: boolean }): boolean {
   const deferred = deferredParentNotifications.get(sessionId);
-  if (!deferred || hasSessionBackgroundActivity(sessionId)) return false;
+  if (!deferred) return false;
+  if (!opts?.force && hasSessionBackgroundActivity(sessionId)) return false;
+  clearDeferredTimer(sessionId);
   deferredParentNotifications.delete(sessionId);
   const child = getSession(sessionId);
   if (!child) return false;
@@ -111,12 +163,15 @@ export function flushDeferredParentNotification(sessionId: string): boolean {
   notifyParentSession(
     child,
     latestAssistant ? { ...deferred.result, result: latestAssistant } : deferred.result,
-    deferred.options,
+    opts?.force ? { ...deferred.options, skipBackgroundDefer: true } : deferred.options,
   );
   return true;
 }
 
 export function clearDeferredParentNotificationsForTest(): void {
+  for (const deferred of deferredParentNotifications.values()) {
+    if (deferred.timer) clearTimeout(deferred.timer);
+  }
   deferredParentNotifications.clear();
 }
 

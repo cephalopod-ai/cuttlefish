@@ -186,7 +186,37 @@ function buildToolCheckpointVerdictPrompt(input: SecurityReviewRequest, session:
   return buildSecurityContextLines(input, session, employee).join("\n");
 }
 
+/**
+ * Serializes security reviews across the whole process.
+ *
+ * The reviewer runs on ONE singleton session (`SECURITY_REVIEW_SESSION_KEY`),
+ * reused for every review. Two checkpoints opening at once both mutated that
+ * session's engine/model and both appended their prompt BEFORE either dispatch
+ * reached the session queue, so a single reviewer turn saw both commands and
+ * whichever caller read the transcript first could publish a verdict about the
+ * other session's command — carrying that session's transcript tail with it.
+ *
+ * Serializing the whole read-modify-dispatch-read section keeps one review in
+ * flight at a time. It is deliberately a process-local chain, matching the
+ * process-local session queue it feeds.
+ */
+let securityReviewChain: Promise<void> = Promise.resolve();
+
 async function runSecurityReviewer(input: SecurityReviewRequest, context: ApiContext, session: Session, employee: Employee | undefined): Promise<void> {
+  const previous = securityReviewChain;
+  let releaseChain!: () => void;
+  securityReviewChain = new Promise<void>((resolve) => { releaseChain = resolve; });
+  // A previous review's failure must not cascade into this one, and must not
+  // leave the chain permanently rejected.
+  await previous.catch(() => {});
+  try {
+    await runSecurityReviewerExclusive(input, context, session, employee);
+  } finally {
+    releaseChain();
+  }
+}
+
+async function runSecurityReviewerExclusive(input: SecurityReviewRequest, context: ApiContext, session: Session, employee: Employee | undefined): Promise<void> {
   const org = scanOrg();
   const reviewerName = employee?.securityReviewer?.trim() || SECURITY_REVIEWER_EMPLOYEE_NAME;
   const reviewer = org.get(reviewerName);
@@ -219,13 +249,29 @@ async function runSecurityReviewer(input: SecurityReviewRequest, context: ApiCon
         prompt,
         portalName: context.getConfig().portal?.portalName,
       });
+  // Watermark BEFORE the turn. The reviewer session is a reused singleton, so
+  // "the last assistant message" is only this review's verdict if the turn
+  // actually produced one. A turn that ends without a new assistant message —
+  // engine error, interrupt, empty completion — would otherwise republish the
+  // PREVIOUS command's review into this session, attributed to this command.
+  const assistantCountBefore = countCompleteAssistantMessages(reviewSession.id);
   insertMessage(reviewSession.id, "user", prompt);
   await dispatchWebSessionRun(reviewSession, prompt, engine, context.getConfig(), context);
   const assistant = getMessages(reviewSession.id).filter((message) => message.role === "assistant" && !message.partial);
+  if (assistant.length <= assistantCountBefore) {
+    logger.warn(
+      `security review for session ${session.id} produced no new reviewer output; not publishing a stale verdict`,
+    );
+    return;
+  }
   const critique = assistant[assistant.length - 1]?.content?.trim();
   if (!critique) return;
   insertMessage(session.id, "notification", `🔐 ${reviewer.name} review: ${critique}`);
   context.emit("session:updated", { sessionId: session.id });
+}
+
+function countCompleteAssistantMessages(sessionId: string): number {
+  return getMessages(sessionId).filter((message) => message.role === "assistant" && !message.partial).length;
 }
 
 export function openSecurityCheckpoint(input: SecurityReviewRequest, context: ApiContext): SecurityReviewDisposition {

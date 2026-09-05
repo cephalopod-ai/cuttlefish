@@ -31,7 +31,7 @@ vi.mock("../../gateway/gateway-info.js", async (importOriginal) => ({
   })),
 }));
 
-import { clearDeferredParentNotificationsForTest, flushDeferredParentNotification, notifyConnectorNotification, notifyParentSession, notifyRateLimitResumed } from "../callbacks.js";
+import { DEFERRED_CALLBACK_MAX_PARK_MS, clearDeferredParentNotificationsForTest, flushDeferredParentNotification, notifyConnectorNotification, notifyParentSession, notifyRateLimitResumed } from "../callbacks.js";
 import { getMessages, getSession, listSessionsBySource } from "../registry.js";
 import { clearSessionBackgroundActivityForTest, setSessionBackgroundActivity } from "../background-activity-state.js";
 import { loadConfig } from "../../shared/config.js";
@@ -155,6 +155,64 @@ describe("notifyParentSession", () => {
     const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
     expect(body.message).toContain("Final verified result after background agents finished");
     expect(body.message).not.toContain("Interim progress; still waiting");
+  });
+
+  it("delivers a parked callback when the background drain event never arrives", async () => {
+    // The park has exactly one normal release: the engine's background-activity
+    // drain event. If the engine dies mid-turn that event never fires, and the
+    // report used to wait forever. A parentless child is the sharp case — its
+    // only listeners are attached talk sessions, and leader-ack (which is a
+    // no-op without a parent) never covered it.
+    vi.useFakeTimers();
+    try {
+      const child = makeSession({ id: "orphan-001", parentSessionId: "parent-001" });
+      const parent = makeSession({ id: "parent-001", parentSessionId: null, status: "idle" });
+      vi.mocked(getSession).mockImplementation((id) => id === child.id ? child : parent);
+      vi.mocked(getMessages).mockReturnValue([
+        { role: "assistant", content: "Result produced before the engine died", partial: 0 } as any,
+      ]);
+      // Background activity is reported and NEVER drains.
+      setSessionBackgroundActivity(child.id, { activeStreams: 1, lastActivityAt: Date.now() });
+
+      notifyParentSession(child, { result: "interim" });
+      expect(fetchSpy).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(DEFERRED_CALLBACK_MAX_PARK_MS + 1_000);
+
+      expect(fetchSpy).toHaveBeenCalledOnce();
+      const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+      expect(body.message).toContain("Result produced before the engine died");
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("background drain never reported"));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not re-park a force-flushed callback while background activity is still reported", async () => {
+    // The expiry path re-enters notifyParentSession while activity is still
+    // reported — that is exactly why it expired. Without the skip it would park
+    // again with a fresh timer and never deliver.
+    vi.useFakeTimers();
+    try {
+      const child = makeSession({ id: "stuck-001", parentSessionId: "parent-001" });
+      const parent = makeSession({ id: "parent-001", parentSessionId: null, status: "idle" });
+      vi.mocked(getSession).mockImplementation((id) => id === child.id ? child : parent);
+      vi.mocked(getMessages).mockReturnValue([
+        { role: "assistant", content: "delivered late", partial: 0 } as any,
+      ]);
+      setSessionBackgroundActivity(child.id, { activeStreams: 3, lastActivityAt: Date.now() });
+
+      notifyParentSession(child, { result: "interim" });
+      await vi.advanceTimersByTimeAsync(DEFERRED_CALLBACK_MAX_PARK_MS + 1_000);
+      expect(fetchSpy).toHaveBeenCalledOnce();
+
+      // Nothing is left parked, so a second expiry window delivers nothing more.
+      await vi.advanceTimersByTimeAsync(DEFERRED_CALLBACK_MAX_PARK_MS * 2);
+      expect(fetchSpy).toHaveBeenCalledOnce();
+      expect(flushDeferredParentNotification(child.id)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("refreshes child acknowledgement state before a stale completion can re-arm it", async () => {

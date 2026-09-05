@@ -24,7 +24,28 @@ import type {
   RoleExecutionPolicy,
 } from "../shared/types.js";
 import { MAX_ROLE_FALLBACK_CHAIN } from "../shared/types.js";
+import { clampText } from "./content-screening.js";
 import { logger } from "../shared/logger.js";
+
+/**
+ * Character budget for an implementer summary embedded in a review or revision
+ * packet.
+ *
+ * Audit A-F9: this used to be a bare `slice(0, 4000)`. Silent truncation is
+ * worse than omission — the reviewer reasons over an amputated summary while
+ * believing it read the whole thing, and can then "require" a change the
+ * implementer already made in the part that was cut. Every truncation below is
+ * marked, and the marker names the child session so the full text is one
+ * request away.
+ */
+const SUMMARY_CHAR_BUDGET = 4000;
+
+function clampSummary(summary: string, sessionId?: string): string {
+  const pointer = sessionId
+    ? `...[summary truncated at ${SUMMARY_CHAR_BUDGET} chars — full output: GET /api/sessions/${sessionId}]...`
+    : `...[summary truncated at ${SUMMARY_CHAR_BUDGET} chars]...`;
+  return clampText(summary, SUMMARY_CHAR_BUDGET, pointer);
+}
 
 // ---------------------------------------------------------------------------
 // Default values
@@ -261,6 +282,7 @@ export function buildReviewPacketPrompt(
   task: string,
   implementerSummary: string,
   diffContext?: string,
+  implementerSessionId?: string,
 ): string {
   const diffSection = diffContext && diffContext.trim()
     ? `\n\n**Changed files / diff (working tree vs HEAD):**\n${diffContext}`
@@ -271,7 +293,7 @@ export function buildReviewPacketPrompt(
 ${task}
 
 **Implementer output summary:**
-${implementerSummary.slice(0, 4000)}${diffSection}
+${clampSummary(implementerSummary, implementerSessionId)}${diffSection}
 
 Please review the above and return your structured JSON verdict.`;
 }
@@ -302,6 +324,7 @@ export function buildRevisionPrompt(
   task: string,
   priorSummary: string,
   review: ReviewResult,
+  priorSessionId?: string,
 ): string {
   const changes = review.requiredChanges.length > 0
     ? review.requiredChanges.map((c) => `- ${c}`).join("\n")
@@ -314,7 +337,7 @@ A reviewer evaluated your previous work on this task and requested changes.
 ${task}
 
 **Your previous output summary:**
-${priorSummary.slice(0, 4000)}
+${clampSummary(priorSummary, priorSessionId)}
 
 **Reviewer summary:**
 ${review.summary || "(no summary provided)"}

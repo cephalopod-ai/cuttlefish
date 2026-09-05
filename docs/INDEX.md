@@ -164,4 +164,5 @@ describe superseded experiments and should not override `README.md`,
 - `docs/audits/2026-09-05-playtest-final-matrix.md`: all225 card dispositions; partial coverage is not a pass.
 - `docs/audits/2026-09-05-playtest-closing-review.md`: scoped transitive review and separate completeness inspection.
 - `docs/audits/2026-09-05-queued-defect-repair.md`: repair of the queued/unresolved findings that needed no operator decision, and the decision-blocked backlog recorded in their place.
+- `docs/audits/2026-09-05-orchestration-dataflow-walkthrough.md`: role/mode, trust-boundary and run-state maps for the agent-to-agent seams, the four findings repaired, and the four recorded as needing an operator decision.
 - `docs/logs/session/092026/2026-09-04-playtest-resumption.md`: local reboot-resumption handoff and repair-validation checkpoints.

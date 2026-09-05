@@ -364,3 +364,40 @@ describe("prompt builders", () => {
     expect(prompt).toContain("no specific changes listed");
   });
 });
+
+describe("review/revision packet truncation is marked (A-F9)", () => {
+  const long = "x".repeat(9000);
+
+  it("marks a truncated implementer summary and points at the full session", () => {
+    const prompt = buildReviewPacketPrompt("do the task", long, undefined, "impl-session-9");
+    // Silent truncation is the defect: the reviewer would reason over an
+    // amputated summary while believing it read the whole thing, and could
+    // "require" a change the implementer already made in the cut portion.
+    expect(prompt).toContain("...[summary truncated at 4000 chars");
+    expect(prompt).toContain("GET /api/sessions/impl-session-9");
+    expect(prompt).not.toContain(long);
+  });
+
+  it("leaves a summary inside the budget untouched and unmarked", () => {
+    const short = "implemented the endpoint and added tests";
+    const prompt = buildReviewPacketPrompt("do the task", short, undefined, "impl-session-9");
+    expect(prompt).toContain(short);
+    expect(prompt).not.toContain("truncated");
+  });
+
+  it("marks a truncated prior summary in the revision packet too", () => {
+    const prompt = buildRevisionPrompt(
+      "do the task",
+      long,
+      { verdict: "changes_requested", summary: "needs work", requiredChanges: ["fix the guard"] } as never,
+      "impl-session-9",
+    );
+    expect(prompt).toContain("...[summary truncated at 4000 chars");
+    expect(prompt).toContain("GET /api/sessions/impl-session-9");
+  });
+
+  it("still marks truncation when no session id is available", () => {
+    const prompt = buildReviewPacketPrompt("do the task", long);
+    expect(prompt).toContain("...[summary truncated at 4000 chars]...");
+  });
+});

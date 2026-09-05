@@ -264,7 +264,7 @@ async function runReviewLoop(params: ReviewLoopParams): Promise<void> {
     });
 
     const outcome = await runReviewerPass({
-      employee, exec, task, implementerSummary, diffContext: reviewContext.diffText, employeeRunId, pass,
+      employee, exec, task, implementerSummary, implementerSessionId, diffContext: reviewContext.diffText, employeeRunId, pass,
       parentSession: topSession, config, context, priorVerdict,
       remainingChildBudget: maxChildren - childCount, deadline,
     });
@@ -277,6 +277,26 @@ async function runReviewLoop(params: ReviewLoopParams): Promise<void> {
 
     const verdict = outcome.verdict;
     priorVerdict = verdict.verdict;
+    // Audit A-F7: record how independent this review actually was before the
+    // gate reads the verdict, so an "approved" from the implementer's own model
+    // is never mistaken for a second opinion. Recorded on every pass — a
+    // fallback rung can change the answer mid-run.
+    const independence = classifyReviewIndependence(
+      { engine: employee.engine, model: employee.model },
+      outcome.reviewerTarget,
+    );
+    updateExecutionState(topSession.id, context, {
+      executionReviewIndependence: independence,
+      executionReviewerEngine: outcome.reviewerTarget.engine,
+      executionReviewerModel: outcome.reviewerTarget.model,
+    });
+    if (independence !== "independent") {
+      logExecutionDegraded(
+        topSession.id,
+        reviewIndependenceReason(independence, outcome.reviewerTarget) ?? "reviewer independence reduced",
+        employeeRunId,
+      );
+    }
     if (outcome.fallbackUsed) {
       // Sticky run-level flag: at least one reviewer fallback occurred this run.
       updateExecutionState(topSession.id, context, { executionFallbackActive: true });
@@ -346,7 +366,7 @@ async function runReviewLoop(params: ReviewLoopParams): Promise<void> {
 
     updateExecutionState(topSession.id, context, { executionPhase: "revising", executionPass: pass, executionChildCount: childCount });
     const revision = await runRevisionPass({
-      employee, exec, task, priorSummary: implementerSummary, review: verdict,
+      employee, exec, task, priorSummary: implementerSummary, priorSessionId: implementerSessionId, review: verdict,
       employeeRunId, pass, parentSession: topSession, config, context,
       remainingChildBudget: maxChildren - childCount, deadline,
     });
@@ -387,8 +407,55 @@ function lossOutcomeToPatch(outcome: ReviewerLossOutcome): { executionPhase: Exe
 // ---------------------------------------------------------------------------
 
 type ReviewerPassOutcome =
-  | { kind: "verdict"; verdict: ReviewResult; childSessionsSpawned: number; fallbackUsed: boolean }
+  | {
+      kind: "verdict";
+      verdict: ReviewResult;
+      childSessionsSpawned: number;
+      fallbackUsed: boolean;
+      /** Engine/model of the reviewer that actually produced this verdict — the
+       *  primary or whichever fallback rung succeeded. Drives the independence
+       *  classification recorded on the parent (audit A-F7). */
+      reviewerTarget: { engine: string; model: string };
+    }
   | { kind: "unavailable"; childSessionsSpawned: number; finalOutcome: ReviewerLossOutcome };
+
+/**
+ * How independent this review actually was (audit A-F7, echo-consensus).
+ *
+ * The reviewer defaults to the implementer's own engine and model
+ * (`reviewerRole?.override?.engine ?? employee.engine`), because an employee
+ * that has only configured one engine must still be reviewable. But a reviewer
+ * running the same model as the implementer shares its blind spots: its
+ * agreement is a second sample from one distribution, not independent evidence,
+ * and nothing previously told the operator which of the two they had.
+ *
+ * This does not change routing — the operator picks the reviewer engine — it
+ * makes the distinction visible so an "approved" verdict can be weighed
+ * correctly.
+ */
+export type ReviewIndependence = "independent" | "same_engine" | "same_model";
+
+export function classifyReviewIndependence(
+  implementer: { engine: string; model?: string | null },
+  reviewer: { engine: string; model?: string | null },
+): ReviewIndependence {
+  const sameEngine = implementer.engine.trim().toLowerCase() === reviewer.engine.trim().toLowerCase();
+  if (!sameEngine) return "independent";
+  const implModel = (implementer.model ?? "").trim().toLowerCase();
+  const reviewModel = (reviewer.model ?? "").trim().toLowerCase();
+  return implModel === reviewModel ? "same_model" : "same_engine";
+}
+
+export function reviewIndependenceReason(independence: ReviewIndependence, reviewer: { engine: string; model?: string | null }): string | undefined {
+  const target = `${reviewer.engine}/${reviewer.model ?? "(default)"}`;
+  if (independence === "same_model") {
+    return `reviewer ran the implementer's own engine and model (${target}) — agreement is a second sample from the same model, not independent evidence`;
+  }
+  if (independence === "same_engine") {
+    return `reviewer ran the implementer's own engine (${target}) with a different model — partially independent`;
+  }
+  return undefined;
+}
 
 /** Result of a single reviewer session attempt (one engine/model), after an
  *  in-place JSON repair retry when the session completed but its output was
@@ -403,6 +470,8 @@ interface ReviewerPassParams {
   exec: EmployeeExecutionConfig;
   task: string;
   implementerSummary: string;
+  /** Session the summary came from, so a truncated packet can point at the full output (A-F9). */
+  implementerSessionId: string;
   /** Deterministic changed-file/diff context for the reviewer packet, when available. */
   diffContext?: string;
   employeeRunId: string;
@@ -438,7 +507,7 @@ function resolveFailoverTargets(
 }
 
 async function runReviewerPass(params: ReviewerPassParams): Promise<ReviewerPassOutcome> {
-  const { employee, exec, task, implementerSummary, diffContext, employeeRunId, pass, parentSession, config, context, priorVerdict, remainingChildBudget, deadline } = params;
+  const { employee, exec, task, implementerSummary, implementerSessionId, diffContext, employeeRunId, pass, parentSession, config, context, priorVerdict, remainingChildBudget, deadline } = params;
   const reviewerRole = exec.roles?.reviewer;
   let spawned = 0;
 
@@ -457,7 +526,7 @@ async function runReviewerPass(params: ReviewerPassParams): Promise<ReviewerPass
       label: `Review pass ${pass}`, context,
     });
     spawned += 1;
-    const reviewerPrompt = `${buildReviewerSystemPrompt(exec.reviewerToolProfile ?? "read_only")}\n\n${buildReviewPacketPrompt(task, implementerSummary, diffContext)}`;
+    const reviewerPrompt = `${buildReviewerSystemPrompt(exec.reviewerToolProfile ?? "read_only")}\n\n${buildReviewPacketPrompt(task, implementerSummary, diffContext, implementerSessionId)}`;
     insertMessage(reviewerSession.id, "user", reviewerPrompt);
     const dispatchWebSessionRun = await getDispatchWebSessionRun();
     await dispatchWebSessionRun(reviewerSession, reviewerPrompt, reviewerEngine, config, context);
@@ -488,7 +557,7 @@ async function runReviewerPass(params: ReviewerPassParams): Promise<ReviewerPass
   const primaryEffort = reviewerRole?.override?.effortLevel ?? employee.effortLevel;
 
   const primary = await attemptReview(primaryEngine, primaryModel, primaryEffort);
-  if (primary.kind === "verdict") return { kind: "verdict", verdict: primary.verdict, childSessionsSpawned: spawned, fallbackUsed: false };
+  if (primary.kind === "verdict") return { kind: "verdict", verdict: primary.verdict, childSessionsSpawned: spawned, fallbackUsed: false, reviewerTarget: { engine: primaryEngine, model: primaryModel } };
   // Tracks the cause of the MOST RECENT attempt (primary or the last fallback
   // tried), not just the primary's — a fallback rung can fail for a different
   // reason than the primary did, and the final reason should reflect whichever
@@ -517,7 +586,7 @@ async function runReviewerPass(params: ReviewerPassParams): Promise<ReviewerPass
       const fallbackAttempt = await attemptReview(target.engine, target.model, target.effortLevel);
       if (fallbackAttempt.kind === "verdict") {
         logExecutionDegraded(parentSession.id, `reviewer replaced with fallback ${label}`, employeeRunId);
-        return { kind: "verdict", verdict: fallbackAttempt.verdict, childSessionsSpawned: spawned, fallbackUsed: true };
+        return { kind: "verdict", verdict: fallbackAttempt.verdict, childSessionsSpawned: spawned, fallbackUsed: true, reviewerTarget: { engine: target.engine, model: target.model } };
       }
       lastCause = fallbackAttempt.kind === "unparseable" ? "unparseable" : "unavailable";
       const detailSuffix = fallbackAttempt.kind === "unparseable" ? `: ${fallbackAttempt.detail}` : "";
@@ -560,6 +629,8 @@ interface RevisionPassParams {
   exec: EmployeeExecutionConfig;
   task: string;
   priorSummary: string;
+  /** Session the prior summary came from, for the truncation pointer (A-F9). */
+  priorSessionId: string;
   review: ReviewResult;
   employeeRunId: string;
   pass: number;
@@ -579,7 +650,7 @@ interface RevisionPassResult {
 }
 
 async function runRevisionPass(params: RevisionPassParams): Promise<RevisionPassResult> {
-  const { employee, exec, task, priorSummary, review, employeeRunId, pass, parentSession, config, context, remainingChildBudget, deadline } = params;
+  const { employee, exec, task, priorSummary, priorSessionId, review, employeeRunId, pass, parentSession, config, context, remainingChildBudget, deadline } = params;
   const implRole = exec.roles?.implementer;
   const primary: ResolvedRoleTarget = {
     engine: implRole?.override?.engine ?? employee.engine,
@@ -606,7 +677,7 @@ async function runRevisionPass(params: RevisionPassParams): Promise<RevisionPass
       label: `Revision pass ${pass}`, context,
     });
     spawned += 1;
-    const revisionPrompt = buildRevisionPrompt(task, priorSummary, review);
+    const revisionPrompt = buildRevisionPrompt(task, priorSummary, review, priorSessionId);
     insertMessage(revisionSession.id, "user", revisionPrompt);
     const dispatchWebSessionRun = await getDispatchWebSessionRun();
     await dispatchWebSessionRun(revisionSession, revisionPrompt, revisionEngine, config, context);
@@ -680,6 +751,9 @@ function updateExecutionState(
     executionFallbackActive?: boolean;
     executionReviewContext?: "diff" | "summary_only";
     executionReviewContextReason?: string;
+    executionReviewIndependence?: ReviewIndependence;
+    executionReviewerEngine?: string;
+    executionReviewerModel?: string;
     lastError?: string;
     status?: Session["status"];
   },
@@ -691,6 +765,14 @@ function updateExecutionState(
   if (patch.executionPass !== undefined) metaPatch.executionPass = patch.executionPass;
   if (patch.executionChildCount !== undefined) metaPatch.executionChildCount = patch.executionChildCount;
   if (patch.executionFallbackActive !== undefined) metaPatch.executionFallbackActive = patch.executionFallbackActive;
+  // Written as a triple: the independence verdict only means something next to
+  // the reviewer it describes, so a later pass never leaves a stale engine/model
+  // beside a fresh classification.
+  if (patch.executionReviewIndependence !== undefined) {
+    metaPatch.executionReviewIndependence = patch.executionReviewIndependence;
+    metaPatch.executionReviewerEngine = patch.executionReviewerEngine;
+    metaPatch.executionReviewerModel = patch.executionReviewerModel;
+  }
   // Written as a pair, not independently: reviewContextReason only has meaning
   // relative to the mode it was recorded under. If we only wrote the reason
   // when it's defined, a stale reason from an earlier "summary_only" pass would

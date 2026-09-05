@@ -3,6 +3,25 @@
 ## [Unreleased]
 
 ### Fixed
+- **Security reviews cannot be attributed to the wrong command.** The
+  security-reviewer runs on one standing session reused for every checkpoint.
+  Reading "its last reply" republished the previous review whenever a turn
+  produced nothing new, and two checkpoints opening at once could put both
+  commands in front of a single reviewer turn. Reviews are now serialized and
+  the reply is watermarked, so a review that produced nothing publishes nothing.
+- **A delegated worker's report is no longer lost when its engine dies.** When a
+  turn settles while background agents are still working, the report is held
+  until that work drains. If the engine dies first, the drain signal never
+  arrives — the report used to wait forever. It is now delivered after a bounded
+  wait, with a warning.
+- **Reviewer independence is visible.** A mid_pair review records whether the
+  reviewer actually differed from the implementer's engine and model. With no
+  reviewer override configured the two are the same, so an approval is a second
+  sample from one model rather than a second opinion; sessions now say which one
+  it was.
+- **Review packets say when they were truncated.** A long implementer summary is
+  clamped with a marker naming the child session instead of being cut silently,
+  so a reviewer can tell an amputated summary from a complete one.
 - **Engine names have one source.** The config validator no longer keeps its own
   copy of the engine list. Allowed `engines.*` keys, the `models.<engine>` gate,
   the `engines.default` error text, and the config type unions all derive from
