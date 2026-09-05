@@ -107,13 +107,6 @@ export async function continueSession(input: ContinueSessionInput): Promise<Cont
   const engine = ptyEngine ?? input.context.sessionManager.getEngine(session.engine);
   if (!engine) return { statusCode: 500, body: { error: `Engine "${session.engine}" not available` } };
 
-  const turnRunning = session.status === "running" && isInterruptibleEngine(engine)
-    && ("isTurnRunning" in engine ? (engine as { isTurnRunning(id: string): boolean }).isTurnRunning(session.id) : engine.isAlive(session.id));
-  const shouldInterruptRunningTurn = !isNotification
-    && (config.sessions?.interruptOnNewMessage ?? true)
-    && turnRunning;
-  if (shouldInterruptRunningTurn) supersedeRunningTurn(session);
-
   const userMedia = isNotification ? [] : attachmentMedia(body);
   let attached;
   if (isNotification) {
@@ -125,6 +118,12 @@ export async function continueSession(input: ContinueSessionInput): Promise<Cont
       return { statusCode: 400, body: { error: error instanceof Error ? error.message : "invalid resources" } };
     }
   }
+  // Resource resolution/screening can await while the current turn completes
+  // or opens a checkpoint. Reject invalid input before touching that turn and
+  // make the interruption decision from the fresh, persisted session below.
+  const currentSession = getSession(session.id);
+  if (!currentSession) return { statusCode: 404, body: { error: "Not found" } };
+  session = currentSession;
   const insertedMessageId = insertMessage(
     session.id,
     messageRole,
@@ -177,8 +176,13 @@ export async function continueSession(input: ContinueSessionInput): Promise<Cont
     input.context.emit("session:notification", { sessionId: session.id, message: queuedText });
   }
   if (session.status === "running") {
+    const shouldInterruptRunningTurn = !isNotification
+      && (config.sessions?.interruptOnNewMessage ?? true)
+      && isInterruptibleEngine(engine)
+      && ("isTurnRunning" in engine ? (engine as { isTurnRunning(id: string): boolean }).isTurnRunning(session.id) : engine.isAlive(session.id));
     if (shouldInterruptRunningTurn) {
       logger.info(`Interrupting running session ${session.id} for new message`);
+      supersedeRunningTurn(session);
       engine.kill(session.id, "Interrupted: new message received");
       input.context.emit("session:interrupted", { sessionId: session.id, reason: "new message" });
     } else if (!isNotification) {

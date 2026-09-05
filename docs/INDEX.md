@@ -112,6 +112,11 @@ recovery. Its final225-card matrix records18 Pass,180 Partial,17 Fail and10 Bloc
 The earlier report's broad local-environment blockers are superseded; permissions
 were available. Detailed evidence remains local under the audit/session trees.
 
+The September 5 user-workflow walkthrough separately traces setup, chat,
+attachments, queue recovery, delegation, checkpoints, boards, cron and archives.
+Its scoped send/recovery repairs and validation are recorded in
+`docs/audits/2026-09-05-user-workflow-dataflow-repair.md` and feature ledger 0120.
+
 One tracked baseline pair was force-added before the ignore rule and remains
 in the checkout:
 

@@ -37,7 +37,8 @@ export function classifyMicGesture(
 interface ChatInputProps {
   disabled: boolean
   loading: boolean
-  onSend: (message: string, media?: MediaAttachment[], interrupt?: boolean) => void
+  /** Return false when the request was not accepted, preserving the draft. */
+  onSend: (message: string, media?: MediaAttachment[], interrupt?: boolean) => boolean | void | Promise<boolean | void>
   onInterrupt?: () => void
   onNewSession: () => void
   onStatusRequest: () => void
@@ -93,6 +94,9 @@ export function ChatInput({
   const [commandFilter, setCommandFilter] = useState('')
   const [commandIndex, setCommandIndex] = useState(0)
   const [pendingAttachments, setPendingAttachments] = useState<MediaAttachment[]>([])
+  const [submitting, setSubmitting] = useState(false)
+  const [sendError, setSendError] = useState<string | null>(null)
+  const submittingRef = useRef(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const rafRef = useRef<number | null>(null)
@@ -302,11 +306,11 @@ export function ChatInput({
     }
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     const trimmed = value.trim()
     const hasMedia = pendingAttachments.length > 0
 
-    if ((!trimmed && !hasMedia) || disabled) return
+    if ((!trimmed && !hasMedia) || disabled || submittingRef.current) return
 
     const command = resolveClientCommand(trimmed)
     if (command === 'new') {
@@ -320,17 +324,24 @@ export function ChatInput({
       return
     }
     const mediaToSend = hasMedia ? [...pendingAttachments] : undefined
-    setValue('')
-    setPendingAttachments([])
     setShowMentions(false)
     setShowCommands(false)
-
-    // Reset textarea height
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto'
+    setSendError(null)
+    submittingRef.current = true
+    setSubmitting(true)
+    try {
+      const accepted = await onSend(trimmed || 'Please review the attached files.', mediaToSend, false)
+      if (accepted === false) return
+      // Keep any text or files added while the request was in flight (e.g.
+      // dictation or a drop finishing). Only clear the accepted draft.
+      setValue((current) => current === value ? '' : current)
+      setPendingAttachments((current) => current.filter((attachment) => !mediaToSend?.includes(attachment)))
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : 'Failed to send message')
+    } finally {
+      submittingRef.current = false
+      setSubmitting(false)
     }
-
-    onSend(trimmed, mediaToSend, false)
   }
 
   async function handleFileAttach(e: React.ChangeEvent<HTMLInputElement>) {
@@ -508,7 +519,7 @@ export function ChatInput({
       )}
 
       <ChatInputComposer
-        disabled={disabled}
+        disabled={disabled || submitting}
         loading={loading}
         value={value}
         hasContent={hasContent}
@@ -527,6 +538,7 @@ export function ChatInput({
         onSubmit={handleSubmit}
         onInterrupt={onInterrupt}
       />
+      {sendError && <p role="alert" className="mt-2 text-[var(--system-red)]">{sendError}</p>}
 
       {/* Slim helper row — shortcuts + terminal access (CLI view). Quiet; the
           command/mention hints were dropped (discoverable by typing / or @). */}

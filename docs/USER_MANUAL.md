@@ -125,6 +125,19 @@ Routes are defined in `packages/web/src/main.tsx`:
 Unknown client paths redirect to `/` so stale deep links recover to the primary
 chat workspace instead of leaving an empty dashboard shell.
 
+### Sending messages and files
+
+The chat composer keeps your draft and attachments until the gateway accepts
+the request. If an upload or message request fails, correct the problem and
+retry from the composer. Sending files without text supplies the visible prompt
+"Please review the attached files." File screening and checkpoints still apply.
+
+Resources belong to the session. Later messages and durable queue replay reuse
+the saved file references and screened context. Concurrent resource additions
+are merged. A rejected attachment request leaves the current engine turn able
+to finish; an accepted follow-up checks the current session state before
+interrupting it. Queue replay follows the existing pause and boot-resume policy.
+
 ## Configuration
 
 Cuttlefish reads instance configuration from the active Cuttlefish home, normally

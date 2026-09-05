@@ -1,14 +1,19 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import type React from 'react'
+import type { MediaAttachment } from '@/lib/conversations'
 import { ChatPane } from '../chat-pane'
 
-vi.mock('@/lib/api', () => ({ api: {} }))
+const apiMocks = vi.hoisted(() => ({ createSession: vi.fn(), sendMessage: vi.fn(), uploadFile: vi.fn() }))
+vi.mock('@/lib/api', () => ({ api: apiMocks }))
+const sendResult = vi.fn()
+let sendMedia: MediaAttachment[] | undefined
 
-vi.mock('@/hooks/use-employees', () => ({
-  useOrg: () => ({ data: { employees: [] } }),
-  useWorkspaceProfiles: () => ({ data: { profiles: [] } }),
-}))
+vi.mock('@/hooks/use-employees', () => {
+  const org = { data: { employees: [] } }
+  const workspaces = { data: { profiles: [] } }
+  return { useOrg: () => org, useWorkspaceProfiles: () => workspaces }
+})
 
 interface LiveSessionMockState {
   messages: unknown[]
@@ -49,8 +54,8 @@ vi.mock('@/hooks/use-live-session', () => ({
 }))
 
 vi.mock('@/components/chat/chat-input', () => ({
-  ChatInput: ({ selectorSlot }: { selectorSlot?: React.ReactNode }) => (
-    <div data-testid="chat-input">{selectorSlot}</div>
+  ChatInput: ({ selectorSlot, onSend }: { selectorSlot?: React.ReactNode; onSend: (message: string, media?: MediaAttachment[]) => Promise<boolean> }) => (
+    <div data-testid="chat-input">{selectorSlot}<button type="button" onClick={() => { void onSend('Draft message', sendMedia).then(sendResult) }}>submit draft</button></div>
   ),
 }))
 
@@ -105,8 +110,14 @@ function renderPane(props: Partial<React.ComponentProps<typeof ChatPane>> = {}) 
 
 describe('ChatPane', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
+    apiMocks.createSession.mockResolvedValue({ id: 'created-session' })
+    apiMocks.sendMessage.mockResolvedValue({ status: 'queued' })
+    apiMocks.uploadFile.mockResolvedValue({ id: 'uploaded-file' })
+    sendMedia = undefined
     liveSessionState = { ...liveSessionDefaults }
   })
+  afterEach(() => vi.restoreAllMocks())
 
   it('routes existing-chat engine switching to the parent new-chat flow', () => {
     const onNewChat = vi.fn()
@@ -130,5 +141,37 @@ describe('ChatPane', () => {
     renderPane({ sessionId: 'hr-session-1' })
 
     expect(screen.getByTestId('session-human-review').textContent).toBe('hr-session-1')
+  })
+
+  it.each([true, false])('reports a rejected API request to the composer (new chat=%s)', async (newChat) => {
+    const failure = new Error('Gateway unavailable')
+    if (newChat) apiMocks.createSession.mockRejectedValueOnce(failure)
+    else apiMocks.sendMessage.mockRejectedValueOnce(failure)
+    renderPane({ sessionId: newChat ? null : 's1' })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'submit draft' })) })
+    expect(sendResult).toHaveBeenCalledWith(false)
+    expect(liveSessionState.failSend).toHaveBeenCalledWith('Error: Gateway unavailable')
+  })
+
+  it('reports failed uploads without submitting a message that omits its attachment', async () => {
+    const file = new File(['report'], 'report.txt', { type: 'text/plain' })
+    sendMedia = [{ type: 'file', name: file.name, file, url: 'data:text/plain;base64,cmVwb3J0' }]
+    apiMocks.uploadFile.mockRejectedValueOnce(new Error('Upload failed'))
+    renderPane()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'submit draft' })) })
+    expect(apiMocks.sendMessage).not.toHaveBeenCalled()
+    expect(sendResult).toHaveBeenCalledWith(false)
+    expect(liveSessionState.failSend).toHaveBeenCalledWith('Error: Upload failed')
+  })
+
+  it('does not report an accepted new session as failed when browser preference storage is full', async () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Storage full') })
+    const onSessionCreated = vi.fn()
+    renderPane({ sessionId: null, onSessionCreated })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'submit draft' })) })
+    expect(apiMocks.createSession).toHaveBeenCalledTimes(1)
+    expect(onSessionCreated).toHaveBeenCalledWith('created-session', expect.objectContaining({ content: 'Draft message' }))
+    expect(sendResult).toHaveBeenCalledWith(true)
+    expect(liveSessionState.failSend).not.toHaveBeenCalled()
   })
 })

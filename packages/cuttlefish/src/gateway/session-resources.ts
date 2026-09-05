@@ -1,6 +1,7 @@
 import type { Session } from "../shared/types.js";
 import {
   buildResolvedRunAttachments,
+  enrichRunAttachmentsForSession,
   listRunAttachments,
   mergeRunAttachments,
   resolveIncomingRunAttachments,
@@ -32,7 +33,7 @@ export async function attachResourcesToSession(
   body: Record<string, unknown>,
   context: ApiContext,
 ): Promise<AttachedSessionResources> {
-  const existing = listRunAttachments(session);
+  const existing = enrichRunAttachmentsForSession(session);
   const incomingSpecs = combinedResourceSpecs(body);
   if (incomingSpecs.length === 0) {
     const resolved = buildResolvedRunAttachments(existing);
@@ -65,17 +66,28 @@ export async function attachResourcesToSession(
         : session.promptExcerpt ?? session.title ?? null,
   );
   // Read-merge-write inside one transaction (not a pre-`await` snapshot of
-  // session.transportMeta) so a concurrent transport_meta writer between the
-  // resolve/screen awaits above and this write can't be blind-overwritten —
-  // see DFI-007.
+  // session.transportMeta), including resource additions committed while this
+  // request was screening. Preserve both those additions and unrelated meta.
   const updated = patchSessionTransportMeta(session.id, (current) =>
-    setRunAttachmentsOnTransportMeta(current, screened),
+    setRunAttachmentsOnTransportMeta(current, mergeRunAttachments(listRunAttachments({ transportMeta: current }), screened)),
   ) ?? session;
-  return { session: updated, ...buildResolvedRunAttachments(screened) };
+  return { session: updated, ...describeSessionResources(updated) };
 }
 
 export function describeSessionResources(session: Session): DescribedSessionResources {
-  return buildResolvedRunAttachments(listRunAttachments(session));
+  return buildResolvedRunAttachments(enrichRunAttachmentsForSession(session));
+}
+
+/** Restore allowed session resources when a durable queue item is replayed.
+ * A checkpoint may resume reconsideration without releasing quarantined files;
+ * that is not permission to pass the blocked resource set to an engine. */
+export function queuedSessionResourceOptions(session: Session): { attachments?: string[]; resourceContext?: string | null } {
+  const resources = describeSessionResources(session);
+  if (resources.blocked) return {};
+  return {
+    attachments: resources.engineAttachments.length > 0 ? resources.engineAttachments : undefined,
+    resourceContext: resources.promptBlock,
+  };
 }
 
 export function attachmentMedia(body: Record<string, unknown>) {

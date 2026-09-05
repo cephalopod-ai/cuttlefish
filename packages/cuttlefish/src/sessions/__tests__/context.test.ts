@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import { describe, it, expect } from "vitest";
 import { buildContext, buildTalkThreadsSection } from "../context.js";
 import type { Employee, CuttlefishConfig } from "../../shared/types.js";
+import { withStaticTempCuttlefishHome } from "../../test-utils/cuttlefish-home.js";
+
+withStaticTempCuttlefishHome("cuttlefish-context-");
 
 // These tests lock the CURRENT output of buildContext after the "context hygiene"
 // refactor: the static COO operating-manual base was dropped (engines auto-ingest
@@ -463,9 +463,10 @@ describe("buildContext — audience scoping", () => {
 });
 
 // Guards the payoff of audience scoping (engine-stability plan, spec 2b): the
-// injected context must stay well under its token budget, and an employee must
-// never carry MORE than the COO (the original bug — employees received the org
-// roster + cron list + full API table the COO had, on top of their persona).
+// injected context must stay well under its token budget without copying the
+// COO's org roster, cron list and full API table into employee context.
+// A manager's required delegation guidance can exceed a COO's context when no
+// cron jobs are installed, so total length ordering is only a worker invariant.
 // Baseline before scoping was ~9K tokens (COO) / ~10K tokens (employee); the
 // targets are COO ≤ 4K tokens and employee ≤ 3.5K tokens. We assert in tokens
 // via a chars/4 estimate (a safe over-estimate for English+markdown), plus the
@@ -529,17 +530,19 @@ describe("buildContext — size regression (spec 2b)", () => {
     expect(estTokens(ctx(manager))).toBeLessThan(3500);
   });
 
-  it("an employee never carries more context than the COO", () => {
+  it("a plain worker carries less context than the COO", () => {
     const coo = ctx().length;
     expect(ctx(worker).length).toBeLessThan(coo);
-    expect(ctx(manager).length).toBeLessThan(coo);
   });
 
   it("employee context omits the dropped bloat (org roster, cron list, API table)", () => {
-    const out = ctx(worker);
-    expect(out).not.toContain("## Organization ("); // roster heading
-    expect(out).not.toContain("## Scheduled cron");
-    expect(out).not.toContain("| `/api/cron` | GET |"); // full API table row
+    for (const employee of [worker, manager]) {
+      const out = ctx(employee);
+      expect(out).not.toContain("## Organization ("); // roster heading
+      expect(out).not.toContain("## Scheduled cron");
+      expect(out).not.toContain("| `/api/cron` | GET |"); // full API table row
+    }
+    expect(ctx(manager)).toContain("## Manager delegation discipline");
   });
 
   it("COO context omits the full API table (it lives in CLAUDE.md/AGENTS.md)", () => {

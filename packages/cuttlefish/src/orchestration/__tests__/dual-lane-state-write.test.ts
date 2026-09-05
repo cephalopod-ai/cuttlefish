@@ -1,12 +1,17 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import {
-  dualLaneTaskDir,
-  readDualLaneManifest,
-  writeDualLaneManifest,
-  type DualLaneManifest,
-} from "../dual-lane-state.js";
+import type { DualLaneManifest } from "../dual-lane-state.js";
+import { withStaticTempCuttlefishHome } from "../../test-utils/cuttlefish-home.js";
+import { safeRmSync } from "../../shared/safe-delete.js";
+
+const { home } = withStaticTempCuttlefishHome("cuttlefish-dual-lane-state-write-");
+let state: typeof import("../dual-lane-state.js");
+beforeAll(async () => {
+  // The module captures its state directory at import time. Import only after
+  // selecting the disposable home so these fixtures cannot touch operator data.
+  state = await import("../dual-lane-state.js");
+});
 
 function manifest(overrides: Partial<DualLaneManifest> = {}): DualLaneManifest {
   return {
@@ -34,18 +39,19 @@ describe("writeDualLaneManifest (atomic)", () => {
   let taskDir: string;
 
   beforeEach(() => {
-    taskDir = dualLaneTaskDir("task-1", "coord-1");
-    fs.rmSync(taskDir, { recursive: true, force: true });
+    taskDir = state.dualLaneTaskDir("task-1", "coord-1");
+    expect(path.relative(home, taskDir)).toBe(path.join("tmp", "orchestration-dual-lane", "task-1", "coord-1"));
+    safeRmSync(taskDir, { within: home, label: "dual-lane manifest fixture" });
   });
 
   afterEach(() => {
-    fs.rmSync(taskDir, { recursive: true, force: true });
+    safeRmSync(taskDir, { within: home, label: "dual-lane manifest fixture" });
   });
 
   it("round-trips a manifest and leaves no partial .tmp files behind", () => {
-    writeDualLaneManifest(manifest({ state: "selected", selectedLane: "anthropic" }));
+    state.writeDualLaneManifest(manifest({ state: "selected", selectedLane: "anthropic" }));
 
-    const read = readDualLaneManifest("task-1", "coord-1");
+    const read = state.readDualLaneManifest("task-1", "coord-1");
     expect(read?.state).toBe("selected");
     expect(read?.selectedLane).toBe("anthropic");
 
@@ -56,9 +62,9 @@ describe("writeDualLaneManifest (atomic)", () => {
   });
 
   it("overwrites an existing manifest in place", () => {
-    writeDualLaneManifest(manifest({ state: "selection_required" }));
-    writeDualLaneManifest(manifest({ state: "failed" }));
-    expect(readDualLaneManifest("task-1", "coord-1")?.state).toBe("failed");
+    state.writeDualLaneManifest(manifest({ state: "selection_required" }));
+    state.writeDualLaneManifest(manifest({ state: "failed" }));
+    expect(state.readDualLaneManifest("task-1", "coord-1")?.state).toBe("failed");
   });
 
   // FSR-CF-012: a single-record manifest read had no guard against the file
@@ -68,8 +74,8 @@ describe("writeDualLaneManifest (atomic)", () => {
     fs.mkdirSync(taskDir, { recursive: true });
     fs.writeFileSync(manifestPath, '{"taskId": "task-1", "coordinatorId": "coord-1", "state": "sel'); // truncated JSON
 
-    expect(() => readDualLaneManifest("task-1", "coord-1")).not.toThrow();
-    expect(readDualLaneManifest("task-1", "coord-1")).toBeUndefined();
+    expect(() => state.readDualLaneManifest("task-1", "coord-1")).not.toThrow();
+    expect(state.readDualLaneManifest("task-1", "coord-1")).toBeUndefined();
 
     // The corrupt file must be moved aside, not deleted or left in place.
     expect(fs.existsSync(manifestPath)).toBe(false);

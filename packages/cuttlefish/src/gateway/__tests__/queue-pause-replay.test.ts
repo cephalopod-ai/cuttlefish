@@ -44,6 +44,39 @@ afterEach(() => {
 });
 
 describe("resumePendingWebQueueItems", () => {
+  it.each(["boot", "drain"])("restores persisted files and resource context during %s replay", async (mode) => {
+    const { dispatch, reg, SessionQueue } = await setup();
+    const { attachResourcesToSession } = await import("../session-resources.js");
+    const { runWebSession } = await import("../run-web-session.js");
+    const session = reg.createSession({ engine: "claude", source: "web", sourceRef: `web:resources-${mode}`, prompt: "Inspect the resources" });
+    const filePath = path.join(tmpHome, "empty.txt");
+    fs.writeFileSync(filePath, "");
+    const notesPath = path.join(tmpHome, "notes.txt");
+    fs.writeFileSync(notesPath, "The acceptance criterion is a blue square.");
+    const queue = new SessionQueue();
+    const ctx = {
+      getConfig: () => ({ gateway: {}, engines: { default: "claude" }, sessions: { autoResumeOnBoot: true } }),
+      connectors: new Map(), startTime: Date.now(), emit: vi.fn(),
+      sessionManager: { getEngine: () => ({}) as any, getQueue: () => queue },
+    } as any;
+    const attached = await attachResourcesToSession(session, {
+      resources: [{ path: filePath }, { path: notesPath }, { url: "https://example.com/reference", intendedUse: "reference" }],
+    }, ctx);
+    expect(attached.blocked).toBe(false);
+    const itemId = reg.enqueueQueueItem(session.id, session.sessionKey, "Inspect the resources");
+
+    if (mode === "boot") await dispatch.resumePendingWebQueueItems(ctx);
+    else await dispatch.redispatchPendingWebQueueItemsForSessionKey(ctx, session.sessionKey);
+    await waitFor(() => reg.getQueueItem(itemId)?.status === "completed");
+
+    const call = vi.mocked(runWebSession).mock.calls.find((args) => args[0].id === session.id)!;
+    expect(call).toBeDefined();
+    expect(call[5]).toEqual([filePath]);
+    expect(call[6]).toContain("Attached resources:");
+    expect(call[6]).toContain("https://example.com/reference");
+    expect(call[6]).toContain("The acceptance criterion is a blue square.");
+  }, 15_000);
+
   it("leaves pending work untouched on startup unless autoResumeOnBoot is enabled", async () => {
     const { dispatch, reg, SessionQueue } = await setup();
     const session = reg.createSession({

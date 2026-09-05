@@ -49,11 +49,17 @@ function readNewSessionSelector(): SelectorValue {
 
 function writeNewSessionSelector(value: SelectorValue): void {
   if (typeof window === 'undefined') return
-  window.localStorage.setItem(NEW_SESSION_SELECTOR_KEY, JSON.stringify({
-    engine: value.engine,
-    model: value.model,
-    effortLevel: value.effortLevel,
-  }))
+  try {
+    window.localStorage.setItem(NEW_SESSION_SELECTOR_KEY, JSON.stringify({
+      engine: value.engine,
+      model: value.model,
+      effortLevel: value.effortLevel,
+    }))
+  } catch (error) {
+    // A browser preference write cannot turn an accepted API request into a
+    // failed send and invite a duplicate session on retry.
+    console.warn('Could not save the chat model preference', error)
+  }
 }
 
 function supportsCli(engine: string | undefined): boolean {
@@ -372,8 +378,10 @@ export function ChatPane({
           await api.sendMessage(sid, { message, interrupt: interrupt || undefined, attachments: attachmentIds, mode })
           onRefresh?.()
         }
+        return true
       } catch (err) {
         failSend(`Error: ${err instanceof Error ? err.message : 'Failed to send message'}`)
+        return false
       }
     },
     // viewMode MUST be in deps — without it, toggling chat↔CLI keeps the stale

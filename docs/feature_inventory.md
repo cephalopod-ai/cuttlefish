@@ -544,6 +544,18 @@
 - Engine dispatch still receives exact local file paths when available, while
   the prompt also includes a structured "Attached resources" block for folders,
   URLs, access mode, intended use, artifact linkage, and producing-run context.
+- Follow-ups reconstruct saved local paths, and durable web queue replay restores
+  allowed resource context and file arguments. A replay that reconsiders a
+  checkpoint still withholds a quarantined resource set. Concurrent additions
+  merge against the current persisted resource list.
+- Follow-up attachment validation precedes turn supersession. Completion,
+  checkpoint waits, and deletion during validation are checked before the
+  request can interrupt a turn or persist its message.
+- The chat composer retains draft text/files through failed uploads and rejected
+  sends, clears the accepted draft on acknowledgment, and prevents another
+  submission while that request is pending. File-only sends use the visible
+  prompt "Please review the attached files." Browser preference-storage errors
+  do not turn an accepted new chat into a failed send.
 
 ### Human checkpoints and approval gates
 - `packages/cuttlefish/src/gateway/checkpoints.ts`

@@ -1,4 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import path from "node:path";
+import { withStaticTempCuttlefishHome } from "../../test-utils/cuttlefish-home.js";
+
+const { home } = withStaticTempCuttlefishHome("cuttlefish-rate-limit-guard-");
 
 // ── Mocks (must be declared before importing the module under test) ──────────
 
@@ -47,6 +51,7 @@ import type { Session, EngineResult } from "../../shared/types.js";
 function makeSession(overrides: Partial<Session> = {}): Session {
   return {
     id: "sess-1",
+    cwd: path.join(home, "workspace"),
     engine: "claude",
     engineSessionId: "claude-thread-1",
     source: "web",
@@ -149,7 +154,7 @@ describe("handleRateLimit — fallback guard (#40)", () => {
       model: "grok-build",
       bin: "grok",
       resumeSessionId: undefined,
-      cwd: expect.stringContaining(".cuttlefish-workspaces/sess-1"),
+      cwd: path.join(home, "workspace"),
     }));
     expect(updateSessionMock).toHaveBeenCalledWith("sess-1", expect.objectContaining({
       engine: "grok",

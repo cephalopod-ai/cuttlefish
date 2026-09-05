@@ -41,9 +41,13 @@ describe("instance destructive path safety", () => {
   });
 
   it("accepts only the canonical Cuttlefish home convention", () => {
-    const managed = instance("cuttlefish", path.join(os.homedir(), ".cuttlefish"));
-
-    expect(assertSafeManagedInstanceHome(managed)).toBe(path.join(os.homedir(), ".cuttlefish"));
+    vi.stubEnv("CUTTLEFISH_HOME", undefined);
+    try {
+      const managed = instance("cuttlefish", path.join(os.homedir(), ".cuttlefish"));
+      expect(assertSafeManagedInstanceHome(managed)).toBe(path.join(os.homedir(), ".cuttlefish"));
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("rejects non-canonical names instead of mapping them to any home", async () => {
@@ -59,6 +63,9 @@ describe("instance destructive path safety", () => {
     vi.stubEnv("CUTTLEFISH_HOME", customHome);
     try {
       expect(homeForInstance("cuttlefish")).toBe(customHome);
+      expect(assertSafeManagedInstanceHome(instance("cuttlefish", customHome))).toBe(customHome);
+      expect(() => assertSafeManagedInstanceHome(instance("cuttlefish", path.join(os.homedir(), ".cuttlefish"))))
+        .toThrow(/outside its managed path/);
     } finally {
       vi.unstubAllEnvs();
     }

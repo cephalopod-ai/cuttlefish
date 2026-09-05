@@ -26,6 +26,7 @@ import { claimManagerDelegationSynthesis, markManagerDelegationSynthesisDispatch
 import { runWebSession } from "../run-web-session.js";
 import type { ApiContext } from "./context.js";
 import { expireOperatorDelegationForPrompt } from "../../sessions/operator-delegation.js";
+import { queuedSessionResourceOptions } from "../session-resources.js";
 
 export function killSessionEngines(context: ApiContext, session: Session, reason: string): { interruptible: number; killed: number } {
   const engines = new Set<Engine>();
@@ -153,7 +154,7 @@ export async function resumePendingWebQueueItems(context: ApiContext): Promise<v
 
     updateSession(session.id, { status: "running", lastActivity: new Date().toISOString(), lastError: null });
     const employee = await resolveDispatchEmployeeForSession(session, registry);
-    dispatchEmployeeSessionRun(session, item.prompt, engine, config, context, employee, { queueItemId: item.id });
+    dispatchEmployeeSessionRun(session, item.prompt, engine, config, context, employee, { queueItemId: item.id, ...queuedSessionResourceOptions(session) });
     resumed++;
   }
 
@@ -216,7 +217,7 @@ async function dispatchPendingQueueItem(context: ApiContext, item: QueueItem): P
     resolveDispatchEmployeeForSession(session),
     importDispatchEmployeeSessionRun(),
   ]);
-  dispatchEmployeeSessionRun(session, item.prompt, engine, config, context, employee, { queueItemId: item.id });
+  dispatchEmployeeSessionRun(session, item.prompt, engine, config, context, employee, { queueItemId: item.id, ...queuedSessionResourceOptions(session) });
   return true;
 }
 
