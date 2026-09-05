@@ -105,12 +105,12 @@ and per `docs/DOC_MAINTENANCE.md` they are not published unless a maintainer
 explicitly selects and reviews them. Do not treat this index as a list of
 tracked audit/session files.
 
-September 2026: the local `2026-09-04-playtest-repairs` audit and session handoff
-record a disposable gateway/dashboard playtest and repairs to engine availability,
-onboarding, and CLI error rendering. Coverage is partial: signed-in engine,
-connector, and active-work scenarios require a separate equipped environment.
-Detailed evidence remains under the local audit/session trees; the repair record
-is also captured in `.giles/feature-ledger/`.
+September 2026: the resumed playtest used installed native engines, real local
+IMAP, disposable gateway restarts/crashes, browser interactions and orchestration
+recovery. Its final225-card matrix records18 Pass,180 Partial,17 Fail and10 Blocked;
+21 findings were repaired, with one background-result observation still open.
+The earlier report's broad local-environment blockers are superseded; permissions
+were available. Detailed evidence remains local under the audit/session trees.
 
 One tracked baseline pair was force-added before the ignore rule and remains
 in the checkout:
@@ -159,3 +159,8 @@ Historical archives are not current operator workflow documentation. They may
 describe superseded experiments and should not override `README.md`,
 `docs/USER_MANUAL.md`, `docs/SPECIFICATION.md`, `docs/ARCHITECTURE.md`, or
 `docs/feature_inventory.md`.
+
+- `docs/audits/2026-09-05-playtest-resumed-final.md`: final resumed playtest report, repair results, remaining limitations and explicit reasons for unexecuted variations.
+- `docs/audits/2026-09-05-playtest-final-matrix.md`: all225 card dispositions; partial coverage is not a pass.
+- `docs/audits/2026-09-05-playtest-closing-review.md`: scoped transitive review and separate completeness inspection.
+- `docs/logs/session/092026/2026-09-04-playtest-resumption.md`: local reboot-resumption handoff and repair-validation checkpoints.

@@ -193,8 +193,10 @@ export async function continueSession(input: ContinueSessionInput): Promise<Cont
 
   input.context.sessionManager.getQueue().clearCancelled(session.sessionKey || session.sourceRef || session.id);
   const sessionKey = session.sessionKey || session.sourceRef || session.id;
+  const queue = input.context.sessionManager.getQueue();
+  const scheduled = typeof queue.hasScheduled === "function" ? queue.hasScheduled(sessionKey) : queue.isRunning(sessionKey);
   let queueItemId: string | undefined;
-  if (!isNotification) {
+  if (!isNotification || session.status === "waiting" || scheduled) {
     queueItemId = enqueueQueueItem(session.id, sessionKey, prompt);
     input.context.emit("queue:updated", { sessionId: session.id, sessionKey });
   }
@@ -205,7 +207,9 @@ export async function continueSession(input: ContinueSessionInput): Promise<Cont
   if (session.status === "waiting") {
     return { statusCode: 200, body: { status: isNotification ? "notification_recorded" : "queued", sessionId: session.id }, insertedMessageId };
   }
-  if (queueItemId && hasPendingQueueItemBefore(sessionKey, queueItemId)) {
+  // Keep followers durable until the active turn settles. It may open a
+  // checkpoint after this request arrives; the drain then rechecks that wait.
+  if (queueItemId && (scheduled || hasPendingQueueItemBefore(sessionKey, queueItemId))) {
     dispatchPendingWebQueueHeadForSessionKey(input.context, sessionKey);
   } else {
     let followUpEmployee;

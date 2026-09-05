@@ -198,7 +198,7 @@ export async function runMigrate(opts: { check?: boolean; auto?: boolean }): Pro
   // --auto: apply safe changes deterministically without launching AI
   if (opts.auto) {
     console.log("\nApplying safe changes automatically...");
-    await applyAutoMigrations(pending, instanceVersion, packageVersion);
+    await applyAutoMigrations(pending);
     return;
   }
 
@@ -272,12 +272,10 @@ export async function runMigrate(opts: { check?: boolean; auto?: boolean }): Pro
 
 /**
  * Auto-migration: deterministically apply safe changes without AI.
- * Copies new files, adds new config keys. Does NOT modify user-customized files.
+ * Copies new files. Does NOT verify prose instructions or modify customized files.
  */
 async function applyAutoMigrations(
   pending: string[],
-  instanceVersion: string,
-  packageVersion: string,
 ): Promise<void> {
   let applied = 0;
 
@@ -311,15 +309,12 @@ async function applyAutoMigrations(
     }
   }
 
-  // Stamp version
-  stampVersion(packageVersion);
-  console.log(`\n  ${GREEN}[version]${RESET} ${instanceVersion} → ${packageVersion}`);
-  console.log(`\n${GREEN}Auto-migration complete.${RESET} ${applied} file(s) added.`);
-
-  // Clean up
-  safeRmSync(MIGRATIONS_DIR, { within: CUTTLEFISH_HOME, label: "migrations dir" });
-
-  console.log(`\n${DIM}Tip: Run ${RESET}cuttlefish migrate${DIM} (without --auto) to also merge updated files with AI.${RESET}\n`);
+  // File copying cannot verify the migration's prose instructions. Preserve
+  // the version and staging so the normal migration can finish those steps.
+  console.log(`\n${YELLOW}Auto-migration preparation incomplete.${RESET} ${applied} file(s) added.`);
+  console.error(`The instance version is unchanged; staged files remain in ${MIGRATIONS_DIR}.`);
+  console.error("Run cuttlefish migrate (without --auto) to finish and verify the pending migrations.\n");
+  process.exit(1);
 }
 
 /** Recursively collect relative file paths under a directory. */

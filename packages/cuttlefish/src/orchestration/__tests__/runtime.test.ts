@@ -8,6 +8,7 @@ import type { LiveRunContinuationRecord } from "../live-run.js";
 import type { OrchestrationConfig } from "../types.js";
 import type { CuttlefishConfig } from "../../shared/types.js";
 import { logger } from "../../shared/logger.js";
+import { swapOrchestrationRuntime } from "../../gateway/orchestration-runtime-manager.js";
 
 let tmpDir: string;
 let dbPath: string;
@@ -22,6 +23,74 @@ afterEach(() => {
 });
 
 describe("OrchestrationRuntime continuation dispatch", () => {
+  it.each(["requestAllocationWithLiveHeadroom", "tryAllocationNowWithLiveHeadroom"] as const)(
+    "%s prevents a runtime refresh during asynchronous allocation", async (method) => {
+      let releaseHeadroom!: () => void;
+      const gate = new Promise<void>((resolve) => { releaseHeadroom = resolve; });
+      const cfg = cuttlefishConfig(dbPath);
+      const runtime = new OrchestrationRuntime({
+        config: config(), dbPath, startReaper: false, cuttlefishConfig: cfg,
+        headroomFilter: async (workers) => { await gate; return { allowed: workers, rejected: [] }; },
+      });
+      const pending = runtime[method](request("refresh-race", "refresh-coord"));
+      expect(runtime.hasActiveWork()).toBe(true);
+      const create = vi.fn();
+      const context = { orchestration: { runtime } } as any;
+      expect(swapOrchestrationRuntime(context, cfg, runtime, create)).toBe(runtime);
+      expect(create).not.toHaveBeenCalled();
+      releaseHeadroom();
+      const result = await pending;
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        runtime.pauseQueue("test drains without retry");
+        runtime.releaseLease(result.allocation.leases[0].leaseId, "refresh-coord");
+      }
+      expect(runtime.hasActiveWork()).toBe(false);
+      runtime.close();
+    },
+  );
+
+  it("reports shutdown during a pending allocation without using a closed database", async () => {
+    let releaseHeadroom!: () => void;
+    const gate = new Promise<void>((resolve) => { releaseHeadroom = resolve; });
+    const runtime = new OrchestrationRuntime({
+      config: config(), dbPath, startReaper: false, cuttlefishConfig: cuttlefishConfig(dbPath),
+      headroomFilter: async (workers) => { await gate; return { allowed: workers, rejected: [] }; },
+    });
+    const pending = runtime.tryAllocationNowWithLiveHeadroom(request("closing", "closing-coord"));
+    runtime.close();
+    releaseHeadroom();
+    await expect(pending).rejects.toThrow("orchestration runtime is closing");
+  });
+
+  it.each(["resumeTask", "retryFailedLiveContinuation"] as const)(
+    "%s rechecks a global pause or shutdown after headroom", async (method) => {
+      for (const closing of [false, true]) {
+        const fixtureDb = path.join(tmpDir, `${method}-${closing}.db`);
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        const runtime = new OrchestrationRuntime({ config: config(), dbPath: fixtureDb, startReaper: false,
+          cuttlefishConfig: cuttlefishConfig(fixtureDb),
+          headroomFilter: async (workers) => { await gate; return { allowed: workers, rejected: [] }; },
+        });
+        if (method === "retryFailedLiveContinuation") {
+          runtime.queueLiveContinuation(continuation("deferred-task", "deferred-coord", { state: "failed" }));
+        }
+        const pending = runtime[method]("deferred-task", "deferred-coord");
+        if (closing) runtime.close();
+        else runtime.pauseQueue("new operator pause while headroom waits");
+        release();
+        if (closing) await expect(pending).rejects.toThrow("orchestration runtime is closing");
+        else {
+          await pending;
+          expect(runtime.listLeases()).toEqual([]);
+          expect(runtime.getControlState().queuePaused).toBe(true);
+          runtime.close();
+        }
+      }
+    },
+  );
+
   it("tryAllocationNow persists successful leases without changing normal allocation behavior", () => {
     const runtime1 = new OrchestrationRuntime({ config: config(), dbPath, startReaper: false });
     const immediate = runtime1.tryAllocationNow(request("board-ticket-1", "ticket-dispatch:manual"));
@@ -258,13 +327,14 @@ describe("OrchestrationRuntime continuation dispatch", () => {
     runtime.close();
   });
 
-  it("does not dispatch manual failed-continuation retry while globally paused", async () => {
+  it.each(["global", "task"])("does not dispatch manual failed-continuation retry while %s paused", async (scope) => {
     const runtime = new OrchestrationRuntime({ config: config(), dbPath, startReaper: false });
     runtime.queueLiveContinuation(continuation("task-paused-retry", "coord-paused-retry", {
       state: "failed",
       lastError: "forced engine failure",
     }));
-    runtime.pauseQueue("operator hold");
+    if (scope === "global") runtime.pauseQueue("operator hold");
+    else runtime.pauseTask("task-paused-retry", "coord-paused-retry", { reason: "operator hold" });
     const resumed: Array<{ taskId: string; allocationId: string }> = [];
     runtime.setResumeQueuedRunHandler(async ({ continuation, allocation }) => {
       resumed.push({ taskId: continuation.taskId, allocationId: allocation.allocationId });
@@ -276,6 +346,11 @@ describe("OrchestrationRuntime continuation dispatch", () => {
     expect(runtime.listLeases()).toEqual([]);
     expect(runtime.listLiveContinuations()).toMatchObject([{ taskId: "task-paused-retry", state: "queued" }]);
     expect(resumed).toEqual([]);
+    if (scope === "global") await runtime.resumeQueue();
+    else await runtime.resumeTask("task-paused-retry", "coord-paused-retry");
+    await waitFor(() => resumed.length === 1);
+    await runtime.retryQueuedWithLiveHeadroom();
+    expect(resumed).toHaveLength(1);
     runtime.close();
   });
 

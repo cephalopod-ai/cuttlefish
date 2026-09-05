@@ -5,6 +5,7 @@ import type { Lease } from "../../orchestration/types.js";
 import { notifyAttachedTalkSessions } from "../../sessions/callbacks.js";
 import {
   cancelQueueItem,
+  enqueueQueueItem,
   deleteSession,
   getFilesByIds,
   getSession,
@@ -365,6 +366,18 @@ export async function dispatchSessionNotification(
     resolveDispatchEmployeeForSession(session),
     importDispatchEmployeeSessionRun(),
   ]);
+  // A checkpoint may open while these dependencies load, or during an already
+  // scheduled turn. Keep the callback durable until that turn's fresh drain.
+  session = getSession(session.id) ?? session;
+  const sessionKey = session.sessionKey || session.sourceRef || session.id;
+  const queue = context.sessionManager.getQueue();
+  const scheduled = typeof queue.hasScheduled === "function" ? queue.hasScheduled(sessionKey)
+    : typeof queue.isRunning === "function" && queue.isRunning(sessionKey);
+  if (session.status === "waiting" || scheduled) {
+    enqueueQueueItem(session.id, sessionKey, message);
+    context.emit("queue:updated", { sessionId: session.id, sessionKey });
+    return;
+  }
   dispatchEmployeeSessionRun(session, message, engine, context.getConfig(), context, employee);
 }
 

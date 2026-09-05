@@ -182,14 +182,15 @@ describe("handleRateLimit — wait cancellation", () => {
     vi.useRealTimers();
   });
 
-  it("cancels a long wait when the session leaves waiting status", async () => {
+  it.each([false, true])("cancels a long wait on stop or a human checkpoint (checkpoint=%s)", async (checkpoint) => {
     vi.useFakeTimers();
     engineAvailableMock.mockReturnValue(false);
     vi.mocked(computeNextRetryDelayMs).mockReturnValue({ delayMs: 10_000, resumeAt: undefined });
     vi.mocked(computeRateLimitDeadlineMs).mockReturnValue(Date.now() + 60_000);
 
     let status: Session["status"] = "waiting";
-    getSessionMock.mockImplementation(() => makeSession({ status }));
+    let paused = false;
+    getSessionMock.mockImplementation(() => makeSession({ status, transportMeta: paused ? { humanCheckpoint: { state: "pending" } } : null }));
     const retryEngine = { run: vi.fn(async () => ({ result: "retry", sessionId: "claude-thread-1" }) as EngineResult) };
     const opts = {
       ...makeOpts(vi.fn()),
@@ -200,7 +201,7 @@ describe("handleRateLimit — wait cancellation", () => {
       engine: retryEngine as unknown as RateLimitHandlerOpts["engine"],
       hooks: {
         onWaitingStart: () => {
-          setTimeout(() => { status = "idle"; }, 1000);
+          setTimeout(() => { if (checkpoint) paused = true; else status = "idle"; }, 1000);
         },
       },
     } satisfies RateLimitHandlerOpts;

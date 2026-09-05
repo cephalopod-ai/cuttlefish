@@ -52,6 +52,17 @@ describe("ApprovalsPage", () => {
     approvalsState.checkpointsError = null
   })
 
+  it("identifies an org change and the effect of approval before the operator decides", () => {
+    approvalsState.approvals = [{ id: "hire-1", sessionId: "origin-1", type: "org-change",
+      payload: { changeRequestId: "change-317", changeType: "create_agent", employeeName: "coral-317", riskLevel: "high" },
+      state: "pending", createdAt: "2026-09-05T05:00:00.000Z" }]
+    render(<MemoryRouter><ApprovalsPage /></MemoryRouter>)
+    expect(screen.getByRole("button", { name: /org-change approval.*coral-317/ })).toBeTruthy()
+    expect(screen.getByText(/create_agent for coral-317/)).toBeTruthy()
+    expect(screen.getByText(/high risk.*change-317/)).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Approve & apply" })).toBeTruthy()
+  })
+
   it("renders fallback approvals and human checkpoints in the pending list, and shows detail on click", () => {
     approvalsState.approvals = [{
       id: "approval-1",

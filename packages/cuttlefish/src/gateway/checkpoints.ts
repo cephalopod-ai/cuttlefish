@@ -262,9 +262,11 @@ export async function applyCheckpointDecision(
     insertMessage(
       session.id,
       "notification",
-      input.decision === "revised"
-        ? "📝 Human checkpoint revised the plan. Resuming with human instructions."
-        : "✅ Human checkpoint approved. Resuming session.",
+      resolved.resolvedByKind === "autonomous_dual_model"
+        ? "✅ AI reviewers approved reconsideration. Resuming session."
+        : input.decision === "revised"
+          ? "📝 Human checkpoint revised the plan. Resuming with human instructions."
+          : "✅ Human checkpoint approved. Resuming session.",
     );
     dispatchWebSessionRun(rolled, prompt!, engine, context.getConfig(), context);
     await exportCheckpointDecision(resolved, rolled, context);

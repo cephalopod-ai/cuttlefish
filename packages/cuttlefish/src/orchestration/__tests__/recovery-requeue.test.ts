@@ -3,9 +3,18 @@ import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { OrchestrationRuntime } from "../runtime.js";
+import type { OrchestrationConfig } from "../types.js";
 import { requeueRecoveredContinuation } from "../recovery-requeue.js";
 import { OrchestrationStore } from "../store.js";
 import { pruneRecoveryNotices, writeRecoveryManifest } from "../store-recovery.js";
+
+const recoveryConfig: OrchestrationConfig = {
+  workers: [{ id: "worker", provider: "mock", family: "local", tier: "frontier",
+    capabilities: ["coding"], tools: [], maxConcurrentTasks: 1, costClass: "low", workspacePolicy: "shared" }],
+  roles: [{ id: "seniorImplementer", requiredCapabilities: ["coding"], requiredTools: [] }],
+  coordinatorTemplates: [], quotas: { providers: {}, families: {} },
+};
 
 const fixedNow = new Date("2026-06-23T12:00:00.000Z");
 
@@ -59,6 +68,7 @@ function buildQuarantinedDb(corruptDbPath: string, taskId: string, coordinatorId
     );
   `);
   const task = {
+    requiredRoles: ["seniorImplementer"],
     taskId,
     coordinatorId,
     priority: "normal",
@@ -92,6 +102,7 @@ describe("requeueRecoveredContinuation", () => {
     const store = OrchestrationStore.open(dbPath, { now: () => fixedNow });
 
     const result = requeueRecoveredContinuation({
+      config: recoveryConfig,
       manifestPath,
       taskId: "task-recovered",
       coordinatorId: "coord-recovered",
@@ -110,6 +121,10 @@ describe("requeueRecoveredContinuation", () => {
     // retryCount is PRESERVED across recovery (inserted as 2), not reset to 0 —
     // resetting let a broken continuation bypass the retry cap across recovery cycles.
     expect(stored).toMatchObject({ taskId: "task-recovered", state: "queued", retryCount: 2 });
+    expect(store.loadSnapshot().queue).toMatchObject([{
+      taskId: "task-recovered", coordinatorId: "coord-recovered",
+      request: { taskId: "task-recovered", requiredRoles: ["seniorImplementer"] },
+    }]);
     // task pause set
     expect(store.listTaskPauses()).toMatchObject([{
       taskId: "task-recovered",
@@ -117,6 +132,27 @@ describe("requeueRecoveredContinuation", () => {
       managerName: "operator",
     }]);
     store.close();
+  });
+
+  it("keeps recovered work paused across restart, then dispatches it exactly once on explicit resume", async () => {
+    const corruptDbPath = path.join(quarantineDir, "orchestration.db.corrupt.resume");
+    buildQuarantinedDb(corruptDbPath, "task-resume", "coord-resume");
+    const store = OrchestrationStore.open(dbPath);
+    expect(requeueRecoveredContinuation({ config: recoveryConfig, store,
+      manifestPath: buildManifestPath(corruptDbPath), taskId: "task-resume",
+      coordinatorId: "coord-resume", managerName: "operator" }).ok).toBe(true);
+    store.close();
+    const runtime = new OrchestrationRuntime({ config: recoveryConfig, dbPath, startReaper: false });
+    let dispatches = 0;
+    runtime.setResumeQueuedRunHandler(async () => { dispatches++; });
+    await runtime.retryQueuedWithLiveHeadroom();
+    expect(dispatches).toBe(0);
+    expect(runtime.listQueue()).toHaveLength(1);
+    await runtime.resumeTask("task-resume", "coord-resume");
+    await runtime.resumeTask("task-resume", "coord-resume");
+    await runtime.prepareForShutdown();
+    runtime.close();
+    expect(dispatches).toBe(1);
   });
 
   it("resets retry count and clears allocationId on import regardless of original state", () => {
@@ -132,7 +168,8 @@ describe("requeueRecoveredContinuation", () => {
         PRIMARY KEY (task_id, coordinator_id)
       );
     `);
-    const task = { taskId: "task-mid", coordinatorId: "coord-mid", priority: "normal", leaseDurationMs: 60_000, prompt: "Resume" };
+    const task = {
+    requiredRoles: ["seniorImplementer"], taskId: "task-mid", coordinatorId: "coord-mid", priority: "normal", leaseDurationMs: 60_000, prompt: "Resume" };
     db.prepare(`
       INSERT INTO live_run_continuations
         (task_id, coordinator_id, mode, state, task_json, enqueued_at, updated_at, retry_count, allocation_id)
@@ -143,6 +180,7 @@ describe("requeueRecoveredContinuation", () => {
     const store = OrchestrationStore.open(dbPath, { now: () => fixedNow });
 
     const result = requeueRecoveredContinuation({
+      config: recoveryConfig,
       manifestPath,
       taskId: "task-mid",
       coordinatorId: "coord-mid",
@@ -178,6 +216,7 @@ describe("requeueRecoveredContinuation", () => {
     const store = OrchestrationStore.open(dbPath, { now: () => fixedNow });
 
     const result = requeueRecoveredContinuation({
+      config: recoveryConfig,
       manifestPath,
       taskId: "task-with-holds",
       coordinatorId: "coord-with-holds",
@@ -213,6 +252,7 @@ describe("requeueRecoveredContinuation", () => {
     const store = OrchestrationStore.open(dbPath, { now: () => fixedNow });
 
     const result = requeueRecoveredContinuation({
+      config: recoveryConfig,
       manifestPath,
       taskId: "task-exp-holds",
       coordinatorId: "coord-exp-holds",
@@ -231,6 +271,7 @@ describe("requeueRecoveredContinuation", () => {
   it("returns manifest_not_found when manifest path does not exist", () => {
     const store = OrchestrationStore.open(dbPath, { now: () => fixedNow });
     const result = requeueRecoveredContinuation({
+      config: recoveryConfig,
       manifestPath: path.join(tmpDir, "nonexistent.json"),
       taskId: "task-x",
       coordinatorId: "coord-x",
@@ -250,6 +291,7 @@ describe("requeueRecoveredContinuation", () => {
     fs.writeFileSync(badManifestPath, JSON.stringify({ recoveredAt: "2026-06-23T12:00:00.000Z" }));
     const store = OrchestrationStore.open(dbPath, { now: () => fixedNow });
     const result = requeueRecoveredContinuation({
+      config: recoveryConfig,
       manifestPath: badManifestPath,
       taskId: "task-x",
       coordinatorId: "coord-x",
@@ -270,6 +312,7 @@ describe("requeueRecoveredContinuation", () => {
     const store = OrchestrationStore.open(dbPath, { now: () => fixedNow });
 
     const result = requeueRecoveredContinuation({
+      config: recoveryConfig,
       manifestPath,
       taskId: "task-unknown",
       coordinatorId: "coord-found",
@@ -298,6 +341,7 @@ describe("requeueRecoveredContinuation", () => {
     const store = OrchestrationStore.open(dbPath, { now: () => fixedNow });
 
     const result = requeueRecoveredContinuation({
+      config: recoveryConfig,
       manifestPath,
       taskId: "task-x",
       coordinatorId: "coord-x",
@@ -326,6 +370,7 @@ describe("requeueRecoveredContinuation", () => {
     const store = OrchestrationStore.open(dbPath, { now: () => fixedNow });
 
     const result = requeueRecoveredContinuation({
+      config: recoveryConfig,
       manifestPath,
       taskId: "task-outside",
       coordinatorId: "coord-outside",
@@ -420,6 +465,7 @@ describe("requeueRecoveredContinuation", () => {
     const store = OrchestrationStore.open(dbPath, { now: () => fixedNow });
 
     const result = requeueRecoveredContinuation({
+      config: recoveryConfig,
       manifestPath,
       taskId: "task-bad-hold",
       coordinatorId: "coord-bad-hold",
@@ -448,7 +494,8 @@ describe("requeueRecoveredContinuation", () => {
         PRIMARY KEY (task_id, coordinator_id)
       );
     `);
-    const task = { taskId: "task-done", coordinatorId: "coord-done", priority: "normal", leaseDurationMs: 60_000, prompt: "done" };
+    const task = {
+    requiredRoles: ["seniorImplementer"], taskId: "task-done", coordinatorId: "coord-done", priority: "normal", leaseDurationMs: 60_000, prompt: "done" };
     db.prepare(`
       INSERT INTO live_run_continuations
         (task_id, coordinator_id, mode, state, task_json, enqueued_at, updated_at, retry_count)
@@ -459,6 +506,7 @@ describe("requeueRecoveredContinuation", () => {
     const store = OrchestrationStore.open(dbPath, { now: () => fixedNow });
 
     const result = requeueRecoveredContinuation({
+      config: recoveryConfig,
       manifestPath,
       taskId: "task-done",
       coordinatorId: "coord-done",

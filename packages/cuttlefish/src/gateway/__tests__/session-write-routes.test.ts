@@ -101,6 +101,7 @@ function makeCtx(api: Awaited<ReturnType<typeof setup>>["api"]) {
     resumeQueue: vi.fn(),
     clearQueue: vi.fn(),
     clearCancelled: vi.fn(),
+    hasScheduled: vi.fn(() => false),
   };
   return {
     getConfig: () => ({ gateway: {}, engines: {}, portal: {} }),

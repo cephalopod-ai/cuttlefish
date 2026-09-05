@@ -6,7 +6,7 @@ import { logger } from "../shared/logger.js";
 import type { CuttlefishConfig } from "../shared/types.js";
 import { loadOrchestrationConfig } from "./config.js";
 import { appendOrchestrationAudit } from "./audit.js";
-import { buildCoordinatorTaskBrief, type CoordinatorMode } from "./coordinator.js";
+import { buildContinuationRequest } from "./continuation-request.js";
 import { resolveCrossFamilyReviewPolicy, type CrossFamilyReviewPolicy } from "./cross-family.js";
 import { listProtectedDualLaneTaskIds } from "./dual-lane-state.js";
 import type { LiveRunContinuationRecord, LiveRunMode, LiveRunTaskPayload } from "./live-run.js";
@@ -124,6 +124,7 @@ export class OrchestrationRuntime {
   private resumeQueuedRunHandler?: ResumeQueuedRunHandler;
   private reaper: ReturnType<typeof setInterval> | null = null;
   private closing = false;
+  private pendingAllocations = 0;
 
   constructor(opts: OrchestrationRuntimeOptions) {
     this.config = opts.config ?? loadOrchestrationConfig(opts.configDir ?? ORCH_CONFIG_DIR);
@@ -165,9 +166,17 @@ export class OrchestrationRuntime {
   }
 
   async requestAllocationWithLiveHeadroom(request: AllocationRequest): Promise<AllocationResult> {
-    return this.scheduler.requestAllocation(request, {
-      allowedWorkerIds: await this.resolveLiveHeadroomWorkerIds(),
-    });
+    if (this.closing) throw new Error("orchestration runtime is closing");
+    // No durable lease exists yet; keep refresh from closing this store while
+    // the provider headroom check yields to another request or config reload.
+    this.pendingAllocations++;
+    try {
+      const allowedWorkerIds = await this.resolveLiveHeadroomWorkerIds();
+      if (this.closing) throw new Error("orchestration runtime is closing");
+      return this.scheduler.requestAllocation(request, { allowedWorkerIds });
+    } finally {
+      this.pendingAllocations--;
+    }
   }
 
   tryAllocationNow(request: AllocationRequest): AllocationResult {
@@ -175,9 +184,17 @@ export class OrchestrationRuntime {
   }
 
   async tryAllocationNowWithLiveHeadroom(request: AllocationRequest): Promise<AllocationResult> {
-    return this.scheduler.tryAllocationNow(request, {
-      allowedWorkerIds: await this.resolveLiveHeadroomWorkerIds(),
-    });
+    if (this.closing) throw new Error("orchestration runtime is closing");
+    // No durable lease exists yet; keep refresh from closing this store while
+    // the provider headroom check yields to another request or config reload.
+    this.pendingAllocations++;
+    try {
+      const allowedWorkerIds = await this.resolveLiveHeadroomWorkerIds();
+      if (this.closing) throw new Error("orchestration runtime is closing");
+      return this.scheduler.tryAllocationNow(request, { allowedWorkerIds });
+    } finally {
+      this.pendingAllocations--;
+    }
   }
 
   heartbeatLease(leaseId: string, coordinatorId?: string): Lease {
@@ -371,6 +388,8 @@ export class OrchestrationRuntime {
     appendOrchestrationAudit("orchestration.queue.resume_task", { taskId, coordinatorId, paused }, this.dbPath);
     if (this.getControlState().queuePaused) return { paused, retryResults: [] };
     const allowedWorkerIds = await this.resolveLiveHeadroomWorkerIds();
+    if (this.closing) throw new Error("orchestration runtime is closing");
+    if (this.getControlState().queuePaused) return { paused, retryResults: [] };
     const results = this.scheduler.retryQueued({
       allowedWorkerIds,
       skipQueuedTaskKeys: this.pausedTaskKeys(),
@@ -469,13 +488,20 @@ export class OrchestrationRuntime {
         message: `live continuation ${taskId}/${coordinatorId} disappeared before retry`,
       };
     }
-    if (this.getControlState().queuePaused) {
+    if (this.getControlState().queuePaused || this.pausedTaskKeys().has(queueTaskKey(taskId, coordinatorId))) {
+      // No worker is eligible while the operator holds the queue. Persist the
+      // request too, so a later explicit resume can actually discover it.
+      this.scheduler.requestAllocation(buildContinuationRequest(queued, this.config), { allowedWorkerIds: new Set() });
       return { ok: true, state: "paused", continuation: queued, controlState: this.getControlState() };
     }
 
-    const result = this.scheduler.requestAllocation(buildContinuationRequest(queued, this.config), {
-      allowedWorkerIds: await this.resolveLiveHeadroomWorkerIds(),
-    });
+    const allowedWorkerIds = await this.resolveLiveHeadroomWorkerIds();
+    if (this.closing) throw new Error("orchestration runtime is closing");
+    if (this.getControlState().queuePaused || this.pausedTaskKeys().has(queueTaskKey(taskId, coordinatorId))) {
+      this.scheduler.requestAllocation(buildContinuationRequest(queued, this.config), { allowedWorkerIds: new Set() });
+      return { ok: true, state: "paused", continuation: queued, controlState: this.getControlState() };
+    }
+    const result = this.scheduler.requestAllocation(buildContinuationRequest(queued, this.config), { allowedWorkerIds });
     if (!result.ok) {
       const blocked = this.store.getLiveContinuation(taskId, coordinatorId) ?? queued;
       return {
@@ -498,7 +524,8 @@ export class OrchestrationRuntime {
   }
 
   hasActiveWork(): boolean {
-    return this.scheduler.listLeases().some((lease) => lease.state === "running")
+    return this.pendingAllocations > 0
+      || this.scheduler.listLeases().some((lease) => lease.state === "running")
       || this.scheduler.listQueue().length > 0
       || this.store.listLiveContinuations(["queued", "dispatching"]).length > 0
       || this.resumeDispatches.size > 0;
@@ -836,31 +863,6 @@ function resolveGitHeadSha(cwd: string): string | undefined {
   }
 }
 
-function buildContinuationRequest(record: LiveRunContinuationRecord, config: OrchestrationConfig): AllocationRequest {
-  if (record.mode === "dual_lane") {
-    return {
-      taskId: record.task.taskId,
-      coordinatorId: record.task.coordinatorId,
-      requiredRoles: [record.task.openaiRole ?? "openaiImplementer", record.task.anthropicRole ?? "anthropicImplementer"],
-      optionalRoles: [],
-      allowedWorkerIds: record.task.allowedWorkerIds,
-      priority: record.task.priority,
-      leaseDurationMs: record.task.leaseDurationMs,
-    };
-  }
-  const brief = buildCoordinatorTaskBrief({
-    taskId: record.task.taskId,
-    coordinatorId: record.task.coordinatorId,
-    coordinatorTemplate: record.task.coordinatorTemplate ?? record.task.template,
-    requiredRoles: record.task.requiredRoles,
-    optionalRoles: record.task.optionalRoles,
-    allowedWorkerIds: record.task.allowedWorkerIds,
-    priority: record.task.priority,
-    leaseDurationMs: record.task.leaseDurationMs,
-    mode: record.mode as CoordinatorMode,
-  }, config);
-  return brief.request;
-}
 
 function resolveEmpiricalWorkerScores(config: CuttlefishConfig): Record<string, number> | undefined {
   if (config.orchestration?.empiricalRouting !== true) return undefined;

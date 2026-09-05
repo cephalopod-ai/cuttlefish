@@ -120,6 +120,11 @@ export function lastCodexTranscriptContextTokens(sessionId: string, root = CODEX
   return last;
 }
 
+function actionableCodexError(message: string): string {
+  if (!/\b401\s+Unauthorized\b/i.test(message)) return message;
+  return `${message}\nSign in with \`codex login\` in a terminal, then retry this session.`;
+}
+
 export class CodexEngine implements InterruptibleEngine {
   name = "codex" as const;
   private liveProcesses = new Map<string, LiveProcess>();
@@ -252,7 +257,7 @@ export class CodexEngine implements InterruptibleEngine {
         resolve({
           sessionId: resolvedThreadId,
           result: resultText,
-          error: resultText.trim() ? undefined : (turnError ?? undefined),
+          error: resultText.trim() ? undefined : (turnError ? actionableCodexError(turnError) : undefined),
           numTurns: numTurns || undefined,
           ...(typeof lastContextTokens === "number" ? { contextTokens: lastContextTokens } : {}),
         });
@@ -408,14 +413,14 @@ export class CodexEngine implements InterruptibleEngine {
           resolve({
             sessionId: resolvedThreadId,
             result: resultText,
-            error: resultText.trim() ? undefined : (turnError ?? undefined),
+            error: resultText.trim() ? undefined : (turnError ? actionableCodexError(turnError) : undefined),
             numTurns: numTurns || undefined,
             ...(typeof lastContextTokens === "number" ? { contextTokens: lastContextTokens } : {}),
           });
           return;
         }
 
-        const errMsg = turnError || `Codex exited with code ${code}: ${stderr.slice(0, 500)}`;
+        const errMsg = actionableCodexError(turnError || `Codex exited with code ${code}: ${stderr.slice(0, 500)}`);
         logger.error(errMsg);
         resolve({
           sessionId: resolvedThreadId,

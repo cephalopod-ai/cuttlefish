@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import ChatPageWrapper from "./page"
 
 type ShellProps = {
+  collaborationMode?: boolean
   selectedId?: string | null
   selectedRoomId?: string | null
   onSessionsLoaded: (sessions: { id: string }[]) => void
@@ -31,6 +32,7 @@ vi.mock("./chat-page-shell", () => ({
       <div
         data-testid="chat-page-shell"
         data-selected-id={props.selectedId ?? ""}
+        data-collaboration-mode={String(props.collaborationMode)}
         data-selected-room-id={props.selectedRoomId ?? ""}
       >
         <button onClick={() => props.onSessionsLoaded([{ id: "s-1" }])}>sessions loaded</button>
@@ -119,6 +121,21 @@ describe("ChatPage room selection persistence", () => {
     mocks.shellSpy.mockClear()
     mocks.deleteSession.mockReset()
     mocks.duplicateSession.mockReset()
+  })
+
+  it("restores the underlying session surface with a persisted session tab", async () => {
+    localStorage.setItem("cuttlefish-chat-tabs", JSON.stringify({
+      version: 1,
+      tabs: [{ kind: "session", sessionId: "qa-child", label: "Luna chat", status: "idle", unread: false }],
+      activeIndex: 0,
+    }))
+    renderPage()
+    await waitFor(() => {
+      expect(shell().dataset.selectedId).toBe("qa-child")
+      expect(shell().dataset.collaborationMode).toBe("false")
+    })
+    fireEvent.click(screen.getByText("sessions loaded"))
+    expect(shell().dataset.selectedId).toBe("qa-child")
   })
 
   it("restores a stored room and does not auto-open the first session", async () => {

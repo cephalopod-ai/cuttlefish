@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
+import { buildContinuationRequest } from "./continuation-request.js";
+import type { OrchestrationConfig, QueueItem } from "./types.js";
 import { appendOrchestrationAudit } from "./audit.js";
 import type { LiveRunContinuationRecord } from "./live-run.js";
 import type { OrchestrationStore } from "./store.js";
@@ -46,6 +48,7 @@ export function requeueRecoveredContinuation(opts: {
   coordinatorId: string;
   managerName: string;
   store: OrchestrationStore;
+  config: OrchestrationConfig;
   recoveryDir?: string;
   now?: () => Date;
 }): RecoveryRequeueResult {
@@ -66,7 +69,14 @@ export function requeueRecoveredContinuation(opts: {
     const nowIso = (opts.now?.() ?? new Date()).toISOString();
     const continuation = rowToContinuation(rows[0], nowIso);
     const holds = stageRecoveredHolds(db, continuation.taskId, continuation.coordinatorId, nowIso);
-    opts.store.transaction(() => {
+    const request = buildContinuationRequest(continuation, opts.config);
+    const queueItem: QueueItem = {
+      taskId: continuation.taskId, coordinatorId: continuation.coordinatorId,
+      state: "blocked_resource", missingRoles: [], priority: request.priority,
+      blockedSince: continuation.enqueuedAt, lastBlockedAt: nowIso, blockedAttempts: 0,
+      resumeOn: ["worker_released", "quota_available", "lease_expired"], request,
+    };
+    opts.store.transactionImmediate(() => {
       opts.store.upsertLiveContinuation(continuation);
       opts.store.setTaskPause({
         taskId: continuation.taskId,
@@ -76,6 +86,12 @@ export function requeueRecoveredContinuation(opts: {
         managerName: opts.managerName,
       });
       for (const hold of holds) opts.store.upsertHold(hold);
+      const before = opts.store.loadSnapshot();
+      opts.store.applySnapshotDelta(before, {
+        ...before,
+        queue: [...before.queue.filter((item) => item.taskId !== continuation.taskId
+          || item.coordinatorId !== continuation.coordinatorId), queueItem],
+      });
     });
     appendOrchestrationAudit("orchestration.recovery.requeue", {
       manifestPath: opts.manifestPath,

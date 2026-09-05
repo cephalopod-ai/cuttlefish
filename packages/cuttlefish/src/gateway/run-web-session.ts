@@ -654,7 +654,7 @@ export async function runWebSession(
         } finally {
           if (stallWatchdog) clearInterval(stallWatchdog);
         }
-        if (!stallKilled || !shouldRetrySameEngineAfterStall(stallAttempt, maxStallRetries)) break;
+        if (isHumanCheckpointPaused(getSession(currentSession.id)) || !stallKilled || !shouldRetrySameEngineAfterStall(stallAttempt, maxStallRetries)) break;
         deletePartialMessages(currentSession.id);
         logger.warn(
           `[watchdog] web session ${currentSession.id} retrying after stall ` +
@@ -674,7 +674,7 @@ export async function runWebSession(
       return;
     }
 
-    if (stalledReason) {
+    if (stalledReason && !isHumanCheckpointPaused(getSession(currentSession.id))) {
       if (await attemptEscalation("stall", stalledReason)) return;
       const attempts = maxStallRetries + 1;
       const errMsg =
@@ -763,7 +763,7 @@ export async function runWebSession(
     const executionBudgetExceeded = Boolean(executionBudgetReason) || result.error?.startsWith("Execution budget exceeded:");
     const rateLimit = !quietPreempted && !executionBudgetExceeded ? detectRateLimit(result) : { limited: false as const };
 
-    if (rateLimit.limited) {
+    if (rateLimit.limited && !isHumanCheckpointPaused(getSession(currentSession.id))) {
       recordEngineRateLimit(currentSession.engine, rateLimit.resetsAt);
       if (await attemptEscalation("usage", "engine usage/quota limit")) {
         return;
@@ -816,15 +816,17 @@ export async function runWebSession(
               insertMessage(currentSession.id, "assistant", fallbackResult.result);
             }
 
+            const latestFallback = getSession(currentSession.id);
+            const fallbackPaused = isHumanCheckpointPaused(latestFallback);
             const completedFallback = updateSession(currentSession.id, {
               engineSessionId: fallbackResult.sessionId,
-              status: fallbackResult.error ? "error" : "idle",
+              status: fallbackPaused ? "waiting" : fallbackResult.error ? "error" : "idle",
               lastActivity: new Date().toISOString(),
-              lastError: fallbackResult.error ?? null,
+              lastError: fallbackPaused ? latestFallback?.lastError : fallbackResult.error ?? null,
             });
             if (completedFallback) {
               recordSuccessfulWebSessionTurn(completedFallback.id, fallbackResult);
-              notifyParentSession(completedFallback, { result: fallbackResult.result, error: fallbackResult.error ?? null, cost: fallbackResult.cost, durationMs: fallbackResult.durationMs }, { alwaysNotify: parentNotifyAlwaysNotify, sink: context.notificationSink });
+              if (!fallbackPaused) notifyParentSession(completedFallback, { result: fallbackResult.result, error: fallbackResult.error ?? null, cost: fallbackResult.cost, durationMs: fallbackResult.durationMs }, { alwaysNotify: parentNotifyAlwaysNotify, sink: context.notificationSink });
               if (fallbackResult.result) {
                 void deliverConnectorReply(completedFallback, fallbackResult.result, context.connectors, { emit: context.emit }).catch((err) => {
                   logger.warn(`Failed to deliver connector reply for session ${completedFallback.id}: ${err instanceof Error ? err.message : String(err)}`);
@@ -881,11 +883,13 @@ export async function runWebSession(
             }
             const sourceEngine = currentSession.engine;
 
+            const latestRetry = getSession(currentSession.id);
+            const retryPaused = isHumanCheckpointPaused(latestRetry);
             const completedAfterRetry = updateSession(currentSession.id, {
               ...(retryResult.sessionId?.trim() ? { engineSessionId: retryResult.sessionId } : {}),
-              status: retryResult.error ? "error" : "idle",
+              status: retryPaused ? "waiting" : retryResult.error ? "error" : "idle",
               lastActivity: new Date().toISOString(),
-              lastError: retryResult.error ?? null,
+              lastError: retryPaused ? latestRetry?.lastError : retryResult.error ?? null,
             });
 
             if (completedAfterRetry) {
@@ -895,7 +899,7 @@ export async function runWebSession(
                 `✅ ${rateLimitSummary(sourceEngine)} cleared. Session ${currentSession.id}${currentSession.employee ? ` (${currentSession.employee})` : ""} resumed.`,
                 { sink: context.notificationSink },
               );
-              notifyParentSession(completedAfterRetry, { result: retryResult.result, error: retryResult.error ?? null, cost: retryResult.cost, durationMs: retryResult.durationMs }, { alwaysNotify: parentNotifyAlwaysNotify, sink: context.notificationSink });
+              if (!retryPaused) notifyParentSession(completedAfterRetry, { result: retryResult.result, error: retryResult.error ?? null, cost: retryResult.cost, durationMs: retryResult.durationMs }, { alwaysNotify: parentNotifyAlwaysNotify, sink: context.notificationSink });
               if (retryResult.result) {
                 void deliverConnectorReply(completedAfterRetry, retryResult.result, context.connectors, { emit: context.emit }).catch((err) => {
                   logger.warn(`Failed to deliver connector reply for session ${completedAfterRetry.id}: ${err instanceof Error ? err.message : String(err)}`);
@@ -915,6 +919,7 @@ export async function runWebSession(
             maybeEmitTalkGraph(currentSession.id, "completed", { getSession, emit: context.emit });
           },
           onTimeout: () => {
+            if (isHumanCheckpointPaused(getSession(currentSession.id))) return;
             const sourceEngine = currentSession.engine;
             const timeoutError = rateLimitTimeoutError(sourceEngine);
             notifyConnectorNotification(
@@ -1023,12 +1028,14 @@ export async function runWebSession(
       return;
     }
     deletePartialMessages(currentSession.id);
+    const latest = getSession(currentSession.id);
+    const checkpointPaused = isHumanCheckpointPaused(latest);
     const erroredSession = updateSession(currentSession.id, {
-      status: "error",
+      status: checkpointPaused ? "waiting" : "error",
       lastActivity: new Date().toISOString(),
-      lastError: errMsg,
+      lastError: checkpointPaused ? latest?.lastError : errMsg,
     });
-    if (erroredSession) {
+    if (erroredSession && !checkpointPaused) {
       notifyParentSession(erroredSession, { error: errMsg }, { alwaysNotify: parentNotifyAlwaysNotify, sink: context.notificationSink });
     }
     context.emit("session:completed", {

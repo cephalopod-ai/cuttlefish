@@ -22,6 +22,7 @@
  */
 
 import type { Employee, Engine, EngineResult, CuttlefishConfig, JsonObject, Session, StreamDelta } from "../shared/types.js";
+import { isHumanCheckpointPaused } from "./human-checkpoint-state.js";
 import { logger } from "../shared/logger.js";
 import { resolveEffort } from "../shared/effort.js";
 import { effortLevelsForModel, engineAvailable, isKnownEngine } from "../shared/models.js";
@@ -193,6 +194,7 @@ export async function handleRateLimit(opts: RateLimitHandlerOpts): Promise<RateL
     rateLimit, originalResult, hooks,
   } = opts;
   const sourceEngine = session.engine;
+  if (isHumanCheckpointPaused(getSession(session.id))) return { kind: "cancelled" };
 
   if (hooks.onDetected) hooks.onDetected(rateLimit);
   else recordEngineRateLimit(sourceEngine, rateLimit.resetsAt);
@@ -212,6 +214,7 @@ export async function handleRateLimit(opts: RateLimitHandlerOpts): Promise<RateL
 
         await hooks.onFallbackStart?.({ resumeAt: resumeAt ?? null, until, originalEngine: sourceEngine, fallbackName });
 
+        if (isHumanCheckpointPaused(getSession(session.id))) return { kind: "cancelled" };
         const nextMeta = { ...(session.transportMeta || {}) } as Record<string, unknown>;
         const engineSessionsRaw = nextMeta.engineSessions;
         const engineSessions = (engineSessionsRaw && typeof engineSessionsRaw === "object" && !Array.isArray(engineSessionsRaw))
@@ -358,13 +361,14 @@ export async function handleRateLimit(opts: RateLimitHandlerOpts): Promise<RateL
       // only caught "error", so user-initiated stop ("idle") leaked through
       // and the retry fired against a session the user thought was stopped.
       const currentSession = getSession(session.id);
-      if (!currentSession || currentSession.status !== "waiting") {
+      if (!currentSession || currentSession.status !== "waiting" || isHumanCheckpointPaused(currentSession)) {
         logger.info(`Session ${session.id} stopped while waiting for usage reset (status=${currentSession?.status ?? "deleted"})`);
         await hooks.onCancelled?.();
         return { kind: "cancelled" };
       }
 
       await hooks.onRetryAttempt?.({ attempt });
+      if (isHumanCheckpointPaused(getSession(session.id))) return { kind: "cancelled" };
       logger.info(`Session ${session.id} retrying after usage limit (attempt ${attempt})`);
 
       const retryResult = await runWithEngineEnvironment(
@@ -389,6 +393,7 @@ export async function handleRateLimit(opts: RateLimitHandlerOpts): Promise<RateL
       const retryInterrupted = retryResult.error?.startsWith("Interrupted");
       const retryRateLimit = !retryInterrupted ? detectRateLimit(retryResult) : { limited: false as const };
 
+      if (retryRateLimit.limited && isHumanCheckpointPaused(getSession(session.id))) return { kind: "cancelled" };
       if (retryRateLimit.limited) {
         recordEngineRateLimit(sourceEngine, retryRateLimit.resetsAt);
         logger.info(`Session ${session.id} still rate limited (attempt ${attempt})`);
@@ -428,10 +433,10 @@ async function waitWhileSessionWaiting(sessionId: string, delayMs: number): Prom
   const end = Date.now() + Math.max(0, delayMs);
   while (Date.now() < end) {
     const currentSession = getSession(sessionId);
-    if (!currentSession || currentSession.status !== "waiting") return false;
+    if (!currentSession || currentSession.status !== "waiting" || isHumanCheckpointPaused(currentSession)) return false;
     const sleepMs = Math.min(WAIT_CANCEL_POLL_MS, end - Date.now());
     if (sleepMs > 0) await new Promise<void>((resolve) => setTimeout(resolve, sleepMs));
   }
   const currentSession = getSession(sessionId);
-  return !!currentSession && currentSession.status === "waiting";
+  return !!currentSession && currentSession.status === "waiting" && !isHumanCheckpointPaused(currentSession);
 }

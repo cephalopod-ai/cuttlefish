@@ -91,6 +91,18 @@ describe("migrate: AI session launcher", () => {
     exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
   });
 
+  it("keeps auto preparation retryable without stamping or removing staged migrations", async () => {
+    const { runMigrate } = await import("../migrate.js");
+    await runMigrate({ auto: true });
+    expect(mockExecFileSync).not.toHaveBeenCalled();
+    expect(fs.writeFileSync).not.toHaveBeenCalled();
+    expect(fs.rmSync).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(instanceVersionOnDisk).toBe("1.0.0");
+    await runMigrate({ check: true });
+    expect(fs.writeFileSync).not.toHaveBeenCalled();
+  });
+
   it("should NOT pass --cwd as a CLI argument to the engine binary", async () => {
     const { runMigrate } = await import("../migrate.js");
 

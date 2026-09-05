@@ -613,10 +613,13 @@ function ChatPage() {
       handleSelectProject(at.rootSessionId)
       return
     }
-    if (at && at.kind === 'session' && at.sessionId !== selectedId) {
-      clearSelectedRoomId()
-      setSelectedRoomId(null) // a session tab takes over the surface from a room
-      setSelectedId(at.sessionId)
+    if (at && at.kind === 'session') {
+      setCollaborationMode(false)
+      if (at.sessionId !== selectedId) {
+        clearSelectedRoomId()
+        setSelectedRoomId(null) // a session tab takes over the surface from a room
+        setSelectedId(at.sessionId)
+      }
       return
     }
 

@@ -38,6 +38,13 @@ function fallbackSummary(payload: Record<string, unknown>): { from: string; to: 
   return { from: fmt(from), to: fmt(to), reason: typeof payload.reason === 'string' ? payload.reason : undefined }
 }
 
+function approvalLabel(approval: Approval): string {
+  const employee = approval.payload.employeeName
+  return approval.type === 'org-change' && typeof employee === 'string'
+    ? `org-change approval · ${employee}`
+    : `${approval.type} approval`
+}
+
 type SelectionKind = 'approval' | 'checkpoint'
 
 // --- Decision badge ---
@@ -124,7 +131,7 @@ function PendingListItem({
         <span className="font-medium truncate">
           {isCheckpoint
             ? (item as Checkpoint).payload.decisionNeeded
-            : `${item.type} approval`}
+            : approvalLabel(item as Approval)}
         </span>
       </div>
       <div className="text-muted-foreground">
@@ -164,7 +171,7 @@ function ResolvedListItem({
         <span className="font-medium truncate">
           {isCheckpoint
             ? (item as Checkpoint).payload.decisionNeeded
-            : `${item.type} approval`}
+            : approvalLabel(item as Approval)}
         </span>
       </div>
       <div className="flex items-center justify-between gap-1">
@@ -227,6 +234,20 @@ function ApprovalDetail({ approval, readOnly }: { approval: Approval; readOnly?:
         {readOnly && <DecisionBadge state={approval.state} />}
       </div>
 
+      {approval.type === 'org-change' && (
+        <div className="rounded-md border bg-muted/30 p-3 text-sm">
+          <div>
+            {typeof approval.payload.changeType === 'string' ? approval.payload.changeType : 'Org change'}
+            {' for '}
+            {typeof approval.payload.employeeName === 'string' ? approval.payload.employeeName : 'employee'}
+          </div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {typeof approval.payload.riskLevel === 'string' ? `${approval.payload.riskLevel} risk` : 'Review required'}
+            {typeof approval.payload.changeRequestId === 'string' && ` · request ${approval.payload.changeRequestId}`}
+          </div>
+        </div>
+      )}
+
       {approval.type === 'fallback' && (
         <div className="flex items-center gap-2 rounded-md border bg-muted/30 p-3 text-sm font-mono">
           <span className="text-muted-foreground">{from}</span>
@@ -262,7 +283,7 @@ function ApprovalDetail({ approval, readOnly }: { approval: Approval; readOnly?:
           )}
           <div className="flex gap-2">
             <Button size="sm" disabled={busy} onClick={() => approve.mutate(approval.id)}>
-              <Check className="size-3.5" /> Approve &amp; resume
+              <Check className="size-3.5" /> {approval.type === 'org-change' ? 'Approve & apply' : 'Approve & resume'}
             </Button>
             <Button size="sm" variant="outline" disabled={busy} onClick={() => reject.mutate(approval.id)}>
               <X className="size-3.5" /> Reject

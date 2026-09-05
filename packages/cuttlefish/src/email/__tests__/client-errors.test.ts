@@ -11,7 +11,10 @@ vi.mock("imapflow", () => ({
     async connect() { if (state.phase === "connect") this.emit("error", new Error("Socket timeout")); }
     async mailboxOpen() { return { uidValidity: 7 }; }
     async search() { return []; }
-    async *fetch() { if (state.phase === "fetch") this.emit("error", new Error("Socket timeout")); }
+    async *fetch() {
+      if (state.phase === "fetch") this.emit("error", new Error("Socket timeout"));
+      yield* [];
+    }
     async messageFlagsAdd() { if (state.phase === "markSeen") this.emit("error", new Error("Socket timeout")); }
   },
 }));

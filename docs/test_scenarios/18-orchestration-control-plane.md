@@ -10,13 +10,13 @@ Run JSON commands with the source-checkout rule in `README.md`. Restore queue
 state, cancel test holds, stop live sessions, and clean only worktrees created by
 the card.
 
-**CLI exposure gate:** the current source contains orchestration command
-handlers, but the canonical `bin/cuttlefish.ts` does not register the
-orchestration command groups. CP-01–CP-03 and CP-12 deliberately begin by
-checking top-level help. Until registration lands, record that missing surface
-as a Fail and the remaining CLI-only steps as Blocked; importing internal
-handlers is module testing, not a user-facing CLI playtest. The live cards use
-the implemented authenticated API and `/orchestration` dashboard controls.
+**CLI exposure gate:** the canonical `bin/cuttlefish.ts` registers the
+orchestration command groups. CP-01–CP-03 and CP-12 still begin by checking
+top-level help so an older installed binary cannot be mistaken for this
+checkout. If that binary lacks the groups, record the missing surface and
+use the source-checkout command before proceeding. Importing internal handlers
+is module testing, not a user-facing CLI playtest. The live cards use the
+authenticated API and `/orchestration` dashboard controls.
 
 ---
 

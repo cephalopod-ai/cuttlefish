@@ -57,7 +57,8 @@ function loadTabs(): TabState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) {
-      const parsed = clampState(JSON.parse(raw))
+      const stored = JSON.parse(raw) as TabState & { version?: number }
+      const parsed = clampState(stored)
       // Migrate persisted tabs that predate `kind`: a tab missing `kind` but
       // carrying a sessionId is a legacy session tab.
       const migrated = parsed.tabs.map((t) => {
@@ -65,7 +66,8 @@ function loadTabs(): TabState {
         if (!tab.kind && tab.sessionId) {
           return { ...tab, kind: 'session', migrateToProject: true } as ChatTab
         }
-        return tab.kind === 'session' ? { ...tab, migrateToProject: true } as ChatTab : tab as ChatTab
+        return tab.kind === 'session' && stored.version !== 1
+          ? { ...tab, migrateToProject: true } as ChatTab : tab as ChatTab
       })
       return { tabs: migrated, activeIndex: parsed.activeIndex }
     }
@@ -74,7 +76,7 @@ function loadTabs(): TabState {
 }
 
 function saveTabs(state: TabState) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, version: 1 }))
 }
 
 export function useChatTabs() {

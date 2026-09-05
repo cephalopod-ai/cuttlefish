@@ -277,7 +277,7 @@ function getMetaValue(db: Database.Database, key: string): string | undefined {
  * handled by the additive `ensure*Column` migrations above, so it is
  * intentionally not guarded here.
  */
-function assertSchemaVersionNotNewer(db: Database.Database): void {
+export function assertSchemaVersionNotNewer(db: Database.Database): void {
   const stamped = getMetaValue(db, SCHEMA_VERSION_META_KEY);
   if (stamped === undefined) return;
   const stampedVersion = Number(stamped);

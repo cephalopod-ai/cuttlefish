@@ -114,8 +114,9 @@ async function runWith(
   {
     closeCode = 0,
     trailingNoNewline,
+    stderr,
     engineOpts,
-  }: { closeCode?: number | null; trailingNoNewline?: string; engineOpts?: CodexEngineOpts } = {},
+  }: { closeCode?: number | null; trailingNoNewline?: string; stderr?: string; engineOpts?: CodexEngineOpts } = {},
 ): Promise<{ result: EngineResult; deltas: StreamDelta[]; call: SpawnCall }> {
   const deltas: StreamDelta[] = [];
   const safeEngineOpts = {
@@ -139,6 +140,7 @@ async function runWith(
   // Optionally leave a trailing line WITHOUT a newline to exercise the
   // close-time lineBuf flush.
   if (trailingNoNewline) call.proc.emitStdout(trailingNoNewline);
+  if (stderr) call.proc.emitStderr(stderr);
 
   call.proc.close(closeCode);
   const result = await promise;
@@ -480,6 +482,17 @@ describe("CodexEngine — usage / context-token extraction", () => {
 });
 
 describe("CodexEngine — error / failure handling", () => {
+  it("keeps authentication diagnostics and adds a usable login remedy", async () => {
+    const failure = "unexpected status 401 Unauthorized: Missing bearer authentication";
+    const { result } = await runWith({}, [threadStarted("auth-thread"), turnFailed(failure)], { closeCode: 1 });
+    expect(result.error).toContain(failure);
+    expect(result.error).toContain("codex login");
+    const stderrResult = await runWith({}, [], { closeCode: 1, stderr: failure });
+    expect(stderrResult.result.error).toContain("codex login");
+    const quota = await runWith({}, [threadStarted("quota-thread"), turnFailed("429 Too Many Requests")], { closeCode: 1 });
+    expect(quota.result.error).toBe("429 Too Many Requests");
+  });
+
   it("does not surface a turn error when a non-empty answer was produced", async () => {
     const { result } = await runWith({}, [
       threadStarted("t1"),

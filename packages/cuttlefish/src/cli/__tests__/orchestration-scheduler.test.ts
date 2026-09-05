@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import Database from "better-sqlite3";
 import { loadOrchestrationConfig } from "../../orchestration/config.js";
 import { PersistentMatrixScheduler } from "../../orchestration/persistent-scheduler.js";
 import {
@@ -106,13 +107,55 @@ describe("orchestration CLI dry-run commands", () => {
     });
     scheduler.close();
 
+    const before = fs.readFileSync(dbPath);
     await runLeasesList({ configDir: tmpDir, dbPath, json: true });
     await runQueueList({ configDir: tmpDir, dbPath, json: true });
+    const taskFile = path.join(tmpDir, "observe-plan.json");
+    fs.writeFileSync(taskFile, JSON.stringify({ taskId: "observe", coordinatorId: "observe", coordinatorTemplate: "standardImplementation" }));
+    await runSchedulerPlan(taskFile, { configDir: tmpDir, dbPath, json: true });
+    expect(fs.readFileSync(dbPath)).toEqual(before);
 
     const leases = JSON.parse(String(logSpy.mock.calls[0][0]));
     const queue = JSON.parse(String(logSpy.mock.calls[1][0]));
     expect(leases.leases.map((lease: { taskId: string }) => lease.taskId)).toContain("task-one");
     expect(queue.queue).toMatchObject([{ taskId: "task-two", missingRoles: ["seniorImplementer"] }]);
+  });
+
+  it("observes a live WAL lease without advancing boot generation or expiring it", async () => {
+    const config = loadOrchestrationConfig(tmpDir);
+    const scheduler = PersistentMatrixScheduler.open(config, { dbPath });
+    try {
+      scheduler.requestAllocation({
+        taskId: "wal-task", coordinatorId: "wal-coordinator", requiredRoles: ["seniorImplementer"],
+        optionalRoles: [], priority: "normal", leaseDurationMs: 60_000,
+      });
+      const before = fs.readFileSync(`${dbPath}-wal`);
+      await runLeasesList({ configDir: tmpDir, dbPath, json: true });
+      const output = JSON.parse(String(logSpy.mock.calls[0][0]));
+      expect(output.leases).toMatchObject([{ taskId: "wal-task", state: "running" }]);
+      expect(fs.readFileSync(`${dbPath}-wal`)).toEqual(before);
+    } finally {
+      scheduler.close();
+    }
+  });
+
+  it("refuses corrupt observation without quarantining or replacing the database", async () => {
+    fs.writeFileSync(dbPath, "not a sqlite database");
+    const before = fs.readdirSync(tmpDir).sort();
+    await expect(runLeasesList({ configDir: tmpDir, dbPath, json: true })).rejects.toThrow();
+    expect(fs.readFileSync(dbPath, "utf8")).toBe("not a sqlite database");
+    expect(fs.readdirSync(tmpDir).sort()).toEqual(before);
+  });
+
+  it("refuses a newer schema without rewriting its version", async () => {
+    const scheduler = PersistentMatrixScheduler.open(loadOrchestrationConfig(tmpDir), { dbPath });
+    scheduler.close();
+    const db = new Database(dbPath);
+    db.prepare("UPDATE meta SET value = '99999' WHERE key = 'schema_version'").run();
+    db.close();
+    const before = fs.readFileSync(dbPath);
+    await expect(runQueueList({ configDir: tmpDir, dbPath, json: true })).rejects.toThrow("newer than this binary");
+    expect(fs.readFileSync(dbPath)).toEqual(before);
   });
 
   it("simulates blocked and resumed allocation steps", async () => {

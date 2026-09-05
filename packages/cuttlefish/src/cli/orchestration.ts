@@ -4,7 +4,7 @@ import { formatZodError } from "../orchestration/schemas.js";
 import { loadAllocationRequest, loadOrchestrationConfig, loadSimulationScenario } from "../orchestration/config.js";
 import { loadCoordinatorTaskBrief, planCoordinatorAllocation } from "../orchestration/coordinator.js";
 import { liveRunModeSchema } from "../orchestration/run-mode.js";
-import { PersistentMatrixScheduler } from "../orchestration/persistent-scheduler.js";
+import { readOrchestrationSnapshot } from "../orchestration/store-observe.js";
 import { MatrixScheduler } from "../orchestration/scheduler.js";
 import { simulateScenario } from "../orchestration/simulation.js";
 import {
@@ -392,26 +392,13 @@ function readTaskIdentity(filePath: string): { taskId: string; cwd?: string } {
   return { taskId: task.taskId, cwd: task.cwd };
 }
 
-function readSnapshotIfPresent(config: OrchestrationConfig, opts: OrchestrationStateOptions): SchedulerSnapshot | undefined {
-  const dbPath = opts.dbPath ?? ORCH_DB;
-  if (dbPath !== ":memory:" && !fs.existsSync(dbPath)) return undefined;
-  const scheduler = PersistentMatrixScheduler.open(config, { dbPath, expireOnHydrate: false });
-  try {
-    return scheduler.createSnapshot();
-  } finally {
-    scheduler.close();
-  }
+function readSnapshotIfPresent(opts: OrchestrationStateOptions): SchedulerSnapshot | undefined {
+  return readOrchestrationSnapshot(opts.dbPath ?? ORCH_DB);
 }
 
-function readState<T>(config: OrchestrationConfig, opts: OrchestrationStateOptions, read: (scheduler: PersistentMatrixScheduler) => T, empty: T): T {
-  const dbPath = opts.dbPath ?? ORCH_DB;
-  if (dbPath !== ":memory:" && !fs.existsSync(dbPath)) return empty;
-  const scheduler = PersistentMatrixScheduler.open(config, { dbPath, expireOnHydrate: false });
-  try {
-    return read(scheduler);
-  } finally {
-    scheduler.close();
-  }
+function readState<T>(config: OrchestrationConfig, opts: OrchestrationStateOptions, read: (scheduler: MatrixScheduler) => T, empty: T): T {
+  const snapshot = readSnapshotIfPresent(opts);
+  return snapshot ? read(new MatrixScheduler(config, { snapshot })) : empty;
 }
 
 export async function runWorkersList(opts: ConfigDirOptions): Promise<void> {
@@ -469,7 +456,7 @@ export async function runSchedulerAllocate(taskFile: string, opts: SchedulerAllo
 export async function runSchedulerPlan(taskFile: string, opts: OrchestrationStateOptions): Promise<void> {
   const config = loadConfigForCli(opts);
   const brief = loadCoordinatorTaskBrief(taskFile, config);
-  const snapshot = readSnapshotIfPresent(config, opts);
+  const snapshot = readSnapshotIfPresent(opts);
   const plan = planCoordinatorAllocation(brief, config, { snapshot });
   print(opts.json ? plan : formatAllocationResult(plan.result), opts.json);
 }

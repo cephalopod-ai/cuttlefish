@@ -561,7 +561,7 @@
 - A pending human checkpoint keeps the session waiting through streamed output,
   heartbeats, completion, and restart. Followup messages remain in the durable
   queue until the checkpoint resumes; the requesting turn still records usage.
-  Late engine recovery cannot clear the checkpoint.
+  Late engine recovery, thrown engine errors, and fallback/retry completion preserve the checkpoint; the rate-limit wait loop stops automatic retries when a human checkpoint appears. User followups queued before a checkpoint opens also remain paused until the decision resumes the queue.
 - A session-scoped agent can create a checkpoint only for its own authenticated
   session; the gateway binds the checkpoint to that identity even when the body
   omits `sessionId`. Ordinary agent credentials cannot read or resolve
@@ -575,6 +575,7 @@
   session with a stored or supplied prompt. Repeating the same terminal
   decision is explicitly idempotent; a conflicting terminal decision returns
   a machine-readable conflict and leaves the original decision unchanged.
+- Autonomous dual-model decisions retain code-owned attribution; their resume notification says AI reviewers approved reconsideration. Human decisions retain human approval wording.
 - Every decision response reads the session after its checkpoint metadata is
   persisted, so its top-level checkpoint and embedded `humanCheckpoint` state
   describe the same committed decision on the first response.
@@ -614,7 +615,7 @@
   significantly enhanced:
   - Pending approvals and checkpoints are shown in a unified list with compact list items.
   - Decided items display a colored `DecisionBadge` (`approved` / `rejected` / `deferred` / `revised`) inline.
-  - The detail panel is now scrollable and renders structured approval content, artifact lists, and file/action context.
+  - The detail panel is now scrollable and renders structured approval content, artifact lists, and file/action context. Org-change review identifies the employee, change type, risk and request id; its action is labelled Approve & apply.
   - Board-assignee validation now returns an error when a ticket is assigned to an unknown employee (not just a cross-department employee).
   - The page renders correctly inside a scrollable layout region.
 
@@ -675,6 +676,7 @@
 - `GET /api/orchestration/status` returns enabled/runtime-bound state, degraded
   reason, queue pause state, active counts, recent corrupt-DB recovery notices,
   and recent expired-lease interruption diagnostics.
+- CLI `scheduler plan`, `leases list`, and `queue list` read committed snapshots without migrating, advancing the boot generation, expiring leases, or quarantining a corrupt store. Missing stores remain absent; unsupported/corrupt stores fail visibly. SQLite may create or update its WAL shared-memory coordination sidecars during a read.
 - `GET /api/orchestration/workers` returns configured workers.
 - `GET /api/orchestration/leases` returns existing durable orchestration leases.
 - `GET /api/orchestration/queue` returns blocked-resource queue items, per-task pause records, missing roles, and resume triggers.
@@ -697,8 +699,9 @@
 - `POST /api/orchestration/run` executes `single_worker`, `single_worker_with_review`, `dual_lane`, `architecture`, and `local_heavy` tasks through the daemon runtime.
 - `POST /api/orchestration/dual-lane/select` selects a completed dual-lane winner keyed by `taskId + coordinatorId` and archives/discards the loser lane.
 - `POST /api/orchestration/dual-lane/apply` applies a selected or selection-required winner patch keyed by `taskId + coordinatorId` to the base repo as unstaged changes only.
-- `POST /api/orchestration/recovery/requeue` imports one parsed recovered continuation from an explicit recovery manifest by `taskId + coordinatorId` and leaves it task-paused until resumed.
+- `POST /api/orchestration/recovery/requeue` imports one parsed recovered continuation from an explicit recovery manifest by `taskId + coordinatorId` and atomically restores its scheduler queue entry, leaving it task-paused until explicitly resumed (including after restart).
 - Run responses include `reviewPolicy.explanations` for reviewer selection, explicit same-family fallback, and blocked reviewer allocation.
+- Runtime refresh treats allocation requests awaiting provider headroom as active work, keeping their database open until those requests settle.
 - Blocked live runs persist a durable continuation keyed by task/coordinator and auto-resume on later resource availability.
 - These routes inherit the existing `/api/*` gateway token gate; unsupported methods on each path return `405`.
 - Fidelity gaps:
@@ -764,6 +767,7 @@
   `models.codex.models[].contextWindow`. This is not a claim about an API limit.
 
 - `packages/cuttlefish/src/engines/codex.ts`
+- Authentication failures containing `401 Unauthorized` retain the provider diagnostic and add a `codex login` remedy before retry.
 - Headless Codex turns place workspace sandbox and approval-policy options at
   the CLI's top level before `exec` or `exec resume`, matching current Codex
   argument parsing while retaining `workspace-write` and `never` approval
@@ -785,7 +789,7 @@
 - Any manager may ask Program Manager, Cuttlefish (COO), or both for a second opinion through a child session even when they are not a direct report. Consultation does not transfer any human-delegated approval authority.
 - Managers read the complete task before choosing explicit delegation through the existing session API. Runtime context requires each child brief to include its own assignment, acceptance criteria, and inputs. The gateway no longer creates child tasks from keyword fragments before the manager runs. Parent prompts, attachments, and resource context are not implicitly forwarded. Persisted barriers on existing delegated batches remain respected by callback and synthesis handling.
 - A completed or failed child report contacts its direct supervisor first. If the report remains unacknowledged for `gateway.leaderAckTimeoutMs`, the gateway sends that same supervisor a second notice and starts a fresh timeout window. Executive or manual-review escalation occurs only after the second contact also goes unanswered; a supervisor reply after either contact acknowledges the handoff and prevents escalation.
-- Claude child turns do not report completion while their background-agent streams remain active. The gateway retains the latest callback until the engine's quiet-window signal confirms the background work has drained, then wakes the direct supervisor with the latest durable assistant result. A completed synthesis marker applies only to the child batch and generation it names, so it cannot suppress callbacks from a later child or a later turn of the same child.
+- Claude child completion callbacks are deferred while reported upstream streams remain active and released after the engine's quiet-window signal, using the latest normalized assistant result. This signal describes network activity; it does not establish completion of every native background task. A September2026 live test found a native Agent result missing from the normalized child/parent completion (open PLAY-RESUME-20260905-R22). A completed synthesis marker applies only to its named child batch/generation.
 - Session API responses expose a derived `jobState` (`idle`, `working`,
   `needs_attention`, `finished`, or `failed`) that aggregates nested child,
   queue, and background activity without changing the reusable chat session's
@@ -915,3 +919,8 @@
   local file path. Unsupported, oversized, or unreadable files open a human-review
   checkpoint instead of being passed through; supported text is delivered as screened
   prompt context rather than a raw file argument.
+
+### Template migration preparation
+- `cuttlefish migrate --auto` copies missing migration files without overwriting existing files. It leaves the instance version and staged migrations intact, reports incomplete preparation with exit status 1, and directs the operator to `cuttlefish migrate` to finish the prose instructions and verify completion. File copying alone does not certify that required merges were applied.
+
+- Current session tabs retain their underlying chat and model selection on reload. Versioned tab storage distinguishes new tabs from legacy tabs that require one-time conversion to project tabs. Explicit project and Management links continue to take precedence over restored tabs.

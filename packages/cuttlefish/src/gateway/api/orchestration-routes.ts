@@ -333,6 +333,7 @@ export async function handleOrchestrationRoutes(
       coordinatorId: body.coordinatorId,
       managerName: body.managerName,
       store: runtime.getStore(),
+      config: runtime.config,
       recoveryDir: context.orchestration?.recoveryDir ?? ORCH_RECOVERY_DIR,
     });
     if (!result.ok) {
