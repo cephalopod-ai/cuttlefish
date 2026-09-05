@@ -128,7 +128,7 @@ interface TicketDetailPanelProps {
   onAssigneeChange: (employeeName: string | null) => void
   onRunNow: () => void
   onDelete: () => void
-  onSaveDetails: (updates: Pick<KanbanTicket, 'title' | 'description' | 'resourcePath' | 'resourceUrl' | 'manualOnly'>) => void
+  onSaveDetails: (updates: Pick<KanbanTicket, 'title' | 'description' | 'resourcePath' | 'resourceUrl' | 'manualOnly'>) => void | Promise<boolean>
   onAppendNote: (updates: { title: string; description: string; note: string }) => void
   onEscalateToLead?: () => void
 }
@@ -166,6 +166,16 @@ export function TicketDetailPanel({
   const [draftResourceUrl, setDraftResourceUrl] = useState(ticket.resourceUrl ?? '')
   const [draftManualOnly, setDraftManualOnly] = useState(ticket.manualOnly === true)
   const [noteDraft, setNoteDraft] = useState('')
+  const draftBase = useRef(ticket)
+  const [detailsConflict, setDetailsConflict] = useState(false)
+  const [savingDetails, setSavingDetails] = useState(false)
+
+  const draftMatches = useCallback((value: KanbanTicket) =>
+    draftTitle === value.title && draftDescription === value.description &&
+    (draftResourcePath ?? '') === (value.resourcePath ?? '') &&
+    draftResourceUrl === (value.resourceUrl ?? '') &&
+    draftManualOnly === (value.manualOnly === true),
+  [draftTitle, draftDescription, draftResourcePath, draftResourceUrl, draftManualOnly])
 
   // Escape key to close
   useEffect(() => {
@@ -182,28 +192,54 @@ export function TicketDetailPanel({
   }, [])
 
   useEffect(() => {
+    const previous = draftBase.current
+    const changed = previous.id !== ticket.id || previous.title !== ticket.title ||
+      previous.description !== ticket.description || previous.resourcePath !== ticket.resourcePath ||
+      previous.resourceUrl !== ticket.resourceUrl || previous.manualOnly !== ticket.manualOnly
+    if (!changed) return
+    if (previous.id === ticket.id && !draftMatches(previous) && !draftMatches(ticket)) {
+      setDetailsConflict(true)
+      return
+    }
+    draftBase.current = ticket
     setDraftTitle(ticket.title)
     setDraftDescription(ticket.description)
     setDraftResourcePath(ticket.resourcePath ?? null)
     setDraftResourceUrl(ticket.resourceUrl ?? '')
     setDraftManualOnly(ticket.manualOnly === true)
-    setNoteDraft('')
-  }, [ticket.id, ticket.title, ticket.description, ticket.resourcePath, ticket.resourceUrl, ticket.manualOnly])
+    if (previous.id !== ticket.id) setNoteDraft('')
+    setDetailsConflict(false)
+  }, [ticket, draftMatches])
+
+  function loadLatestDetails() {
+    draftBase.current = ticket
+    setDraftTitle(ticket.title)
+    setDraftDescription(ticket.description)
+    setDraftResourcePath(ticket.resourcePath ?? null)
+    setDraftResourceUrl(ticket.resourceUrl ?? '')
+    setDraftManualOnly(ticket.manualOnly === true)
+    setDetailsConflict(false)
+  }
 
   function handleDelete() {
     onDelete()
   }
 
-  function handleSaveDetails() {
+  async function handleSaveDetails() {
     const title = draftTitle.trim()
     if (!title) return
-    onSaveDetails({
+    setSavingDetails(true)
+    try {
+      await onSaveDetails({
       title,
       description: draftDescription,
       resourcePath: draftResourcePath?.trim() || undefined,
       resourceUrl: draftResourceUrl.trim() || undefined,
       manualOnly: draftManualOnly,
-    })
+      })
+    } finally {
+      setSavingDetails(false)
+    }
   }
 
   function handleAppendNoteClick() {
@@ -280,7 +316,7 @@ export function TicketDetailPanel({
     (draftResourcePath ?? '') !== (ticket.resourcePath ?? '') ||
     draftResourceUrl !== (ticket.resourceUrl ?? '') ||
     draftManualOnly !== (ticket.manualOnly === true)
-  const saveDetailsDisabled = trimmedTitle.length === 0 || !detailsDirty
+  const saveDetailsDisabled = savingDetails || trimmedTitle.length === 0 || !detailsDirty
   const appendNoteDisabled = trimmedTitle.length === 0 || noteDraft.trim().length === 0
   const runDisabled = !ticket.assigneeId || ticket.workState === 'starting'
   const runHelperText = !ticket.assigneeId
@@ -497,6 +533,12 @@ export function TicketDetailPanel({
               <span>Manual only</span>
               <span className="text-[var(--text-tertiary)]">Skip board-worker auto-dispatch.</span>
             </label>
+            {detailsConflict && (
+              <div role="alert" className="mt-[var(--space-2)] text-[length:var(--text-footnote)] text-[var(--system-orange)]">
+                This ticket changed elsewhere. Your edits are preserved. Saving replaces the latest details with your edits.
+                <button type="button" onClick={loadLatestDetails} className="ml-2 underline">Load latest details</button>
+              </div>
+            )}
             <div className="mt-[var(--space-2)] flex justify-end">
               <button
                 onClick={handleSaveDetails}
@@ -508,7 +550,7 @@ export function TicketDetailPanel({
                   cursor: saveDetailsDisabled ? 'default' : 'pointer',
                 }}
               >
-                Save changes
+                {savingDetails ? 'Saving…' : 'Save changes'}
               </button>
             </div>
           </div>

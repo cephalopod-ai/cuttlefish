@@ -383,6 +383,18 @@ describe("createEmployeeYaml", () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
+  it.each(["checkpoint", "notify", "none"] as const)("persists the validated %s security policy in preview, YAML and runtime", (approvalPolicy) => {
+    const employee = {
+      name: "security-fixture", displayName: "Security Fixture", department: "platform",
+      rank: "employee" as const, engine: "claude", model: "sonnet", persona: "Follow the saved policy.",
+      approvalPolicy, reviewTriggers: ["privileged_shell" as const], securityReviewer: "senior-security-officer",
+    };
+    expect(createEmployeeYaml(employee)).toBe(true);
+    const expected = { approvalPolicy, reviewTriggers: ["privileged_shell"], securityReviewer: "senior-security-officer" };
+    expect(readYaml("platform", "security-fixture.yaml")).toEqual(buildEmployeeCreateData(employee));
+    expect(scanOrg().get(employee.name)).toMatchObject(expected);
+  });
+
   it("creates a new employee yaml with a fallback policy", () => {
     expect(createEmployeeYaml({
       name: "platform-lead",

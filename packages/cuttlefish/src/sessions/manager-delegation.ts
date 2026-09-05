@@ -115,6 +115,7 @@ export function buildManagerDelegationDiscipline(gatewayUrl: string, employee: E
     `Delegate when the task is multi-domain, has clear specialist matches, benefits from independent verification, or can split into parallel work. Spawn child sessions before doing delegated work inline: \`POST ${gatewayUrl}/api/sessions\` with \`{prompt, employee, parentSessionId}\`.`,
     `Stay inline when the task is trivial, explicitly asks you to do it yourself, has no relevant report, needs one coherent judgment, or delegation would add latency/noise. Do not delegate just to appear managerial.`,
     `If you delegate, tell the user what went to whom, end the turn, then read replies and synthesize. If you do not delegate a plausibly splittable task, state one short reason.`,
+    `Every child prompt must contain a concrete task, acceptance criteria, and needed inputs. Share only necessary facts/paths; never forward the full private request or attachments implicitly.`,
     `For a second opinion, any manager may consult Program Manager with \`POST ${gatewayUrl}/api/sessions\` using \`{"employee":"program-manager","parentSessionId":"<your-session-id>","prompt":"Second opinion: ..."}\`, consult Cuttlefish (COO) by omitting \`employee\`, or consult both. This consultation exception does not itself transfer human approval authority.`,
   ];
   if (supervisedNodes.length > 0) lines.push(`Direct-report specialties:`);

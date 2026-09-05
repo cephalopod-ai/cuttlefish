@@ -8,7 +8,7 @@ import type { SidebarOrder } from '@/components/chat/chat-sidebar'
 import { groupSessionsByDepartment, indexSessionsById } from '@/lib/rooms/grouping'
 import type { RoomSession, RoomEmployee } from '@/lib/rooms/types'
 import { useOrg } from '@/hooks/use-employees'
-import { useChatTabs } from '@/hooks/use-chat-tabs'
+import { tabKey, useChatTabs } from '@/hooks/use-chat-tabs'
 import { useKeyboardShortcuts, type ShortcutDef } from '@/hooks/use-keyboard-shortcuts'
 import { useDeleteSession, useDuplicateSession, useSessions } from '@/hooks/use-sessions'
 import { clearIntermediateMessages } from '@/lib/conversations'
@@ -103,6 +103,8 @@ function ChatPage() {
   const sessionPickerRef = useRef<HTMLDivElement>(null)
   const { events, connectionSeq, skillsVersion, subscribe } = useGateway()
   const chatTabs = useChatTabs()
+  const pendingRouteTabRef = useRef<string | null | undefined>(undefined)
+  const { openProjectTab, clearActiveTab } = chatTabs
   const restoredRoomIdRef = useRef(selectedRoomId)
   const clearedRestoredRoomTabRef = useRef(false)
   useEffect(() => {
@@ -364,6 +366,19 @@ function ChatPage() {
   useEffect(() => {
     if (!searchParams.has('lane') && !searchParams.has('project')) return
     const state = readCollaborationRouteState(searchParams)
+    // Explicit navigation wins over the tab restored from local storage.
+    // Wait for the requested tab to become active before allowing tab changes
+    // to drive route selection again.
+    pendingRouteTabRef.current = state.lane === 'team' && state.projectRootSessionId
+      ? `project:${state.projectRootSessionId}` : null
+    if (state.lane === 'team' && state.projectRootSessionId) {
+      openProjectTab({ rootSessionId: state.projectRootSessionId, label: 'Project', status: 'idle', unread: false })
+    } else {
+      clearActiveTab()
+    }
+    clearSelectedRoomId()
+    setSelectedRoomId(null)
+    setMobileView('chat')
     setCollaborationMode(true)
     setCollaborationLane(state.lane)
     setProjectRootSessionId(state.projectRootSessionId)
@@ -372,12 +387,13 @@ function ChatPage() {
     if (state.sessionId) setSelectedId(state.sessionId)
     else if (state.projectRootSessionId) setSelectedId(state.projectRootSessionId)
     else setSelectedId(null)
-  }, [searchParams])
+  }, [searchParams, openProjectTab, clearActiveTab])
 
   useEffect(() => {
     if (searchParams.has('lane') || searchParams.has('project')) return
     const link = resolveDeepLink(searchParams)
     if (!link) return
+    pendingRouteTabRef.current = link.kind === 'session' ? link.id : null
     if (link.kind === 'session') handleSelect(link.id)
     else contactEmployee(link.name)
     const next = new URLSearchParams(searchParams)
@@ -589,6 +605,10 @@ function ChatPage() {
   // When active tab changes, sync selectedId
   useEffect(() => {
     const at = chatTabs.activeTab
+    if (pendingRouteTabRef.current !== undefined) {
+      if ((at ? tabKey(at) : null) === pendingRouteTabRef.current) pendingRouteTabRef.current = undefined
+      return
+    }
     if (at?.kind === 'project' && at.rootSessionId !== projectRootSessionId) {
       handleSelectProject(at.rootSessionId)
       return

@@ -36,6 +36,13 @@ const store: KanbanStore = {
 }
 
 describe('buildDepartmentBoardSaveRequests', () => {
+  it('sends the exact deletion version only for an explicit restore', () => {
+    const deletedAt = '2026-06-25T10:00:00.000Z'
+    const [restore] = buildDepartmentBoardSaveRequests(store, [{ department: 'engineering', restoredVersions: { 'ticket-1': deletedAt } }], { engineering: 3 })
+    expect(restore.payload.tickets[0].deletedAt).toBe(deletedAt)
+    const [ordinary] = buildDepartmentBoardSaveRequests(store, [{ department: 'engineering' }], { engineering: 3 })
+    expect(ordinary.payload.tickets[0].deletedAt).toBeUndefined()
+  })
   it('serializes only targeted department boards', () => {
     const requests = buildDepartmentBoardSaveRequests(
       store,

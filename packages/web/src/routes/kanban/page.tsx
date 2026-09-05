@@ -180,6 +180,7 @@ export interface DepartmentBoardSaveTarget {
   department: string
   deletedIds?: string[]
   deletedVersions?: Record<string, string>
+  restoredVersions?: Record<string, string>
   retentionDays?: number | null
 }
 
@@ -195,10 +196,12 @@ export function buildDepartmentBoardSaveRequests(
       department: target.department,
       deletedIds: [],
       deletedVersions: {},
+      restoredVersions: {},
       retentionDays: null,
     }
     existing.deletedIds = [...new Set([...existing.deletedIds, ...(target.deletedIds ?? [])])]
     existing.deletedVersions = { ...existing.deletedVersions, ...(target.deletedVersions ?? {}) }
+    existing.restoredVersions = { ...existing.restoredVersions, ...(target.restoredVersions ?? {}) }
     if (target.retentionDays != null) existing.retentionDays = target.retentionDays
     mergedTargets.set(target.department, existing)
   }
@@ -230,6 +233,7 @@ export function buildDepartmentBoardSaveRequests(
           sessionId: t.sessionId,
           createdAt: new Date(t.createdAt || Date.now()).toISOString(),
           updatedAt: new Date(t.updatedAt || Date.now()).toISOString(),
+          ...(target.restoredVersions[t.id] ? { deletedAt: target.restoredVersions[t.id] } : {}),
           ...(changed
             ? { baseUpdatedAt: new Date(t.baseUpdatedAt ?? t.updatedAt ?? Date.now()).toISOString() }
             : {}),
@@ -535,7 +539,10 @@ export default function KanbanPage() {
         ...prev,
         [ticketId]: restoredTicket,
       }
-      persistBoardChange(next, targetForTicket(restoredTicket))
+      persistBoardChange(next, targetForTicket(restoredTicket).map((target) => ({
+        ...target,
+        restoredVersions: { [ticketId]: new Date(deletedTicket.deletedAt).toISOString() },
+      })))
       return next
     })
     setDeletedTickets((prev) => prev.filter((ticket) => ticket.id !== ticketId))
@@ -583,15 +590,20 @@ export default function KanbanPage() {
     })
   }
 
-  function handleSaveTicketConfig(
+  async function handleSaveTicketConfig(
     ticketId: string,
     updates: Pick<KanbanTicket, 'title' | 'description' | 'resourcePath' | 'resourceUrl' | 'manualOnly'>,
   ) {
-    setTickets((prev) => {
-      const next = updateTicket(prev, ticketId, updates)
-      persistBoardChange(next, targetForTicket(next[ticketId]))
-      return next
-    })
+    setSaveError(null)
+    const next = updateTicket(tickets, ticketId, updates)
+    try {
+      await persistToApi(next, targetForTicket(next[ticketId]))
+      await loadData()
+      return true
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save ticket details.')
+      return false
+    }
   }
 
   function handleAppendNote(ticketId: string, updates: { title: string; description: string; note: string }) {

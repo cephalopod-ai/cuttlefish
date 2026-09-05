@@ -1,5 +1,5 @@
 import path from "node:path";
-import { createHash } from "node:crypto";
+import { isHumanCheckpointPaused } from "../sessions/human-checkpoint-state.js";
 import type { Engine, EngineResult, CuttlefishConfig, Session, StreamDelta } from "../shared/types.js";
 import { isInterruptibleEngine } from "../shared/types.js";
 import { rungKey } from "../shared/model-escalation.js";
@@ -10,7 +10,7 @@ import { createApproval } from "./approvals.js";
 import { isAutonomousVerdictSession } from "./autonomous-mode.js";
 import { buildContext } from "../sessions/context.js";
 import { buildContextPacket, contextManagerMode, logContextPacketMetadata } from "../sessions/context-manager/index.js";
-import { accumulateSessionCost, createSession, listChildSessions, getSession, updateSession, patchSessionTransportMeta, insertMessage, insertPartialMessage, updatePartialMessage, deletePartialMessages, finalizePartialMessages, getMessages } from "../sessions/registry.js";
+import { accumulateSessionCost, listChildSessions, getSession, updateSession, patchSessionTransportMeta, insertMessage, insertPartialMessage, updatePartialMessage, deletePartialMessages, finalizePartialMessages, getMessages } from "../sessions/registry.js";
 import { logger } from "../shared/logger.js";
 import { resolveSessionWorkspace } from "../sessions/session-workspace.js";
 import { resolveEffort } from "../shared/effort.js";
@@ -27,7 +27,7 @@ import {
 import { notifyConnectorNotification, notifyParentSession, notifyRateLimited, notifyRateLimitResumed } from "../sessions/callbacks.js";
 import { markTranscriptSyncedThrough } from "./external-turns.js";
 import { getOrchestratorPersona } from "../talk/orchestrator-persona.js";
-import { buildManagerDelegationPlan, buildManagerDelegationTelemetry, isInitialManagerDelegationTurn, resolveSupervisedNodes } from "../sessions/manager-delegation.js";
+import { buildManagerDelegationTelemetry, resolveSupervisedNodes } from "../sessions/manager-delegation.js";
 import { feedTalkText, flushTalkSpeech, discardTalkSpeech } from "../talk/tts-stream.js";
 import { isTalkMuted } from "../talk/mute-state.js";
 import { maybeEmitTalkGraph } from "../talk/graph.js";
@@ -178,18 +178,9 @@ export async function runWebSession(
     if (telemetry) logger.debug(`manager_delegation ${JSON.stringify(telemetry)}`);
   };
 
-  const enforcedDelegation = await enforceManagerDelegationIfNeeded({
-    session: currentSession,
-    prompt,
-    employee,
-    supervisedNodes: managerDelegationSupervisedNodes,
-    config,
-    context,
-    attachments,
-    resourceContext,
-    logTelemetry: logManagerDelegationTelemetryOnce,
-  });
-  if (enforcedDelegation) return;
+  // Let the manager read the task and prepare bounded child briefs through
+  // the normal delegation API. Keyword-only fan-out supplied roles without
+  // assignments, starting work that could not satisfy the operator's request.
 
   try {
     const operatorDelegationScopes = isHumanDelegateRole(currentSession.employee, currentSession.source)
@@ -433,7 +424,7 @@ export async function runWebSession(
         return;
       }
       updateSession(currentSession.id, {
-        status: "running",
+        status: isHumanCheckpointPaused(live) ? "waiting" : "running",
         lastActivity: new Date().toISOString(),
       });
       const leaseMeta = parseLeaseTransportMeta(live.transportMeta);
@@ -602,7 +593,7 @@ export async function runWebSession(
                 if (now - lastHeartbeatAt >= 2000) {
                   lastHeartbeatAt = now;
                   updateSession(currentSession.id, {
-                    status: "running",
+                    status: isHumanCheckpointPaused(getSession(currentSession.id)) ? "waiting" : "running",
                     lastActivity: new Date(now).toISOString(),
                   });
                 }
@@ -634,7 +625,7 @@ export async function runWebSession(
               },
               onLateRecovery: ({ result: lateText, sessionId: engineSid }) => {
                 const live = getSession(currentSession.id);
-                if (!live || live.status === "running") return;
+                if (!live || live.status === "running" || isHumanCheckpointPaused(live)) return;
                 insertMessage(currentSession.id, "assistant", lateText);
                 const recovered = updateSession(currentSession.id, {
                   ...(engineSid.trim() ? { engineSessionId: engineSid } : {}),
@@ -961,15 +952,17 @@ export async function runWebSession(
       else void flushTalkSpeech(currentSession.id, config.talk?.kokoro, context.emit);
     }
 
+    const latestBeforeCompletion = getSession(currentSession.id);
+    const checkpointPaused = isHumanCheckpointPaused(latestBeforeCompletion);
     const completedSession = updateSession(currentSession.id, {
       // A stopped/superseded turn can settle after its replacement has already
       // cleared or changed the resume id. Never let that stale completion put
       // its engine session id back onto the durable session record.
       ...(!quietPreempted && result.sessionId?.trim() ? { engineSessionId: result.sessionId } : {}),
       ...(typeof result.contextTokens === "number" ? { lastContextTokens: result.contextTokens } : {}),
-      status: quietPreempted ? "idle" : (result.error ? "error" : "idle"),
+      status: checkpointPaused ? "waiting" : quietPreempted ? "idle" : (result.error ? "error" : "idle"),
       lastActivity: new Date().toISOString(),
-      lastError: quietPreempted ? null : (result.error ?? null),
+      lastError: checkpointPaused ? latestBeforeCompletion?.lastError : quietPreempted ? null : (result.error ?? null),
     });
     if (!quietPreempted && currentSession.engine === "claude") {
       markTranscriptSyncedThrough(currentSession.id, result.sessionId);
@@ -985,7 +978,9 @@ export async function runWebSession(
     const reportedError = quietPreempted ? null : (result.error ?? null);
     if (completedSession && !quietPreempted) {
       recordSuccessfulWebSessionTurn(completedSession.id, result);
-      notifyParentSession(completedSession, { result: result.result, error: reportedError, cost: result.cost, durationMs: result.durationMs }, { alwaysNotify: parentNotifyAlwaysNotify, sink: context.notificationSink });
+      if (!checkpointPaused) {
+        notifyParentSession(completedSession, { result: result.result, error: reportedError, cost: result.cost, durationMs: result.durationMs }, { alwaysNotify: parentNotifyAlwaysNotify, sink: context.notificationSink });
+      }
     }
 
     if (completedSession && !quietPreempted && result.result) {
@@ -1051,164 +1046,4 @@ function isOrchestrationImplementationTurn(session: Session): boolean {
   if (!lease) return false;
   const role = typeof lease.role === "string" ? lease.role.toLowerCase() : "";
   return !role.includes("review");
-}
-
-async function enforceManagerDelegationIfNeeded(input: {
-  session: Session;
-  prompt: string;
-  employee: import("../shared/types.js").Employee | undefined;
-  supervisedNodes: import("../shared/types.js").OrgNode[];
-  config: CuttlefishConfig;
-  context: ApiContext;
-  attachments?: string[];
-  resourceContext?: string | null;
-  logTelemetry: () => void;
-}): Promise<boolean> {
-  const { session, prompt, employee, supervisedNodes, config, context } = input;
-  if (!employee || employee.mcp === false || supervisedNodes.length === 0) return false;
-  // A parented manager already received a bounded work package from its
-  // delegator. Keyword-only gateway fan-out loses that package's acceptance
-  // criteria and caused nested workers to start without an actionable task.
-  // Let the manager read the full brief and use its delegation discipline to
-  // create semantically complete child assignments itself.
-  if (session.parentSessionId) return false;
-  if (isExecutionDepthBlocked(session.transportMeta as Record<string, unknown> | undefined)) return false;
-  if (!isInitialManagerDelegationTurn(getMessages(session.id))) return false;
-
-  const promptHash = delegationPromptHash(prompt, input.resourceContext);
-  const meta = ((session.transportMeta ?? {}) as Record<string, unknown>);
-  const enforcedHashes = Array.isArray(meta.managerDelegationEnforcedPromptHashes)
-    ? meta.managerDelegationEnforcedPromptHashes.filter((value): value is string => typeof value === "string")
-    : [];
-  if (enforcedHashes.includes(promptHash)) return false;
-
-  const plan = buildManagerDelegationPlan({ manager: employee, prompt, supervisedNodes });
-  if (!plan.enforced || plan.matches.length === 0) return false;
-
-  const runnableMatches = plan.matches.filter((match) => {
-    const childEngine = context.sessionManager.getEngine(match.employee.engine);
-    if (!childEngine) {
-      logger.warn(`[manager-delegation] cannot enforce delegation from ${employee.name} to ${match.employee.name}: engine "${match.employee.engine}" unavailable`);
-      return false;
-    }
-    return true;
-  });
-  if (runnableMatches.length === 0) return false;
-
-  const now = new Date().toISOString();
-  const delegatedTo: string[] = [];
-  const childSessionIds: string[] = [];
-  const delegatedChildren: Array<{
-    child: Session;
-    match: typeof runnableMatches[number];
-    engine: import("../shared/types.js").Engine;
-  }> = [];
-  for (const match of runnableMatches) {
-    const child = createSession({
-      engine: match.employee.engine,
-      source: session.source,
-      sourceRef: `${session.sourceRef}:manager-delegation:${promptHash}:${match.employee.name}`,
-      connector: session.connector ?? session.source,
-      sessionKey: `${session.sessionKey || session.sourceRef}:manager-delegation:${promptHash}:${match.employee.name}`,
-      replyContext: session.replyContext,
-      transportMeta: {
-        managerDelegation: {
-          enforced: true,
-          parentEmployee: employee.name,
-          matchedKeywords: match.matchedKeywords,
-          promptHash,
-        },
-      },
-      employee: match.employee.name,
-      parentSessionId: session.id,
-      model: match.employee.model,
-      effortLevel: match.employee.effortLevel,
-      title: `Delegated to ${match.employee.displayName}`,
-      prompt: match.prompt,
-      promptExcerpt: match.prompt,
-      cwd: session.cwd,
-      portalName: config.portal?.portalName,
-    });
-    delegatedTo.push(match.employee.name);
-    childSessionIds.push(child.id);
-    insertMessage(child.id, "user", match.prompt);
-    maybeEmitTalkGraph(child.id, "added", { getSession, emit: context.emit });
-
-    const childEngine = context.sessionManager.getEngine(match.employee.engine);
-    if (!childEngine) continue;
-    delegatedChildren.push({ child, match, engine: childEngine });
-  }
-
-  if (delegatedTo.length === 0) return false;
-
-  const summary = `Delegated specialist work to ${delegatedTo.map((name) => `\`${name}\``).join(", ")}. I’ll synthesize after the report${delegatedTo.length === 1 ? "" : "s"} come back.`;
-  insertMessage(session.id, "assistant", summary);
-  const nextHashes = [...enforcedHashes.filter((hash) => hash !== promptHash), promptHash].slice(-20);
-  const updated = updateSession(session.id, {
-    status: "idle",
-    transportMeta: {
-      ...meta,
-      managerDelegationEnforcedPromptHashes: nextHashes,
-      managerDelegationEnforcement: {
-        promptHash,
-        delegatedTo,
-        childSessionIds,
-        completedChildSessionIds: [],
-        reason: plan.reason,
-        occurredAt: now,
-        synthesisDispatched: false,
-      },
-    } as any,
-    lastActivity: now,
-    lastError: null,
-  });
-
-  // Persist the expected-child barrier before any child can finish and send a
-  // callback. Starting children inside the creation loop left a small fast-run
-  // race where an immediate result could wake the parent before this metadata
-  // existed, bypassing the one-synthesis guard.
-  for (const { child, match, engine: childEngine } of delegatedChildren) {
-    void context.sessionManager.getQueue().enqueue(child.sessionKey || child.sourceRef, async () => {
-      context.emit("session:started", { sessionId: child.id });
-      // Delegated children receive only their bounded assignment. Parent files
-      // and resource context can contain manager-only data, so they are never
-      // forwarded implicitly with automatic delegation.
-      await runWebSession(child, match.prompt, childEngine, config, context);
-    }).catch((err) => {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      logger.error(`[manager-delegation] delegated child ${child.id} dispatch error: ${errMsg}`);
-      updateSession(child.id, {
-        status: "error",
-        lastActivity: new Date().toISOString(),
-        lastError: errMsg,
-      });
-      context.emit("session:completed", { sessionId: child.id, result: null, error: errMsg });
-      maybeEmitTalkGraph(child.id, "completed", { getSession, emit: context.emit });
-    });
-  }
-  input.logTelemetry();
-  context.emit("session:updated", { sessionId: session.id });
-  context.emit("manager:delegated", {
-    sessionId: session.id,
-    employee: employee.name,
-    delegatedTo,
-    promptHash,
-    enforced: true,
-  });
-  if (updated) {
-    void deliverConnectorReply(updated, summary, context.connectors, { emit: context.emit }).catch((err) => {
-      logger.warn(`Failed to deliver manager delegation notice for session ${updated.id}: ${err instanceof Error ? err.message : String(err)}`);
-    });
-  }
-  logger.info(`[manager-delegation] enforced delegation for session ${session.id}: ${employee.name} -> ${delegatedTo.join(", ")}`);
-  return true;
-}
-
-function delegationPromptHash(prompt: string, resourceContext?: string | null): string {
-  return createHash("sha256")
-    .update(resourceContext ?? "")
-    .update("\n---prompt---\n")
-    .update(prompt)
-    .digest("hex")
-    .slice(0, 16);
 }

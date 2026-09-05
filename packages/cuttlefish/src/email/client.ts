@@ -57,8 +57,12 @@ export class ImapEmailMailboxClient implements EmailMailboxClient {
       },
     });
 
-    await client.connect();
+    // ImapFlow emits socket failures as EventEmitter errors as well as rejecting
+    // pending commands. Own that event so one inbox cannot poison gateway health.
+    let socketError: Error | undefined;
+    client.on("error", (error: Error) => { socketError = error; client.close(); });
     try {
+      await client.connect();
       const mailbox = await client.mailboxOpen(inbox.folder || "INBOX");
       // IMAP UIDs are only unique within a UIDVALIDITY generation. Namespace the
       // dedup identity by uidValidity so a UID reused after the mailbox is
@@ -77,7 +81,10 @@ export class ImapEmailMailboxClient implements EmailMailboxClient {
           raw: Buffer.isBuffer(message.source) ? message.source : Buffer.from(message.source),
         });
       }
+      if (socketError) throw socketError;
       return out;
+    } catch (error) {
+      throw socketError ?? error;
     } finally {
       await client.logout().catch(() => {});
     }
@@ -99,10 +106,15 @@ export class ImapEmailMailboxClient implements EmailMailboxClient {
       socketTimeout: 60_000,
       auth: { user: inbox.username, pass: inbox.password },
     });
-    await client.connect();
+    let socketError: Error | undefined;
+    client.on("error", (error: Error) => { socketError = error; client.close(); });
     try {
+      await client.connect();
       await client.mailboxOpen(inbox.folder || "INBOX");
       await client.messageFlagsAdd({ uid: Number(uid) }, ["\\Seen"]);
+      if (socketError) throw socketError;
+    } catch (error) {
+      throw socketError ?? error;
     } finally {
       await client.logout().catch(() => {});
     }

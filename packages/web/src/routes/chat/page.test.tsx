@@ -95,14 +95,14 @@ vi.mock("@/components/ui/confirm-dialog", () => ({
   ConfirmDialog: () => null,
 }))
 
-function renderPage() {
+function renderPage(initialEntry = '/') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <ChatPageWrapper />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -174,5 +174,20 @@ describe("ChatPage room selection persistence", () => {
       expect(shell().dataset.selectedId).toBe("s-1")
       expect(localStorage.getItem("cuttlefish-chat-selected-room")).toBeNull()
     })
+  })
+
+  it.each([
+    ['/?lane=team&project=qa-parent', 'qa-parent'],
+    ['/?session=qa-child', 'qa-child'],
+    ['/?lane=management', ''],
+  ])('honors explicit link %s over the restored active project', async (url, expected) => {
+    localStorage.setItem('cuttlefish-chat-tabs', JSON.stringify({
+      tabs: [{ kind: 'project', rootSessionId: 's-1', label: 'Old project', status: 'idle', unread: false }],
+      activeIndex: 0,
+    }))
+    renderPage(url)
+    await waitFor(() => expect(shell().dataset.selectedId).toBe(expected))
+    fireEvent.click(screen.getByText('sessions loaded'))
+    await waitFor(() => expect(shell().dataset.selectedId).toBe(expected))
   })
 })

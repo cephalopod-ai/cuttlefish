@@ -110,6 +110,53 @@ describe('TicketDetailPanel', () => {
     vi.restoreAllMocks()
   })
 
+  it('preserves unsaved details and notes across remote updates and permits explicit conflict resolution', async () => {
+    getTicketSession.mockResolvedValue({ found: false })
+    const onSaveDetails = vi.fn().mockResolvedValue(false)
+    const view = (ticket: KanbanTicket) => (
+      <MemoryRouter>
+        <TicketDetailPanel ticket={ticket} employees={employees}
+          onClose={vi.fn()} onStatusChange={vi.fn()} onComplexityChange={vi.fn()}
+          onAssigneeChange={vi.fn()} onRunNow={vi.fn()} onDelete={vi.fn()}
+          onSaveDetails={onSaveDetails} onAppendNote={vi.fn()} />
+      </MemoryRouter>
+    )
+    const { rerender } = render(view(baseTicket))
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Unsaved local work' } })
+    fireEvent.change(screen.getByLabelText('Append note'), { target: { value: 'Unsaved note' } })
+    const remote = { ...baseTicket, description: 'Saved in another tab', updatedAt: baseTicket.updatedAt + 1 }
+    rerender(view(remote))
+    expect((screen.getByLabelText('Description') as HTMLTextAreaElement).value).toBe('Unsaved local work')
+    expect((screen.getByLabelText('Append note') as HTMLTextAreaElement).value).toBe('Unsaved note')
+    expect(screen.getByRole('alert').textContent).toContain('Saving replaces the latest details')
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save changes' })).toBeDefined())
+    expect((screen.getByLabelText('Description') as HTMLTextAreaElement).value).toBe('Unsaved local work')
+    expect(onSaveDetails).toHaveBeenCalledWith(expect.objectContaining({ description: 'Unsaved local work' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Load latest details' }))
+    expect((screen.getByLabelText('Description') as HTMLTextAreaElement).value).toBe('Saved in another tab')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('refreshes clean details and resets drafts when opening another ticket', () => {
+    getTicketSession.mockResolvedValue({ found: false })
+    const view = (ticket: KanbanTicket) => (
+      <MemoryRouter>
+        <TicketDetailPanel ticket={ticket} employees={employees}
+          onClose={vi.fn()} onStatusChange={vi.fn()} onComplexityChange={vi.fn()}
+          onAssigneeChange={vi.fn()} onRunNow={vi.fn()} onDelete={vi.fn()}
+          onSaveDetails={vi.fn()} onAppendNote={vi.fn()} />
+      </MemoryRouter>
+    )
+    const { rerender } = render(view(baseTicket))
+    rerender(view({ ...baseTicket, description: 'Remote update' }))
+    expect((screen.getByLabelText('Description') as HTMLTextAreaElement).value).toBe('Remote update')
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Local edit' } })
+    rerender(view({ ...baseTicket, id: 'another-ticket', description: 'Another ticket' }))
+    expect((screen.getByLabelText('Description') as HTMLTextAreaElement).value).toBe('Another ticket')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
   it('saves edited title and description', async () => {
     getTicketSession.mockResolvedValue({ found: false })
     const onSaveDetails = vi.fn()

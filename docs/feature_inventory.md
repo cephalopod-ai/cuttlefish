@@ -117,7 +117,7 @@
 - Deleted kanban tickets move into a recycle bin instead of being purged immediately.
 - The retention window defaults to 3 days and is configurable from 0 to 7 days in the kanban UI.
 - `0` means immediate purge.
-- Tickets remain restorable from the "Recently deleted" section until their retention window expires.
+- Tickets remain restorable from the "Recently deleted" section until their retention window expires. Dashboard restores carry the deletion timestamp; the server rejects expired, missing, or superseded restore versions atomically with `409`. Successful restores remove deletion metadata from the active ticket. Generic creates/imports without restore intent retain their existing behavior.
 - Deleting a session archives its session-generated tickets; deleting an employee
   archives that employee's assigned tickets, so neither lifecycle action leaves
   a dangling board reference.
@@ -212,7 +212,7 @@
   security gate fields `approvalPolicy`, `reviewTriggers`, and
   `securityReviewer`, including the looser `notify` runtime policy that allows
   risky-but-reviewed Bash actions to continue with a session notification
-  instead of a human checkpoint.
+  instead of a human checkpoint. Employee creation persists these policy fields in YAML and in change-request previews; omitted fields retain the runtime defaults.
 - Employee, manager, and executive org-map cards also expose a compact quick-chat affordance that opens the main chat workspace, using the existing employee preselection deep-link for non-executive employees.
 - `/org` department tabs expose an inline rename action for a selected department. `PATCH /api/org/departments/:name` updates matching employee YAML `department` fields, renames the department directory when there is no target collision, and emits org/board refresh events.
 - The create/edit surfaces now include multi-role execution configuration when the `features.multiRoleEmployeeExecution` feature flag is enabled: execution tier (`solo` or `mid_pair`), max internal passes, max child sessions, max wall-clock time, max tool calls, max estimated cost, reviewer loss policy, and reviewer tool profile.
@@ -274,7 +274,7 @@
 - Feature gated: `features.multiRoleEmployeeExecution: true` must be set in daemon config.
 - The mid-pair reviewer's verdict is host-validated (`validateReviewResult`); invalid output triggers exactly one in-place JSON repair retry (same reviewer session, bounded by the wall-clock deadline) before the reviewer loss policy applies, and the recorded degraded reason distinguishes "unparseable after retry" from an engine loss.
 - The mid-pair reviewer receives deterministic changed-file/diff context (bounded `git diff HEAD` of the implementer workspace via `session.cwd`, built by `gateway/review-context.ts`); when no diff can be produced it degrades to summary-only and records the reason.
-- Degraded/fallback/review-context state is surfaced on the API `executionRunState` (from parent-session `transportMeta`): `degraded`/`degradedReason`, the now-populated `fallbackActive`, and `reviewContext` (`diff` | `summary_only`) + `reviewContextReason`. A parent remains `running` and heartbeats while its internal reviewer or revision worker is live, then resolves to the appropriate terminal session state when the execution loop settles. If initial manager delegation preempts a mid-pair implementer turn, the parent instead reports phase `delegating`; the fan-out announcement is not reviewed, and the later all-child synthesis turn enters review normally.
+- Degraded/fallback/review-context state is surfaced on the API `executionRunState` (from parent-session `transportMeta`): `degraded`/`degradedReason`, the now-populated `fallbackActive`, and `reviewContext` (`diff` | `summary_only`) + `reviewContextReason`. A parent remains `running` and heartbeats while its internal reviewer or revision worker is live, then resolves to the appropriate terminal session state when the execution loop settles. If a manager implementer turn finishes with delegated children still outstanding, the parent instead reports phase `delegating`; the fan-out announcement is not reviewed, and the later all-child synthesis turn enters review normally.
 - Fidelity gaps:
   - Mid-pair review flow is wired at the session-write and org-execution layers, and degraded/fallback/review-context state is now surfaced on `executionRunState`; the web UI to display review status is still deferred.
   - The mid-pair path passes an inline bounded diff rather than the orchestration path's full disk-backed review bundle (`patch.diff` + `metadata.json` via `createReviewBundle`); reviewer allocation still uses the configured `reviewerToolProfile`.
@@ -374,6 +374,14 @@
 - The skills CLI reads the seeded object-shaped `skills.json` manifest and
   remains compatible with legacy flat-array manifests. Empty or whitespace-only
   `skills find` queries fail before starting the external registry client.
+- `skills update` warns that installed skill files, including local edits, will be
+  overwritten by the source package. Failed package updates return a nonzero exit
+  while allowing independent packages to continue.
+- Engine availability uses a bounded `--version` probe cached for up to30seconds
+  by launcher identity and launch environment. Changed or removed launchers are
+  rechecked immediately; indirect dependency changes may wait for cache expiry.
+  Availability does not establish authentication or remaining quota.
+- Onboarding submits effort only when the selected engine/model supports it.
 - A bare `cuttlefish` invocation prints normal discovery help and exits zero.
   Commands offering `--json` return a `{status:"error",message}` object on
   stdout with a nonzero exit for action and parser failures; human-mode errors
@@ -401,7 +409,7 @@
 > named commands and continue to require the running gateway's authentication.
 - `cuttlefish workers list --config-dir <dir> [--json]` loads explicit matrix worker config and prints available workers.
 - `cuttlefish scheduler allocate <task-file> --config-dir <dir> --dry-run [--json]` validates a task request and performs fake-worker allocation only.
-- `cuttlefish scheduler simulate <scenario-file> --config-dir <dir> [--json]` runs deterministic allocation/release/heartbeat/expiry scenario steps against in-memory scheduler state.
+- `cuttlefish scheduler simulate <scenario-file> --config-dir <dir> [--json]` runs deterministic allocation/release/heartbeat/expiry scenario steps against in-memory scheduler state. Simulation starts at the Unix epoch unless an ISO `startTime` is supplied; expiry steps advance logical time, and backward time is rejected. Live scheduling continues to use wall time.
 - `cuttlefish scheduler plan <task-file> --config-dir <dir> [--db-path <path>] [--json]` expands a coordinator template into an observe-only allocation plan.
 - `cuttlefish leases list --config-dir <dir> [--db-path <path>] [--json]` lists durable orchestration leases when a DB exists.
 - `cuttlefish queue list --config-dir <dir> [--db-path <path>] [--json]` lists durable blocked-resource queue items when a DB exists.
@@ -550,6 +558,10 @@
   decision notes, and resulting action.
 - `POST /api/checkpoints` creates a checkpoint for a session and, by default,
   pauses the session in `waiting` with a visible notification trail.
+- A pending human checkpoint keeps the session waiting through streamed output,
+  heartbeats, completion, and restart. Followup messages remain in the durable
+  queue until the checkpoint resumes; the requesting turn still records usage.
+  Late engine recovery cannot clear the checkpoint.
 - A session-scoped agent can create a checkpoint only for its own authenticated
   session; the gateway binds the checkpoint to that identity even when the body
   omits `sessionId`. Ordinary agent credentials cannot read or resolve
@@ -771,7 +783,7 @@
 ### Smart manager delegation discipline
 - Manager and executive sessions receive a default-on manager delegation discipline block in their runtime context. The block requires a delegate-vs-inline decision before substantive work, lists concise direct-report specialties when present, and distinguishes smart delegation from delegation just for appearances.
 - Any manager may ask Program Manager, Cuttlefish (COO), or both for a second opinion through a child session even when they are not a direct report. Consultation does not transfer any human-delegated approval authority.
-- Runtime execution can enforce a bounded initial-task split for a top-level manager before its model runs. It requires either an exact direct-report reference or at least two distinct specialist signals; one roster, department, or marker-like token cannot trigger a fan-out. A manager session that was itself delegated work always reads the complete bounded brief and delegates explicitly, preventing the gateway from reducing acceptance criteria to keyword fragments. Automatically created children receive only their bounded assignment and matched signals—never the manager's full prompt, prompt excerpt, attachments, or resource context. Later manager turns, including child callbacks, stay inline unless the manager explicitly delegates. Enforced runs record the prompt hash and expected child ids in `transportMeta`; final synthesis waits for every started child’s durable lifecycle, then takes a one-per-prompt claim and persists the dispatch marker so stale or overlapping callbacks cannot queue an additional synthesis turn.
+- Managers read the complete task before choosing explicit delegation through the existing session API. Runtime context requires each child brief to include its own assignment, acceptance criteria, and inputs. The gateway no longer creates child tasks from keyword fragments before the manager runs. Parent prompts, attachments, and resource context are not implicitly forwarded. Persisted barriers on existing delegated batches remain respected by callback and synthesis handling.
 - A completed or failed child report contacts its direct supervisor first. If the report remains unacknowledged for `gateway.leaderAckTimeoutMs`, the gateway sends that same supervisor a second notice and starts a fresh timeout window. Executive or manual-review escalation occurs only after the second contact also goes unanswered; a supervisor reply after either contact acknowledges the handoff and prevents escalation.
 - Claude child turns do not report completion while their background-agent streams remain active. The gateway retains the latest callback until the engine's quiet-window signal confirms the background work has drained, then wakes the direct supervisor with the latest durable assistant result. A completed synthesis marker applies only to the child batch and generation it names, so it cannot suppress callbacks from a later child or a later turn of the same child.
 - Session API responses expose a derived `jobState` (`idle`, `working`,
@@ -826,7 +838,7 @@
   Approvals/checkpoints remain the durable surface when the agent is blocked on
   a human action or decision; Kanban remains optional work tracking rather than
   a prerequisite for operator visibility.
-- Runtime execution logs a debug-only `manager_delegation` telemetry record for eligible manager sessions with child-session counts before and after the engine run or enforced delegation.
+- Runtime execution logs a debug-only `manager_delegation` telemetry record for eligible manager sessions with child-session counts before and after the engine run.
 - Manual live behavior can be sampled with `node packages/cuttlefish/scripts/delegation-live-harness.mjs --employee <manager-slug>` against a running gateway. The harness is not part of CI because it depends on live model behavior and local credentials.
 
 ### Stopped Grok session recovery

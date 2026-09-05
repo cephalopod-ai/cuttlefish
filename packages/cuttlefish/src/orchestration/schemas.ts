@@ -79,6 +79,7 @@ export const allocationRequestFileSchema = z.object({
 
 export const simulationScenarioSchema = z.object({
   name: z.string().min(1).optional(),
+  startTime: z.string().datetime().optional(),
   steps: z.array(z.union([
     z.object({ allocate: allocationRequestFileSchema }).strict(),
     z.object({

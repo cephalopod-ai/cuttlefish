@@ -339,6 +339,30 @@ describe("POST /api/sessions prompt validation (I-1)", () => {
     expect(cap.body).toEqual(expect.objectContaining({ error: expect.stringContaining("message is required") }));
   });
 
+  it.each([
+    "Waiting on human checkpoint: Review the attachment",
+    "Codex usage limit reached",
+    null,
+  ])("reports the actual waiting reason without inventing a Claude limit: %s", async (lastError) => {
+    const { api, reg } = await setup();
+    const ctx = makeCtx(api);
+    ctx.sessionManager.getEngine = () => ({ name: "codex" }) as any;
+    const session = reg.createSession({ engine: "codex", source: "web", sourceRef: "waiting-notice", prompt: "Initial task" });
+    reg.updateSession(session.id, { status: "waiting", lastError });
+    const cap = makeRes();
+    await api.handleApiRequest(makeJsonReq("POST", `/api/sessions/${session.id}/message`, { message: "A followup" }), cap.res, ctx);
+    expect(cap.status).toBe(200);
+    const notice = reg.getMessages(session.id).find((message) => message.role === "notification")?.content;
+    expect(notice).toContain(lastError || "This session is paused.");
+    expect(notice).toContain("queued until the session resumes");
+    expect(notice).not.toContain("Claude usage limit");
+    expect(notice).not.toContain("automatically");
+    expect(hoisted.dispatchEmployeeSessionRun).not.toHaveBeenCalled();
+    expect(hoisted.dispatchPendingWebQueueHeadForSessionKey).not.toHaveBeenCalled();
+    expect(reg.listPendingQueueItems(session.sessionKey)).toHaveLength(1);
+    expect(reg.getSession(session.id)?.status).toBe("waiting");
+  });
+
   it("applies a workspace profile cwd and instructions to a new session", async () => {
     const { api, reg } = await setup();
     const ctx = makeCtx(api);

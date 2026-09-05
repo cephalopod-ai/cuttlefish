@@ -5,7 +5,8 @@ import { loadAllocationRequest, loadOrchestrationConfig, loadSimulationScenario 
 import { loadCoordinatorTaskBrief, planCoordinatorAllocation } from "../orchestration/coordinator.js";
 import { liveRunModeSchema } from "../orchestration/run-mode.js";
 import { PersistentMatrixScheduler } from "../orchestration/persistent-scheduler.js";
-import { MatrixScheduler, runSimulation } from "../orchestration/scheduler.js";
+import { MatrixScheduler } from "../orchestration/scheduler.js";
+import { simulateScenario } from "../orchestration/simulation.js";
 import {
   cleanupWorktreeByTaskLane,
   createImplementationWorktree,
@@ -476,14 +477,7 @@ export async function runSchedulerPlan(taskFile: string, opts: OrchestrationStat
 export async function runSchedulerSimulate(scenarioFile: string, opts: ConfigDirOptions): Promise<void> {
   const config = loadConfigForCli(opts);
   const scenario = loadSimulationScenario(scenarioFile, config);
-  const scheduler = new MatrixScheduler(config);
-  const steps = runSimulation(scheduler, scenario.steps);
-  const result = {
-    name: scenario.name,
-    steps,
-    leases: scheduler.listLeases(),
-    queue: scheduler.listQueue(),
-  };
+  const result = simulateScenario(config, scenario);
   print(opts.json ? result : JSON.stringify(result, null, 2), opts.json);
 }
 

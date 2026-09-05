@@ -138,7 +138,7 @@ export async function resumePendingWebQueueItems(context: ApiContext): Promise<v
       continue;
     }
     let session = existingSession;
-    if (session.source !== "web") continue;
+    if (session.source !== "web" || session.status === "waiting") continue;
     session = maybeRevertEngineOverride(session);
     if (context.sessionManager.getQueue().isPaused(item.sessionKey)) continue;
 
@@ -195,7 +195,7 @@ async function dispatchPendingQueueItem(context: ApiContext, item: QueueItem): P
     return false;
   }
   let session = existingSession;
-  if (session.source !== "web") return false;
+  if (session.source !== "web" || session.status === "waiting") return false;
   session = maybeRevertEngineOverride(session);
 
   const config = context.getConfig();
@@ -295,7 +295,10 @@ export function dispatchWebSessionRun(
         context.emit("session:updated", { sessionId: session.id });
       }
       if (opts?.queueItemId) context.emit("queue:updated", { sessionId: session.id, sessionKey });
-      if (opts?.queueItemId) dispatchPendingWebQueueHeadForSessionKey(context, sessionKey);
+      // Checkpoint resumes have no queue item, but must release retained followups too.
+      if (opts?.queueItemId || listPendingQueueItems(sessionKey).length > 0) {
+        dispatchPendingWebQueueHeadForSessionKey(context, sessionKey);
+      }
     }
   };
 

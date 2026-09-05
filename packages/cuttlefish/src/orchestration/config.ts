@@ -15,6 +15,7 @@ import type { AllocationRequest, OrchestrationConfig } from "./types.js";
 
 export interface SimulationScenario {
   name?: string;
+  startTime?: string;
   steps: Array<
     | { allocate: AllocationRequest }
     | { release: { leaseId?: string; taskId?: string; role?: string; workerId?: string } }
@@ -58,6 +59,7 @@ export function loadSimulationScenario(filePath: string, config: OrchestrationCo
   const parsed = simulationScenarioSchema.parse(readYamlFile(filePath));
   return {
     name: parsed.name,
+    startTime: parsed.startTime,
     steps: parsed.steps.map((step) => {
       if ("allocate" in step) return { allocate: buildAllocationRequest(step.allocate, config) };
       return step;

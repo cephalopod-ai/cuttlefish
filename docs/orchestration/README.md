@@ -159,6 +159,13 @@ cuttlefish worktree diff docs/orchestration/examples/task-live.yaml --lane senio
 cuttlefish worktree cleanup docs/orchestration/examples/task-live.yaml --lane seniorImplementer
 ```
 
+Simulation uses logical time, starting at `1970-01-01T00:00:00.000Z` by
+default. A scenario can set an ISO `startTime`; each `expire.now` advances that
+clock for expiry, queued retries, and later steps. Backward clock movement is
+rejected. Identical scenarios produce identical JSON without consulting live
+engines or the wall clock.
+
+
 `scheduler allocate` intentionally requires `--dry-run`. Without it, the command
 fails because real provider execution is out of scope for this slice.
 

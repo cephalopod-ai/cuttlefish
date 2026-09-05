@@ -19,6 +19,11 @@ import { api, type ModelInfo, type EnginesResponse } from "@/lib/api"
 import { buildNewSessionParams } from "@/components/chat/new-chat-helpers"
 import { defaultAvailableEngine } from "@/hooks/use-model-registry"
 
+function initialEffort(model: ModelInfo | undefined): string | undefined {
+  if (!model?.supportsEffort || !model.effortLevels?.length) return undefined
+  return model.effortLevels.includes("medium") ? "medium" : model.effortLevels[0]
+}
+
 // ---------------------------------------------------------------------------
 // Accent color presets
 // ---------------------------------------------------------------------------
@@ -121,11 +126,11 @@ export function OnboardingWizard({ forceOpen, onClose }: OnboardingWizardProps) 
   const [engineChoice, setEngineChoice] = useState<{
     engine: string | undefined
     model: string | undefined
-    effortLevel: string
+    effortLevel?: string
   }>({
     engine: undefined,
     model: undefined,
-    effortLevel: "medium",
+    effortLevel: undefined,
   })
 
   const TOTAL_STEPS = 5
@@ -168,7 +173,7 @@ export function OnboardingWizard({ forceOpen, onClose }: OnboardingWizardProps) 
       const models: ModelInfo[] = defaultEntry?.models ?? []
       if (models.length > 0) {
         const defaultModel = defaultEntry?.defaultModel ?? models[0]?.id
-        setEngineChoice({ engine: defaultEntry?.name, model: defaultModel, effortLevel: "medium" })
+        setEngineChoice({ engine: defaultEntry?.name, model: defaultModel, effortLevel: initialEffort(models.find(m => m.id === defaultModel)) })
       }
       // If no models available, leave engineChoice.engine undefined so
       // applyEngineChoice will no-op and the server default is preserved.
@@ -563,7 +568,7 @@ export function OnboardingWizard({ forceOpen, onClose }: OnboardingWizardProps) 
                               onClick={() => {
                                 const entry = enginesData!.engines[key]
                                 const newModel = entry.defaultModel ?? entry.models[0]?.id
-                                setEngineChoice({ engine: key, model: newModel, effortLevel: "medium" })
+                                setEngineChoice({ engine: key, model: newModel, effortLevel: initialEffort(entry.models.find(m => m.id === newModel)) })
                               }}
                               className="flex items-center gap-[var(--space-3)] px-[var(--space-4)] py-[var(--space-2)] rounded-[var(--radius-md)] cursor-pointer transition-all duration-150 text-left"
                               style={{
@@ -618,7 +623,7 @@ export function OnboardingWizard({ forceOpen, onClose }: OnboardingWizardProps) 
                               <button
                                 key={m.id}
                                 onClick={() =>
-                                  setEngineChoice({ engine: engineChoice.engine, model: m.id, effortLevel: "medium" })
+                                  setEngineChoice({ engine: engineChoice.engine, model: m.id, effortLevel: initialEffort(m) })
                                 }
                                 className="flex items-center gap-[var(--space-3)] px-[var(--space-4)] py-[var(--space-3)] rounded-[var(--radius-md)] cursor-pointer transition-all duration-150 text-left"
                                 style={{

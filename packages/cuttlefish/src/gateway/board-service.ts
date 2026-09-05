@@ -433,7 +433,7 @@ export function mergeBoardTickets(
         return currentTicket;
       }
     }
-    const { baseUpdatedAt: _baseUpdatedAt, ...stored } = ticket;
+    const { baseUpdatedAt: _baseUpdatedAt, deletedAt: _deletedAt, ...stored } = ticket;
     if (currentTicket && isActiveSessionTicket(currentTicket, options.activeSessionIds)) {
       stored.sessionId = currentTicket.sessionId;
       if (currentTicket.source != null) stored.source = currentTicket.source;
@@ -491,6 +491,18 @@ export function indexBoardTicketsById(tickets: BoardTicket[]): Map<string, Board
   return ticketsById;
 }
 
+/** Restore intent must name the deletion version still inside retention. */
+function assertCurrentBoardRestores(current: BoardState, incoming: BoardTicket[], retentionDays: number): void {
+  const restorable = new Map(pruneDeletedTickets(current.deletedTickets, retentionDays).map((ticket) => [ticket.id, ticket]));
+  for (const ticket of incoming) {
+    if (ticket.deletedAt == null) continue;
+    const deleted = restorable.get(ticket.id);
+    if (!deleted || typeof ticket.deletedAt !== "string" || ticketTime(deleted.deletedAt) !== ticketTime(ticket.deletedAt)) {
+      throw new BoardConflictError(`board conflict: ticket "${ticket.id}" is no longer available to restore; refresh the recycle bin`, [ticket.id]);
+    }
+  }
+}
+
 export function writeMergedBoard(
   orgDir: string,
   department: string,
@@ -503,6 +515,7 @@ export function writeMergedBoard(
   const { tickets, deletedIds, deletedVersions, retentionDays } = parseBoardWritePayload(payload);
   assertValidBoardTickets(tickets);
   const nextRetentionDays = retentionDays ?? current.retentionDays;
+  assertCurrentBoardRestores(current, tickets, nextRetentionDays);
   const mergedTickets = mergeBoardTickets(current.tickets, tickets, deletedIds, deletedVersions, options);
   const mergedDeletedTickets = pruneDeletedTickets(
     mergeDeletedTickets(current, mergedTickets, deletedIds, new Date().toISOString()),
@@ -540,6 +553,7 @@ export function writeMergedBoardPartial(
   const { tickets: rawTickets, deletedIds, deletedVersions, retentionDays } = parseBoardWritePayload(payload);
   const { valid, rejected } = partitionBoardTickets(rawTickets);
   const nextRetentionDays = retentionDays ?? current.retentionDays;
+  assertCurrentBoardRestores(current, valid, nextRetentionDays);
   const mergedTickets = mergeBoardTickets(current.tickets, valid, deletedIds, deletedVersions, options);
   const mergedDeletedTickets = pruneDeletedTickets(
     mergeDeletedTickets(current, mergedTickets, deletedIds, new Date().toISOString()),

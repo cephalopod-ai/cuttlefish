@@ -585,6 +585,9 @@ export function buildEmployeeCreateData(employee: EmployeeCreate): Record<string
   if (employee.cliFlags && employee.cliFlags.length > 0) data.cliFlags = employee.cliFlags;
   if (typeof employee.alwaysNotify === "boolean") data.alwaysNotify = employee.alwaysNotify;
   if (employee.lifecycle && employee.lifecycle !== "active") data.lifecycle = employee.lifecycle;
+  if (employee.approvalPolicy !== undefined) data.approvalPolicy = employee.approvalPolicy;
+  if (employee.reviewTriggers !== undefined) data.reviewTriggers = [...employee.reviewTriggers];
+  if (employee.securityReviewer !== undefined) data.securityReviewer = employee.securityReviewer;
   if (employee.fallbackModel && employee.fallbackModel.trim()) {
     data.modelPolicy = {
       fallback_chain: [{ engine: employee.fallbackEngine?.trim() || employee.engine, model: employee.fallbackModel.trim() }],

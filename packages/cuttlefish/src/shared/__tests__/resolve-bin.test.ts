@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -81,6 +81,27 @@ describe.skipIf(process.platform === "win32")("resolveBin", () => {
 
     expect(isInstalled("agy", exePath)).toBe(true);
     expect(isInstalled("agy", broken)).toBe(false);
+  });
+
+  it("reuses probes across repeated worker checks but refreshes changed launchers and expired results", () => {
+    const engine = path.join(tmpDir, "counted-engine");
+    const count = path.join(tmpDir, "probe-count");
+    fs.writeFileSync(engine, `#!/bin/sh\necho probe >> '${count}'\nexit 0\n`, { mode: 0o755 });
+    const now = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+    try {
+      for (let i = 0; i < 30; i++) expect(isInstalled("counted", engine)).toBe(true);
+      expect(fs.readFileSync(count, "utf8").trim().split("\n")).toHaveLength(1);
+      clock.mockReturnValue(now + 30_001);
+      expect(isInstalled("counted", engine)).toBe(true);
+      expect(fs.readFileSync(count, "utf8").trim().split("\n")).toHaveLength(2);
+      fs.writeFileSync(engine, "#!/bin/sh\n# changed launcher\nexit 1\n");
+      expect(isInstalled("counted", engine)).toBe(false);
+      fs.unlinkSync(engine);
+      expect(isInstalled("counted", engine)).toBe(false);
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it("does not substitute a PATH installation for an unusable explicit override", () => {

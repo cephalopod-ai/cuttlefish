@@ -263,6 +263,10 @@ describe("buildContext — compact org roster", () => {
   it("lists name/dept/rank but NOT persona previews", () => {
     const out = buildContext({ ...baseOpts, hierarchy });
     expect(out).toContain("## Organization (2 employee(s))");
+    expect(out).toContain("Org mutations are operator-only");
+    expect(out).toContain("POST /api/org/change-requests");
+    expect(out).not.toContain("may switch a report");
+    expect(out).not.toContain("Create new employees by writing YAML");
     expect(out).toContain("- **lead** (lead) — eng, manager");
     expect(out).not.toContain("Secret persona preview");
     expect(out).not.toContain("Another secret persona");

@@ -14,6 +14,8 @@ import { execFileSyncCompat } from "./windows-exec.js";
  */
 
 const DEFAULT_PATHEXT = ".COM;.EXE;.BAT;.CMD";
+const PROBE_CACHE_MS = 30_000;
+const probeCache = new Map<string, { identity: string; expiresAt: number; available: boolean }>();
 
 function isExecutableFile(p: string): boolean {
   try {
@@ -138,6 +140,25 @@ export function isInstalled(name: string, override?: string): boolean {
   bin ??= findOnPath(name);
   if (!bin) return false;
 
+  // Org/runtime refreshes ask about each worker repeatedly. Launching every
+  // CLI synchronously on every call can starve HTTP and socket timers. Keep
+  // the bounded probe, but reuse its result briefly unless the launcher changes.
+  let identity: string;
+  try {
+    const stat = fs.statSync(bin);
+    identity = [stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs, process.platform,
+      process.env.PATH, process.env.HOME, process.env.comspec].join("|");
+  } catch {
+    return false;
+  }
+  const previous = probeCache.get(bin);
+  if (previous?.identity === identity && previous.expiresAt > Date.now()) return previous.available;
+  const remember = (available: boolean): boolean => {
+    if (probeCache.size >= 256) probeCache.delete(probeCache.keys().next().value!);
+    probeCache.set(bin, { identity, expiresAt: Date.now() + PROBE_CACHE_MS, available });
+    return available;
+  };
+
   // A Windows install that only provides a .cmd/.bat shim (npm's default —
   // `npm i -g` writes no .exe) is still a usable engine: the probe and every
   // non-PTY runner route shims through cmd.exe via windows-exec, and PTY
@@ -149,8 +170,8 @@ export function isInstalled(name: string, override?: string): boolean {
       timeout: 2_000,
       windowsHide: true,
     });
-    return true;
+    return remember(true);
   } catch {
-    return false;
+    return remember(false);
   }
 }

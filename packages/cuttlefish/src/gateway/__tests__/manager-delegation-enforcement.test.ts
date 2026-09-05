@@ -44,11 +44,11 @@ describe("manager delegation enforcement", () => {
     reg.initDb();
   });
 
-  it("spawns the matched specialist before the manager model can work inline", async () => {
+  it("lets the top-level manager prepare actionable briefs without exposing private context to automatic children", async () => {
     const reg = await import("../../sessions/registry.js");
     const { runWebSession } = await import("../run-web-session.js");
 
-    const managerRun = vi.fn<Engine["run"]>(async () => ({ result: "manager should not run inline", sessionId: "manager-engine-session" }));
+    const managerRun = vi.fn<Engine["run"]>(async () => ({ result: "manager prepared actionable specialist briefs", sessionId: "manager-engine-session" }));
     const specialistRun = vi.fn<Engine["run"]>(async () => ({ result: "security result", sessionId: "specialist-engine-session", durationMs: 1 }));
     const engines = new Map<string, Engine>([
       ["claude", fakeEngine("claude", managerRun)],
@@ -102,29 +102,13 @@ describe("manager delegation enforcement", () => {
       managerOnlyResource,
     );
 
-    expect(managerRun).not.toHaveBeenCalled();
-    const children = reg.listChildSessions(parent.id);
-    expect(children).toHaveLength(1);
-    expect(children[0]).toMatchObject({
-      employee: "senior-security-officer",
-      parentSessionId: parent.id,
-      engine: "codex",
-    });
-    const childPrompt = reg.getMessages(children[0].id).find((message) => message.role === "user")?.content ?? "";
-    expect(childPrompt).not.toContain(managerOnlyMarker);
-    expect(childPrompt).not.toContain("Original task:");
-    expect(children[0].promptExcerpt).not.toContain(managerOnlyMarker);
-    expect((reg.getSession(parent.id)?.transportMeta as any)?.managerDelegationEnforcement).toMatchObject({
-      childSessionIds: [children[0].id],
-      completedChildSessionIds: [],
-      synthesisDispatched: false,
-    });
-    await waitFor(() => specialistRun.mock.calls.length === 1);
-    expect(specialistRun).toHaveBeenCalledTimes(1);
-    expect(specialistRun.mock.calls[0][0].prompt).not.toContain(managerOnlyResource);
-    expect(specialistRun.mock.calls[0][0].systemPrompt).not.toContain(managerOnlyResource);
-    expect(reg.getMessages(parent.id).some((message) => message.role === "assistant" && message.content.includes("Delegated specialist work"))).toBe(true);
-    expect(events.some((entry) => entry.event === "manager:delegated")).toBe(true);
+    expect(managerRun).toHaveBeenCalledTimes(1);
+    expect(managerRun.mock.calls[0][0].prompt).toContain(managerOnlyMarker);
+    expect(managerRun.mock.calls[0][0].systemPrompt).toContain("Every child prompt must contain a concrete task");
+    expect(reg.listChildSessions(parent.id)).toHaveLength(0);
+    expect(specialistRun).not.toHaveBeenCalled();
+    expect(events.some((entry) => entry.event === "manager:delegated")).toBe(false);
+
   });
 
   it("does not automatically fan out a later manager message that resembles a child report", async () => {
@@ -287,10 +271,3 @@ describe("manager delegation enforcement", () => {
   });
 });
 
-async function waitFor(predicate: () => boolean): Promise<void> {
-  const deadline = Date.now() + 500;
-  while (Date.now() < deadline) {
-    if (predicate()) return;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-}

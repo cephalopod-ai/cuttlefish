@@ -1,4 +1,3 @@
-import { getClaudeExpectedResetAt } from "../shared/usageAwareness.js";
 import { logger } from "../shared/logger.js";
 import { isInterruptibleEngine, type CuttlefishConfig } from "../shared/types.js";
 import {
@@ -172,11 +171,8 @@ export async function continueSession(input: ContinueSessionInput): Promise<Cont
   }
 
   if (!isNotification && session.status === "waiting") {
-    const expectedResetAt = getClaudeExpectedResetAt();
-    const resumeText = expectedResetAt
-      ? expectedResetAt.toLocaleString("en-GB", { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
-      : null;
-    const queuedText = `⏳ Still paused due to Claude usage limit${resumeText ? ` (resets ${resumeText})` : ""}. Your message is queued and will run automatically.`;
+    const reason = session.lastError?.trim();
+    const queuedText = `⏳ ${reason || "This session is paused."} Your message is queued until the session resumes.`;
     insertMessage(session.id, "notification", queuedText);
     input.context.emit("session:notification", { sessionId: session.id, message: queuedText });
   }
@@ -204,6 +200,10 @@ export async function continueSession(input: ContinueSessionInput): Promise<Cont
   }
   if (attached.blocked) {
     return { statusCode: 200, body: { status: "checkpoint_required", sessionId: session.id }, insertedMessageId };
+  }
+  // A followup is not an approval: keep it durable until the wait is resolved.
+  if (session.status === "waiting") {
+    return { statusCode: 200, body: { status: isNotification ? "notification_recorded" : "queued", sessionId: session.id }, insertedMessageId };
   }
   if (queueItemId && hasPendingQueueItemBefore(sessionKey, queueItemId)) {
     dispatchPendingWebQueueHeadForSessionKey(input.context, sessionKey);

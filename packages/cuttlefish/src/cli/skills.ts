@@ -326,7 +326,7 @@ export function skillsList(): void {
   console.log("");
 }
 
-export function skillsUpdate(): void {
+export function skillsUpdate(dependencies: SkillsAddDependencies = {}): void {
   const manifest = readManifest();
   if (manifest.length === 0) {
     console.log("No skills in manifest to update.");
@@ -334,22 +334,25 @@ export function skillsUpdate(): void {
   }
 
   console.log(`\nUpdating ${manifest.length} skill(s)...\n`);
+  console.log(`${YELLOW}Updates replace instance skill files with the source version; local edits may be overwritten.${RESET}`);
   for (const entry of manifest) {
     console.log(`  Updating ${entry.name} from ${entry.source}...`);
-    const before = snapshotDirs();
-    const result = runNpxSkills(["add", entry.source, "-g", "-y"], "pipe");
+    const snapshot = dependencies.snapshot ?? snapshotDirs;
+    const before = snapshot();
+    const result = (dependencies.runInstaller ?? ((args) => runNpxSkills(args, "pipe")))(["add", entry.source, "-g", "-y"]);
 
     if (result.status !== 0) {
       console.log(`  ${RED}Failed to update ${entry.name}${RESET}`);
+      process.exitCode = 1;
       continue;
     }
 
-    const after = snapshotDirs();
-    const newDirs = diffSnapshots(before, after);
+    const after = snapshot();
+    const newDirs = (dependencies.diffSnapshots ?? diffSnapshots)(before, after);
     if (newDirs.length > 0) {
       copySkillToInstance(newDirs[0].name, path.join(newDirs[0].dir, newDirs[0].name));
     } else {
-      const existing = findExistingSkill(entry.name);
+      const existing = (dependencies.findGlobalSkill ?? findExistingSkill)(entry.name);
       if (existing) {
         copySkillToInstance(existing.name, existing.dir);
       }

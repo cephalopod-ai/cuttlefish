@@ -114,6 +114,27 @@ describe("resumePendingWebQueueItems", () => {
     expect(reg.getQueueItem(itemId)?.status).toBe("completed");
   });
 
+  it("does not replay human-waiting work on boot or queue drain, but resumes after a decision", async () => {
+    const { dispatch, reg, SessionQueue } = await setup();
+    const session = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:checkpoint-wait", prompt: "seed" });
+    reg.updateSession(session.id, { status: "waiting" });
+    const itemId = reg.enqueueQueueItem(session.id, session.sessionKey, "wait for approval");
+    const queue = new SessionQueue();
+    const getEngine = vi.fn(() => ({}) as any);
+    const ctx = {
+      getConfig: () => ({ gateway: {}, engines: { default: "claude" }, sessions: { autoResumeOnBoot: true } }),
+      connectors: new Map(), startTime: Date.now(), emit: vi.fn(),
+      sessionManager: { getEngine, getQueue: () => queue },
+    } as any;
+    await dispatch.resumePendingWebQueueItems(ctx);
+    expect(await dispatch.redispatchPendingWebQueueItemsForSessionKey(ctx, session.sessionKey)).toBe(0);
+    expect(getEngine).not.toHaveBeenCalled();
+    expect(reg.getQueueItem(itemId)?.status).toBe("pending");
+    reg.updateSession(session.id, { status: "idle" });
+    expect(await dispatch.redispatchPendingWebQueueItemsForSessionKey(ctx, session.sessionKey)).toBe(1);
+    await waitFor(() => reg.getQueueItem(itemId)?.status === "completed");
+  });
+
   it("drains durable pending web queue items in FIFO order", async () => {
     const { dispatch, reg, SessionQueue } = await setup();
     const { runWebSession } = await import("../run-web-session.js");

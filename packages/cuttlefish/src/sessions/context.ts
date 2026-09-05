@@ -585,8 +585,8 @@ function buildOrgContext(hierarchy?: import("../shared/types.js").OrgHierarchy):
         lines.push(`${"  ".repeat(MAX_DEPTH)}- ... and ${deepCount} more at deeper levels`);
       }
 
-      lines.push(`\nFull persona/details: \`GET /api/org/employees/:name\` or the YAML under \`${ORG_DIR}/\`. Create new employees by writing YAML files there.`);
-      lines.push(`Managers and executives may switch a report's engine/model/effort via \`PATCH /api/org/employees/:name\` with \`{"managerName":"<manager>","engine":"...","model":"...","effortLevel":"..."}\`.`);
+      lines.push(`\nFull persona/details: \`GET /api/org/employees/:name\` or the YAML under \`${ORG_DIR}/\`. Employee creation and YAML edits require operator authority.`);
+      lines.push("Org mutations are operator-only. Propose engine/model/effort changes through POST /api/org/change-requests for operator review; a manager identity does not authorize direct PATCH or YAML edits.");
       lines.push(`HR / Org Steward is human-only: managers must not delegate or route requests to \`hr-manager\`. Escalate significant model, overlap, and org-fit questions to the human operator.`);
       return lines.join("\n");
     }
@@ -621,9 +621,9 @@ function buildOrgContext(hierarchy?: import("../shared/types.js").OrgHierarchy):
       const rankMatch = content.match(/rank:\s*(.+)/);
       lines.push(`- **${displayMatch?.[1] || name}** (${name}) — ${deptMatch?.[1] || "unassigned"}, ${rankMatch?.[1] || "employee"}`);
     }
-    lines.push(`\nFull persona/details: \`GET /api/org/employees/:name\` or the YAML under \`${ORG_DIR}/\`. Create new employees by writing YAML files there.`);
-    lines.push(`Managers and executives may switch a report's engine/model/effort via \`PATCH /api/org/employees/:name\` with \`{"managerName":"<manager>","engine":"...","model":"...","effortLevel":"..."}\`.`);
-    lines.push(`Before a significant model change, managers may ask \`hr-manager\` to sanity-check cost, overlap, and org-fit concerns; use the direct PATCH path when the change is straightforward and within the manager's scope.`);
+    lines.push(`\nFull persona/details: \`GET /api/org/employees/:name\` or the YAML under \`${ORG_DIR}/\`. Employee creation and YAML edits require operator authority.`);
+    lines.push("Org mutations are operator-only. Propose engine/model/effort changes through POST /api/org/change-requests for operator review; a manager identity does not authorize direct PATCH or YAML edits.");
+    lines.push("HR / Org Steward is human-only: managers must not delegate or route requests to hr-manager. Escalate significant model, overlap, and org-fit questions to the human operator.");
     return lines.join("\n");
   } catch {
     return null;

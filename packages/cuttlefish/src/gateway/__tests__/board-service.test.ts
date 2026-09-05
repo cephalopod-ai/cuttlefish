@@ -320,3 +320,32 @@ describe("board-service write lock (CON-002)", () => {
     expect(readBoardState(orgDir, "software-delivery")?.tickets.map((t) => t.id)).toEqual(["b"]);
   });
 });
+
+describe("explicit recycle-bin restore freshness", () => {
+  it.each([writeMergedBoard, writeMergedBoardPartial])("refuses expired/stale restore intent before writing and preserves valid restore", (write) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "board-restore-"));
+    const dept = path.join(root, "fixture");
+    fs.mkdirSync(dept);
+    const file = path.join(dept, "board.json");
+    const now = new Date().toISOString();
+    const expired = new Date(Date.now() - 8 * 86400_000).toISOString();
+    fs.writeFileSync(file, JSON.stringify({ tickets: [], retentionDays: 7, deletedTickets: [
+      { ...ticket("valid"), deletedAt: now }, { ...ticket("expired"), deletedAt: expired },
+    ] }));
+    try {
+      readBoardState(root, "fixture"); // normal retention purge precedes restore
+      const before = fs.readFileSync(file, "utf8");
+      for (const entry of [{ ...ticket("expired"), deletedAt: expired }, { ...ticket("valid"), deletedAt: expired }, { ...ticket("missing"), deletedAt: now }]) {
+        expect(() => write(root, "fixture", { tickets: [entry] })).toThrow(BoardConflictError);
+        expect(fs.readFileSync(file, "utf8")).toBe(before);
+      }
+      write(root, "fixture", { tickets: [{ ...ticket("valid"), deletedAt: now }] });
+      expect(readBoardState(root, "fixture")?.tickets[0]).toEqual(ticket("valid"));
+      expect(() => write(root, "fixture", { tickets: [{ ...ticket("valid"), deletedAt: now }] })).toThrow(BoardConflictError);
+      write(root, "fixture", { tickets: [ticket("ordinary-create")] });
+      expect(readBoardState(root, "fixture")?.tickets.some((entry) => entry.id === "ordinary-create")).toBe(true);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
