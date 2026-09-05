@@ -4,15 +4,14 @@
  * model picker.
  *
  * Extracted from `packages/cuttlefish/src/shared/config-schema.ts` in a
- * behavior-preserving modularization. Both consumers of the local `ENGINE_NAMES`
- * membership set moved here together, so that set stays private to this module.
- * The facade calls `validateEngines` and `validateModels`.
+ * behavior-preserving modularization. The facade calls `validateEngines` and
+ * `validateModels`.
  */
-// NOTE: this file keeps its own ENGINE_NAMES Set (below) as the
-// display/membership list for per-engine config keys; isKnownEngine is
-// imported (not the models.js ENGINE_NAMES array) to avoid a second,
-// differently-shaped copy of the same list in this file.
-import { isKnownEngine } from "./models.js";
+// B-INV-001: the engine membership set is NOT re-declared here. `models.ts`
+// owns the canonical `ENGINE_NAMES` list; this module derives its allowed
+// per-engine config keys, its `models.<engine>` gate, and its operator-facing
+// error text from that one source so validation and its message cannot drift.
+import { ENGINE_NAMES, isKnownEngine } from "./models.js";
 import {
   isPlainObject,
   pushUnknownKeys,
@@ -22,8 +21,6 @@ import {
   validateString,
   validateStringArray,
 } from "./config-schema-primitives.js";
-
-const ENGINE_NAMES = new Set(["claude", "codex", "antigravity", "grok", "pi", "kiro", "hermes", "ollama", "kilo", "aider", "vibe"]);
 
 
 function validateEngineConfig(
@@ -53,14 +50,14 @@ export function validateEngines(
     problems.push("engines must be a mapping with at least an engines.claude entry");
     return;
   }
-  pushUnknownKeys(problems, value, ["default", "claude", "codex", "antigravity", "grok", "pi", "kiro", "hermes", "ollama", "kilo", "aider", "vibe"], "engines");
+  pushUnknownKeys(problems, value, ["default", ...ENGINE_NAMES], "engines");
   if (value.default !== undefined) {
     validateString(problems, "engines.default", value.default);
     // DFI-005: this used to only type-check engines.default as a string, so
     // an unknown engine value would pass shape validation and only fail (or
     // silently misbehave) much later at dispatch time.
     if (typeof value.default === "string" && !isKnownEngine(value.default)) {
-      problems.push(`engines.default must be one of: ${[...ENGINE_NAMES].join(", ")} (got "${value.default}")`);
+      problems.push(`engines.default must be one of: ${ENGINE_NAMES.join(", ")} (got "${value.default}")`);
     }
   }
   if (value.claude === undefined) {
@@ -102,7 +99,7 @@ export function validateModels(
     return;
   }
   for (const [engine, entry] of Object.entries(value)) {
-    if (!ENGINE_NAMES.has(engine)) {
+    if (!isKnownEngine(engine)) {
       problems.push(`unknown models config keys: ${engine}`);
       continue;
     }

@@ -138,6 +138,34 @@ describe("runOrchestrationTask", () => {
     runtime.close();
   });
 
+  it("applies review-only execution controls from a declared role kind, not the role's name (F2)", async () => {
+    // `verifier` matches no reviewer predicate by name or capability. Before F2
+    // it was silently treated as an ordinary worker and given the implementer's
+    // prompt; declaring `kind: ["reviewer"]` must reach the same read-only
+    // controls the name "independentReviewer" used to trigger by accident.
+    const { runOrchestrationTask, OrchestrationRuntime } = await loadModules();
+    const engine = new RecordingEngine();
+    const runtime = new OrchestrationRuntime({ config: declaredKindReviewConfig(), dbPath: ":memory:", startReaper: false });
+    const ctx = makeContext(runtime, engine);
+
+    const result = await runOrchestrationTask({
+      context: ctx,
+      task: {
+        taskId: "task-declared-kind",
+        coordinatorId: "coord-declared-kind",
+        coordinatorTemplate: "withReview",
+        mode: "single_worker_with_review",
+        prompt: "Implement and verify a small task",
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.sessions.map((session) => session.role)).toEqual(["seniorImplementer", "verifier"]);
+    expect(engine.prompts[1]).toContain("Review-only pass");
+    runtime.close();
+  });
+
   it("emits one durable telemetry record for a successful single-worker run", async () => {
     const { runOrchestrationTask, OrchestrationRuntime, readOrchestrationTelemetry, ORCHESTRATION_TELEMETRY_LOG } = await loadModules();
     const engine = new RecordingEngine();
@@ -565,6 +593,28 @@ function reviewConfig(): OrchestrationConfig {
     ],
     coordinatorTemplates: [
       { id: "withReview", purpose: "implementation with review", requiredRoles: ["seniorImplementer", "independentReviewer"], optionalRoles: [] },
+    ],
+    quotas: { providers: {}, families: {} },
+  };
+}
+
+/** Reviewer role named `verifier` — no "review" substring, no `code_review`
+ *  capability — that earns its reviewer treatment purely from `kind` (F2). */
+function declaredKindReviewConfig(): OrchestrationConfig {
+  return {
+    workers: [
+      worker({ id: "mockImplementer", provider: "mock", family: "local" }),
+      worker({ id: "mockReviewer", provider: "mock", family: "review" }),
+    ],
+    roles: [
+      { id: "seniorImplementer", requiredCapabilities: ["repo_edit", "coding"], requiredTools: ["git", "filesystem"] },
+      // Deliberately matches NO legacy reviewer heuristic: the id has no "review"
+      // substring, it declares no `code_review` capability, and it carries no
+      // family constraint. Only `kind` makes it a reviewer.
+      { id: "verifier", kind: ["reviewer"], requiredCapabilities: ["coding"], requiredTools: ["filesystem"] },
+    ],
+    coordinatorTemplates: [
+      { id: "withReview", purpose: "implementation with verification", requiredRoles: ["seniorImplementer", "verifier"], optionalRoles: [] },
     ],
     quotas: { providers: {}, families: {} },
   };

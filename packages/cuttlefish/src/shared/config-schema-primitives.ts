@@ -9,9 +9,10 @@
  * re-export them — it imports them like any other section module does.
  */
 
-export function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+// Shared with policy/cron/MCP parsing — see `plain-object.ts`. Re-exported here
+// so every `config-schema-*` module keeps importing it from one place.
+export { isPlainObject } from "./plain-object.js";
+
 export function pushUnknownKeys(
   problems: string[],
   value: Record<string, unknown>,

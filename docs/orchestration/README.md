@@ -87,6 +87,23 @@ concurrency, cost class, and workspace policy. Roles describe required
 capabilities/tools and routing constraints. Coordinator templates define the
 minimum viable team for a task class. Quotas bound active provider/family leases.
 
+#### Role kinds
+
+A role may declare `kind:` — one or more of `implementer`, `reviewer`,
+`independent_reviewer`, `adversarial_reviewer`, `architect`, `qa`. The kind
+drives real execution controls: a reviewer kind receives a generated read-only
+review bundle instead of a working directory, gets a "Review-only pass. Do not
+modify files." prompt prefix, and is never selected as the implementation
+workspace; an implementer kind determines which families the cross-family
+reviewer policy must avoid.
+
+`kind:` is optional and authoritative when present. A role that omits it falls
+back to inference from its id and then its capabilities, which misfires in both
+directions — a role named `preview-generator` is classified as a reviewer
+because its id contains "review", and a role named `verifier` matches nothing at
+all. Declare it. An explicitly empty `kind: []` means "none of these kinds" and
+is the way to keep a role out of the controlled sets regardless of its name.
+
 ### Default config
 
 The seeded default (`packages/cuttlefish/template/orchestration/`) is a curated

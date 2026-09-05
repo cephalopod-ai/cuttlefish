@@ -2,7 +2,17 @@ import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { executableCandidates, isInstalled, resolveBin } from "../resolve-bin.js";
+import { executableCandidates, isInstalled, resolveBin, setProbeTimeoutMsForTest } from "../resolve-bin.js";
+
+// These cases spawn real fixture processes, and the shim path spawns two of
+// them (comspec -> .cmd). Inside the full parallel suite a saturated host can
+// push that past the product's 2s probe bound and report a working fixture as
+// unavailable — a flake about machine load, not about resolution. Give the
+// probe room here; every assertion below still turns on exit status, PATH, or
+// file mode, never on the timeout.
+let restoreProbeTimeout: (() => void) | undefined;
+beforeAll(() => { restoreProbeTimeout = setProbeTimeoutMsForTest(30_000); });
+afterAll(() => { restoreProbeTimeout?.(); });
 
 // POSIX-host resolution semantics (extension-less executables, chmod bits) —
 // meaningless on a real Windows host, where the Windows describe below runs

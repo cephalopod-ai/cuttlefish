@@ -5,6 +5,7 @@ import { safeWriteYaml } from "./safe-write.js";
 import { KNOWLEDGE_OUTBOX_JSONL } from "./paths.js";
 import type { BoardWorkerConfig, CuttlefishConfig, KnowledgeConfig } from "./types.js";
 import { validateConfigShape } from "./config-schema.js";
+import { TIME_OF_DAY_RE } from "./time-of-day.js";
 export { validateConfigShape } from "./config-schema.js";
 
 type ClaudeEngineConfig = CuttlefishConfig["engines"]["claude"];
@@ -17,7 +18,6 @@ type NormalizedBoardWorkerConfig = Required<NonNullable<CuttlefishConfig["boardW
 };
 
 const DEFAULT_BOARD_WORKER_WINDOW = { start: "22:00", end: "04:00" } as const;
-const TIME_OF_DAY_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 function systemTimezone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";

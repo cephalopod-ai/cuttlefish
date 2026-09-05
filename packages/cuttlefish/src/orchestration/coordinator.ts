@@ -1,6 +1,16 @@
 import fs from "node:fs";
 import * as yaml from "js-yaml";
 import { z } from "zod";
+// F2: one canonical role classifier — declared `kind:` first, then the
+// historical name/capability heuristics.
+import {
+  isAdversarialReviewerRole as isAdversarialReviewer,
+  isArchitectRole as isArchitect,
+  isImplementerRole as isImplementer,
+  isIndependentReviewerRole as isIndependentReviewer,
+  isQaRole as isQa,
+  isReviewerRole as isReviewer,
+} from "./role-kinds.js";
 import { MatrixScheduler } from "./scheduler.js";
 import { allocationRequestFileSchema, buildAllocationRequest } from "./schemas.js";
 import type {
@@ -125,17 +135,6 @@ function roleById(roles: RoleDefinition[], roleId: string): RoleDefinition | und
   return roles.find((role) => role.id === roleId);
 }
 
-function isImplementer(roleId: string, role: RoleDefinition | undefined): boolean {
-  if (roleId.toLowerCase().includes("implementer")) return true;
-  if (!role) return false;
-  return role.requiredCapabilities.includes("repo_edit") || role.requiredCapabilities.includes("coding");
-}
-
-function isReviewer(roleId: string, role: RoleDefinition | undefined): boolean {
-  if (roleId.toLowerCase().includes("review")) return true;
-  if (!role) return false;
-  return role.requiredCapabilities.includes("code_review") || role.familyConstraint === "opposite_of_implementer";
-}
 
 function architectureRequest(
   request: AllocationRequest,
@@ -185,30 +184,6 @@ function localHeavyRequest(request: AllocationRequest, config: OrchestrationConf
   };
 }
 
-function isArchitect(roleId: string, role: RoleDefinition | undefined): boolean {
-  const lower = roleId.toLowerCase();
-  if (lower.includes("architect")) return true;
-  return Boolean(role?.requiredCapabilities.some((capability) => capability === "architecture" || capability === "system_design"));
-}
-
-function isIndependentReviewer(roleId: string, role: RoleDefinition | undefined): boolean {
-  const lower = roleId.toLowerCase();
-  if (lower.includes("adversarial")) return false;
-  if (lower.includes("independent") && lower.includes("review")) return true;
-  return isReviewer(roleId, role);
-}
-
-function isAdversarialReviewer(roleId: string, role: RoleDefinition | undefined): boolean {
-  const lower = roleId.toLowerCase();
-  if (lower.includes("adversarial")) return true;
-  return Boolean(role?.requiredCapabilities.some((capability) => capability === "adversarial_review" || capability === "bug_hunt"));
-}
-
-function isQa(roleId: string, role: RoleDefinition | undefined): boolean {
-  const lower = roleId.toLowerCase();
-  if (lower === "qa" || lower.includes("qa")) return true;
-  return Boolean(role?.requiredCapabilities.some((capability) => capability === "validation" || capability === "test_log_triage"));
-}
 
 function isEditingRole(role: RoleDefinition): boolean {
   return role.requiredCapabilities.includes("repo_edit") || role.requiredCapabilities.includes("coding");

@@ -1,3 +1,4 @@
+import { isImplementerRole } from "./role-kinds.js";
 import type {
   ReviewPolicyDecision,
   ReviewPolicyExplanation,
@@ -21,17 +22,10 @@ export function resolveCrossFamilyReviewPolicy(
   };
 }
 
-export function isImplementerRole(roleId: string, role: RoleDefinition | undefined): boolean {
-  if (roleId.toLowerCase().includes("implementer")) return true;
-  if (!role) return false;
-  return role.requiredCapabilities.includes("repo_edit") || role.requiredCapabilities.includes("coding");
-}
-
-export function isReviewerRole(roleId: string, role: RoleDefinition | undefined): boolean {
-  if (roleId.toLowerCase().includes("review")) return true;
-  if (!role) return false;
-  return role.requiredCapabilities.includes("code_review") || role.familyConstraint === "opposite_of_implementer";
-}
+// F2: role classification lives in one place now (`role-kinds.ts`), which
+// resolves a declared `kind:` first and only then falls back to the historical
+// name/capability heuristics. These re-exports keep the existing import path.
+export { isImplementerRole, isReviewerRole } from "./role-kinds.js";
 
 export function selectedImplementerFamilies(
   selected: Array<{ role: string; worker: Worker }>,

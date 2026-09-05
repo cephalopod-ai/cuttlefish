@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Fixed
+- **Engine names have one source.** The config validator no longer keeps its own
+  copy of the engine list. Allowed `engines.*` keys, the `models.<engine>` gate,
+  the `engines.default` error text, and the config type unions all derive from
+  the canonical `ENGINE_NAMES`, so the validator and the message it prints can
+  no longer disagree about which engines are legal.
+- **Two high Browserslist advisories** (GHSA-c83g-rgw3-j3cx,
+  GHSA-73wf-gq98-2v4g) resolved through a workspace override. Development tree
+  only; the production audit was already clean.
+
+### Changed
+- **Orchestration roles can declare what they are.** `roles.yaml` accepts an
+  optional `kind:` — `implementer`, `reviewer`, `independent_reviewer`,
+  `adversarial_reviewer`, `architect`, `qa` — and it is authoritative when
+  present. This replaces guessing from the role id, which misfired in both
+  directions: a role named `preview-generator` was silently given read-only
+  reviewer treatment because its id contains "review", and a role named
+  `verifier` matched nothing, so the cross-family reviewer policy quietly did
+  not apply. An explicitly empty `kind: []` means "none of these kinds". Roles
+  that omit `kind` keep their existing behavior unchanged; the shipped template
+  now declares its kinds.
+
 ## [0.23.9] - 2026-09-03
 
 Cuttlefish 0.23.9 publishes the accumulated A2A, Vibe, security, reliability,

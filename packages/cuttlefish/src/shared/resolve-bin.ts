@@ -17,6 +17,28 @@ const DEFAULT_PATHEXT = ".COM;.EXE;.BAT;.CMD";
 const PROBE_CACHE_MS = 30_000;
 const probeCache = new Map<string, { identity: string; expiresAt: number; available: boolean }>();
 
+/** Wall-clock bound on the `--version` availability probe. The gateway asks
+ *  about every worker repeatedly and the probe is synchronous, so an unbounded
+ *  one starves HTTP and socket timers — 2s is the product bound and is not a
+ *  config surface.
+ *
+ *  Tests raise it. A probe that spawns its fixture through a second process
+ *  layer (the Windows `.cmd` shim path goes comspec -> shim) can exceed 2s on
+ *  fork+exec alone when the host is saturated, which made
+ *  `resolve-bin.test.ts` fail intermittently inside the full parallel suite
+ *  while passing in isolation. That is host scheduling latency, not an
+ *  unusable engine, so the seam belongs in the test rather than in a weaker
+ *  production bound. */
+const DEFAULT_PROBE_TIMEOUT_MS = 2_000;
+let probeTimeoutMs = DEFAULT_PROBE_TIMEOUT_MS;
+
+/** Test-only. Returns a restore function. */
+export function setProbeTimeoutMsForTest(ms: number): () => void {
+  const previous = probeTimeoutMs;
+  probeTimeoutMs = ms;
+  return () => { probeTimeoutMs = previous; };
+}
+
 function isExecutableFile(p: string): boolean {
   try {
     const st = fs.statSync(p);
@@ -167,7 +189,7 @@ export function isInstalled(name: string, override?: string): boolean {
   try {
     execFileSyncCompat(bin, ["--version"], {
       stdio: "ignore",
-      timeout: 2_000,
+      timeout: probeTimeoutMs,
       windowsHide: true,
     });
     return remember(true);

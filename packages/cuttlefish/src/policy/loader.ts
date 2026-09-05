@@ -4,10 +4,8 @@ import { watch, type FSWatcher } from "chokidar";
 import { buildDefaultProfile } from "./profiles.js";
 import { logger } from "../shared/logger.js";
 import type { PolicyProfile, PolicyRule } from "./types.js";
+import { isPlainObject } from "../shared/plain-object.js";
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function parseRule(raw: unknown, index: number): PolicyRule | null {
   if (!isPlainObject(raw)) return null;

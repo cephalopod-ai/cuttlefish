@@ -4,8 +4,8 @@
  * `orchestration` runtime, and `cron` delivery defaults and alerting.
  *
  * Extracted from `packages/cuttlefish/src/shared/config-schema.ts` in a
- * behavior-preserving modularization. `TIME_OF_DAY_RE` has only one consumer and
- * moved here with it.
+ * behavior-preserving modularization. `TIME_OF_DAY_RE` is shared with the config
+ * normalizer in `config.ts`, so it lives in `time-of-day.ts`.
  */
 import {
   isPlainObject,
@@ -14,8 +14,7 @@ import {
   validateNumber,
   validateString,
 } from "./config-schema-primitives.js";
-
-const TIME_OF_DAY_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
+import { TIME_OF_DAY_RE } from "./time-of-day.js";
 
 export function validateBoardWorker(problems: string[], value: unknown): void {
   if (!isPlainObject(value)) {

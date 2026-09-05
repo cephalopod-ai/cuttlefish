@@ -23,8 +23,21 @@ export interface Worker {
   workspacePolicy: WorkspacePolicy;
 }
 
+/** Declarative role kinds (F2). Optional: a role that omits `kind` keeps the
+ *  historical name/capability inference. See `role-kinds.ts`. */
+export type RoleKind =
+  | "implementer"
+  | "reviewer"
+  | "independent_reviewer"
+  | "adversarial_reviewer"
+  | "architect"
+  | "qa";
+
 export interface RoleDefinition {
   id: string;
+  /** Authoritative when present — including an explicitly empty list, which
+   *  declares "none of these kinds". Absent means "infer from name/capabilities". */
+  kind?: RoleKind[];
   requiredCapabilities: Capability[];
   requiredTools: string[];
   allowedFamilies?: string[];

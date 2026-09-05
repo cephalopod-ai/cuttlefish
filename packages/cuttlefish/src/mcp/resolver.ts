@@ -5,6 +5,7 @@ import type { McpGlobalConfig, McpServerConfig, McpServerStdioConfig, McpServerU
 import { CUTTLEFISH_HOME } from "../shared/paths.js";
 import { logger } from "../shared/logger.js";
 import { safeWriteFile } from "../shared/safe-write.js";
+import { isPlainObject } from "../shared/plain-object.js";
 
 // Built-in MCP processes execute in an agent's tool boundary. Exact package
 // versions make the code selected by a Cuttlefish release reviewable and prevent
@@ -58,9 +59,6 @@ export function resolveMcpServers(
   return { mcpServers: servers };
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");

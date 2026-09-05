@@ -11,6 +11,7 @@ import type {
 const costClassSchema = z.enum(["near_zero", "low", "medium", "high"]);
 const prioritySchema = z.enum(["low", "normal", "high"]);
 const familyConstraintSchema = z.enum(["opposite_of_implementer", "same_as_implementer"]);
+const roleKindSchema = z.enum(["implementer", "reviewer", "independent_reviewer", "adversarial_reviewer", "architect", "qa"]);
 const workspacePolicySchema = z.enum(["shared", "read_only", "isolated_worktree"]);
 
 const stringList = z.array(z.string().min(1)).default([]);
@@ -27,6 +28,9 @@ const workerBodySchema = z.object({
 }).strict();
 
 const roleBodySchema = z.object({
+  // F2: declared kinds win over the name/capability heuristics. An empty list is
+  // a deliberate "none of these kinds" declaration, so it is allowed.
+  kind: z.array(roleKindSchema).optional(),
   requiredCapabilities: z.array(z.string().min(1)).min(1),
   requiredTools: stringList,
   allowedFamilies: z.array(z.string().min(1)).optional(),

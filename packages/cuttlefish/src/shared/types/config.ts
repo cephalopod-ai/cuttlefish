@@ -7,6 +7,7 @@ import type {
 } from "./connectors.js";
 import type { GlobalModelFallbackConfig } from "./engine.js";
 import type { McpGlobalConfig } from "./mcp.js";
+import type { EngineName } from "../models.js";
 import type { ModelConfigEntry, ModelsConfig, PortalConfig } from "./models.js";
 import type { CronDelivery } from "./operations.js";
 import type { EmailConfig } from "./email.js";
@@ -215,7 +216,8 @@ export interface CuttlefishConfig {
     exposeResolvedFilePaths?: boolean;
   };
   engines: {
-    default: "claude" | "codex" | "antigravity" | "grok" | "pi" | "hermes" | "kiro" | "ollama" | "kilo" | "aider" | "vibe";
+    /** B-INV-001: derived from the canonical `ENGINE_NAMES` in `shared/models.ts`. */
+    default: EngineName;
     claude: {
       bin: string;
       model: string;
@@ -259,7 +261,7 @@ export interface CuttlefishConfig {
     maxCostUsd?: number;
     interruptOnNewMessage?: boolean;
     rateLimitStrategy?: "wait" | "fallback";
-    fallbackEngine?: "claude" | "codex" | "antigravity" | "grok" | "pi" | "kiro" | "hermes" | "ollama" | "kilo" | "aider" | "vibe";
+    fallbackEngine?: EngineName;
     autoResumeOnBoot?: boolean;
     /** Ledger-0007 Finding 2: cap on concurrent turn dispatches across the whole
      *  gateway (the default (non-orchestration) dispatch path had no cap at all —

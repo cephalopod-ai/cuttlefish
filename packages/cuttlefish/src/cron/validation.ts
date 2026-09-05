@@ -1,13 +1,11 @@
 import crypto from "node:crypto";
 import cron from "node-cron";
 import type { CronDelivery, CronJob } from "../shared/types.js";
+import { isPlainObject } from "../shared/plain-object.js";
 
 const CREATE_FIELDS = new Set(["id", "name", "enabled", "schedule", "timezone", "engine", "model", "employee", "prompt", "delivery"]);
 const UPDATE_FIELDS = new Set(["name", "enabled", "schedule", "timezone", "engine", "model", "employee", "prompt", "delivery"]);
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function optionalString(body: Record<string, unknown>, key: string): string | undefined {
   const value = body[key];
