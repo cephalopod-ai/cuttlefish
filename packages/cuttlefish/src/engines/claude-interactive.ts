@@ -19,6 +19,7 @@ import {
   type InteractiveCumulativeStats,
 } from "./claude-interactive-transcript.js";
 import { claudeHookToDeltas, rateLimitFromStopFailure, sseEventToDeltas } from "./claude-interactive-stream.js";
+import { CompactionStreamGate } from "./claude-compaction-gate.js";
 import { TurnResolver } from "./claude-turn-resolver.js";
 import { ClaudeBackgroundActivity } from "./claude-background-activity.js";
 import { ClaudeLateRecovery } from "./claude-late-recovery.js";
@@ -55,7 +56,7 @@ export class InteractiveClaudeEngine implements InterruptibleEngine, PtyViewEngi
    *  released by a kill->respawn race can't poison the freshly-started turn.
    *  `onStream` is the current turn's delta callback; the per-PTY SSE proxy routes
    *  parsed events here (a PTY outlives its turn, so the proxy looks this up live). */
-  private active = new Map<string, { resolver: TurnResolver; onStream?: (d: StreamDelta) => void; boundProc?: IPty }>();
+  private active = new Map<string, { resolver: TurnResolver; onStream?: (d: StreamDelta) => void; boundProc?: IPty; compactionGate?: CompactionStreamGate }>();
   /** Sessions with an in-flight async idle-spawn (proxy.start awaited) — prevents
    *  a second ensureIdleSpawn from racing in a duplicate PTY during that gap. */
   private idleSpawning = new Set<string>();
@@ -193,10 +194,19 @@ export class InteractiveClaudeEngine implements InterruptibleEngine, PtyViewEngi
       native: nativeCommand,
       shouldDeferStopFailure: () => this.background.hasActive(cuttlefishSessionId),
     });
-    const entry: { resolver: TurnResolver; onStream?: (d: StreamDelta) => void; boundProc?: IPty; activeTools: number } = {
+    const entry: {
+      resolver: TurnResolver;
+      onStream?: (d: StreamDelta) => void;
+      boundProc?: IPty;
+      activeTools: number;
+      compactionGate: CompactionStreamGate;
+    } = {
       resolver,
       onStream: opts.onStream,
       activeTools: 0,
+      // UPS-A6: auto-compaction rides the same SSE stream as a real turn; this
+      // keeps its summary out of the chat and out of the ledger.
+      compactionGate: new CompactionStreamGate(),
     };
     let turnMarkedStarted = false;
     let watchdog: NodeJS.Timeout | undefined;
@@ -304,6 +314,9 @@ export class InteractiveClaudeEngine implements InterruptibleEngine, PtyViewEngi
       if (nativeCommandTimer) clearInterval(nativeCommandTimer);
       if (lostStopRecoveryTimer) clearInterval(lostStopRecoveryTimer);
       this.hookRegistry.unregister(cuttlefishSessionId);
+      // A stream that ended mid-message left text withheld pending a verdict it
+      // never reached. Silence is the worse failure, so release it (UPS-A6).
+      for (const delta of entry.compactionGate.flush()) entry.onStream?.(delta);
       this.active.delete(cuttlefishSessionId);
       if (turnMarkedStarted) this.lifecycle.turnEnded(cuttlefishSessionId); // manager decides kill vs keep-warm
       else cleanupSessionSettings(CLAUDE_SETTINGS_DIR, cuttlefishSessionId);
@@ -366,8 +379,11 @@ export class InteractiveClaudeEngine implements InterruptibleEngine, PtyViewEngi
     entry.resolver.noteActivity();
     if (!entry.onStream) return;
     // Only the main agent's events reach here (the proxy suppresses sub-agent and
-    // auxiliary streams), so deltas go straight to the transcript.
-    for (const d of sseEventToDeltas(e)) entry.onStream(d);
+    // auxiliary streams), so deltas go straight to the transcript — except an
+    // auto-compaction summary, which the gate withholds (UPS-A6).
+    const deltas = sseEventToDeltas(e);
+    const passed = entry.compactionGate ? entry.compactionGate.filter(e, deltas) : deltas;
+    for (const d of passed) entry.onStream(d);
   }
 
   /** Allocate + start a per-PTY SSE forward proxy. Returns the proxy and its port,

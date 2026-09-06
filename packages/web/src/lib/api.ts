@@ -358,11 +358,12 @@ export const api = {
     get<DepartmentBoardResponse>(`/api/org/departments/${name}/board`),
   getSkills: () => get<Record<string, unknown>[]>("/api/skills"),
   getSkill: (name: string) => get<Record<string, unknown>>(`/api/skills/${name}`),
-  getConfig: () => get<Record<string, unknown>>("/api/config"),
+  // The config document is read and written through lib/api-config.ts, which is
+  // the one client that carries the revision header the conflict guard needs
+  // (UPS-A7). A second, header-blind client here is exactly the drift that guard
+  // exists to prevent, so there is deliberately no getConfig/updateConfig.
   reloadConnectors: () =>
     post<{ started: string[]; stopped: string[]; errors: string[] }>("/api/connectors/reload", {}),
-  updateConfig: (data: Record<string, unknown>) =>
-    put<Record<string, unknown>>("/api/config", data),
   getLogs: (n?: number) =>
     get<{ lines: string[] }>(`/api/logs${n ? `?n=${n}` : ""}`),
   getOnboarding: () =>

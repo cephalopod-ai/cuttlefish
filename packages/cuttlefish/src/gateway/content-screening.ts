@@ -14,6 +14,7 @@ import type { ApiContext } from "./api/context.js";
 import { scanOrg } from "./org.js";
 import { SECURITY_REVIEWER_EMPLOYEE_NAME } from "./security-review.js";
 import { logger } from "../shared/logger.js";
+import { readFileUnderPolicy } from "./files/read-security.js";
 import { SKILLS_DIR, CLAUDE_SKILLS_DIR, AGENTS_SKILLS_DIR } from "../shared/paths.js";
 
 const MAX_SCREENED_TEXT_BYTES = 128 * 1024;
@@ -511,14 +512,34 @@ export async function screenAttachmentContent(
     );
   }
   try {
-    const stat = fs.statSync(resolvedPath);
-    if (stat.size > MAX_SCREENED_TEXT_BYTES) {
+    // UPS-A1: the standing file-read policy was applied when the attachment was
+    // recorded, but the bytes are read here — after an arbitrary gap. Re-decide
+    // it against the descriptor this read actually holds, so a path swapped in
+    // the meantime cannot feed the screener (and then the engine) a file the
+    // denylist refuses.
+    // No fileReadRoots gate here on purpose: this path screens files that were
+    // already admitted by their own route's policy (skill roots, recorded
+    // attachments), and imposing the read-roots allowlist now would refuse
+    // legitimate skill files. What this call adds is the part that was missing —
+    // the denylist, the symlink refusal, and the inode binding.
+    const read = readFileUnderPolicy(resolvedPath, {
+      maxBytes: MAX_SCREENED_TEXT_BYTES,
+      authenticated: true,
+    });
+    if (!read.ok) {
+      if (read.code === "too_large") {
+        return unavailableAttachmentScreening(
+          attachment,
+          `Attachment exceeds the ${MAX_SCREENED_TEXT_BYTES}-byte screening limit; human review is required before engine access.`,
+        );
+      }
+      logger.warn(`attachment screening refused for ${resolvedPath}: ${read.reason}`);
       return unavailableAttachmentScreening(
         attachment,
-        `Attachment exceeds the ${MAX_SCREENED_TEXT_BYTES}-byte screening limit; human review is required before engine access.`,
+        "Attachment could not be read for security screening; human review is required before engine access.",
       );
     }
-    const text = fs.readFileSync(resolvedPath, "utf-8");
+    const text = read.buffer.toString("utf-8");
     const source = inferContentSourceForAttachment(attachment);
     const { screening, blocked } = await screenUntrustedText(
       {

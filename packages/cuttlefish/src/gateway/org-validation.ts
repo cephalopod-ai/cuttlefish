@@ -1,4 +1,5 @@
 import path from "node:path";
+import { isReservedActorName, reservedActorNameReason } from "./reserved-actors.js";
 import {
   EMPLOYEE_APPROVAL_POLICIES,
   EMPLOYEE_LIFECYCLES,
@@ -634,6 +635,11 @@ export function validateEmployeeCreate(
   if (!name) return { ok: false, error: "name must be a non-empty string" };
   if (!/^[a-z0-9][a-z0-9._-]*$/i.test(name)) {
     return { ok: false, error: "name must use only letters, numbers, dot, underscore, or hyphen" };
+  }
+  // UPS-A5: refuse a name the audit layer already uses to mean the operator,
+  // the system, or the origin of a piece of work.
+  if (isReservedActorName(name)) {
+    return { ok: false, error: reservedActorNameReason(name) };
   }
   // Case-insensitive: employee YAML filenames derive from `name`, and a
   // case-only variant (e.g. "Foo" vs "foo") would silently collide or

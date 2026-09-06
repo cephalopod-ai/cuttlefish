@@ -2,9 +2,9 @@ import type { IncomingMessage as HttpRequest, ServerResponse } from "node:http";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import Busboy from "busboy";
+import { collectTagFields, firstField, readSingleFileMultipart } from "./multipart.js";
 import { safeFetch, SsrfError } from "../../shared/ssrf-guard.js";
-import { assessFileRead, isAllowedReadPath } from "./read-security.js";
+import { readFileUnderPolicy } from "./read-security.js";
 import { logger } from "../../shared/logger.js";
 import {
   getFilesByIds,
@@ -21,7 +21,6 @@ import { safeRmSync } from "../../shared/safe-delete.js";
 import {
   FILES_DIR,
   buildMessageMedia,
-  expandPath,
   sanitizeUploadFilename,
   uploadDir,
 } from "./storage.js";
@@ -121,61 +120,30 @@ async function handleAttachmentMultipart(
   sessionId: string,
   context: ApiContext,
 ): Promise<void> {
-  return new Promise((resolve) => {
-    const MAX_FILE_SIZE = 50 * 1024 * 1024;
-    const busboy = Busboy({ headers: req.headers, limits: { fileSize: MAX_FILE_SIZE } });
-    let filename = "";
-    let fileBuffer: Buffer | null = null;
-    let caption = "";
-    let artifactKind: ArtifactKind | undefined;
-    let tags: string[] | undefined;
-    let notes: string | null = null;
-    let fileTruncated = false;
-
-    busboy.on("file", (_f: string, file: NodeJS.ReadableStream, info: { filename: string }) => {
-      filename = info.filename;
-      const chunks: Buffer[] = [];
-      file.on("data", (chunk: Buffer) => chunks.push(chunk));
-      (file as NodeJS.EventEmitter).on("limit", () => { fileTruncated = true; });
-      file.on("end", () => { fileBuffer = Buffer.concat(chunks); });
-    });
-    busboy.on("field", (name: string, val: string) => {
-      if (name === "text" || name === "caption") caption = val;
-      if (name === "artifactKind") artifactKind = val as ArtifactKind;
-      if (name === "tag" || name === "tags") {
-        const parsed = name === "tags" ? val.split(",") : [val];
-        tags = [...(tags ?? []), ...parsed.map((tag) => tag.trim()).filter(Boolean)];
-      }
-      if (name === "notes") notes = val;
-    });
-    busboy.on("finish", async () => {
-      if (fileTruncated) {
-        badRequest(res, `File exceeds ${MAX_FILE_SIZE / 1024 / 1024} MB limit`);
-        resolve();
-        return;
-      }
-      if (!fileBuffer || !filename) {
-        badRequest(res, "No file provided");
-        resolve();
-        return;
-      }
-      try {
-        await finalizeAttachment(res, sessionId, filename, fileBuffer, caption, context, {
-          artifactKind: artifactKind ?? "manual",
-          tags,
-          notes,
-        });
-      } catch (err) {
-        serverError(res, err instanceof Error ? err.message : "Attachment failed");
-      }
-      resolve();
-    });
-    busboy.on("error", (err: Error) => {
-      serverError(res, err.message);
-      resolve();
-    });
-    req.pipe(busboy);
+  const MAX_FILE_SIZE = 50 * 1024 * 1024;
+  const outcome = await readSingleFileMultipart(req, {
+    maxFileBytes: MAX_FILE_SIZE,
+    tooLargeMessage: () => `File exceeds ${MAX_FILE_SIZE / 1024 / 1024} MB limit`,
   });
+  if (!outcome.ok) {
+    json(res, { error: outcome.reason }, outcome.status);
+    return;
+  }
+
+  const caption = firstField(outcome.fields, "text") ?? firstField(outcome.fields, "caption") ?? "";
+  const artifactKind = firstField(outcome.fields, "artifactKind") as ArtifactKind | undefined;
+  const notes = firstField(outcome.fields, "notes") ?? null;
+  const tags = collectTagFields(outcome.fields);
+
+  try {
+    await finalizeAttachment(res, sessionId, outcome.filename, outcome.buffer, caption, context, {
+      artifactKind: artifactKind ?? "manual",
+      tags,
+      notes,
+    });
+  } catch (err) {
+    serverError(res, err instanceof Error ? err.message : "Attachment failed");
+  }
 }
 
 async function handleAttachmentJson(
@@ -210,26 +178,29 @@ async function handleAttachmentJson(
 
   const MAX = 50 * 1024 * 1024;
   let buffer: Buffer;
+  // The path we actually opened, so provenance records the file that was read
+  // rather than the spelling the caller happened to send.
+  let sourcePath: string | null = null;
 
   if (localPath) {
-    const expanded = expandPath(localPath);
     // Apply the same secret-file policy /api/files/read enforces (IOP-CF-001):
     // this route previously read any local path directly, bypassing the denylist
     // that blocks .env, private keys, ~/.ssh, and stored auth/credential files.
-    const assessment = assessFileRead(expanded);
-    if (!assessment.allowed) return badRequest(res, assessment.reason || "Refusing to read this file");
-    // CF2-103 (remaining gap): the secret-file blocklist above was the only
-    // check here — a configured gateway.fileReadRoots allowlist was never
-    // consulted, unlike run-attachments.ts's equivalent local-path check.
-    if (!isAllowedReadPath(expanded, context)) {
-      return badRequest(res, `File is outside the configured fileReadRoots: ${localPath}`);
-    }
-    if (!fs.existsSync(expanded) || !fs.statSync(expanded).isFile()) {
-      return badRequest(res, `File not found: ${localPath}`);
-    }
-    if (fs.statSync(expanded).size > MAX) return badRequest(res, "File exceeds 50 MB limit");
-    buffer = fs.readFileSync(expanded);
-    if (!filename) filename = path.basename(expanded);
+    // CF2-103 (remaining gap): a configured gateway.fileReadRoots allowlist was
+    // never consulted here either, unlike run-attachments.ts's equivalent check.
+    // UPS-A1: the policy decision and the read are now bound to one descriptor,
+    // so a path component swapped to a symlink between them cannot hand back a
+    // file the denylist would have refused.
+    const read = readFileUnderPolicy(localPath, {
+      maxBytes: MAX,
+      context,
+      authenticated: true,
+      tooLargeMessage: () => "File exceeds 50 MB limit",
+    });
+    if (!read.ok) return badRequest(res, read.reason);
+    buffer = read.buffer;
+    sourcePath = read.realPath;
+    if (!filename) filename = path.basename(read.realPath);
   } else if (content) {
     buffer = Buffer.from(content, "base64");
     if (buffer.length > MAX) return badRequest(res, "File exceeds 50 MB limit");
@@ -257,7 +228,7 @@ async function handleAttachmentJson(
     await finalizeAttachment(res, sessionId, filename!, buffer, caption, context, {
       artifactKind: artifactKind ?? (localPath ? "generated" : (url ? "downloaded" : "manual")),
       sourceUrl: url ?? null,
-      sourcePath: localPath ? expandPath(localPath) : null,
+      sourcePath,
       tags,
       notes,
     });

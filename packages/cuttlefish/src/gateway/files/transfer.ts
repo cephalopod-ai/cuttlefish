@@ -7,7 +7,7 @@ import type { ApiContext } from "../api/context.js";
 import { logger } from "../../shared/logger.js";
 import { readResponseJson, readResponseText } from "../../shared/fetch-response.js";
 import { badRequest, BodyTooLargeError, json, readBody } from "./responses.js";
-import { assessFileRead, isAllowedReadPath } from "./read-security.js";
+import { readFileUnderPolicy } from "./read-security.js";
 import { FILES_DIR, expandPath } from "./storage.js";
 
 interface TransferSpec {
@@ -38,23 +38,24 @@ type RemoteConfig = { remotes?: Record<string, { url: string; label?: string; to
 export function resolveFileSpec(spec: TransferSpec, context: ApiContext): { buffer: Buffer; filename: string; relativePath: string | null } {
   const expanded = expandPath(spec.file);
 
+  // existsSync only chooses the branch (local path vs. managed file id); the
+  // decision that matters is made below against the descriptor we open.
   if (fs.existsSync(expanded)) {
-    const assessment = assessFileRead(expanded, { authenticated: true });
-    if (!assessment.allowed) {
-      throw new Error(assessment.reason || `Refusing to transfer ${spec.file}`);
+    // UPS-A1: policy and bytes are bound to one descriptor, so the file judged
+    // and the file shipped to the remote cannot be two different inodes.
+    const read = readFileUnderPolicy(spec.file, {
+      maxBytes: MAX_TRANSFER_SIZE,
+      context,
+      authenticated: true,
+      tooLargeMessage: (size) => `File ${spec.file} is ${(size / 1024 / 1024).toFixed(1)} MB — exceeds 50 MB transfer limit`,
+    });
+    if (!read.ok) {
+      throw new Error(read.reason || `Refusing to transfer ${spec.file}`);
     }
-    if (!isAllowedReadPath(expanded, context)) {
-      throw new Error(`File ${spec.file} is outside the configured fileReadRoots`);
-    }
-    const stat = fs.statSync(expanded);
-    if (stat.size > MAX_TRANSFER_SIZE) {
-      throw new Error(`File ${spec.file} is ${(stat.size / 1024 / 1024).toFixed(1)} MB — exceeds 50 MB transfer limit`);
-    }
-    const buffer = fs.readFileSync(expanded);
-    const filename = path.basename(expanded);
+    const filename = path.basename(read.realPath);
     const cuttlefishHome = path.join(os.homedir(), ".cuttlefish");
-    const relativePath = expanded.startsWith(cuttlefishHome) ? path.relative(cuttlefishHome, expanded) : null;
-    return { buffer, filename, relativePath };
+    const relativePath = read.realPath.startsWith(cuttlefishHome) ? path.relative(cuttlefishHome, read.realPath) : null;
+    return { buffer: read.buffer, filename, relativePath };
   }
 
   const meta = getFile(spec.file);

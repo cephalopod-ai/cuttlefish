@@ -2,7 +2,7 @@ import type { IncomingMessage as HttpRequest, ServerResponse } from "node:http";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import Busboy from "busboy";
+import { collectTagFields, firstField, readSingleFileMultipart } from "./multipart.js";
 import { readJsonBody } from "../http-helpers.js";
 import type { ApiContext } from "../api/context.js";
 import { safeFetch, SsrfError } from "../../shared/ssrf-guard.js";
@@ -191,85 +191,46 @@ export async function saveFile(result: UploadResult, context: ApiContext): Promi
 }
 
 export async function handleMultipartUpload(req: HttpRequest, res: ServerResponse, context: ApiContext): Promise<void> {
-  return new Promise((resolve) => {
-    const busboy = Busboy({ headers: req.headers, limits: { fileSize: MAX_UPLOAD_SIZE } });
-    let filename = "";
-    let fileBuffer: Buffer | null = null;
-    let customPath: string | null = null;
-    let open = false;
-    let sessionId: string | null = null;
-    let artifactKind: ArtifactKind | undefined;
-    let tags: string[] | undefined;
-    let notes: string | null = null;
-    let fileTruncated = false;
-
-    busboy.on("file", (_fieldname: string, file: NodeJS.ReadableStream, info: { filename: string }) => {
-      filename = info.filename;
-      const chunks: Buffer[] = [];
-      file.on("data", (chunk: Buffer) => chunks.push(chunk));
-      (file as NodeJS.EventEmitter).on("limit", () => { fileTruncated = true; });
-      file.on("end", () => { fileBuffer = Buffer.concat(chunks); });
-    });
-
-    busboy.on("field", (name: string, val: string) => {
-      if (name === "path") customPath = val;
-      if (name === "open") open = val === "true" || val === "1";
-      if (name === "sessionId") sessionId = val;
-      if (name === "artifactKind") artifactKind = val as ArtifactKind;
-      if (name === "tag" || name === "tags") {
-        const parsed = name === "tags" ? val.split(",") : [val];
-        tags = [...(tags ?? []), ...parsed.map((tag) => tag.trim()).filter(Boolean)];
-      }
-      if (name === "notes") notes = val;
-    });
-
-    busboy.on("finish", async () => {
-      if (fileTruncated) {
-        badRequest(res, uploadTooLargeMessage());
-        resolve();
-        return;
-      }
-      if (!fileBuffer || !filename) {
-        badRequest(res, "No file provided");
-        resolve();
-        return;
-      }
-      if (rejectCrossSessionUpload(req, res, sessionId)) {
-        resolve();
-        return;
-      }
-      try {
-        const meta = await saveFile({
-          id: crypto.randomUUID(),
-          filename,
-          buffer: fileBuffer,
-          customPath,
-          open,
-          sessionId,
-          artifactKind: artifactKind ?? "input",
-          sourcePath: customPath,
-          tags,
-          notes,
-        }, context);
-        json(res, meta, 201);
-      } catch (err) {
-        if (err instanceof FileRequestError) {
-          badRequest(res, err.message);
-          resolve();
-          return;
-        }
-        serverError(res, err instanceof Error ? err.message : "Upload failed");
-      }
-      resolve();
-    });
-
-    busboy.on("error", (err: Error) => {
-      serverError(res, err.message);
-      resolve();
-    });
-
-    req.pipe(busboy);
+  const outcome = await readSingleFileMultipart(req, {
+    maxFileBytes: MAX_UPLOAD_SIZE,
+    tooLargeMessage: uploadTooLargeMessage,
   });
+  if (!outcome.ok) {
+    json(res, { error: outcome.reason }, outcome.status);
+    return;
+  }
+
+  const customPath = firstField(outcome.fields, "path") ?? null;
+  const openField = firstField(outcome.fields, "open");
+  const open = openField === "true" || openField === "1";
+  const sessionId = firstField(outcome.fields, "sessionId") ?? null;
+  const artifactKind = firstField(outcome.fields, "artifactKind") as ArtifactKind | undefined;
+  const notes = firstField(outcome.fields, "notes") ?? null;
+  const tags = collectTagFields(outcome.fields);
+
+  if (rejectCrossSessionUpload(req, res, sessionId)) return;
+
+  try {
+    const meta = await saveFile({
+      id: crypto.randomUUID(),
+      filename: outcome.filename,
+      buffer: outcome.buffer,
+      customPath,
+      open,
+      sessionId,
+      artifactKind: artifactKind ?? "input",
+      sourcePath: customPath,
+      tags,
+      notes,
+    }, context);
+    json(res, meta, 201);
+  } catch (err) {
+    if (err instanceof FileRequestError) {
+      badRequest(res, err.message);
+      return;
+    }
+    serverError(res, err instanceof Error ? err.message : "Upload failed");
+  }
 }
 
 export async function handleJsonUpload(req: HttpRequest, res: ServerResponse, context: ApiContext): Promise<void> {

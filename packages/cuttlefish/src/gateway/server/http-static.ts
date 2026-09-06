@@ -2,6 +2,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { compressStream, isCompressibleExt, pickEncoding } from "../compress.js";
+import { CONFIG_REVISION_HEADER } from "../config-revision.js";
 
 function authorityOf(hostHeader: string | undefined): string | null {
   // Normalize a Host header to a lowercase `host[:port]` authority for comparison.
@@ -43,7 +44,11 @@ export function setCorsHeaders(req: http.IncomingMessage, res: http.ServerRespon
     res.setHeader("Vary", "Origin");
     res.setHeader("Access-Control-Allow-Credentials", "true");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    // The config revision header has to travel in BOTH directions: an allowed
+    // cross-origin caller that cannot send it silently loses the conflict guard,
+    // and one that cannot read it back has no revision to send next (UPS-A7).
+    res.setHeader("Access-Control-Allow-Headers", `Content-Type, Authorization, ${CONFIG_REVISION_HEADER}`);
+    res.setHeader("Access-Control-Expose-Headers", CONFIG_REVISION_HEADER);
   }
   return allowed;
 }

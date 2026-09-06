@@ -80,6 +80,16 @@ function transcriptLineTimestampMs(msg: any): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+/**
+ * UPS-A6: an auto-compaction response is an ordinary assistant message in the
+ * transcript, so the late-recovery reader can pick it as a turn's result text
+ * even though the live stream refused it. Its opening `<analysis>` tag is the
+ * same stable marker the stream gate uses.
+ */
+export function isCompactionSummaryText(text: string): boolean {
+  return text.trimStart().startsWith("<analysis>");
+}
+
 export function lastAssistantTextFromTranscript(transcriptPath: string, afterMs?: number): string | undefined {
   let raw: string;
   try { raw = fs.readFileSync(transcriptPath, "utf-8"); } catch { return undefined; }
@@ -97,7 +107,7 @@ export function lastAssistantTextFromTranscript(transcriptPath: string, afterMs?
     const content = msg?.message?.content;
     if (!Array.isArray(content)) continue;
     const text = content.filter((b: any) => b?.type === "text").map((b: any) => String(b.text ?? "")).join("");
-    if (text.trim()) last = text;
+    if (text.trim() && !isCompactionSummaryText(text)) last = text;
   }
   return last;
 }

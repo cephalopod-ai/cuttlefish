@@ -130,12 +130,188 @@ export function isAllowedReadPath(
   return roots.some((root) => isInsidePath(resolved, realpathOrResolved(root)));
 }
 
+/**
+ * Bytes read under the standing file-read policy, bound to a single inode.
+ *
+ * `assessFileRead` + `isAllowedReadPath` decide on a *path*. A caller that then
+ * re-opens that path has made its policy decision about one inode and its read
+ * about whatever the path resolves to a few syscalls later — a path component
+ * swapped to a symlink in between yields a file the denylist would have refused
+ * (`.env`, `~/.ssh`, `gateway.json`). `readFileUnderPolicy` closes that window:
+ * it opens once, holds the descriptor for the whole decision, and reads the
+ * bytes back out of that same descriptor.
+ */
+export type PolicyReadResult =
+  | { ok: true; buffer: Buffer; realPath: string; size: number }
+  // `size` and `realPath` are carried on the `too_large` refusal so a caller
+  // that reports an oversized file (rather than erroring on it) still has the
+  // facts about the inode that was actually opened.
+  | { ok: false; reason: string; code: PolicyReadRefusal; size?: number; realPath?: string };
+
+export type PolicyReadRefusal =
+  | "not_found"
+  | "not_a_file"
+  | "symlink"
+  | "blocked"
+  | "outside_roots"
+  | "too_large"
+  | "raced"
+  | "io";
+
+export interface PolicyReadOptions {
+  /** Hard ceiling, enforced from `fstat` on the held descriptor. */
+  maxBytes: number;
+  /** When given, the descriptor's real path must also sit inside `gateway.fileReadRoots`. */
+  context?: Pick<ApiContext, "getConfig">;
+  authenticated?: boolean;
+  /** Caller-worded size refusal; receives the real size in bytes. */
+  tooLargeMessage?: (size: number) => string;
+}
+
+// O_NOFOLLOW is POSIX-only. Where the platform does not define it we fall back
+// to an lstat pre-check, which is weaker (it is itself a path check) but still
+// refuses the obvious symlinked leaf; the dev/ino equality check below is what
+// binds the policy decision to the opened inode on every platform.
+const O_NOFOLLOW = typeof fs.constants.O_NOFOLLOW === "number" ? fs.constants.O_NOFOLLOW : 0;
+// O_NONBLOCK matters because we open BEFORE we know what the path names. Opening
+// a FIFO for reading blocks until a writer appears — synchronously, on the
+// gateway's only thread — so a caller naming a fifo would wedge the process
+// forever. With O_NONBLOCK the open returns immediately and `fstat` below
+// refuses it for not being a regular file. It has no effect on regular files,
+// which are the only thing this function ever goes on to read.
+const O_NONBLOCK = typeof fs.constants.O_NONBLOCK === "number" ? fs.constants.O_NONBLOCK : 0;
+
+function readAllFromDescriptor(fd: number, size: number): Buffer | null {
+  const buffer = Buffer.allocUnsafe(size);
+  let read = 0;
+  while (read < size) {
+    const n = fs.readSync(fd, buffer, read, size - read, read);
+    if (n <= 0) break;
+    read += n;
+  }
+  return read === size ? buffer : null;
+}
+
+/**
+ * Open `requestedPath` once, decide the standing file-read policy against the
+ * descriptor we are holding, and return the bytes read from that descriptor.
+ *
+ * The path is canonicalised *after* the open and proven to name the same inode
+ * (device + inode number) as the open descriptor, so the path the policy judged
+ * and the bytes the caller receives cannot be two different files.
+ */
+export function readFileUnderPolicy(requestedPath: string, opts: PolicyReadOptions): PolicyReadResult {
+  const resolved = path.resolve(expandPath(requestedPath));
+
+  if (O_NOFOLLOW === 0) {
+    try {
+      if (fs.lstatSync(resolved).isSymbolicLink()) {
+        return { ok: false, code: "symlink", reason: "Refusing to read through a symbolic link" };
+      }
+    } catch {
+      return { ok: false, code: "not_found", reason: `File not found: ${requestedPath}` };
+    }
+  }
+
+  let fd: number;
+  try {
+    fd = fs.openSync(resolved, fs.constants.O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ELOOP" || code === "EMLINK") {
+      return { ok: false, code: "symlink", reason: "Refusing to read through a symbolic link" };
+    }
+    if (code === "ENOENT" || code === "ENOTDIR") {
+      return { ok: false, code: "not_found", reason: `File not found: ${requestedPath}` };
+    }
+    if (code === "EISDIR") return { ok: false, code: "not_a_file", reason: "Not a file" };
+    return { ok: false, code: "io", reason: err instanceof Error ? err.message : "Cannot open file" };
+  }
+
+  try {
+    const held = fs.fstatSync(fd, { bigint: true });
+    // Regular files only: a directory, fifo, socket or device is not something
+    // this function reads, and refusing here is what makes the O_NONBLOCK open
+    // above safe.
+    if (!held.isFile()) return { ok: false, code: "not_a_file", reason: "Not a file" };
+
+    // Canonicalise after the open, then prove the canonical path still names the
+    // inode we are holding. Without this the policy would be judging a path that
+    // may already point somewhere else.
+    let real: string;
+    try {
+      real = fs.realpathSync.native(resolved);
+    } catch {
+      return { ok: false, code: "not_found", reason: `File not found: ${requestedPath}` };
+    }
+    let named: fs.BigIntStats;
+    try {
+      named = fs.lstatSync(real, { bigint: true });
+    } catch {
+      return { ok: false, code: "raced", reason: "File changed while it was being read" };
+    }
+    if (named.dev !== held.dev || named.ino !== held.ino) {
+      return { ok: false, code: "raced", reason: "File changed while it was being read" };
+    }
+
+    const assessment = assessFileRead(real, { authenticated: opts.authenticated });
+    if (!assessment.allowed) {
+      return { ok: false, code: "blocked", reason: assessment.reason || "Refusing to read this file" };
+    }
+    if (opts.context && !isAllowedReadPath(real, opts.context)) {
+      return { ok: false, code: "outside_roots", reason: `File is outside the configured fileReadRoots: ${requestedPath}` };
+    }
+
+    const size = Number(held.size);
+    if (size > opts.maxBytes) {
+      return {
+        ok: false,
+        code: "too_large",
+        reason: opts.tooLargeMessage?.(size) ?? `File exceeds ${Math.floor(opts.maxBytes / 1024 / 1024)} MB limit`,
+        size,
+        realPath: real,
+      };
+    }
+
+    const buffer = readAllFromDescriptor(fd, size);
+    if (!buffer) return { ok: false, code: "raced", reason: "File changed while it was being read" };
+    return { ok: true, buffer, realPath: real, size };
+  } catch (err) {
+    return { ok: false, code: "io", reason: err instanceof Error ? err.message : "Read failed" };
+  } finally {
+    try { fs.closeSync(fd); } catch { /* descriptor already gone */ }
+  }
+}
+
 export interface FileClassification {
   mime: string;
   size: number;
   tooLarge: boolean;
   binary: boolean;
   content?: string;
+}
+
+/**
+ * Classify bytes already read under policy. Separated from `classifyFile` so a
+ * caller holding the bytes from `readFileUnderPolicy` never re-opens the path
+ * just to be told what is in it.
+ */
+export function classifyBuffer(absPath: string, buffer: Buffer): FileClassification {
+  const size = buffer.length;
+  const mime = mimeFromFilename(absPath);
+
+  if (isBinaryMime(mime)) {
+    return { mime, size, tooLarge: false, binary: true };
+  }
+
+  const scanLen = Math.min(buffer.length, 8192);
+  for (let i = 0; i < scanLen; i++) {
+    if (buffer[i] === 0) {
+      return { mime, size, tooLarge: false, binary: true };
+    }
+  }
+
+  return { mime, size, tooLarge: false, binary: false, content: redactText(buffer.toString("utf-8")) };
 }
 
 export function classifyFile(absPath: string): FileClassification {
@@ -150,13 +326,5 @@ export function classifyFile(absPath: string): FileClassification {
     return { mime, size, tooLarge: false, binary: true };
   }
 
-  const buffer = fs.readFileSync(absPath);
-  const scanLen = Math.min(buffer.length, 8192);
-  for (let i = 0; i < scanLen; i++) {
-    if (buffer[i] === 0) {
-      return { mime, size, tooLarge: false, binary: true };
-    }
-  }
-
-  return { mime, size, tooLarge: false, binary: false, content: redactText(buffer.toString("utf-8")) };
+  return classifyBuffer(absPath, fs.readFileSync(absPath));
 }

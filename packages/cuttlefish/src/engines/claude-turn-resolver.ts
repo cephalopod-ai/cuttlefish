@@ -1,6 +1,6 @@
 import type { EngineResult } from "../shared/types.js";
 import type { HookPayload } from "../gateway/hook-registry.js";
-import { stripReasoningBlocks } from "./claude-interactive-transcript.js";
+import { isCompactionSummaryText, stripReasoningBlocks } from "./claude-interactive-transcript.js";
 
 const STOP_FAILURE_GRACE_MS = 20_000;
 /** StopFailure errors that must settle immediately. Rate-limit/billing/auth
@@ -98,7 +98,12 @@ export class TurnResolver {
     // Native local commands (/usage, /limits, …) produce no new assistant
     // message; the Stop hook's last_assistant_message is the prior turn's stale
     // text. Settling with it would persist a duplicate chat echo — settle empty.
-    const text = this.opts.native ? "" : stripReasoningBlocks(String(this.stopPayload.last_assistant_message ?? ""));
+    // UPS-A6: an auto-compaction response is an assistant message like any
+    // other, so it can be the one the Stop hook reports. Settling with it would
+    // persist the summarizer's output as this turn's result — the same leak the
+    // stream gate refuses live.
+    const stopText = String(this.stopPayload.last_assistant_message ?? "");
+    const text = this.opts.native || isCompactionSummaryText(stopText) ? "" : stripReasoningBlocks(stopText);
     this.settle({ sessionId: sid, result: text, error: undefined, numTurns: 1 });
   }
 

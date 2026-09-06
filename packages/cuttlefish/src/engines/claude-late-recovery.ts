@@ -1,7 +1,7 @@
 import type { EngineRunOpts } from "../shared/types.js";
 import type { HookRegistry } from "../gateway/hook-registry.js";
 import { logger } from "../shared/logger.js";
-import { stripReasoningBlocks } from "./claude-interactive-transcript.js";
+import { isCompactionSummaryText, stripReasoningBlocks } from "./claude-interactive-transcript.js";
 
 const LATE_RECOVERY_WINDOW_MS = 10 * 60 * 1000;
 
@@ -22,7 +22,9 @@ export class ClaudeLateRecovery {
       const text = String(h.last_assistant_message ?? "");
       const sid = typeof h.session_id === "string" ? h.session_id : "";
       this.cancel(cuttlefishSessionId);
-      const safeText = stripReasoningBlocks(text);
+      // UPS-A6: never recover a turn by promoting an auto-compaction summary
+      // into the chat — an empty recovery is the honest outcome there.
+      const safeText = isCompactionSummaryText(text) ? "" : stripReasoningBlocks(text);
       if (safeText.trim()) {
         logger.info(`InteractiveClaudeEngine: late Stop superseded failed turn for ${cuttlefishSessionId}`);
         opts.onLateRecovery?.({ result: safeText, sessionId: sid });

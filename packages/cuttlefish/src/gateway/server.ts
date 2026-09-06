@@ -49,6 +49,7 @@ import { startStuckTicketWatchdog } from "./stuck-ticket-watchdog.js";
 import { logBoardSummary } from "./board-service.js";
 import { syncBoardForEvent } from "./board-sync.js";
 import { ensureGatewayAuthToken, shouldRequireGatewayAuth, validateGatewayExposure } from "./auth.js";
+import { describeOwnerOnlyResult, ensureOwnerOnlyDirectory } from "../shared/owner-only.js";
 import { assertFetchOk, jsonApiHeaders } from "./internal-auth.js";
 import { createGatewayNotificationSink } from "./notification-sink.js";
 import { createGatewayOrchestrationRuntime } from "./orchestration-runtime-factory.js";
@@ -193,6 +194,11 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
 
   const exposure = validateGatewayExposure(config);
   if (!exposure.ok) throw new Error(exposure.error);
+  // UPS-A3: the instance home holds the gateway token, connector secrets and
+  // every transcript. Tighten it (POSIX) or report it (Windows) before minting
+  // the token that lives inside it.
+  const ownerOnly = describeOwnerOnlyResult(CUTTLEFISH_HOME, ensureOwnerOnlyDirectory(CUTTLEFISH_HOME));
+  if (ownerOnly) logger[ownerOnly.level](ownerOnly.message);
   const gatewayAuthToken = ensureGatewayAuthToken(CUTTLEFISH_HOME);
   if (shouldRequireGatewayAuth(config)) logger.info("Gateway auth enabled for privileged API and WebSocket routes");
 

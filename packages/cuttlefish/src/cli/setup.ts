@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import * as yaml from "js-yaml";
 import { isInstalled, resolveBin } from "../shared/resolve-bin.js";
 import { safeWriteFile } from "../shared/safe-write.js";
+import { describeOwnerOnlyResult, ensureOwnerOnlyDirectory } from "../shared/owner-only.js";
 import { buildEngineEnv } from "../shared/engine-env.js";
 import {
   CUTTLEFISH_HOME,
@@ -685,6 +686,12 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
   const created: string[] = [];
 
   if (ensureDir(CUTTLEFISH_HOME)) created.push(CUTTLEFISH_HOME);
+
+  // UPS-A3: this directory is about to hold the gateway token, connector
+  // secrets and every transcript. Make it owner-only where we can, and say so
+  // plainly where we cannot (Windows ACLs are reported, never rewritten).
+  const ownerOnly = describeOwnerOnlyResult(CUTTLEFISH_HOME, ensureOwnerOnlyDirectory(CUTTLEFISH_HOME));
+  if (ownerOnly) console.log(`${ownerOnly.level === "warn" ? "⚠️ " : "  "}${ownerOnly.message}`);
 
   // Copy or create config files.
   // DEFAULT_CONFIG (above) is the canonical default. `template/config.yaml` is an

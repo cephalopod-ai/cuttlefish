@@ -77,10 +77,20 @@ afterAll(() => {
 function makeRes() {
   let status = 200;
   const chunks: Buffer[] = [];
+  const headers = new Map<string, string>();
   const res = {
     writeHead(s: number) {
       status = s;
       return this;
+    },
+    // The config routes stamp the revision header (UPS-A7), so the stub has to
+    // accept headers the way a real ServerResponse does.
+    setHeader(name: string, value: string) {
+      headers.set(name.toLowerCase(), String(value));
+      return this;
+    },
+    getHeader(name: string) {
+      return headers.get(name.toLowerCase());
     },
     end(buf?: Buffer | string) {
       if (buf) chunks.push(Buffer.isBuffer(buf) ? buf : Buffer.from(buf));
@@ -88,6 +98,9 @@ function makeRes() {
   } as unknown as ServerResponse;
   return {
     res,
+    header(name: string) {
+      return headers.get(name.toLowerCase());
+    },
     get status() {
       return status;
     },
@@ -165,7 +178,10 @@ describe("PUT /api/config", () => {
     await api.handleApiRequest(makeReq("PUT", "/api/config", getCap.body), putCap.res, ctx);
 
     expect(putCap.status).toBe(200);
-    expect(putCap.body).toEqual({ status: "ok" });
+    // The write hands back the revision it produced, so the page that just
+    // saved is not stale against its own change (UPS-A7).
+    expect(putCap.body).toEqual({ status: "ok", revision: expect.any(String) });
+    expect(putCap.header("x-cuttlefish-config-revision")).toBe(putCap.body.revision);
 
     const saved = yaml.load(fs.readFileSync(path.join(tmpHome, "config.yaml"), "utf-8")) as Record<string, any>;
     expect(saved.workspaces).toEqual({

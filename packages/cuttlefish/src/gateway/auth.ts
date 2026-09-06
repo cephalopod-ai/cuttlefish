@@ -4,6 +4,7 @@ import path from "node:path";
 import type { IncomingMessage } from "node:http";
 import type { CuttlefishConfig } from "../shared/types.js";
 import { createAuthToken, safeEqual } from "./auth-crypto.js";
+import { logger } from "../shared/logger.js";
 
 // PTY access tokens and scoped session tokens live in dedicated modules
 // (pty-auth.ts, scoped-token.ts). They are re-exported here so existing
@@ -320,6 +321,57 @@ function saveStoredAuthSessions(cuttlefishHome: string, devices: StoredAuthSessi
   fs.chmodSync(file, 0o600);
 }
 
+/**
+ * UPS-A4: `lastSeenAt` is a convenience field, and every authenticated request
+ * used to rewrite the device file to stamp it. A dashboard that polls turns that
+ * into a sustained write loop, and on a full disk the ENOSPC from a presence
+ * stamp is thrown out of request handling — a cosmetic field taking the gateway
+ * down with it. One write per device per minute, and a write that cannot land is
+ * dropped rather than raised.
+ */
+const AUTH_TOUCH_INTERVAL_MS = 60_000;
+/**
+ * Bound on the throttle map. Entries are keyed per (home, device); a revoked
+ * device leaves its key behind, so the map is pruned of expired entries once it
+ * grows past what any real install has. Losing an entry only costs one extra
+ * write.
+ */
+const AUTH_TOUCH_TRACKED_MAX = 256;
+const lastTouchWriteAt = new Map<string, number>();
+
+function pruneAuthTouchThrottle(now: number): void {
+  if (lastTouchWriteAt.size <= AUTH_TOUCH_TRACKED_MAX) return;
+  for (const [key, at] of lastTouchWriteAt) {
+    if (now - at >= AUTH_TOUCH_INTERVAL_MS) lastTouchWriteAt.delete(key);
+  }
+  // Still oversized (every entry is fresh): drop the oldest insertions, which
+  // Map iterates first.
+  while (lastTouchWriteAt.size > AUTH_TOUCH_TRACKED_MAX) {
+    const oldest = lastTouchWriteAt.keys().next();
+    if (oldest.done) break;
+    lastTouchWriteAt.delete(oldest.value);
+  }
+}
+
+/** Test seam: forget the throttle so a suite can observe consecutive writes. */
+export function resetAuthTouchThrottleForTests(): void {
+  lastTouchWriteAt.clear();
+}
+
+function saveTouchedAuthSessions(cuttlefishHome: string, devices: StoredAuthSessionDevice[]): boolean {
+  try {
+    saveStoredAuthSessions(cuttlefishHome, devices);
+    return true;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOSPC" || code === "EDQUOT" || code === "EROFS" || code === "EACCES" || code === "EPERM") {
+      logger.warn(`Could not record device activity (${code}); continuing without the lastSeenAt stamp.`);
+      return false;
+    }
+    throw err;
+  }
+}
+
 function inferAuthSessionName(req: Pick<IncomingMessage, "headers" | "socket">, kind: AuthSessionKind): string {
   if (kind === "local") return "This Mac";
   const ua = headerValue(req.headers, "user-agent") || "";
@@ -382,7 +434,14 @@ export function touchAuthSession(
     ...(req.socket.remoteAddress ? { lastIp: req.socket.remoteAddress } : {}),
     ...(headerValue(req.headers, "user-agent") ? { userAgent: headerValue(req.headers, "user-agent") } : {}),
   };
-  saveStoredAuthSessions(cuttlefishHome, devices);
+  const throttleKey = `${cuttlefishHome}\u0000${deviceId}`;
+  const lastWrite = lastTouchWriteAt.get(throttleKey);
+  if (lastWrite === undefined || now - lastWrite >= AUTH_TOUCH_INTERVAL_MS) {
+    if (saveTouchedAuthSessions(cuttlefishHome, devices)) {
+      lastTouchWriteAt.set(throttleKey, now);
+      pruneAuthTouchThrottle(now);
+    }
+  }
   const { tokenHash: _tokenHash, ...device } = devices[idx];
   return device;
 }

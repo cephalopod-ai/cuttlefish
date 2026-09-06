@@ -11,8 +11,10 @@ import { fileEtag, isFileNotModified } from "./files/http-cache.js";
 import {
   MAX_READ_SIZE,
   assessFileRead,
+  classifyBuffer,
   classifyFile,
   isAllowedReadPath,
+  readFileUnderPolicy,
   readPathCandidates,
   resolveReadPath,
   type FileClassification,
@@ -23,6 +25,7 @@ import {
   cleanupOldUploads,
   ensureFilesDir,
   isServablePath,
+  mimeFromFilename,
   resolveCustomUploadPath,
   sanitizeSessionId,
   sanitizeUploadFilename,
@@ -52,7 +55,9 @@ export {
   sanitizeUploadFilename,
   uploadDir,
   assessFileRead,
+  classifyBuffer,
   classifyFile,
+  readFileUnderPolicy,
 };
 export type { FileClassification, FileReadAssessment };
 
@@ -78,27 +83,53 @@ export async function handleFilesRequest(
       notFound(res);
       return true;
     }
-    if (!fs.statSync(resolvedPath).isFile()) {
-      badRequest(res, "Not a file");
-      return true;
-    }
-    const assessment = assessFileRead(resolvedPath, { authenticated: true });
-    if (!assessment.allowed) {
-      json(res, { error: assessment.reason || "File read blocked by security policy" }, 403);
-      return true;
-    }
-    if (!isAllowedReadPath(resolvedPath, context)) {
-      json(res, { error: "File path is outside configured fileReadRoots" }, 403);
+    // UPS-A1: one descriptor decides the policy and supplies the bytes, so the
+    // file the denylist judged is the file whose contents are returned.
+    const read = readFileUnderPolicy(resolvedPath, {
+      maxBytes: MAX_READ_SIZE,
+      context,
+      authenticated: true,
+    });
+    const exposeResolved = context.getConfig().gateway?.exposeResolvedFilePaths;
+    if (!read.ok) {
+      if (read.code === "too_large") {
+        json(res, {
+          path: requested,
+          ...(exposeResolved ? { resolvedPath: read.realPath ?? resolvedPath } : {}),
+          mime: mimeFromFilename(read.realPath ?? resolvedPath),
+          size: read.size ?? 0,
+          tooLarge: true,
+        });
+        return true;
+      }
+      if (read.code === "not_found") {
+        notFound(res);
+        return true;
+      }
+      if (read.code === "not_a_file") {
+        badRequest(res, "Not a file");
+        return true;
+      }
+      if (read.code === "io" || read.code === "raced") {
+        serverError(res, read.reason);
+        return true;
+      }
+      if (read.code === "outside_roots") {
+        // Deliberately not the helper's wording: that names the resolved path,
+        // and this response must not disclose an absolute host path.
+        json(res, { error: "File path is outside configured fileReadRoots" }, 403);
+        return true;
+      }
+      json(res, { error: read.reason || "File read blocked by security policy" }, 403);
       return true;
     }
     try {
-      const c = classifyFile(resolvedPath);
+      const c = classifyBuffer(read.realPath, read.buffer);
       json(res, {
         path: requested,
-        ...(context.getConfig().gateway?.exposeResolvedFilePaths ? { resolvedPath } : {}),
+        ...(exposeResolved ? { resolvedPath: read.realPath } : {}),
         mime: c.mime,
         size: c.size,
-        ...(c.tooLarge ? { tooLarge: true } : {}),
         ...(c.binary ? { binary: true } : {}),
         ...(c.content !== undefined ? { content: c.content } : {}),
       });

@@ -28,6 +28,7 @@ import type {
   OrgWarning,
 } from "../shared/types.js";
 import { logger } from "../shared/logger.js";
+import { isReservedActorName, reservedActorNameReason } from "./reserved-actors.js";
 import { getAllParents } from "./org-hierarchy.js";
 import {
   isNonEmptyRecord,
@@ -310,6 +311,15 @@ export function scanOrg(warningsOut?: OrgWarning[]): Map<string, Employee> {
     try {
       const data = yaml.load(fs.readFileSync(fullPath, "utf-8")) as any;
       const employee = parseEmployeeData(data, fullPath);
+      if (employee && isReservedActorName(employee.name)) {
+        // UPS-A5: a name that means "the operator", "the system" or "a session"
+        // in an audit record must not resolve to an employee. Skipping is the
+        // fail-closed answer — loading it is what makes the actor string lie.
+        const message = `${reservedActorNameReason(employee.name)}; ${path.relative(ORG_DIR, fullPath)} was not loaded.`;
+        logger.warn(message);
+        warnings.push({ employee: employee.name, type: "reserved_name", message });
+        return undefined;
+      }
       if (employee) {
         // Same `name` claimed by two files: keep the file the sorted walk
         // visits FIRST (matching findEmployeeYamlPath's first-match order,

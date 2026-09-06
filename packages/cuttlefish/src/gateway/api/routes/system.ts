@@ -17,6 +17,7 @@ import { safeWriteFile } from "../../../shared/safe-write.js";
 import type { ApiContext } from "../context.js";
 import { badRequest, json, serverError } from "../responses.js";
 import { sanitizeConfigForApi, deepMerge } from "../../config-sanitize.js";
+import { CONFIG_REVISION_HEADER, checkConfigRevision, currentConfigRevision } from "../../config-revision.js";
 import { ttsStatus, validateTtsText, streamTtsSentences } from "../../../talk/tts-stream.js";
 
 export async function handleSystemRoutes(
@@ -59,6 +60,8 @@ export async function handleSystemRoutes(
   }
 
   if (method === "GET" && pathname === "/api/config") {
+    // Stamp the revision the caller is about to edit against (UPS-A7).
+    res.setHeader(CONFIG_REVISION_HEADER, currentConfigRevision());
     json(res, sanitizeConfigForApi(context.getConfig()));
     return true;
   }
@@ -69,6 +72,24 @@ export async function handleSystemRoutes(
     const body = parsed.body as Record<string, unknown> | null;
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       badRequest(res, "Config must be a JSON object");
+      return true;
+    }
+    // UPS-A7: refuse a save built on a view older than the file, BEFORE the
+    // merge and before the write, so an edit made at a terminal survives a
+    // Settings page that has been open since before it. A request that sends no
+    // revision is unchanged — that is the opt-out for a partial write into a
+    // document the caller never read.
+    // The guard narrows the conflict window from "however long the page has been
+    // open" to the few syscalls between this check and the write below; it is
+    // optimistic concurrency, not a lock, and does not claim to be one.
+    const revision = checkConfigRevision(req.headers);
+    if (revision.conflict) {
+      res.setHeader(CONFIG_REVISION_HEADER, revision.current);
+      json(res, {
+        error: "config.yaml changed since this page loaded it; reload before saving.",
+        code: "CONFIG_CONFLICT",
+        revision: revision.current,
+      }, 409);
       return true;
     }
     let existing: Record<string, unknown> = {};
@@ -85,7 +106,11 @@ export async function handleSystemRoutes(
     context.reloadConfig?.();
     invalidateModelRegistry();
     logger.info("Config updated via API");
-    json(res, { status: "ok" });
+    // Hand back the revision this write produced, so the page that just saved
+    // is not stale against its own change.
+    const next = currentConfigRevision();
+    res.setHeader(CONFIG_REVISION_HEADER, next);
+    json(res, { status: "ok", revision: next });
     return true;
   }
 

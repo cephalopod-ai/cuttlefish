@@ -4,7 +4,7 @@ import { useBreadcrumbs } from "@/context/breadcrumb-context"
 import { useOrg } from "@/hooks/use-employees"
 import { useModelRegistry } from "@/hooks/use-model-registry"
 import { usePageVisibility } from "@/hooks/use-page-visibility"
-import { api } from "@/lib/api"
+import { ConfigConflictError, getConfigDocument, putConfigDocument } from "@/lib/api-config"
 import { useAuth } from "@/routes/auth-provider"
 import { useTheme } from "@/routes/providers"
 import { useSettings } from "@/routes/settings-provider"
@@ -33,6 +33,7 @@ import {
   RecoveryFallbacksSection,
 } from "./settings-config-sections"
 import { FieldRow, Section, SettingsInput, SettingsSelect, ToggleSwitch } from "./settings-fields"
+import { ConfigConflictNotice } from "./config-conflict-notice"
 import { KeyboardShortcutsSection } from "./keyboard-shortcuts-section"
 import { SttSettingsSection } from "./stt-section"
 
@@ -105,6 +106,9 @@ export default function SettingsPage() {
   const [configError, setConfigError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [feedback, setFeedback] = useState<FeedbackState>(null)
+  // config.yaml's revision as of the last successful read or write (UPS-A7).
+  const [configRevision, setConfigRevision] = useState<string | undefined>(undefined)
+  const [configConflict, setConfigConflict] = useState<string | null>(null)
   const [waQr, setWaQr] = useState<string | null>(null)
   const [waStatus, setWaStatus] = useState("unknown")
   const pageVisible = usePageVisibility()
@@ -135,9 +139,13 @@ export default function SettingsPage() {
 
   function loadConfig() {
     setConfigLoading(true)
-    api.getConfig()
-      .then((data) => {
-        setConfig(data as Config)
+    return getConfigDocument()
+      .then((doc) => {
+        setConfig(doc.config as Config)
+        // The revision this view was built from; sent back on save so a
+        // terminal edit made in the meantime is not clobbered (UPS-A7).
+        setConfigRevision(doc.revision)
+        setConfigConflict(null)
         setConfigError(null)
       })
       .catch((err) => setConfigError(err.message))
@@ -209,15 +217,31 @@ export default function SettingsPage() {
   function handleSave() {
     setSaving(true)
     setFeedback(null)
-    api.updateConfig(config as Record<string, unknown>)
-      .then(() => setFeedback({ type: "success", message: "Settings saved successfully" }))
+    setConfigConflict(null)
+    putConfigDocument(config as Record<string, unknown>, configRevision)
+      .then((result) => {
+        // Adopt the revision this write produced, so the page is not stale
+        // against its own change.
+        setConfigRevision(result.revision)
+        setFeedback({ type: "success", message: "Settings saved successfully" })
+      })
       .catch((err) => {
+        if (err instanceof ConfigConflictError) {
+          // No second PUT: retrying is exactly the clobber the guard prevents.
+          setConfigConflict(err.message)
+          return
+        }
         setFeedback({
           type: "error",
           message: `Failed to save: ${err.message}`,
         })
       })
       .finally(() => setSaving(false))
+  }
+
+  function handleConflictReload() {
+    setFeedback(null)
+    void loadConfig()
   }
 
   return (
@@ -275,6 +299,11 @@ export default function SettingsPage() {
           />
           <KeyboardShortcutsSection />
 
+          <ConfigConflictNotice
+            message={configConflict}
+            onReload={handleConflictReload}
+            reloading={configLoading}
+          />
           <ConfigFeedback feedback={feedback} />
           <ConfigLoadState configError={configError} configLoading={configLoading} />
 
