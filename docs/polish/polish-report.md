@@ -59,6 +59,10 @@ anywhere in `packages/cuttlefish/src`, `packages/web/src`, or
 `:179`, `settings-config-sections.tsx:753`) are the literal name of a kanban
 board status ("TODO tickets"), not floating debt markers.
 
+Source-location addendum (2026-09-06): after the settings extraction, the
+`settings-config-sections.tsx` example remains in `BoardWorkerSection`; its
+historical line number above describes the original audit snapshot.
+
 ## Architecture/layout observations
 
 None raised by this pass. Repo-wide architecture/config-centralization

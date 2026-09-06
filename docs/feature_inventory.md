@@ -341,6 +341,13 @@
   child process whose termination has not been confirmed. Late success/error
   settlement cannot replace the persisted timeout.
 
+### Settings engine configuration
+- `packages/web/src/routes/settings/settings-config-sections.tsx` retains the compatibility exports.
+- `packages/web/src/routes/settings/settings-engine-configuration.tsx` owns engine binary, model, and effort editing.
+- Model dropdowns retain the configured selection when the registry omits it,
+  without changing the draft until the operator selects another model. Existing
+  Codex model-specific effort validation and the Grok legacy alias are preserved.
+
 ### Settings orchestration controls
 - `packages/web/src/routes/settings/page.tsx`
 - `packages/web/src/routes/settings/settings-config-sections.tsx`
@@ -350,7 +357,8 @@
 
 ### Settings email inbox controls
 - `packages/web/src/routes/settings/page.tsx`
-- `packages/web/src/routes/settings/settings-config-sections.tsx`
+- `packages/web/src/routes/settings/settings-config-sections.tsx` (compatibility facade)
+- `packages/web/src/routes/settings/settings-email-section.tsx`
 - `/settings` now exposes operator configuration for up to 3 IMAP inboxes,
   including host/port/TLS, credentials, folder, polling cadence, unread-only,
   and auto-ingest toggles.

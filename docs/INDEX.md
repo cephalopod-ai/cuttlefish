@@ -99,6 +99,12 @@ those deliberate cases.
 
 ## Session and Audit Log Summaries
 
+September 6 settings modularization: the 922-line configuration-section file
+was reduced to a 493-line compatibility facade, with email and engine editors
+extracted. A saved-model display defect was repaired; scoped re-audits found
+zero unresolved findings. Validation and scope limits are recorded in
+`docs/audits/2026-09-06-settings-source-modularization.md` and feature ledger 0122.
+
 Raw session logs (`docs/logs/session/`) and audit details (`docs/audits/`)
 are local-only artifacts: the repository `.gitignore` excludes both trees,
 and per `docs/DOC_MAINTENANCE.md` they are not published unless a maintainer

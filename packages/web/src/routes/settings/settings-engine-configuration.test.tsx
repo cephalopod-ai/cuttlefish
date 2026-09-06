@@ -1,7 +1,8 @@
 import { useState } from "react"
 import { describe, expect, it } from "vitest"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { EngineConfigurationSection } from "./settings-config-sections"
+import { EngineConfigurationSection as FacadeEngineConfigurationSection } from "./settings-config-sections"
+import { EngineConfigurationSection } from "./settings-engine-configuration"
 import type { Config } from "./settings-constants"
 
 function setAtPath(config: Config, path: string[], value: unknown): Config {
@@ -68,6 +69,63 @@ function Harness({
 }
 
 describe("EngineConfigurationSection", () => {
+  it.each(["claude", "codex", "grok", "ollama", "kilo", "vibe"] as const)(
+    "keeps the configured %s model visible when a live registry omits it",
+    (engine) => {
+      const savedModel = `${engine}-custom-model`
+      const initialConfig: Config = { engines: { [engine]: { model: savedModel } } }
+      const choices = [{ value: "registry-model", label: "Registry model" }]
+      Object.freeze(choices)
+      render(<Harness
+        initialConfig={initialConfig}
+        modelOptions={(name, fallback) => name === engine
+          ? choices
+          : fallback}
+      />)
+
+      expect(choices).toEqual([{ value: "registry-model", label: "Registry model" }])
+      const select = findSelectByValue(savedModel)
+      expect(Array.from(select.options).map((option) => option.value)).toEqual(["registry-model", savedModel])
+      expect(JSON.parse(screen.getByTestId("config").textContent ?? "{}")).toEqual(initialConfig)
+      fireEvent.change(select, { target: { value: "registry-model" } })
+      expect(JSON.parse(screen.getByTestId("config").textContent ?? "{}").engines[engine].model).toBe("registry-model")
+    },
+  )
+
+  it("keeps the selected model visible through registry refreshes without changing the draft", () => {
+    const initialConfig: Config = { engines: { codex: { model: "configured-model" } } }
+    const { rerender } = render(<Harness initialConfig={initialConfig} modelOptions={() => []} />)
+    const select = findSelectByValue("configured-model")
+    expect(select.options).toHaveLength(1)
+
+    rerender(<Harness initialConfig={initialConfig} modelOptions={(_engine, fallback) => fallback} />)
+    expect(findSelectByValue("configured-model")).toBe(select)
+    expect(select.options).toHaveLength(1)
+
+    rerender(<Harness initialConfig={initialConfig} modelOptions={(engine, fallback) => engine === "codex"
+      ? [{ value: "configured-model", label: "Live model label" }]
+      : fallback} />)
+    expect(select.selectedOptions[0].textContent).toBe("Live model label")
+    expect(select.options).toHaveLength(1)
+    rerender(<Harness initialConfig={initialConfig} modelOptions={(engine, fallback) => engine === "codex"
+      ? [{ value: "replacement-model", label: "Replacement model" }]
+      : fallback} />)
+    expect(findSelectByValue("configured-model")).toBe(select)
+    expect(select.options).toHaveLength(2)
+    expect(JSON.parse(screen.getByTestId("config").textContent ?? "{}")).toEqual(initialConfig)
+  })
+
+  it("preserves the existing Grok alias without rewriting the saved draft", () => {
+    const initialConfig: Config = { engines: { grok: { model: "grok-build" } } }
+    render(<Harness initialConfig={initialConfig} />)
+    expect(findSelectByValue("grok-4.6").value).toBe("grok-4.6")
+    expect(JSON.parse(screen.getByTestId("config").textContent ?? "{}")).toEqual(initialConfig)
+  })
+
+  it("preserves component identity through the original import path", () => {
+    expect(FacadeEngineConfigurationSection).toBe(EngineConfigurationSection)
+  })
+
   it("renders Codex model choices from the live registry options", () => {
     render(<Harness />)
 
