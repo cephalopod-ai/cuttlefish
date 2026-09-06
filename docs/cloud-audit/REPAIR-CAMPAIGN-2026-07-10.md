@@ -72,3 +72,12 @@ delete guard), which does not meet the "heavily edit multiple functions" bar; a 
 defects repaired, tested, and committed as bisectable stages; the full package suite is green.
 The routed items above are architecturally larger or need context/decisions outside this campaign
 and are enumerated for a follow-up pass.
+
+
+## H4 disposition addendum — 2026-09-06
+
+The original R3 planning list included H4 without recording its repair in the
+completed findings table. MOD-KANBAN-20260906 now fixes and locally verifies H4;
+see the dated addendum in [the source audit](FULL-AUDIT-PLAYTEST-2026-07-10.md#source-location-addendum--2026-09-06)
+and feature ledger 0123. This preserves the July campaign history and changes no
+other finding's disposition.

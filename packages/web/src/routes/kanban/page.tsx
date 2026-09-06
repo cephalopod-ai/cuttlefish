@@ -1,8 +1,25 @@
+/**
+ * Kanban page and compatibility facade. Retention helpers live in
+ * kanban-retention; board loading and save adapters live in kanban-board-data.
+ * Public helper re-exports preserve existing callers and monkeypatch surfaces;
+ * do not prune them as unused imports.
+ */
+import {
+  DEFAULT_RECYCLE_BIN_RETENTION_DAYS,
+  MIN_RECYCLE_BIN_RETENTION_DAYS,
+  MAX_RECYCLE_BIN_RETENTION_DAYS,
+  DAY_MS,
+  clampRecycleBinRetentionDays,
+  formatRecycleBinDays,
+  formatDeletedAt,
+  formatDeletionExpiry,
+  type DeletedKanbanTicket,
+} from './kanban-retention'
 
 import { useEffect, useState, useCallback } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { api } from '@/lib/api'
-import type { DepartmentBoardResponse, DepartmentBoardTicket, Employee, OrgData } from '@/lib/api'
+import type { Employee, OrgData } from '@/lib/api'
 import { useGateway } from '@/hooks/use-gateway'
 import type { KanbanTicket, TicketStatus, TicketPriority, TicketComplexity } from '@/lib/kanban/types'
 import {
@@ -31,238 +48,21 @@ import { KanbanBoard } from '@/components/kanban/kanban-board'
 import { CreateTicketModal } from '@/components/kanban/create-ticket-modal'
 import { TicketDetailPanel } from '@/components/kanban/ticket-detail-panel'
 
-const DEFAULT_RECYCLE_BIN_RETENTION_DAYS = 3
-const MIN_RECYCLE_BIN_RETENTION_DAYS = 0
-const MAX_RECYCLE_BIN_RETENTION_DAYS = 7
-const DAY_MS = 24 * 60 * 60 * 1000
-
-type DeletedKanbanTicket = KanbanTicket & { deletedAt: number }
-
-export function getBoardLoadDepartments(data: OrgData): string[] {
-  return Array.isArray(data.boardDepartments) ? data.boardDepartments : data.departments
-}
-
-export interface LoadedDepartmentBoards {
-  boardTickets: KanbanStore
-  deletedTickets: DeletedKanbanTicket[]
-  retentionDays: number
-  departmentRetentionDays: Record<string, number>
-  warnings: string[]
-}
-
-function clampRecycleBinRetentionDays(value: unknown): number {
-  const n = typeof value === 'number' ? value : Number(value)
-  if (!Number.isFinite(n)) return DEFAULT_RECYCLE_BIN_RETENTION_DAYS
-  return Math.max(MIN_RECYCLE_BIN_RETENTION_DAYS, Math.min(MAX_RECYCLE_BIN_RETENTION_DAYS, Math.round(n)))
-}
-
-function formatRecycleBinDays(days: number): string {
-  if (days === 0) return 'Immediate purge'
-  return `${days} day${days === 1 ? '' : 's'}`
-}
-
-function formatDeletedAt(ts: number): string {
-  return new Date(ts).toLocaleString()
-}
-
-function formatDeletionExpiry(ts: number, retentionDays: number): string {
-  if (retentionDays <= 0) return 'immediately'
-  return new Date(ts + (retentionDays * DAY_MS)).toLocaleString()
-}
-
-function mapBoardTicket(item: DepartmentBoardTicket, department: string): KanbanTicket {
-  const statusMap: Record<string, TicketStatus> = {
-    todo: 'todo',
-    in_progress: 'in-progress',
-    'in-progress': 'in-progress',
-    done: 'done',
-    blocked: 'blocked',
-    backlog: 'backlog',
-    review: 'review',
-  }
-  const priorityMap: Record<string, TicketPriority> = {
-    low: 'low',
-    medium: 'medium',
-    high: 'high',
-  }
-  const complexityMap: Record<string, TicketComplexity> = {
-    low: 'low',
-    medium: 'medium',
-    high: 'high',
-  }
-  return {
-    id: item.id,
-    title: item.title,
-    description: item.description || '',
-    resourcePath: item.resourcePath,
-    resourceUrl: item.resourceUrl,
-    manualOnly: item.manualOnly === true,
-    status: statusMap[item.status] ?? (() => { throw new Error(`Unknown ticket status '${String(item.status)}' in ${department}/${item.id}`) })(),
-    priority: priorityMap[item.priority || 'medium'] || 'medium',
-    complexity: complexityMap[item.complexity || 'medium'] || 'medium',
-    assigneeId: item.assignee || null,
-    source: item.source,
-    sessionId: item.sessionId,
-    department,
-    workState: 'idle',
-    createdAt: item.createdAt ? new Date(item.createdAt).getTime() : Date.now(),
-    updatedAt: item.updatedAt ? new Date(item.updatedAt).getTime() : Date.now(),
-    baseUpdatedAt: item.updatedAt ? new Date(item.updatedAt).getTime() : undefined,
-    departmentId: department,
-  }
-}
-
-function mapDeletedBoardTicket(item: DepartmentBoardTicket, department: string): DeletedKanbanTicket {
-  return {
-    ...mapBoardTicket(item, department),
-    deletedAt: item.deletedAt ? new Date(item.deletedAt).getTime() : Date.now(),
-  }
-}
-
-export async function loadDepartmentBoards(
-  boardDepartments: string[],
-  getDepartmentBoard: (department: string) => Promise<DepartmentBoardResponse> = (department) => api.getDepartmentBoard(department),
-): Promise<LoadedDepartmentBoards> {
-  const results = await Promise.all(
-    boardDepartments.map(async (department) => {
-      try {
-        const board = await getDepartmentBoard(department)
-        return { department, board } as const
-      } catch (err) {
-        return { department, error: err } as const
-      }
-    }),
-  )
-
-  const boardTickets: KanbanStore = {}
-  const deletedTickets: DeletedKanbanTicket[] = []
-  let retentionDays: number | null = null
-  const departmentRetentionDays: Record<string, number> = {}
-  const warnings: string[] = []
-
-  for (const result of results) {
-    if ('error' in result) {
-      const message = result.error instanceof Error ? result.error.message : 'Failed to load board.'
-      if (/404|not found/i.test(message)) continue
-      warnings.push(`${result.department}: ${message}`)
-      continue
-    }
-    const nextRetentionDays = clampRecycleBinRetentionDays(result.board.retentionDays)
-    departmentRetentionDays[result.department] = nextRetentionDays
-    retentionDays = retentionDays == null ? nextRetentionDays : Math.max(retentionDays, nextRetentionDays)
-    for (const item of result.board.tickets) {
-      boardTickets[item.id] = mapBoardTicket(item, result.department)
-    }
-    for (const item of result.board.deletedTickets) {
-      deletedTickets.push(mapDeletedBoardTicket(item, result.department))
-    }
-  }
-
-  return {
-    boardTickets,
-    deletedTickets: deletedTickets.sort((a, b) => b.deletedAt - a.deletedAt),
-    retentionDays: retentionDays ?? DEFAULT_RECYCLE_BIN_RETENTION_DAYS,
-    departmentRetentionDays,
-    warnings,
-  }
-}
-
-const BOARD_STATUS_BY_KANBAN_STATUS: Record<KanbanTicket['status'], DepartmentBoardTicket['status']> = {
-  backlog: 'backlog',
-  todo: 'todo',
-  'in-progress': 'in_progress',
-  review: 'review',
-  done: 'done',
-  blocked: 'blocked',
-}
-
-export interface DepartmentBoardSaveTarget {
-  department: string
-  deletedIds?: string[]
-  deletedVersions?: Record<string, string>
-  restoredVersions?: Record<string, string>
-  retentionDays?: number | null
-}
-
-export function buildDepartmentBoardSaveRequests(
-  store: KanbanStore,
-  targets: DepartmentBoardSaveTarget[],
-  departmentRetentionDays: Record<string, number>,
-): Array<{ department: string; payload: import('@/lib/api').UpdateDepartmentBoardPayload }> {
-  const mergedTargets = new Map<string, Required<Omit<DepartmentBoardSaveTarget, 'retentionDays'>> & { retentionDays: number | null }>()
-  for (const target of targets) {
-    if (!target.department) continue
-    const existing = mergedTargets.get(target.department) ?? {
-      department: target.department,
-      deletedIds: [],
-      deletedVersions: {},
-      restoredVersions: {},
-      retentionDays: null,
-    }
-    existing.deletedIds = [...new Set([...existing.deletedIds, ...(target.deletedIds ?? [])])]
-    existing.deletedVersions = { ...existing.deletedVersions, ...(target.deletedVersions ?? {}) }
-    existing.restoredVersions = { ...existing.restoredVersions, ...(target.restoredVersions ?? {}) }
-    if (target.retentionDays != null) existing.retentionDays = target.retentionDays
-    mergedTargets.set(target.department, existing)
-  }
-
-  return [...mergedTargets.values()].map((target) => {
-    const boardData: DepartmentBoardTicket[] = Object.values(store)
-      .filter((ticket) => ticket.departmentId === target.department)
-      .map((t) => {
-        // Only assert optimistic-concurrency freshness for tickets the user
-        // actually edited. `updateTicket` advances `updatedAt` but leaves
-        // `baseUpdatedAt` at the loaded snapshot, so a ticket is "dirty" when
-        // those differ (or when it has no snapshot, i.e. newly created).
-        // Untouched tickets — bundled only because a save sends the whole
-        // department board — omit `baseUpdatedAt` so a concurrent agent write
-        // to one of them can't block an unrelated delete/move/edit.
-        const changed = t.baseUpdatedAt == null || t.baseUpdatedAt !== t.updatedAt
-        return {
-          id: t.id,
-          title: t.title,
-          description: t.description,
-          resourcePath: t.resourcePath,
-          resourceUrl: t.resourceUrl,
-          manualOnly: t.manualOnly === true,
-          status: BOARD_STATUS_BY_KANBAN_STATUS[t.status],
-          priority: t.priority,
-          complexity: t.complexity,
-          assignee: t.assigneeId ?? undefined,
-          source: t.source,
-          sessionId: t.sessionId,
-          createdAt: new Date(t.createdAt || Date.now()).toISOString(),
-          updatedAt: new Date(t.updatedAt || Date.now()).toISOString(),
-          ...(target.restoredVersions[t.id] ? { deletedAt: target.restoredVersions[t.id] } : {}),
-          ...(changed
-            ? { baseUpdatedAt: new Date(t.baseUpdatedAt ?? t.updatedAt ?? Date.now()).toISOString() }
-            : {}),
-        }
-      })
-    return {
-      department: target.department,
-      payload: {
-        tickets: boardData,
-        deletedIds: target.deletedIds,
-        deletedVersions: target.deletedVersions,
-        retentionDays: target.retentionDays ?? departmentRetentionDays[target.department],
-      },
-    }
-  })
-}
-
-export function buildAssigneeChangeUpdate(
-  assigneeId: string | null,
-  employees: Employee[],
-): Partial<Omit<KanbanTicket, 'id' | 'createdAt'>> {
-  const emp = assigneeId ? employees.find(e => e.name === assigneeId) : null
-  const updates: Partial<Omit<KanbanTicket, 'id' | 'createdAt'>> = { assigneeId }
-  if (emp?.department) {
-    updates.department = emp.department
-    updates.departmentId = emp.department
-  }
-  return updates
-}
+import {
+  getBoardLoadDepartments,
+  loadDepartmentBoards,
+  buildDepartmentBoardSaveRequests,
+  buildAssigneeChangeUpdate,
+  type DepartmentBoardSaveTarget,
+} from './kanban-board-data'
+export {
+  getBoardLoadDepartments,
+  loadDepartmentBoards,
+  buildDepartmentBoardSaveRequests,
+  buildAssigneeChangeUpdate,
+  type LoadedDepartmentBoards,
+  type DepartmentBoardSaveTarget,
+} from './kanban-board-data'
 
 /** Delete confirmation dialog */
 function DeleteConfirmDialog({
@@ -330,6 +130,7 @@ export default function KanbanPage() {
   const [recycleBinRetentionDays, setRecycleBinRetentionDays] = useState(DEFAULT_RECYCLE_BIN_RETENTION_DAYS)
   const [departmentRetentionDays, setDepartmentRetentionDays] = useState<Record<string, number>>({})
   const [boardLoadWarnings, setBoardLoadWarnings] = useState<string[]>([])
+  const [blockedDepartments, setBlockedDepartments] = useState<string[]>([])
 
   const loadData = useCallback(() => {
     setLoading(true)
@@ -351,6 +152,7 @@ export default function KanbanPage() {
         setDeletedTickets(loadedBoards.deletedTickets)
         setDepartmentRetentionDays(loadedBoards.departmentRetentionDays)
         setBoardLoadWarnings(loadedBoards.warnings)
+        setBlockedDepartments(loadedBoards.blockedDepartments)
         setRecycleBinRetentionDays(loadedBoards.retentionDays)
       })
       .catch((e) => setError(e.message))
@@ -396,7 +198,7 @@ export default function KanbanPage() {
       // board is refetched from the gateway so optimistic local state does not
       // become the hidden source of truth.
       const responses = await Promise.all(
-        buildDepartmentBoardSaveRequests(store, targets, departmentRetentionDays)
+        buildDepartmentBoardSaveRequests(store, targets, departmentRetentionDays, blockedDepartments)
           .map(({ department, payload }) => api.updateDepartmentBoard(department, payload)),
       )
       const allRejected = responses.flatMap((r) => r.rejectedTickets ?? [])
@@ -409,7 +211,7 @@ export default function KanbanPage() {
         setRejectedWarning(null)
       }
     },
-    [departmentRetentionDays],
+    [departmentRetentionDays, blockedDepartments],
   )
 
   const persistBoardChange = useCallback(

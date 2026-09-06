@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { buildAssigneeChangeUpdate, buildDepartmentBoardSaveRequests, getBoardLoadDepartments, loadDepartmentBoards } from './page'
+import { buildAssigneeChangeUpdate, buildDepartmentBoardSaveRequests, getBoardLoadDepartments, loadDepartmentBoards } from './kanban-board-data'
+import * as facade from './page'
 import type { Employee } from '@/lib/api'
 import type { KanbanStore } from '@/lib/kanban/store'
 
@@ -227,5 +228,14 @@ describe('loadDepartmentBoards', () => {
         'engineering-1': expect.objectContaining({ departmentId: 'engineering' }),
       },
     })
+  })
+})
+
+describe('page compatibility facade', () => {
+  it('preserves the identity of every public board helper', () => {
+    expect(facade.getBoardLoadDepartments).toBe(getBoardLoadDepartments)
+    expect(facade.loadDepartmentBoards).toBe(loadDepartmentBoards)
+    expect(facade.buildDepartmentBoardSaveRequests).toBe(buildDepartmentBoardSaveRequests)
+    expect(facade.buildAssigneeChangeUpdate).toBe(buildAssigneeChangeUpdate)
   })
 })

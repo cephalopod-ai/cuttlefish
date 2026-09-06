@@ -112,6 +112,7 @@
   the board.
 
 ### Kanban recycle bin
+- `packages/web/src/routes/kanban/kanban-retention.ts` owns retention constants and formatting.
 - `packages/cuttlefish/src/gateway/board-service.ts`
 - `packages/web/src/routes/kanban/page.tsx`
 - Deleted kanban tickets move into a recycle bin instead of being purged immediately.
@@ -127,16 +128,16 @@
   durable deletion succeeds.
 
 ### Kanban optimistic save protection
+- `packages/web/src/routes/kanban/kanban-board-data.ts` owns board loading, ticket mapping and scoped save serialization; `page.tsx` preserves its public helper exports.
 - `packages/cuttlefish/src/gateway/board-service.ts`
 - `packages/web/src/routes/kanban/page.tsx`
-- Web board saves send each ticket's last observed `updatedAt` as `baseUpdatedAt`.
+- Edited tickets carry their last observed `updatedAt` as `baseUpdatedAt`; untouched tickets bundled in a department save omit the freshness claim.
+- Malformed board records produce per-ticket warnings while valid tickets remain visible. Saves targeting an incompletely loaded department are blocked before any request in that batch is sent, preventing a partial view from replacing its board. Repair the board data and reload to resume saves. Failed board fetches and duplicate ticket IDs also block affected departments; unaffected departments remain writable.
 - The gateway rejects stale ticket updates or stale deletion attempts with HTTP `409`
   and `reason: "board-conflict"` instead of overwriting newer server state.
 - Running board-linked tickets preserve active `sessionId` and `source` metadata across
   fresh saves so a stale layout cannot silently move a dispatched ticket back to `todo`.
-- Date fields `createdAt`, `updatedAt`, and `baseUpdatedAt` are now guarded at
-  serialization time; missing or invalid timestamps fall back to `Date.now()` to
-  prevent "Invalid Date" / `"Invalid time value"` errors on save.
+- Missing or invalid display timestamps fall back to the current time during save serialization; valid epoch timestamps are preserved. An explicitly invalid `baseUpdatedAt` is rejected with a reload instruction rather than replaced with a fabricated fresh version. Invalid loaded update/deletion versions are reported as malformed records. Valid optimistic and restore versions remain unchanged.
 - An unchanged legacy ticket carried in a whole-board save cannot block deletion
   of another ticket because of its stale assignee; newly created or edited
   tickets still require an active employee in the same department.
