@@ -1,7 +1,7 @@
 import { stratify, tree } from "d3-hierarchy"
 import type { Node, Edge } from "@xyflow/react"
 import type { Employee, OrgHierarchy } from "@/lib/api"
-import { NODE_W, NODE_H } from "./constants"
+import { NODE_W, NODE_H, UNASSIGNED_DEPARTMENT_LABEL } from "./constants"
 export { NODE_W, NODE_H } from "./constants"
 
 // Tidy-tree spacing within a department subtree.
@@ -18,7 +18,6 @@ const BLOCK_GAP = 32 // horizontal gap between department blocks in a row
 const ROW_GAP = 40 // vertical gap between rows of blocks
 const COO_ROW_GAP = 56 // gap below the COO node before the department rows
 const MIN_TARGET_W = 2200 // target row width the packer wraps at
-const UNASSIGNED_DEPARTMENT_LABEL = "Unassigned"
 
 export interface LayoutResult {
   nodes: Node[]
@@ -189,7 +188,9 @@ export function buildTreeLayout(
     rfNodes.push({
       id: `group-${b.dept}`,
       type: "departmentGroup",
-      data: { label: b.dept },
+      // `renamable` is false for the synthetic Unassigned block: it has no
+      // directory behind it, so there is nothing to rename.
+      data: { label: b.dept, renamable: b.dept !== UNASSIGNED_DEPARTMENT_LABEL },
       position: { x: b.x, y: b.y },
       style: { width: b.w, height: b.h, padding: 0 },
       selectable: false,

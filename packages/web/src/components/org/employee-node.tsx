@@ -3,7 +3,6 @@ import { MessageSquare, ChevronDown, ChevronUp } from "lucide-react"
 import { Link } from "react-router-dom"
 import type { Employee } from "@/lib/api"
 import { EmployeeAvatar } from "@/components/ui/employee-avatar"
-import { deptHue } from "@/components/org/layout/dept-color"
 
 type EmployeeNodeData = Employee &
   Record<string, unknown> & {
@@ -134,28 +133,10 @@ export function EmployeeNode({ data, selected }: NodeProps) {
   )
 }
 
-export function DepartmentGroupNode({ data }: NodeProps) {
-  const { label } = data as { label: string } & Record<string, unknown>
-  const hue = deptHue(label)
-  return (
-    <div
-      className="w-full h-full relative rounded-[var(--radius-lg)] bg-[var(--fill-quaternary)] overflow-hidden"
-      style={{ border: "1px solid var(--separator)", ["--dept-h" as string]: String(hue) }}
-    >
-      {/* Subtle per-department hue: left stripe only (amber stays for selection) */}
-      <span
-        aria-hidden
-        className="org-dept-accent absolute left-0 top-0 bottom-0 w-[3px] opacity-70"
-      />
-      <div className="absolute top-[10px] left-0 right-0 flex items-center justify-center gap-[6px] select-none pointer-events-none">
-        <span className="org-dept-accent w-[6px] h-[6px] rounded-full" />
-        <span className="text-[length:var(--text-caption2)] font-[var(--weight-semibold)] tracking-[var(--tracking-wide)] uppercase text-[var(--text-tertiary)]">
-          {label}
-        </span>
-      </div>
-    </div>
-  )
-}
+import { DepartmentGroupNode } from "@/components/org/department-group-node"
+
+export { DepartmentGroupNode }
+export type { DepartmentGroupNodeData } from "@/components/org/department-group-node"
 
 export const nodeTypes = {
   employeeNode: EmployeeNode,

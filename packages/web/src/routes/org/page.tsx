@@ -166,6 +166,23 @@ export default function OrgPage() {
     setRenamingDepartment(true);
   }, [activeDepartment]);
 
+  /**
+   * The one rename path, shared by the filter-row control and the org map's
+   * group header. Keeps the local department list and the active filter in step
+   * with the new name, then reloads so the map re-groups. Rethrows so a caller
+   * that renders its own error (the map header) can show it in place.
+   */
+  const renameDepartmentTo = useCallback(
+    async (department: string, nextName: string) => {
+      const result = await api.renameDepartment(department, nextName);
+      setDepartments((current) => current.map((entry) => entry === department ? result.department : entry));
+      setActiveDepartment((current) => (current === department ? result.department : current));
+      loadData();
+      return result.department;
+    },
+    [loadData],
+  );
+
   const submitRenameDepartment = useCallback(async () => {
     if (!activeDepartment || activeDepartment === UNASSIGNED_DEPARTMENT_TAB) return;
     const nextName = renameDepartmentValue.trim();
@@ -176,17 +193,22 @@ export default function OrgPage() {
     setRenameDepartmentSaving(true);
     setRenameDepartmentError(null);
     try {
-      const result = await api.renameDepartment(activeDepartment, nextName);
-      setDepartments((current) => current.map((entry) => entry === activeDepartment ? result.department : entry));
-      setActiveDepartment(result.department);
+      await renameDepartmentTo(activeDepartment, nextName);
       setRenamingDepartment(false);
-      loadData();
     } catch (err) {
       setRenameDepartmentError(err instanceof Error ? err.message : "Failed to rename department.");
     } finally {
       setRenameDepartmentSaving(false);
     }
-  }, [activeDepartment, loadData, renameDepartmentValue]);
+  }, [activeDepartment, renameDepartmentTo, renameDepartmentValue]);
+
+  /** Map-header rename: the header renders its own error, so let it through. */
+  const handleRenameDepartmentFromMap = useCallback(
+    async (department: string, nextName: string) => {
+      await renameDepartmentTo(department, nextName);
+    },
+    [renameDepartmentTo],
+  );
 
   // After an inline edit: reload the org (so the map re-parents / re-layouts on
   // a reportsTo change) and refresh the open panel with the saved employee.
@@ -379,6 +401,7 @@ export default function OrgPage() {
                 selectedName={selected?.name ?? null}
                 onNodeClick={handleSelectEmployee}
                 onReassign={handleReassignEmployee}
+                onRenameDepartment={handleRenameDepartmentFromMap}
               />
             </Suspense>
           )}

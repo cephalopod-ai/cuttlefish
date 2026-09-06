@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest"
-import { filterCollapsedEmployees, isDescendantOf } from "./org-map-helpers"
+import { describe, it, expect, vi } from "vitest"
+import type { Node } from "@xyflow/react"
+import { decorateDepartmentGroupNodes, filterCollapsedEmployees, isDescendantOf } from "./org-map-helpers"
 import type { Employee } from "@/lib/api"
 
 function emp(overrides: Partial<Employee> & { name: string }): Employee {
@@ -64,5 +65,46 @@ describe("isDescendantOf", () => {
 
   it("is false for a leaf with no reports", () => {
     expect(isDescendantOf(TREE, "lead", "senior")).toBe(false)
+  })
+})
+
+describe("decorateDepartmentGroupNodes", () => {
+  const groupNode = (label: string, renamable: boolean): Node => ({
+    id: `group-${label}`,
+    type: "departmentGroup",
+    data: { label, renamable },
+    position: { x: 0, y: 0 },
+  })
+
+  it("binds each header to its own department, not the last one laid out", async () => {
+    const onRenameDepartment = vi.fn().mockResolvedValue(undefined)
+    const decorated = decorateDepartmentGroupNodes(
+      [groupNode("dataflow", true), groupNode("engineering", true), groupNode("qa", true)],
+      onRenameDepartment,
+    )
+
+    for (const node of decorated) {
+      await (node.data.onRename as (n: string) => Promise<void>)("renamed")
+    }
+
+    // A closure-capture bug here would send every rename to "qa".
+    expect(onRenameDepartment.mock.calls.map(([dept]) => dept)).toEqual(["dataflow", "engineering", "qa"])
+    expect(onRenameDepartment).toHaveBeenLastCalledWith("qa", "renamed")
+  })
+
+  it("leaves the synthetic Unassigned block undecorated", () => {
+    const decorated = decorateDepartmentGroupNodes([groupNode("Unassigned", false)], vi.fn())
+    expect(decorated[0].data.onRename).toBeUndefined()
+  })
+
+  it("decorates nothing when the page passes no handler", () => {
+    const nodes = [groupNode("qa", true)]
+    expect(decorateDepartmentGroupNodes(nodes, undefined)).toBe(nodes)
+  })
+
+  it("leaves employee nodes untouched", () => {
+    const employee: Node = { id: "dev", type: "employeeNode", data: { name: "dev" }, position: { x: 0, y: 0 } }
+    const decorated = decorateDepartmentGroupNodes([employee], vi.fn())
+    expect(decorated[0]).toBe(employee)
   })
 })

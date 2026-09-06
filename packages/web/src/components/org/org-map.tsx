@@ -15,7 +15,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import type { Employee, OrgHierarchy } from "@/lib/api"
 import { nodeTypes } from "@/components/org/employee-node"
 import { computeOrgLayout } from "@/components/org/layout/use-layouted-elements"
-import { filterCollapsedEmployees, isDescendantOf } from "@/components/org/layout/org-map-helpers"
+import { decorateDepartmentGroupNodes, filterCollapsedEmployees, isDescendantOf } from "@/components/org/layout/org-map-helpers"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 
 // A dense org gets hard to read at a glance; below this count the canvas
@@ -30,6 +30,9 @@ interface OrgMapProps {
   /** Enables drag-to-reassign when provided: dropping an employee onto
    *  another confirms, then calls this with the new manager's name. */
   onReassign?: (employee: Employee, newManagerName: string) => Promise<void>
+  /** Enables renaming a department from its group header when provided. Should
+   *  reject with a message the header can render in place. */
+  onRenameDepartment?: (department: string, nextName: string) => Promise<void>
 }
 
 // useReactFlow() (needed for drop-target detection) requires a
@@ -44,7 +47,7 @@ export function OrgMap(props: OrgMapProps) {
   )
 }
 
-function OrgMapInner({ employees, hierarchy, selectedName, onNodeClick, onReassign }: OrgMapProps) {
+function OrgMapInner({ employees, hierarchy, selectedName, onNodeClick, onReassign, onRenameDepartment }: OrgMapProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [pendingReassign, setPendingReassign] = useState<{ employee: Employee; manager: Employee } | null>(null)
   const [reassigning, setReassigning] = useState(false)
@@ -64,7 +67,9 @@ function OrgMapInner({ employees, hierarchy, selectedName, onNodeClick, onReassi
 
   const buildLayout = useCallback(() => {
     const { nodes, edges } = computeOrgLayout(visibleEmployees, hierarchy, selectedName)
-    const decoratedNodes = nodes.map((node) => {
+    // Supplying onRename is what turns each header's pencil on.
+    const withRename = decorateDepartmentGroupNodes(nodes, onRenameDepartment)
+    const decoratedNodes = withRename.map((node) => {
       if (node.type !== "employeeNode") return node
       const employee = employees.find((e) => e.name === node.id)
       if (!employee?.directReports?.length) return node
@@ -78,7 +83,7 @@ function OrgMapInner({ employees, hierarchy, selectedName, onNodeClick, onReassi
       }
     })
     return { nodes: decoratedNodes, edges }
-  }, [visibleEmployees, hierarchy, selectedName, employees, collapsed, toggleCollapse])
+  }, [visibleEmployees, hierarchy, selectedName, employees, collapsed, toggleCollapse, onRenameDepartment])
 
   const { nodes: initialNodes, edges: initialEdges } = buildLayout()
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
@@ -92,6 +97,7 @@ function OrgMapInner({ employees, hierarchy, selectedName, onNodeClick, onReassi
 
   const handleNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
+      if (node.type === "departmentGroup") return
       const employee = employees.find((e) => e.name === node.id)
       if (employee) onNodeClick(employee)
     },

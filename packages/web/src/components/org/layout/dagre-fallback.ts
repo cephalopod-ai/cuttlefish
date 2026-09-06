@@ -1,7 +1,7 @@
 import dagre from "@dagrejs/dagre"
 import type { Node, Edge } from "@xyflow/react"
 import type { Employee, OrgHierarchy } from "@/lib/api"
-import { NODE_W, NODE_H } from "./constants"
+import { NODE_W, NODE_H, UNASSIGNED_DEPARTMENT_LABEL } from "./constants"
 import type { LayoutResult } from "./d3-tree-layout"
 
 // Dagre layout — the fallback used only if d3-stratify rejects the employee set
@@ -12,7 +12,6 @@ const COL_GAP = 24
 const GROUP_PAD_X = 16
 const GROUP_PAD_TOP = 34
 const GROUP_PAD_BOTTOM = 18
-const UNASSIGNED_DEPARTMENT_LABEL = "Unassigned"
 
 function dagreLayout(
   nodeIds: string[],
@@ -153,7 +152,8 @@ export function buildHierarchyLayout(
     rfNodes.push({
       id: `group-${dept}`,
       type: "departmentGroup",
-      data: { label: dept },
+      // See d3-tree-layout.ts: the Unassigned block is synthetic, not a department.
+      data: { label: dept, renamable: dept !== UNASSIGNED_DEPARTMENT_LABEL },
       position: { x: bounds.minX - GROUP_PAD_X, y: bounds.minY - GROUP_PAD_TOP },
       style: {
         width: bounds.maxX - bounds.minX + GROUP_PAD_X * 2,

@@ -1,3 +1,4 @@
+import type { Node } from "@xyflow/react"
 import type { Employee } from "@/lib/api"
 
 /**
@@ -30,4 +31,35 @@ export function isDescendantOf(employees: Employee[], ancestorName: string, cand
     if (employee?.directReports) stack.push(...employee.directReports)
   }
   return false
+}
+
+/**
+ * Attach the rename callback to each department group node, bound to that
+ * node's own department.
+ *
+ * Lives here rather than inline in OrgMap so the binding is testable: a closure
+ * capturing the wrong variable would send every header's rename to the last
+ * department laid out, which is invisible until an operator renames the wrong
+ * team.
+ */
+export function decorateDepartmentGroupNodes(
+  nodes: Node[],
+  onRenameDepartment?: (department: string, nextName: string) => Promise<void>,
+): Node[] {
+  if (!onRenameDepartment) return nodes
+  return nodes.map((node) => {
+    if (node.type !== "departmentGroup") return node
+    // The layout marks the synthetic "Unassigned" block unrenamable: no
+    // directory backs it, so there is nothing to rename.
+    if (node.data?.renamable === false) return node
+    const department = String(node.data?.label ?? "")
+    if (!department) return node
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        onRename: (nextName: string) => onRenameDepartment(department, nextName),
+      },
+    }
+  })
 }
