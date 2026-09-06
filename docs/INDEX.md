@@ -99,6 +99,12 @@ those deliberate cases.
 
 ## Session and Audit Log Summaries
 
+September 6 context modularization: the 957-line session context source is now
+815 lines, with API guidance and budget selection extracted. Repaired summary
+expansion and missing compact action guidance; repeated session-scoped audits
+found zero remaining findings. Validation and limits are recorded in
+`docs/audits/2026-09-06-context-source-modularization.md` and feature ledger 0124.
+
 September 6 Kanban modularization: the 912-line board page is now 714 lines,
 with board adapters and retention helpers extracted. Historical H4 and three
 related data-boundary defects are repaired; scoped re-audits found zero

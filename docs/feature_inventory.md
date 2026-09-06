@@ -589,6 +589,10 @@
   checkpoints. A direct human can explicitly delegate `approve`, `decide`,
   `plan`, and/or `act` authority to a COO or Program Manager turn; only the
   decision scopes unlock checkpoint/approval reads and decisions.
+- Context-budget summaries preserve injected-credential instructions, checkpoint
+  creation, attachments and the turn's delegated-decision guidance. Trimming uses
+  only shorter fallbacks and always retains essential context; `context.maxChars`
+  is a best-effort budget when those retained sections exceed the limit.
 - `GET /api/checkpoints` and `GET /api/checkpoints/:id` expose the checkpoint
   queue and history.
 - `POST /api/checkpoints/:id/decision` records a human decision and either

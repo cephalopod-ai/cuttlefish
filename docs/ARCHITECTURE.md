@@ -77,6 +77,12 @@ owning model reasoning.
 4. Stream deltas are normalized and persisted.
 5. Final message, blocks, media, cost/context, and metadata update the session.
 
+`sessions/context.ts` remains the compatibility facade for prompt assembly and
+its public identity/onboarding/thread builders. `sessions/context-budget.ts`
+owns tier-based section selection; `sessions/context-api.ts` owns full and
+compact audience-scoped gateway guidance. Web and connector dispatchers keep
+calling `buildContext` through the original path.
+
 ## Dependency Boundaries
 
 - Web UI should call API/client libraries, not persistence internals.

@@ -1,3 +1,11 @@
+/**
+ * Session prompt assembly and compatibility facade for the existing public builders.
+ * Budget selection lives in context-budget.ts; API guidance lives in context-api.ts.
+ * Public builder names stay at this path.
+ * Preserve these exports for engine dispatchers and existing import consumers.
+ */
+import { buildApiReference, buildApiReferenceSummary } from "./context-api.js";
+import { Tier, trimContext, type Section } from "./context-budget.js";
 import fs from "node:fs";
 import path from "node:path";
 import type { Employee, CuttlefishConfig } from "../shared/types.js";
@@ -28,20 +36,6 @@ import { HUMAN_DELEGATION_MODELS_LABEL } from "./operator-delegation.js";
  */
 
 const DEFAULT_MAX_CONTEXT_CHARS = 100_000;
-
-// ── Tier enum for progressive trimming ────────────────────────
-const enum Tier {
-  ESSENTIAL = 0,
-  STANDARD = 1,
-  OPTIONAL = 2,
-}
-
-interface Section {
-  tier: Tier;
-  marker: string; // leading text used to identify the section in trimContext
-  content: string;
-  summary: string; // compact fallback when budget is tight
-}
 
 export interface TalkThreadSummary {
   id: string;
@@ -337,7 +331,7 @@ export function buildContext(opts: {
       tier: Tier.STANDARD,
       marker: `## ${portalName} Gateway API`,
       content: buildApiReference(gatewayUrl, portalName, opts.employee, supervisesCount, opts.sessionToken, opts.operatorDelegationScopes),
-      summary: buildApiReferenceSummary(gatewayUrl, portalName, opts.employee, supervisesCount),
+      summary: buildApiReferenceSummary(gatewayUrl, portalName, opts.employee, supervisesCount, opts.sessionToken, opts.operatorDelegationScopes),
     });
   }
 
@@ -818,140 +812,4 @@ export function buildOnboardingContext(opts: {
     `Each beat must offer an explicit skip ("just say 'skip' or 'later'"). Never trap ${name}.`,
     `When onboarding wraps, set \`portal.setupComplete: true\` in \`config.yaml\` so this never repeats.`,
   ].join("\n");
-}
-
-/**
- * Audience-scoped Gateway API reference. The FULL endpoint table lives in
- * CLAUDE.md/AGENTS.md (auto-loaded by every engine) — injecting it here too
- * was pure duplication. What remains dynamic is the live base URL and the
- * short list of calls each audience actually makes.
- */
-function canUseChildSessionProtocol(employee?: Employee, directReportCount = 0): boolean {
-  return !employee || employee.rank === "manager" || employee.rank === "executive" || directReportCount > 0;
-}
-
-function buildApiReferenceSummary(gatewayUrl: string, portalName: string, employee?: Employee, directReportCount = 0): string {
-  const header = `## ${portalName} Gateway API (${gatewayUrl})`;
-  const checkpointLine = `- If work cannot continue without an operator decision, create a durable checkpoint with \`POST ${gatewayUrl}/api/checkpoints\`; if the operator already delegated that decision, decide and continue instead.`;
-  if (!canUseChildSessionProtocol(employee, directReportCount)) {
-    return [
-      header,
-      `Child-session delegation is unavailable because you do not currently supervise any reports in the org graph.`,
-      `If that seems wrong, check the employee's \`reportsTo\` / manager wiring.`,
-      `Full endpoint reference: CLAUDE.md / AGENTS.md.`,
-    ].join("\n");
-  }
-  if (!employee) {
-    return [
-      header,
-      `- Spawn a child session: \`POST ${gatewayUrl}/api/sessions\` with \`{prompt, employee?, parentSessionId}\``,
-      `- Follow up on a child session: \`POST ${gatewayUrl}/api/sessions/:id/message\` with \`{message}\``,
-      `- Read a child's latest replies: \`GET ${gatewayUrl}/api/sessions/:id?last=N\``,
-      checkpointLine,
-      `- Do not delegate or route work to \`hr-manager\`; HR accepts direct top-level human-operator requests only.`,
-    ].join("\n");
-  }
-  return [
-    header,
-    `- Delegate to another employee: \`POST ${gatewayUrl}/api/sessions\` with \`{prompt, employee, parentSessionId}\``,
-    `- Follow up on a child session: \`POST ${gatewayUrl}/api/sessions/:id/message\` with \`{message}\``,
-    `- Read a child's latest replies: \`GET ${gatewayUrl}/api/sessions/:id?last=N\``,
-    checkpointLine,
-    `- Do not delegate or route work to \`hr-manager\`; HR accepts direct top-level human-operator requests only.`,
-  ].join("\n");
-}
-
-function buildApiReference(
-  gatewayUrl: string,
-  portalName: string,
-  employee?: Employee,
-  directReportCount = 0,
-  sessionToken?: string,
-  operatorDelegationScopes?: OperatorDelegationScope[],
-): string {
-  const header = `## ${portalName} Gateway API (base URL: ${gatewayUrl})`;
-  const authLine = sessionToken
-    ? `For session-scoped gateway calls, use \`Authorization: Bearer "$CUTTLEFISH_SESSION_TOKEN"\`. The gateway injects that credential into this engine process; never print, log, or place it in a message.`
-    : `Privileged endpoints require local gateway auth; the web UI and built-in delegation tools handle this automatically.`;
-  const attachmentsLine =
-    `- Push a file/image into this chat (web view): \`curl -X POST ${gatewayUrl}/api/sessions/<your-session-id>/attachments -H 'Content-Type: application/json' -d '{"path":"/abs/path","text":"caption"}'\``;
-  const canResolveDelegatedDecision = operatorDelegationScopes?.includes("approve") || operatorDelegationScopes?.includes("decide");
-  const orgApprovalLine = sessionToken
-    ? canResolveDelegatedDecision
-      ? `- This turn carries explicit human-delegated decision authority. You may inspect and resolve approvals/checkpoints with the injected session credential, within the exact task scope. Direct org apply routes remain operator-only; resolve an org-change through its approval record.`
-      : `- Propose an org change with \`POST ${gatewayUrl}/api/org/change-requests\` using the injected session credential. Its approval is then shown in this chat and in Approvals. Never call an approve, reject, or apply endpoint: chat text is not operator approval.`
-    : `- Org changes require an authenticated proposal and a separate operator approval in the dashboard.`;
-  const checkpointLine = sessionToken
-    ? `- If you genuinely cannot continue without an operator decision, create a durable checkpoint with \`POST ${gatewayUrl}/api/checkpoints\` using \`{decisionNeeded, why, options?, resumePrompt?}\` and the injected session credential. The gateway binds it to this session, pauses the chat, and surfaces it in Approvals. If the operator already authorized you to decide, decide and continue instead; do not create a checkpoint merely to narrate uncertainty.`
-    : `- Unresolved operator decisions should be recorded as durable checkpoints so they appear in this chat and in Approvals.`;
-  if (!employee) {
-    return [
-      header,
-      authLine,
-      `- Spawn a child session: \`POST ${gatewayUrl}/api/sessions\` with \`{prompt, employee?, parentSessionId}\``,
-      `- Set \`employee\` to an org slug to delegate; omit it to spawn a direct/COO child session.`,
-      `- Follow up on a child session: \`POST ${gatewayUrl}/api/sessions/:id/message\` with \`{message}\``,
-      `- Read a child's latest replies: \`GET ${gatewayUrl}/api/sessions/:id?last=N\``,
-      `- Do not delegate or route work to \`hr-manager\`; HR accepts direct top-level human-operator requests only.`,
-      orgApprovalLine,
-      checkpointLine,
-      `- Valid \`employee\` values are the slugs in \`GET ${gatewayUrl}/api/org\` or \`ls ${ORG_DIR}/\``,
-      attachmentsLine,
-      `Full endpoint table: CLAUDE.md / AGENTS.md.`,
-    ].join("\n");
-  }
-  // Anyone who supervises reports needs the delegation endpoints. The caller
-  // passes a count of ALL reportsTo edges (primary + secondary), so a reviewer's
-  // secondary-parent implementer is delegate-capable too — rank alone undercounts
-  // (seniors, and even employees, can be a reviewer's reportsTo target).
-  if (canUseChildSessionProtocol(employee, directReportCount)) {
-    return [
-      header,
-      authLine,
-      `- Delegate to another employee: \`POST ${gatewayUrl}/api/sessions\` with \`{prompt, employee, parentSessionId}\``,
-      `- Follow up on a child session: \`POST ${gatewayUrl}/api/sessions/:id/message\` with \`{message}\``,
-      `- Read a child's latest replies: \`GET ${gatewayUrl}/api/sessions/:id?last=N\``,
-      `- Do not delegate or route work to \`hr-manager\`; HR accepts direct top-level human-operator requests only.`,
-      orgApprovalLine,
-      checkpointLine,
-      `- Valid \`employee\` values are the slugs in your chain of command, \`GET ${gatewayUrl}/api/org\`, or \`ls ${ORG_DIR}/\``,
-      attachmentsLine,
-      `Full endpoint table: CLAUDE.md / AGENTS.md.`,
-    ].join("\n");
-  }
-  return [
-    header,
-    authLine,
-    `Child-session delegation is unavailable because you do not currently supervise any reports in the org graph.`,
-    `If that seems wrong, check the employee's \`reportsTo\` / manager wiring.`,
-    orgApprovalLine,
-    checkpointLine,
-    attachmentsLine,
-    `Full endpoint table: CLAUDE.md / AGENTS.md.`,
-  ].join("\n");
-}
-
-/**
- * Progressive trimming by tier: OPTIONAL sections are replaced with summaries first,
- * then STANDARD, then (as a last resort) ESSENTIAL sections.
- */
-function trimContext(sections: Section[], maxChars: number): string {
-  let parts = sections.map(s => s.content);
-  let result = parts.join("\n\n");
-  if (result.length <= maxChars) return result;
-
-  let length = result.length;
-
-  // Trim OPTIONAL sections first, then STANDARD
-  for (const tier of [Tier.OPTIONAL, Tier.STANDARD]) {
-    for (let i = sections.length - 1; i >= 0; i--) {
-      if (length <= maxChars) break;
-      if (sections[i].tier === tier && sections[i].summary) {
-        length += sections[i].summary.length - parts[i].length;
-        parts[i] = sections[i].summary;
-      }
-    }
-  }
-
-  return parts.join("\n\n");
 }
