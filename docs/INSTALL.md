@@ -14,7 +14,7 @@ Override with `CUTTLEFISH_HOME`.
 |------|----------|--------|
 | **npm** `npm install -g cuttlefish-cli` | Everyday installs | Public package; verify the requested version with `npm view cuttlefish-cli version` |
 | **Homebrew** (macOS/Linux) | Formula users | Updated automatically after a successful npm publish; inspect `Formula/cuttlefish.rb` for its pinned version |
-| **GitHub Release archive** | Offline / pinned platform trees with native modules prebuilt | Use a release that actually lists the platform asset; `v0.23.9` supersedes incomplete `v0.23.7` and unpublished `v0.23.8` |
+| **GitHub Release archive** | Offline / pinned platform trees with native modules prebuilt | Use a release that actually lists the platform asset. `v0.23.6` is the newest release with archives; `v0.23.7` has none, and `v0.23.9` (the recovery release that supersedes it and the unpublished `v0.23.8`) is not tagged or published yet |
 | **Source** | Contributors and pre-publish installs | Always works |
 
 ---
@@ -146,10 +146,13 @@ Known Windows differences and limitations:
 
 ## macOS / Linux
 
-> **Current release state (2026-09-03):** `v0.23.9` is the recovery release for
-> the incomplete `v0.23.7` publication and unpublished `v0.23.8` candidate.
-> Before a pinned install, verify that npm or the GitHub Release lists the
-> requested `0.23.9` package or platform archive; source installation remains
+> **Current release state (2026-09-06):** `v0.23.9` is the recovery release
+> prepared for the incomplete `v0.23.7` publication and unpublished `v0.23.8`
+> candidate, but it is not tagged or published yet. Today `npm install -g
+> cuttlefish-cli` resolves to `0.23.6`, the Homebrew formula pins `0.23.6`, and
+> `v0.23.6` is the newest GitHub Release with platform archives (`v0.23.7`
+> lists none). Before a pinned install, verify that npm or the GitHub Release
+> lists the requested package or platform archive; source installation remains
 > available independently of the release pipeline.
 
 ### npm (after publication)

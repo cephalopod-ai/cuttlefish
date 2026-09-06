@@ -1,7 +1,53 @@
 import { getStatus } from "../gateway/lifecycle.js";
+import { gatewayBaseUrl, readGatewayInfo } from "../gateway/gateway-info.js";
 import { loadConfig } from "../shared/config.js";
-import { CUTTLEFISH_HOME, PID_FILE } from "../shared/paths.js";
+import { CUTTLEFISH_HOME, GATEWAY_INFO_FILE, PID_FILE } from "../shared/paths.js";
 import fs from "node:fs";
+
+export interface StatusEndpoint {
+  url: string;
+  port: number;
+  token?: string;
+}
+
+/**
+ * Where `cuttlefish status` asks the live gateway for details. Prefers the
+ * runtime record the daemon wrote (gateway.json: actual bound port/host plus
+ * the operator token) over config.yaml, so a `start -p` override is honored
+ * and the request can pass the auth gate. `/api/status` is operator-only, so
+ * an unauthenticated probe is answered 401 and would show nothing.
+ */
+export function resolveStatusEndpoint(): StatusEndpoint | null {
+  const info = readGatewayInfo(GATEWAY_INFO_FILE);
+  let configHost: string | undefined;
+  let configPort: number | undefined;
+  try {
+    const config = loadConfig();
+    configHost = config.gateway.host;
+    configPort = config.gateway.port;
+  } catch {
+    // gateway.json alone is enough when config.yaml is temporarily invalid.
+  }
+  const port = info?.port ?? configPort;
+  if (!port) return null;
+  const host = info?.host ?? configHost;
+  return { url: `${gatewayBaseUrl({ port, host }, configHost)}/api/status`, port, token: info?.token };
+}
+
+export interface LiveStatus {
+  sessions?: unknown;
+  uptime?: number;
+}
+
+export async function fetchLiveStatus(
+  endpoint: StatusEndpoint,
+  fetchImpl: typeof fetch = fetch,
+): Promise<LiveStatus | null> {
+  const headers: Record<string, string> = endpoint.token ? { authorization: `Bearer ${endpoint.token}` } : {};
+  const res = await fetchImpl(endpoint.url, { headers, signal: AbortSignal.timeout(3000) });
+  if (!res.ok) return null;
+  return (await res.json()) as LiveStatus;
+}
 
 export async function runStatus(): Promise<void> {
   if (!fs.existsSync(CUTTLEFISH_HOME)) {
@@ -42,35 +88,31 @@ export async function runStatus(): Promise<void> {
   }
 
   // Try to get live stats from the gateway
+  const endpoint = resolveStatusEndpoint();
+  if (!endpoint) return;
+  let data: LiveStatus | null = null;
   try {
-    const config = loadConfig();
-    const url = `http://${config.gateway.host}:${config.gateway.port}/api/status`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
-    if (res.ok) {
-      const data = await res.json();
-      console.log(`  Port: ${config.gateway.port}`);
-      if (data.sessions !== undefined) {
-        if (typeof data.sessions === "object" && data.sessions && !Array.isArray(data.sessions)) {
-          const s = data.sessions as { total?: number; active?: number; running?: number };
-          const total = s.total ?? 0;
-          const active = s.active ?? 0;
-          const running = s.running ?? 0;
-          console.log(`  Active sessions: ${active} (running: ${running}, total: ${total})`);
-        } else {
-          console.log(`  Active sessions: ${data.sessions}`);
-        }
-      }
-      if (data.uptime !== undefined) {
-        console.log(`  Server uptime: ${data.uptime}s`);
-      }
-    }
+    data = await fetchLiveStatus(endpoint);
   } catch {
-    // Gateway not responding to HTTP, that's fine
-    try {
-      const config = loadConfig();
-      console.log(`  Port: ${config.gateway.port} (not responding to HTTP)`);
-    } catch {
-      // no config
+    data = null;
+  }
+  if (!data) {
+    console.log(`  Port: ${endpoint.port} (not responding to HTTP)`);
+    return;
+  }
+  console.log(`  Port: ${endpoint.port}`);
+  if (data.sessions !== undefined) {
+    if (typeof data.sessions === "object" && data.sessions && !Array.isArray(data.sessions)) {
+      const s = data.sessions as { total?: number; active?: number; running?: number };
+      const total = s.total ?? 0;
+      const active = s.active ?? 0;
+      const running = s.running ?? 0;
+      console.log(`  Active sessions: ${active} (running: ${running}, total: ${total})`);
+    } else {
+      console.log(`  Active sessions: ${data.sessions}`);
     }
+  }
+  if (data.uptime !== undefined) {
+    console.log(`  Server uptime: ${data.uptime}s`);
   }
 }

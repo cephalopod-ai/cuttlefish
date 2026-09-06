@@ -1,10 +1,8 @@
-# No published npm release exists as of 2026-07-22. The previous entry
-# (cuttlefish-cli-0.23.6.tgz, bumped by CI on 2026-07-21) pointed at a
-# tarball that briefly existed on the npm registry and now 404s there;
-# `brew install` against that URL fails. See
-# .giles/feature-ledger/giles-ledger-0087-release-cuttlefish-cli-v0.23.4-20260722.md
-# for details. bump-formula.yml will overwrite this url/sha256 once a
-# real npm publish succeeds - do not hand-edit past that point.
+# Pinned to cuttlefish-cli-0.23.6.tgz, the newest version published to npm
+# (2026-07-25; verified live with a matching sha256 on 2026-09-06). The
+# v0.23.7 GitHub Release never reached npm (publish authority failed), so
+# the formula correctly stays at 0.23.6. bump-formula.yml overwrites this
+# url/sha256 after each successful npm publish - do not hand-edit it.
 class Cuttlefish < Formula
   desc "Lightweight AI gateway daemon orchestrating professional AI coding CLIs"
   homepage "https://github.com/cephalopod-ai/cuttlefish"

@@ -95,9 +95,13 @@ Each [GitHub Release](https://github.com/cephalopod-ai/cuttlefish/releases) that
 
 Then open **[http://localhost:8888](http://localhost:8888)**, send your first message, and watch your COO delegate.
 
-> **Package availability.** `v0.23.9` is the current recovery release for the
-> incomplete `v0.23.7` publication and unpublished `v0.23.8` candidate. Its
-> pipeline publishes npm first, then platform archives and Homebrew; verify the
+> **Package availability.** This tree is versioned `0.23.9`, the recovery
+> release prepared for the incomplete `v0.23.7` publication and the unpublished
+> `v0.23.8` candidate, but it has **not been tagged or published yet**. The
+> newest installable packages are `cuttlefish-cli@0.23.6` on npm (also the
+> Homebrew pin) and the `v0.23.6` GitHub Release platform archives; `v0.23.7`
+> on GitHub carries no packages or archives. Once `v0.23.9` is published, its
+> pipeline runs npm first, then platform archives and Homebrew, so verify the
 > requested package or asset is listed before a pinned install.
 > See [`docs/RELEASING.md`](docs/RELEASING.md) and
 > [`docs/INSTALL.md`](docs/INSTALL.md).

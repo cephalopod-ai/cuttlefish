@@ -3,6 +3,12 @@
 ## [Unreleased]
 
 ### Fixed
+- **`cuttlefish status` shows gateway details again.** Since gateway auth became
+  the default, the CLI's unauthenticated probe of `/api/status` was answered
+  401 and silently dropped the port and session lines. `status` now reads the
+  daemon's runtime record (`gateway.json`) for the live port, host, and
+  operator token, so it reports the port a `start -p` override actually bound
+  and the session counts, and says plainly when the gateway is not answering.
 - **Security reviews cannot be attributed to the wrong command.** The
   security-reviewer runs on one standing session reused for every checkpoint.
   Reading "its last reply" republished the previous review whenever a turn
