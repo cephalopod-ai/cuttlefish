@@ -35,7 +35,7 @@
     "@a2a-js/sdk": "1.1.0",
     "@cuttlefish/contracts": "0.1.0",
     "@qdrant/js-client-rest": "^1.19.0",
-    "@slack/bolt": "^4.3.0",
+    "@slack/bolt": "^5.1.0",
     "@whiskeysockets/baileys": "7.0.0-rc14",
     "better-sqlite3": "^13.0.3",
     "busboy": "^1.6.0",
