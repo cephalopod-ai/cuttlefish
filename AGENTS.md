@@ -1,61 +1,51 @@
 # Agent Execution Contract
 
 This file is the canonical repo-wide instruction contract for coding, audit,
-documentation, and maintenance agents. Model-specific files such as `CLAUDE.md`,
-`GEMINI.md`, `CODEX.md`, or `.github/copilot-instructions.md` may add tool-specific
-preferences, but they must not redefine, duplicate, or weaken this contract — they
-should be thin pointers back to `AGENTS.md`.
+documentation, and maintenance agents. Adapter files — `CLAUDE.md`, `GEMINI.md`,
+`CODEX.md`, `.github/copilot-instructions.md` — may add tool-specific execution
+preferences but must not redefine, duplicate, or weaken this contract. On
+conflict, `AGENTS.md` wins.
+
+Rationale and longer-form working practices live in
+[`docs/agent/working-practices.md`](docs/agent/working-practices.md).
 
 <!-- fleet-tiering-core -->
-## Normative Core (staged loading)
+## Normative Core
 
-This section is front-loaded so that a provider which truncates long
-instruction files still receives the binding rules. Some tools cap how much
-of an instruction file they load (a Codex-style `project_doc_max_bytes`
-defaults to 32 KiB, and global instructions count toward that cap); any rule
-past that cap is invisible to such a provider. Everything below this section
-elaborates these rules — later sections **must not weaken** the core.
+Front-loaded so that a provider which truncates long instruction files still
+receives the binding rules (a Codex-style `project_doc_max_bytes` defaults to
+32 KiB, and global instructions count toward that cap). Later sections
+elaborate these rules and must not weaken them.
 
-### Precedence
-1. Explicit task instructions from the operator.
-2. This Normative Core and the repo-required sections below.
-3. Later sections of this file (elaboration).
-4. Adapter files (`CLAUDE.md`, `GEMINI.md`, …) — provider-specific execution
-   preferences only; they never override this file. On conflict, `AGENTS.md`
-   wins.
+Precedence: operator task instructions → this Normative Core → later sections
+of this file → adapter files (`CLAUDE.md`, `GEMINI.md`, …), which carry
+provider-specific execution preferences only.
 
-### Binding rules (MUST / MUST NOT)
-- **Inspect before modifying.** Read existing code, tests, docs, and
-  conventions first. Do not invent APIs, imports, paths, or commands.
-- **Smallest coherent change.** One coherent task per run; MUST NOT bundle
-  unrelated changes or widen scope silently — disclose adjacent edits.
-- **No fake success.** MUST NOT present stubs/placeholders/canned responses
-  as working, or suppress errors to make tests/logs look clean.
-- **Validate and report honestly.** Run the relevant checks before declaring
-  completion; state exactly what passed, failed, or was not run.
-- **Preserve user work.** MUST NOT delete/overwrite existing work or revert
-  changes without explicit instruction.
+- **Inspect before modifying.** Read the surrounding code, tests, docs and
+  conventions first, and preserve them. Do not invent APIs, imports, paths,
+  configuration keys, or commands.
+- **Stay in scope.** One coherent task per run; make the smallest coherent
+  change; disclose adjacent edits instead of widening scope silently.
+- **No fake success.** Never present a stub, placeholder, or canned response as
+  working, and never suppress errors to make tests, logs, or reports look clean.
+- **Validate before completion.** Run the checks in the Validation section and
+  state exactly what passed, failed, or was not run; report work as partially
+  validated when only part of the change was verified.
+- **Preserve operator work.** Do not delete or overwrite in-progress files, and
+  never revert existing changes you were not asked to revert. Uncommitted files
+  are repository state, not a failure.
 - **Artifact placement.** Durable audit summaries → `docs/audits/`;
-  human-authored session/handoff logs → `docs/logs/session/<MMYYYY>/`
-  (NOT the repo root or top-level `logs/`, which is for generated telemetry
-  and raw evidence). Generated compliance artifacts stay under their
-  generator's output path.
-- **Documentation is source-grounded.** MUST NOT invent behavior; update
-  user-facing docs when externally visible behavior changes.
+  human-authored session/handoff logs → `docs/logs/session/<MMYYYY>/` (NOT the
+  repo root and NOT top-level `logs/`, which holds generated telemetry and raw
+  evidence). Generated compliance artifacts stay under their generator's output
+  path.
+- **Evidence, not verdicts.** Scanner output is advisory until a fresh scan
+  promotes it; record evidence rather than declaring compliance. Clear a
+  blocking finding by fixing the repo or by recording a governed exception in
+  `governance/exceptions.yaml`, never by inline suppression.
 
-### Staged instruction loading
-- **Always (this core):** every provider that loads `AGENTS.md` receives it.
-- **By location (nested `AGENTS.md`):** subtrees with their own `AGENTS.md`
-  (e.g. `docs/`, `logs/`) carry local placement rules and defer to this root.
-  Codex loads them automatically when editing that subtree; other tools open
-  them when the task touches it.
-- **Byte-capped providers:** set `project_doc_max_bytes` high enough to load
-  this whole file; if you cannot, treat this Normative Core as authoritative
-  and open later sections explicitly. Non-capped providers (e.g. Claude Code)
-  load the full file and are unaffected.
-
-For repo-specific detail — architecture, commands, governance, and the full
-rules — read the sections that follow this one.
+Nested `AGENTS.md` files (e.g. `docs/AGENTS.md`) add local placement rules for
+their subtree and defer to this root.
 <!-- / fleet-tiering-core -->
 
 ## Repository Contract
@@ -71,13 +61,16 @@ monorepo**. It declares `family: application`, `repo_type: service`,
   `control/`, and `docs/`.
 - Purpose: wrap battle-tested engine CLIs behind one daemon and add only routing,
   scheduling, connectors, and the org system — "a bus, not a brain".
-- Allowed automation behavior: inspect all repo files; propose or apply scoped
-  changes; update governance/compliance records when explicitly instructed.
-- Prohibited automation behavior: weakening baseline agent/governance rules,
-  silently widening scope, adding fake feature behavior, breaking the Claude
-  subscription / interactive-PTY billing path (see README "How the Claude engine
-  works"), or committing secrets / `~/.cuttlefish` runtime state.
 
+### Hard boundaries
+
+- Frozen paths: `control/**` and `governance/**`. Do not edit them unless the
+  task explicitly requires it and authority allows.
+- Do not modify generated artifacts, vendored files, lockfiles, or
+  `packages/*/dist` and `packages/*/out` unless the task requires it.
+- Never break the Claude subscription / interactive-PTY billing path (see
+  `README.md`, "How the Claude engine works").
+- Never commit secrets or `~/.cuttlefish` runtime state.
 
 <!-- GILES:FEATURE-LEDGER:START -->
 ## Giles feature ledger requirement
@@ -132,27 +125,15 @@ If reconstructing history from archive/session/audit logs, mark provenance as re
   new non-routing behavior belongs in focused domain modules.
 <!-- GILES:DOCS-GOVERNANCE:END -->
 
-## Agent Operating Rules
-
-- One task per run; run validation before done.
-- Agents must read `AGENTS.md` first.
-- Read existing code before edits; prefer minimal, focused diffs over rewrites.
-- One coherent task per run; if scope expands, document and justify it.
-- Run validation before declaring completion; if partial, say so with residual risks.
-- Do not delete or overwrite user work; preserve existing behavior unless the task
-  requires a change.
-- No fake success, stubbed completion, invented APIs/imports/paths, or hidden errors.
-- Do not edit out-of-scope or frozen paths (`control/**`, `governance/**`) unless the
-  task explicitly requires it and authority allows.
-
 ## Documentation Rules
 
-- Keep `docs/INDEX.md` aligned with new or renamed operator-facing docs and the
+- `README.md` and `docs/INDEX.md` are the orientation surfaces. Keep
+  `docs/INDEX.md` aligned with new or renamed operator-facing docs and with the
   current month's log/audit summaries.
-- Keep documentation aligned with current behavior; use explicit status language
-  (implemented, partially validated, residual risks). Update docs in the same change set.
-- Do not claim production readiness for scaffolded surfaces without evidence.
 - Public CLI/API/UI surfaces are catalogued in `docs/feature_inventory.md`; keep it current.
+- Use explicit status language (implemented, partially validated, residual risks),
+  and update docs in the same change set as the behaviour they describe.
+- Do not claim production readiness for scaffolded surfaces without evidence.
 
 ## Compliance
 
@@ -175,42 +156,6 @@ pnpm test        # turbo test (vitest in packages/web, node tests in packages/cu
 pnpm lint        # turbo lint
 pnpm build       # turbo build (also copies packages/web/out -> packages/cuttlefish/dist/web)
 ```
-
-## Operating Principles
-
-- Prefer the smallest coherent change that satisfies the task.
-- Make failure states visible; do not hide uncertainty, skipped validation, degraded
-  mode, or partial completion.
-- Do not bundle unrelated work.
-
-## Core Rules
-
-1. Inspect existing code, nearby files, tests, docs, and conventions before writing new code.
-2. Do not invent APIs, imports, commands, files, configuration keys, or paths. Verify before use.
-3. Preserve project style: naming, formatting, architecture, UI language, logging, tests.
-4. Execute one coherent task per run. Do not bundle unrelated fixes or opportunistic cleanup.
-5. Stay in scope. If a necessary change touches adjacent scope, disclose it explicitly.
-6. Prefer the smallest coherent change that satisfies the task and preserves existing behavior.
-7. Surface conflicting patterns instead of averaging them; choose the least risky local convention.
-8. Never silently fail. Surface partial success, blocked work, degraded mode, skipped checks.
-9. Do not hide or suppress errors to make tests, UI, logs, or reports look clean.
-10. Run the relevant tests/checks before declaring completion. State what passed, failed, or was not run.
-11. Summarize meaningful tool actions and file changes with their effect.
-12. Stop at the task boundary, destructive action, or unresolved ambiguity; report state and next safe step.
-
-## Repository State Rules
-
-13. Do not treat uncommitted files as failure by default. Report them as repository state.
-14. Severity `info` findings are not automatic failures. Fail only on configured fail conditions.
-15. Respect documented exceptions. A known, governed exception is reported as covered, not rediscovered.
-16. Do not modify generated artifacts, vendored files, lockfiles, or `packages/*/dist`/`out` unless required.
-
-## Audit Rules
-
-17. For audit tasks, write findings and evidence. Do not patch code unless explicitly instructed.
-18. For patch tasks, keep changes scoped and avoid opportunistic architecture rewrites.
-19. Findings must include evidence paths, observed behavior, expected behavior, and remediation guidance.
-20. Do not average conflicting conventions. Report the conflict and make the smallest reversible local choice.
 
 ## Canonical filename
 
@@ -239,3 +184,14 @@ Both `docs/logs/` and the top-level `logs/` (generated runtime telemetry such as
 `logs/agent-activity.jsonl`) are **git-ignored local artifacts** — they are not part
 of the published repo.
 <!-- /session-log-convention -->
+
+## Compact checklist
+
+1. Read this file, then `README.md` and `docs/INDEX.md`.
+2. Name the one task for this run and the files it touches.
+3. Read those files, their tests, and any nested `AGENTS.md` before editing.
+4. Make the smallest change that completes the task; do not bundle unrelated fixes.
+5. Keep out of `control/**` and `governance/**` unless the task requires them.
+6. Write new artifacts to the paths named above; do not create parallel trees.
+7. Run `pnpm typecheck`, `pnpm test`, and `pnpm lint`.
+8. Report what passed, what failed, what you skipped, and what remains open.
