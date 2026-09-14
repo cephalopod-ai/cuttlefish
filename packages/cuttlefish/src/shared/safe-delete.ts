@@ -109,8 +109,12 @@ export function assertSafeDestructivePath(target: string, opts: SafeDestructiveO
  * not-yet-existing tail lexically. Unlike `fs.realpathSync` this does not throw
  * when the target itself is absent (deletion of a missing path is a no-op), so
  * containment can still be checked in the real-path domain.
+ *
+ * Exported for reuse by `shared/path-containment.ts`'s general-purpose
+ * containment helper — this is a pure visibility change with no effect on
+ * this file's own delete-safety behavior.
  */
-function realpathDeepest(p: string): string {
+export function realpathDeepest(p: string): string {
   let cur = path.resolve(p);
   const tail: string[] = [];
   for (;;) {

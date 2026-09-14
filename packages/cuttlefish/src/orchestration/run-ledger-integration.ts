@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
 import { v4 as uuidv4 } from "uuid";
 import { getRunLedger } from "../run-ledger/index.js";
+import { canonicalSha256 } from "../shared/canonical-json.js";
 import { logger } from "../shared/logger.js";
 import { POLICY_DIR } from "../shared/paths.js";
 import { getPolicyProfile } from "../policy/loader.js";
@@ -82,10 +82,16 @@ export function recordOrchestrationPolicySnapshot(
   }
 }
 
-/** Stable content hash of the currently loaded policy profile's rules. */
+/**
+ * Stable content hash of the currently loaded policy profile's rules.
+ *
+ * Hashed via `canonicalSha256` (key-order-independent) rather than a plain
+ * `JSON.stringify`, so two profiles with identical rules but differently
+ * ordered object keys are never treated as distinct snapshots.
+ */
 function hashPolicyProfile(policyDir: string = POLICY_DIR): string {
   const profile = getPolicyProfile(policyDir);
-  return createHash("sha256").update(JSON.stringify(profile.rules)).digest("hex").slice(0, 16);
+  return canonicalSha256(profile.rules).slice(0, 16);
 }
 
 /**

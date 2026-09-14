@@ -7,7 +7,7 @@ import { writeRecoveryManifest } from "./store-recovery.js";
 import { DEFAULT_LEASE_DURATION_MS, type TelemetryEvent } from "./types.js";
 import { setMeta } from "./store-utils.js";
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 export const NEXT_SEQ_META_KEY = "scheduler_next_seq";
 export const QUEUE_PAUSE_META_KEY = "queue_pause";
 export const SCHEMA_VERSION_META_KEY = "schema_version";
@@ -165,6 +165,143 @@ CREATE TABLE IF NOT EXISTS patch_apply_attempts (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_orch_patch_apply_task ON patch_apply_attempts (task_id, created_at);
+
+-- Evidence-gated run contracts (schema v6). See orchestration/contracts/ for
+-- the layer that owns these tables; store-schema.ts only owns their shape.
+CREATE TABLE IF NOT EXISTS run_contracts (
+  contract_id TEXT PRIMARY KEY,
+  revision INTEGER NOT NULL DEFAULT 1,
+  run_id TEXT,
+  task_id TEXT NOT NULL,
+  coordinator_id TEXT NOT NULL,
+  mode TEXT NOT NULL,
+  schema_version TEXT NOT NULL,
+  contract_json TEXT NOT NULL,
+  contract_sha256 TEXT NOT NULL,
+  task_sha256 TEXT NOT NULL,
+  source_snapshot_json TEXT,
+  source_snapshot_sha256 TEXT,
+  compiled_graph_json TEXT NOT NULL,
+  compiled_graph_sha256 TEXT NOT NULL,
+  completion_policy TEXT NOT NULL,
+  source_drift_policy TEXT NOT NULL,
+  phase TEXT NOT NULL,
+  outcome TEXT,
+  active_stage_id TEXT,
+  generation INTEGER NOT NULL DEFAULT 0,
+  supersedes_contract_id TEXT,
+  projection_pending INTEGER NOT NULL DEFAULT 0,
+  projection_attempts INTEGER NOT NULL DEFAULT 0,
+  projection_last_error TEXT,
+  boot_generation INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  terminal_at TEXT,
+  retention_expires_at TEXT,
+  FOREIGN KEY (supersedes_contract_id) REFERENCES run_contracts(contract_id) ON DELETE SET NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_run_contracts_task_rev ON run_contracts (task_id, coordinator_id, revision);
+CREATE INDEX IF NOT EXISTS idx_run_contracts_phase ON run_contracts (phase, updated_at);
+CREATE INDEX IF NOT EXISTS idx_run_contracts_projection_pending ON run_contracts (projection_pending, updated_at);
+CREATE INDEX IF NOT EXISTS idx_run_contracts_run ON run_contracts (run_id);
+
+CREATE TABLE IF NOT EXISTS run_stages (
+  stage_id TEXT PRIMARY KEY,
+  contract_id TEXT NOT NULL,
+  stage_key TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  ordinal INTEGER NOT NULL,
+  definition_json TEXT NOT NULL,
+  definition_sha256 TEXT NOT NULL,
+  state TEXT NOT NULL,
+  generation INTEGER NOT NULL DEFAULT 0,
+  required INTEGER NOT NULL DEFAULT 1,
+  role_id TEXT,
+  mutates_workspace INTEGER NOT NULL DEFAULT 0,
+  allocation_timeout_ms INTEGER,
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 1,
+  started_at TEXT,
+  finished_at TEXT,
+  last_error_code TEXT,
+  last_error_summary TEXT,
+  FOREIGN KEY (contract_id) REFERENCES run_contracts(contract_id) ON DELETE CASCADE
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_run_stages_contract_key ON run_stages (contract_id, stage_key);
+CREATE INDEX IF NOT EXISTS idx_run_stages_state ON run_stages (contract_id, state);
+
+CREATE TABLE IF NOT EXISTS run_attempts (
+  attempt_id TEXT PRIMARY KEY,
+  stage_id TEXT NOT NULL,
+  attempt_number INTEGER NOT NULL,
+  boot_generation INTEGER NOT NULL,
+  claim_token_hash TEXT NOT NULL,
+  allocation_id TEXT,
+  lease_id TEXT,
+  session_id TEXT,
+  worker_id TEXT,
+  state TEXT NOT NULL,
+  failure_kind TEXT,
+  input_manifest_sha256 TEXT,
+  output_manifest_sha256 TEXT,
+  policy_receipt_evidence_id TEXT,
+  process_terminated_verified_at TEXT,
+  last_heartbeat_at TEXT,
+  started_at TEXT,
+  finished_at TEXT,
+  last_error_summary TEXT,
+  FOREIGN KEY (stage_id) REFERENCES run_stages(stage_id) ON DELETE CASCADE
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_run_attempts_stage_num ON run_attempts (stage_id, attempt_number);
+CREATE INDEX IF NOT EXISTS idx_run_attempts_state ON run_attempts (state, last_heartbeat_at);
+
+CREATE TABLE IF NOT EXISTS run_evidence (
+  evidence_id TEXT PRIMARY KEY,
+  contract_id TEXT NOT NULL,
+  stage_id TEXT,
+  attempt_id TEXT,
+  kind TEXT NOT NULL,
+  origin TEXT NOT NULL,
+  schema_version TEXT NOT NULL,
+  artifact_id TEXT,
+  locator TEXT,
+  content_sha256 TEXT NOT NULL,
+  bytes INTEGER NOT NULL DEFAULT 0,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  superseded_by_revision INTEGER,
+  superseded_at TEXT,
+  retention_expires_at TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (contract_id) REFERENCES run_contracts(contract_id) ON DELETE CASCADE,
+  FOREIGN KEY (stage_id) REFERENCES run_stages(stage_id) ON DELETE CASCADE,
+  FOREIGN KEY (attempt_id) REFERENCES run_attempts(attempt_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_run_evidence_contract ON run_evidence (contract_id, kind, created_at);
+CREATE INDEX IF NOT EXISTS idx_run_evidence_stage ON run_evidence (stage_id, kind);
+CREATE INDEX IF NOT EXISTS idx_run_evidence_current ON run_evidence (contract_id, superseded_by_revision);
+
+CREATE TABLE IF NOT EXISTS run_gate_decisions (
+  decision_id TEXT PRIMARY KEY,
+  contract_id TEXT NOT NULL,
+  stage_id TEXT,
+  gate_key TEXT NOT NULL,
+  gate_type TEXT NOT NULL,
+  state TEXT NOT NULL,
+  decision TEXT,
+  actor_kind TEXT,
+  actor_id TEXT,
+  contract_revision INTEGER NOT NULL,
+  stage_generation INTEGER,
+  input_manifest_sha256 TEXT,
+  evidence_manifest_sha256 TEXT NOT NULL,
+  notes TEXT,
+  created_at TEXT NOT NULL,
+  resolved_at TEXT,
+  FOREIGN KEY (contract_id) REFERENCES run_contracts(contract_id) ON DELETE CASCADE,
+  FOREIGN KEY (stage_id) REFERENCES run_stages(stage_id) ON DELETE CASCADE
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_run_gate_decisions_active ON run_gate_decisions (contract_id, gate_key, stage_generation);
+CREATE INDEX IF NOT EXISTS idx_run_gate_decisions_state ON run_gate_decisions (state, created_at);
 `;
 
 export function openStoreDatabase(dbPath: string, opts: StoreOpenOptions = {}): OpenedStoreDatabase {

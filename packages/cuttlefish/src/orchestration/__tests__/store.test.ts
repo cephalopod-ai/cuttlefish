@@ -283,6 +283,71 @@ describe("OrchestrationStore", () => {
     finalDb.close();
   });
 
+  it("creates the schema v6 run-contract tables and reopens idempotently", () => {
+    const store = OrchestrationStore.open(dbPath);
+    store.close();
+
+    // Idempotent reopen: CREATE_SCHEMA is IF NOT EXISTS everywhere, so a
+    // second open against an already-v6 database must not throw or
+    // duplicate anything.
+    const reopened = OrchestrationStore.open(dbPath);
+    reopened.close();
+
+    const db = new Database(dbPath);
+    const tableNames = new Set(
+      (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>).map(
+        (row) => row.name,
+      ),
+    );
+    for (const table of ["run_contracts", "run_stages", "run_attempts", "run_evidence", "run_gate_decisions"]) {
+      expect(tableNames.has(table)).toBe(true);
+    }
+    expect(db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get()).toMatchObject({
+      value: String(SCHEMA_VERSION),
+    });
+    db.close();
+  });
+
+  it("cascade-deletes stages, attempts, evidence, and gate decisions when their parent contract is deleted", () => {
+    const store = OrchestrationStore.open(dbPath);
+    store.close();
+
+    const db = new Database(dbPath);
+    db.pragma("foreign_keys = ON");
+    const now = fixedNow.toISOString();
+    db.prepare(
+      `INSERT INTO run_contracts (
+        contract_id, revision, task_id, coordinator_id, mode, schema_version,
+        contract_json, contract_sha256, task_sha256, compiled_graph_json, compiled_graph_sha256,
+        completion_policy, source_drift_policy, phase, boot_generation, created_at, updated_at
+      ) VALUES ('c1', 1, 't1', 'default', 'single_worker', '1', '{}', 'x', 'x', '{}', 'x', 'evidence_required', 'block', 'accepted', 1, ?, ?)`,
+    ).run(now, now);
+    db.prepare(
+      `INSERT INTO run_stages (stage_id, contract_id, stage_key, kind, ordinal, definition_json, definition_sha256, state)
+       VALUES ('s1', 'c1', 'implement', 'implement', 0, '{}', 'x', 'pending')`,
+    ).run();
+    db.prepare(
+      `INSERT INTO run_attempts (attempt_id, stage_id, attempt_number, boot_generation, claim_token_hash, state)
+       VALUES ('a1', 's1', 1, 1, 'x', 'pending')`,
+    ).run();
+    db.prepare(
+      `INSERT INTO run_evidence (evidence_id, contract_id, stage_id, attempt_id, kind, origin, schema_version, content_sha256, created_at)
+       VALUES ('e1', 'c1', 's1', 'a1', 'workspace_diff', 'host', '1', 'x', ?)`,
+    ).run(now);
+    db.prepare(
+      `INSERT INTO run_gate_decisions (decision_id, contract_id, stage_id, gate_key, gate_type, state, contract_revision, evidence_manifest_sha256, created_at)
+       VALUES ('g1', 'c1', 's1', 'review', 'review_gate', 'pending', 1, 'x', ?)`,
+    ).run(now);
+
+    db.prepare("DELETE FROM run_contracts WHERE contract_id = 'c1'").run();
+
+    expect(db.prepare("SELECT COUNT(*) AS n FROM run_stages").get()).toMatchObject({ n: 0 });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM run_attempts").get()).toMatchObject({ n: 0 });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM run_evidence").get()).toMatchObject({ n: 0 });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM run_gate_decisions").get()).toMatchObject({ n: 0 });
+    db.close();
+  });
+
   it("increments a durable boot generation counter on every open (TMP-CUT-013)", () => {
     const store = OrchestrationStore.open(dbPath);
     expect(store.getBootGeneration()).toBe(1);
