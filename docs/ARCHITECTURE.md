@@ -83,7 +83,8 @@ owning model reasoning.
 
 1. A session selects an engine/model/effort.
 2. Gateway builds prompt/context and attachments.
-3. Engine adapter invokes the external CLI.
+3. Gateway revalidates current task, allocation, queue and decision authority;
+   a supported engine adapter invokes the external CLI.
 4. Stream deltas are normalized and persisted.
 5. Final message, blocks, media, cost/context, and metadata update the session.
 
@@ -92,6 +93,34 @@ its public identity/onboarding/thread builders. `sessions/context-budget.ts`
 owns tier-based section selection; `sessions/context-api.ts` owns full and
 compact audience-scoped gateway guidance. Web and connector dispatchers keep
 calling `buildContext` through the original path.
+
+### Evidence and execution authority
+
+`sessions/execution-boundary.ts` constructs gateway-owned versioned origin,
+requirement and generation state in the registry. Child restrictions attenuate
+the actual parent; inbound transport metadata cannot mint host grant, lease,
+checkpoint or run state. `source: web` and a COO/manager persona do not authenticate
+an operator. Existing HMAC session credentials and explicit operator delegation
+remain the identity/grant mechanism, with unique issuance, bounded lifetime,
+current role/model/config checks and own/direct-child decision scope.
+
+`gateway/approval-binding.ts` binds material and target policy to the review
+revision. Checkpoint and fallback services persist a decision plus stable queue
+intent atomically in SQLite. `gateway/session-dispatch-authorization.ts` fences
+the current generation, producer attempt, allocation and decision immediately
+before invocation, including retries/fallbacks. Completion cannot clear a
+replacement attempt's checkpoint. Claimed queue rows recover as uncertain,
+never automatically re-armed. Outbox destinations and automatic web-turn
+connector reply material are bound independently of evidence text.
+
+Prompt distinctions and historical export metadata support attribution; live
+permission comes from gateway state. Codex batch's supported read-only arguments
+are used for protected dispatch; adapters without that capability refuse it.
+Gateway authorization does not isolate an external CLI from same-user files,
+credentials or native network/tools. The maintained
+[implementation handoff](evidence-execution-authority.md) maps actual action
+paths, compatibility, evidence and residual boundaries; upstream runtime
+conformance and native containment remain unverified.
 
 ## Dependency Boundaries
 

@@ -1,33 +1,57 @@
 import { randomUUID } from 'node:crypto';
+import { isQueueDispatchAuthority, type QueueDispatchAuthority } from '@cuttlefish/contracts';
 import { initDb } from './core.js';
+import { getSession, patchSessionTransportMeta, updateSession } from './sessions.js';
+import { queueDispatchAuthority } from '../execution-boundary.js';
 
 export interface QueueItem {
   id: string;
   sessionId: string;
   sessionKey: string;
   prompt: string;
-  status: "pending" | "running" | "cancelled" | "completed";
+  status: "pending" | "running" | "cancelled" | "completed" | "denied" | "uncertain";
+  dispatchAuthority: QueueDispatchAuthority | null;
+  dispatchAuthorityInvalid: boolean;
   position: number;
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;
 }
 
-export function enqueueQueueItem(sessionId: string, sessionKey: string, prompt: string): string {
+const SELECT_QUEUE = 'SELECT id, session_id as sessionId, session_key as sessionKey, prompt, dispatch_authority as dispatchAuthority, status, position, created_at as createdAt, started_at as startedAt, completed_at as completedAt FROM queue_items';
+
+function queueRow(row: Record<string, unknown>): QueueItem {
+  let authority: unknown = null;
+  try { authority = typeof row.dispatchAuthority === 'string' ? JSON.parse(row.dispatchAuthority) : null; } catch { /* Corrupt state is explicitly gated at dispatch. */ }
+  return { ...row, dispatchAuthority: isQueueDispatchAuthority(authority) ? authority : null,
+    dispatchAuthorityInvalid: row.dispatchAuthority != null && !isQueueDispatchAuthority(authority) } as unknown as QueueItem;
+}
+
+export function enqueueQueueItem(sessionId: string, sessionKey: string, prompt: string, authority?: QueueDispatchAuthority | null, operationId?: string): string {
   const db = initDb();
-  const id = randomUUID();
+  const id = operationId ?? randomUUID();
   // Read-then-insert must be one atomic unit: two concurrent enqueues for the
   // same session_key could otherwise read the same MAX(position) and produce
   // duplicate position values (DAT-SESS-007). Position ties are additionally
   // self-mitigated by the created_at secondary sort in the read paths below,
   // but the transaction removes the race rather than just tolerating it.
   const insert = db.transaction(() => {
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Queue target session is unavailable');
+    const dispatchAuthority = authority === undefined ? queueDispatchAuthority(session, prompt) : authority;
+    if (dispatchAuthority !== null && !isQueueDispatchAuthority(dispatchAuthority)) throw new Error('Invalid queue dispatch authority');
+    const existing = getQueueItem(id);
+    if (existing) {
+      if (existing.sessionId !== sessionId || existing.sessionKey !== sessionKey || existing.prompt !== prompt
+        || JSON.stringify(existing.dispatchAuthority) !== JSON.stringify(dispatchAuthority)) throw new Error('Queue operation identity reused with changed payload');
+      return;
+    }
     const position = (db.prepare(
       "SELECT COALESCE(MAX(position), 0) + 1 as pos FROM queue_items WHERE session_key = ? AND status IN ('pending', 'running')"
     ).get(sessionKey) as { pos: number }).pos;
     db.prepare(
-      "INSERT INTO queue_items (id, session_id, session_key, prompt, status, position, created_at) VALUES (?, ?, ?, ?, 'pending', ?, ?)"
-    ).run(id, sessionId, sessionKey, prompt, position, new Date().toISOString());
+      "INSERT INTO queue_items (id, session_id, session_key, prompt, dispatch_authority, status, position, created_at) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)"
+    ).run(id, sessionId, sessionKey, prompt, dispatchAuthority ? JSON.stringify(dispatchAuthority) : null, position, new Date().toISOString());
   });
   insert();
   return id;
@@ -43,14 +67,8 @@ export function enqueueQueueItem(sessionId: string, sessionKey: string, prompt: 
  * and the atomic-claim idiom in webhook-replay.ts's claimConnectorWebhookReplay).
  * Returns true only if this call performed the claim.
  *
- * Residual risk: if the process crashes after a successful claim but before
- * the engine call is confirmed, recoverStaleQueueItems() below will still
- * reset the item to 'pending' on restart so it isn't stranded forever — that
- * restart-recovery reset remains at-least-once by design (this file has no
- * signal for "the engine call was actually sent"; only the dispatch call
- * site could record that). What this claim fixes is the concurrent-claim
- * race: two callers can no longer both observe 'pending' and both dispatch
- * the same item.
+ * A crash after the claim has an uncertain outcome. Recovery quarantines that
+ * operation instead of silently repeating a possibly consequential engine call.
  */
 export function markQueueItemRunning(itemId: string): boolean {
   const db = initDb();
@@ -62,15 +80,23 @@ export function markQueueItemRunning(itemId: string): boolean {
 
 export function markQueueItemCompleted(itemId: string): void {
   const db = initDb();
-  db.prepare("UPDATE queue_items SET status = 'completed', completed_at = ? WHERE id = ?")
+  db.prepare("UPDATE queue_items SET status = 'completed', completed_at = ? WHERE id = ? AND status = 'running'")
     .run(new Date().toISOString(), itemId);
 }
 
 export function getQueueItem(itemId: string): QueueItem | undefined {
   const db = initDb();
-  return db.prepare(
-    "SELECT id, session_id as sessionId, session_key as sessionKey, prompt, status, position, created_at as createdAt, started_at as startedAt, completed_at as completedAt FROM queue_items WHERE id = ?"
-  ).get(itemId) as QueueItem | undefined;
+  const row = db.prepare(`${SELECT_QUEUE} WHERE id = ?`).get(itemId) as Record<string, unknown> | undefined;
+  return row ? queueRow(row) : undefined;
+}
+
+export function markQueueItemDenied(itemId: string): void {
+  initDb().prepare("UPDATE queue_items SET status = 'denied', completed_at = ? WHERE id = ? AND status IN ('pending', 'running')").run(new Date().toISOString(), itemId);
+}
+
+/** A wait discovered after claim is still undispatched work, safe to retain. */
+export function retainQueueItemPending(itemId: string): void {
+  initDb().prepare("UPDATE queue_items SET status = 'pending', started_at = NULL WHERE id = ? AND status = 'running'").run(itemId);
 }
 
 export function cancelQueueItem(itemId: string): boolean {
@@ -84,7 +110,7 @@ export function cancelQueueItem(itemId: string): boolean {
 export function cancelQueueItemForSession(itemId: string, sessionId: string, sessionKey: string): boolean {
   const db = initDb();
   const result = db.prepare(
-    "UPDATE queue_items SET status = 'cancelled' WHERE id = ? AND status = 'pending' AND (session_id = ? OR session_key = ?)"
+    "UPDATE queue_items SET status = 'cancelled' WHERE id = ? AND status = 'pending' AND session_id = ? AND session_key = ?"
   ).run(itemId, sessionId, sessionKey);
   return result.changes > 0;
 }
@@ -92,15 +118,15 @@ export function cancelQueueItemForSession(itemId: string, sessionId: string, ses
 export function getQueueItems(sessionKey: string): QueueItem[] {
   const db = initDb();
   return db.prepare(
-    "SELECT id, session_id as sessionId, session_key as sessionKey, prompt, status, position, created_at as createdAt, started_at as startedAt, completed_at as completedAt FROM queue_items WHERE session_key = ? AND status IN ('pending', 'running') ORDER BY position ASC, created_at ASC"
-  ).all(sessionKey) as QueueItem[];
+    `${SELECT_QUEUE} WHERE session_key = ? AND status IN ('pending', 'running') ORDER BY position ASC, created_at ASC`
+  ).all(sessionKey).map((row) => queueRow(row as Record<string, unknown>));
 }
 
 export function listPendingQueueItems(sessionKey: string): QueueItem[] {
   const db = initDb();
   return db.prepare(
-    "SELECT id, session_id as sessionId, session_key as sessionKey, prompt, status, position, created_at as createdAt, started_at as startedAt, completed_at as completedAt FROM queue_items WHERE session_key = ? AND status = 'pending' ORDER BY position ASC, created_at ASC"
-  ).all(sessionKey) as QueueItem[];
+    `${SELECT_QUEUE} WHERE session_key = ? AND status = 'pending' ORDER BY position ASC, created_at ASC`
+  ).all(sessionKey).map((row) => queueRow(row as Record<string, unknown>));
 }
 
 export function hasPendingQueueItemBefore(sessionKey: string, itemId: string): boolean {
@@ -138,23 +164,29 @@ export function listPausedQueueKeys(): string[] {
 
 /**
  * Boot-time recovery for items orphaned by a crash: any item still 'running'
- * from a previous process (a claim that markQueueItemRunning committed
- * durably before dispatch, per FSR-CF-007) is handed back to 'pending' so it
- * isn't stranded. Only rows in the transient 'running' state are touched —
+ * from a previous process is quarantined as 'uncertain'. A committed claim
+ * cannot prove whether the external CLI performed an effect. Only 'running' is touched —
  * 'pending', 'cancelled', and 'completed' rows are left exactly as they are,
  * so recovery never re-arms an item that already settled.
  */
 export function recoverStaleQueueItems(): number {
   const db = initDb();
-  const result = db.prepare(
-    "UPDATE queue_items SET status = 'pending', started_at = NULL WHERE status = 'running'"
-  ).run();
-  return result.changes;
+  return db.transaction(() => {
+    const rows = db.prepare("SELECT DISTINCT session_id AS id FROM queue_items WHERE status = 'running'").all() as Array<{ id: string }>;
+    const result = db.prepare("UPDATE queue_items SET status = 'uncertain' WHERE status = 'running'").run();
+    for (const row of rows) {
+      patchSessionTransportMeta(row.id, (meta) => ({ ...meta, dispatchRecovery: { state: 'uncertain' },
+        ...(meta.operatorDelegation && typeof meta.operatorDelegation === 'object' && !Array.isArray(meta.operatorDelegation)
+          ? { operatorDelegation: { ...meta.operatorDelegation, state: 'revoked' } } : {}) }));
+      updateSession(row.id, { status: 'waiting', lastError: 'Uncertain engine dispatch after gateway restart; reconcile effects before resuming the queue' });
+    }
+    return result.changes;
+  })();
 }
 
 export function listAllPendingQueueItems(): QueueItem[] {
   const db = initDb();
   return db.prepare(
-    "SELECT id, session_id as sessionId, session_key as sessionKey, prompt, status, position, created_at as createdAt, started_at as startedAt, completed_at as completedAt FROM queue_items WHERE status = 'pending' ORDER BY created_at ASC, position ASC"
-  ).all() as QueueItem[];
+    `${SELECT_QUEUE} WHERE status = 'pending' ORDER BY created_at ASC, position ASC`
+  ).all().map((row) => queueRow(row as Record<string, unknown>));
 }

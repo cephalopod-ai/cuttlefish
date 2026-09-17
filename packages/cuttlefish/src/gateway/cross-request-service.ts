@@ -70,6 +70,10 @@ export async function createCrossRequest(
     };
   }
   if (externalProvider) {
+    const originSession = parentSessionId ? getSession(parentSessionId) : undefined;
+    if (originSession?.executionBoundaryInvalid || originSession?.executionBoundary?.cancelled || originSession?.executionBoundary?.requirement === "read_only") {
+      return { statusCode: 403, body: { error: "External peers cannot establish the originating execution restriction", code: "execution_scope_forbidden" } };
+    }
     if (!context.a2aOutbound) {
       return { statusCode: 503, body: { error: "Outbound A2A service is unavailable", code: "a2a_unavailable" } };
     }
@@ -128,13 +132,14 @@ export async function createCrossRequest(
   const hierarchy = resolveOrgHierarchy(withPortalExecutive(registry, config.portal?.portalName, config));
   const routed = resolveCrossRequestRoute(requester.name, provider.employee.name, hierarchy);
   const brief = buildCrossRequestBrief({ requester, service: provider.service, prompt });
-  const now = Date.now();
+  const { randomUUID } = await import("node:crypto");
+  const requestId = randomUUID();
   const session = createSession({
     engine: provider.employee.engine,
     source: "web",
-    sourceRef: `cross-request:${now}:${provider.employee.name}`,
+    sourceRef: `cross-request:${requestId}:${provider.employee.name}`,
     connector: "web",
-    sessionKey: `cross-request:${now}:${provider.employee.name}`,
+    sessionKey: `cross-request:${requestId}:${provider.employee.name}`,
     replyContext: { source: "web" },
     employee: provider.employee.name,
     parentSessionId,

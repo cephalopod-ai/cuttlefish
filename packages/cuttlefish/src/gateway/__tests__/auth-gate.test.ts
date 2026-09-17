@@ -155,7 +155,7 @@ describe("resolvePrincipalGate (CF2-120)", () => {
     };
     expect(resolvePrincipalGate({ ...common, method: "POST", pathname: "/api/approvals/a/reject" }).status).toBe(403);
     expect(resolvePrincipalGate({ ...common, method: "POST", pathname: "/api/org/change-requests/c/approve" }).status).toBe(403);
-    expect(() => createScopedSessionToken("coo-run", TOKEN, { delegatedScopes: ["approve"] })).toThrow(/prompt hash/);
+    expect(() => createScopedSessionToken("coo-run", TOKEN, { delegatedScopes: ["approve"] })).toThrow(/issuance id/);
   });
 
   it("403s a scoped session token hitting a forbidden control-plane path even when auth is NOT required (loopback default) — this is the CF2-120 regression", () => {
@@ -222,7 +222,7 @@ describe("resolvePrincipalGate (CF2-120)", () => {
     }
   });
 
-  it("allows a COO session to send a follow-up message to any session", () => {
+  it("allows a COO session to follow up only with its direct child", () => {
     const scoped = createScopedSessionToken("coo-run", TOKEN);
     const gate = resolvePrincipalGate({
       req: req({ authorization: `Bearer ${scoped}` }),
@@ -232,6 +232,7 @@ describe("resolvePrincipalGate (CF2-120)", () => {
       gatewayAuthToken: TOKEN,
       cuttlefishHome: "/tmp/does-not-matter",
       isCooSession: (sessionId) => sessionId === "coo-run",
+      isDirectChildSession: (parent, child) => parent === "coo-run" && child === "worker-run",
     });
     expect(gate).toMatchObject({ status: 200, principal: { kind: "session", sessionId: "coo-run" } });
   });

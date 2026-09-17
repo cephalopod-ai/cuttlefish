@@ -7,6 +7,8 @@ import type {
   Session,
 } from "../shared/types.js";
 import type { SessionMessage } from "../sessions/registry/messages.js";
+import { sessionEvidenceBoundary } from "../sessions/execution-boundary.js";
+import { canonicalSha256 } from "../shared/canonical-json.js";
 
 function hashSeed(seed: string): string {
   return createHash("sha256").update(seed).digest("hex").slice(0, 24);
@@ -50,6 +52,10 @@ export function buildSessionSummaryEnvelope(
     actor: session.userId ?? null,
     sourceRef: session.sourceRef,
     payload: {
+      evidenceBoundary: sessionEvidenceBoundary(session),
+      derivation: { kind: "available_history", totalInputs: messages.length, omittedInputs: Math.max(0, messages.length - 32),
+        inputs: messages.slice(-32).map((message) => ({ messageId: message.id, role: message.role, recordedAtMs: message.timestamp,
+          contentRevision: canonicalSha256({ content: message.content, media: message.media, blocks: message.blocks }) })) },
       sessionId: session.id,
       source: session.source,
       sourceRef: session.sourceRef,
@@ -85,6 +91,8 @@ export function buildCheckpointDecisionEnvelope(
     sourceRef: session?.sourceRef ?? null,
     payload: {
       checkpointId: checkpoint.id,
+      evidenceBoundary: session ? sessionEvidenceBoundary(session) : { role: "reference_evidence", authority: "historical_only", origin: "unknown" },
+      reviewBinding: checkpoint.payload.reviewBinding && typeof checkpoint.payload.reviewBinding === "object" && !Array.isArray(checkpoint.payload.reviewBinding) ? checkpoint.payload.reviewBinding : null,
       sessionId: checkpoint.sessionId,
       decision: checkpoint.state,
       resultingAction: checkpoint.resultingAction ?? "record_only",

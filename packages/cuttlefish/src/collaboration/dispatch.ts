@@ -4,6 +4,8 @@ import type {
   OperatorDelegationScope,
 } from "@cuttlefish/contracts";
 import type { Employee, Session } from "../shared/types.js";
+import type { ExecutionOriginKind } from "@cuttlefish/contracts";
+import { randomUUID } from "node:crypto";
 import {
   createSession,
   getOrCreateSessionBySessionKey,
@@ -29,6 +31,7 @@ export interface DispatchTarget {
 type InternalDelivery = DeliveryReceipt & { messageId?: string };
 
 export interface CollaborationDispatchInput {
+  ingressOrigin?: ExecutionOriginKind;
   lane: "team" | "management";
   message: string;
   targets: DispatchTarget[];
@@ -90,12 +93,13 @@ function createManagementSession(
   input: CollaborationDispatchInput,
 ): { session: Session; created: boolean } {
   const isHr = profile.employee === HR_EMPLOYEE_NAME;
-  const sessionKey = isHr ? HR_SESSION_KEY : target.sessionKey ?? `web:management:${target.recipientId}:${Date.now()}`;
+  const sessionKey = isHr ? HR_SESSION_KEY : target.sessionKey ?? `web:management:${target.recipientId}:${randomUUID()}`;
   const opts = {
     engine: profile.engine,
     model: profile.model,
     effortLevel: profile.effortLevel,
     source: "web",
+    ingressOrigin: input.ingressOrigin ?? (input.principal?.kind === "admin" ? "operator" as const : "unknown" as const),
     sourceRef: sessionKey,
     connector: "web",
     sessionKey,

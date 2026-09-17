@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { chmodSync, mkdirSync } from 'node:fs';
 import Database from 'better-sqlite3';
+import { isSessionExecutionBoundary } from '@cuttlefish/contracts';
 import { SESSIONS_DB } from '../../shared/paths.js';
 import { logger } from '../../shared/logger.js';
 import { isSqliteCorruptionError, quarantineCorruptDb } from '../../shared/sqlite-corruption.js';
@@ -27,6 +28,7 @@ export function parseJsonObject(value: unknown, label?: string): JsonObject | nu
 export function rowToSession(row: Record<string, unknown>): Session {
   const replyContext = parseJsonObject(row.reply_context, 'reply_context');
   const transportMeta = parseJsonObject(row.transport_meta, 'transport_meta');
+  const boundary = parseJsonObject(row.execution_boundary, 'execution_boundary');
   const sessionKey = ((row.session_key as string) || (row.source_ref as string));
   const connector = (row.connector as string) ?? (row.source as string) ?? null;
   return {
@@ -40,6 +42,8 @@ export function rowToSession(row: Record<string, unknown>): Session {
     replyContext: replyContext as ReplyContext | null,
     messageId: (row.message_id as string) ?? null,
     transportMeta,
+    executionBoundary: isSessionExecutionBoundary(boundary) ? boundary : null,
+    executionBoundaryInvalid: row.execution_boundary != null && !isSessionExecutionBoundary(boundary),
     employee: (row.employee as string) ?? null,
     model: (row.model as string) ?? null,
     title: (row.title as string) ?? null,

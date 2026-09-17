@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   activeOperatorDelegationMatches,
   buildOperatorDelegationGrant,
@@ -62,22 +62,27 @@ describe("operator delegation directives", () => {
 
   it("binds a grant to one exact prompt and makes expiry irreversible", () => {
     const prompt = "/delegate-authority decide\nChoose the rollout window.";
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-20T12:00:00.000Z"));
+    const owner = { id: "delegate", engine: "codex", model: "gpt-5.5", employee: null, executionBoundary: { version: 1, origin: "operator", requirement: "standard", generation: "generation", parentGeneration: null, cancelled: false } } as any;
     const grant = buildOperatorDelegationGrant({
+      session: owner,
       prompt,
       scopes: ["decide"],
       grantedBy: "human@example.test",
       now: "2026-07-20T12:00:00.000Z",
     });
-    const session = { transportMeta: { operatorDelegation: grant } } as any;
+    const session = { ...owner, transportMeta: { operatorDelegation: grant } } as any;
 
     expect(readOperatorDelegationScopesForTurn(session, prompt)).toEqual(["decide"]);
     expect(readOperatorDelegationScopesForTurn(session, `${prompt} changed`)).toEqual([]);
     expect(readActiveOperatorDelegationScopes(session)).toEqual(["decide"]);
-    expect(activeOperatorDelegationMatches(session, operatorDelegationPromptHash(prompt))).toBe(true);
+    expect(activeOperatorDelegationMatches(session, grant.id)).toBe(true);
     expect(activeOperatorDelegationMatches(session, operatorDelegationPromptHash("another turn"))).toBe(false);
 
-    const expired = expireOperatorDelegationForPrompt(session, prompt, "2026-07-20T12:01:00.000Z");
+    const expired = expireOperatorDelegationForPrompt(session, prompt, "2026-07-20T12:01:00.000Z", grant.id);
     expect(expired).toMatchObject({ state: "expired", expiredAt: "2026-07-20T12:01:00.000Z" });
-    expect(readActiveOperatorDelegationScopes({ transportMeta: { operatorDelegation: expired } } as any)).toEqual([]);
+    expect(readActiveOperatorDelegationScopes({ ...owner, transportMeta: { operatorDelegation: expired } } as any)).toEqual([]);
+    vi.useRealTimers();
   });
 });

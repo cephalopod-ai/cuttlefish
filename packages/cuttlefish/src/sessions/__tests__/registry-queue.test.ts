@@ -35,7 +35,7 @@ describe("registry/queue.ts — FSR-CF-007 atomic dispatch claim", () => {
     expect(reg.getQueueItem(itemId)?.status).toBe("running");
   });
 
-  it("claim, then crash before dispatch is durably recorded: recovery reclaims the item but never lets two live claims coexist", async () => {
+  it("claim, then crash before dispatch is durably recorded: recovery quarantines the uncertain invocation", async () => {
     const reg = await setup();
     const session = makeSession(reg, "web:claim-crash");
     const itemId = reg.enqueueQueueItem(session.id, session.sessionKey, "do the thing");
@@ -51,17 +51,17 @@ describe("registry/queue.ts — FSR-CF-007 atomic dispatch claim", () => {
     // it back to 'pending' so it isn't stranded forever.
     const recovered = reg.recoverStaleQueueItems();
     expect(recovered).toBe(1);
-    expect(reg.getQueueItem(itemId)?.status).toBe("pending");
-    expect(reg.getQueueItem(itemId)?.startedAt).toBeNull();
+    expect(reg.getQueueItem(itemId)?.status).toBe("uncertain");
+    expect(reg.getQueueItem(itemId)?.startedAt).not.toBeNull();
+    expect(reg.getSession(session.id)).toMatchObject({ status: "waiting", transportMeta: { dispatchRecovery: { state: "uncertain" } } });
 
     // Post-recovery, the item is claimable again exactly once — the new
     // process becomes the sole owner of the (re)dispatch, matching the
     // invariant proven above: at most one live claim ever exists at a time.
-    expect(reg.markQueueItemRunning(itemId)).toBe(true);
     expect(reg.markQueueItemRunning(itemId)).toBe(false);
   });
 
-  it("recoverStaleQueueItems only resets orphaned 'running' rows — it never re-arms settled items", async () => {
+  it("recoverStaleQueueItems only quarantines orphaned 'running' rows — it never re-arms settled items", async () => {
     const reg = await setup();
     const session = makeSession(reg, "web:recover-scope");
     const runningId = reg.enqueueQueueItem(session.id, session.sessionKey, "in flight");
@@ -78,7 +78,7 @@ describe("registry/queue.ts — FSR-CF-007 atomic dispatch claim", () => {
 
     expect(reg.recoverStaleQueueItems()).toBe(1);
 
-    expect(reg.getQueueItem(runningId)?.status).toBe("pending");
+    expect(reg.getQueueItem(runningId)?.status).toBe("uncertain");
     expect(reg.getQueueItem(completedId)?.status).toBe("completed");
     expect(reg.getQueueItem(cancelledId)?.status).toBe("cancelled");
     expect(reg.getQueueItem(pendingId)?.status).toBe("pending");

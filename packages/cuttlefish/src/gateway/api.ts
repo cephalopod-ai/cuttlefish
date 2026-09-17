@@ -31,6 +31,7 @@ import { handleInspectRoutes } from "./api/routes/inspect.js";
 import { handleCollaborationRoutes } from "./api/routes/collaboration.js";
 import { handleA2AOutboundRoutes } from "./api/routes/a2a-outbound.js";
 import { parseGatewayRequestUrl } from "./request-url.js";
+import { ApprovalAuthorityError } from "./approval-binding.js";
 
 export type { ApiContext } from "./api/context.js";
 export { normalizeBlockDeltaForTurn, shouldPersistFinalAssistantMessage, finalBlocksForAssistantMessage } from "./api/block-finalize.js";
@@ -150,6 +151,7 @@ export async function handleApiRequest(
 
     notFound(res);
   } catch (err) {
+    if (err instanceof ApprovalAuthorityError) { json(res, { error: err.message, code: "approval_authority_denied" }, 409); return; }
     const msg = err instanceof Error ? err.message : String(err);
     logger.error(`API error: ${msg}`);
     serverError(res, msg);

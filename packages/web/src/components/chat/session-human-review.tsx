@@ -5,6 +5,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useApprovals, useApproveApproval, useRejectApproval } from '@/hooks/use-approvals'
 import { useCheckpoints, useDecideCheckpoint } from '@/hooks/use-checkpoints'
 import type { Approval, ApprovalDecision, Checkpoint } from '@/lib/api'
+import { approvalDecisionRequest } from '@/lib/api-approvals'
 
 function fallbackSummary(payload: Record<string, unknown>): { from: string; to: string; reason?: string } {
   const from = payload.from as { engine?: string; model?: string } | undefined
@@ -54,10 +55,10 @@ function FallbackApprovalCard({ approval }: { approval: Approval }) {
         </div>
       ) : null}
       <div className="mt-3 flex flex-wrap gap-2">
-        <Button size="sm" disabled={busy} onClick={() => approve.mutate(approval.id)}>
+        <Button size="sm" disabled={busy} onClick={() => approve.mutate(approvalDecisionRequest(approval))}>
           <Check className="size-3.5" /> Approve &amp; resume
         </Button>
-        <Button size="sm" variant="outline" disabled={busy} onClick={() => reject.mutate(approval.id)}>
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => reject.mutate(approvalDecisionRequest(approval))}>
           <X className="size-3.5" /> Reject
         </Button>
       </div>
@@ -91,10 +92,10 @@ function OrgChangeApprovalCard({ approval }: { approval: Approval }) {
         </div>
       ) : null}
       <div className="mt-3 flex flex-wrap gap-2">
-        <Button size="sm" disabled={busy} onClick={() => approve.mutate(approval.id)}>
+        <Button size="sm" disabled={busy} onClick={() => approve.mutate(approvalDecisionRequest(approval))}>
           <Check className="size-3.5" /> Approve &amp; apply
         </Button>
-        <Button size="sm" variant="outline" disabled={busy} onClick={() => reject.mutate(approval.id)}>
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => reject.mutate(approvalDecisionRequest(approval))}>
           <X className="size-3.5" /> Reject
         </Button>
       </div>
@@ -116,14 +117,19 @@ function CheckpointCard({ checkpoint }: { checkpoint: Checkpoint }) {
       setLocalError('Revision notes are required to revise and resume.')
       return
     }
+    try {
     await decide.mutateAsync({
       id: checkpoint.id,
       body: {
         decision,
+        reviewedRevision: (checkpoint.payload.reviewBinding as { revision?: string } | undefined)?.revision,
         notes: trimmed || undefined,
         resumePrompt: decision === 'revised' ? trimmed : undefined,
       },
     })
+    } catch (error) {
+      setLocalError(error instanceof Error ? error.message : "Decision failed")
+    }
   }
 
   return (

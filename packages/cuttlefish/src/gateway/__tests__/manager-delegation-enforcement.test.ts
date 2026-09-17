@@ -222,6 +222,7 @@ describe("manager delegation enforcement", () => {
       expect.stringContaining("manager prepared bounded briefs"),
       expect.any(String),
       delegatedManager.id,
+      reg.getSession(delegatedManager.id)?.transportMeta?.latestRunId,
     );
   });
 
@@ -270,4 +271,3 @@ describe("manager delegation enforcement", () => {
     });
   });
 });
-

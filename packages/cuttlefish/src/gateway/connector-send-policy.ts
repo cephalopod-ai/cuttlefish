@@ -22,6 +22,9 @@ export function authorizeConnectorSend(
 ): { allowed: boolean; reason?: string } {
   if (principal?.kind !== "session") return { allowed: true };
   const callerSession = deps.getSession(principal.sessionId);
+  if (callerSession?.executionBoundaryInvalid || callerSession?.executionBoundary?.cancelled || callerSession?.executionBoundary?.requirement === "read_only") {
+    return { allowed: false, reason: "Current task execution boundary does not permit connector sends" };
+  }
   if (!callerSession?.connector || callerSession.connector !== connectorName) {
     return { allowed: false, reason: "Session token may only send via its own connector" };
   }

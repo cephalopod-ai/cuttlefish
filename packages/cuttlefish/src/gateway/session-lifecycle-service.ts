@@ -9,6 +9,7 @@ import {
   duplicateSession,
   getQueueItems,
   getSession,
+  patchSessionTransportMeta,
   updateSession,
   type UpdateSessionFields,
 } from "../sessions/registry.js";
@@ -26,6 +27,8 @@ import { attachResourcesToSession } from "./session-resources.js";
 import { requestExternalA2ACrossRequestStop } from "./external-a2a-cross-request.js";
 import { ArtifactAccessError } from "./artifact-access.js";
 import type { GatewayPrincipal } from "./scoped-token.js";
+import { cancelSessionExecutionBoundary } from "../sessions/execution-boundary.js";
+import { isHumanCheckpointPaused } from "../sessions/human-checkpoint-state.js";
 
 export interface SessionMutationResult {
   statusCode: number;
@@ -107,6 +110,7 @@ export function deleteSessionAndCleanup(sessionId: string, context: ApiContext):
   logger.info(`Killing engine process for deleted session ${sessionId}`);
   killSessionEngines(context, session, "Interrupted: session deleted");
   context.sessionManager.getQueue().clearQueue(session.sessionKey || session.sourceRef || session.id);
+  cancelAllPendingQueueItems(session.sessionKey || session.sourceRef || session.id);
   maybeEmitTalkGraph(sessionId, "removed", { getSession, emit: context.emit, session });
   clearTalkMuted(sessionId);
   clearTalkAttachments(sessionId);
@@ -120,12 +124,18 @@ export function stopSession(sessionId: string, context: ApiContext): SessionMuta
   const session = getSession(sessionId);
   if (!session) return notFound();
 
+  updateSession(sessionId, { executionBoundary: cancelSessionExecutionBoundary(session) });
+  patchSessionTransportMeta(sessionId, (meta) => {
+    const next = { ...meta }; delete next.operatorDelegation; return next;
+  });
+
   const wasRunning = session.status === "running";
   const externalInterruptible = session.engine === "a2a" && (session.status === "running" || session.status === "waiting")
     ? requestExternalA2ACrossRequestStop(sessionId, context)
     : false;
   const killResult = killSessionEngines(context, session, "Interrupted by user");
   context.sessionManager.getQueue().clearQueue(session.sessionKey || session.sourceRef || session.id);
+  cancelAllPendingQueueItems(session.sessionKey || session.sourceRef || session.id);
   const stopped = externalInterruptible || killResult.interruptible > 0 || session.status !== "running";
   if (stopped) {
     updateSession(sessionId, {
@@ -156,14 +166,17 @@ export function resetSession(sessionId: string, context: ApiContext): SessionMut
   killSessionEngines(context, session, "Interrupted: session reset");
   context.sessionManager.getQueue().clearQueue(session.sessionKey || session.sourceRef || session.id);
   const transportMeta = { ...(session.transportMeta || {}) } as Record<string, unknown>;
+  cancelAllPendingQueueItems(session.sessionKey || session.sourceRef || session.id);
   delete transportMeta.engineSessions;
   delete transportMeta.engineOverride;
+  delete transportMeta.operatorDelegation;
   updateSession(sessionId, {
     status: "idle",
     engineSessionId: null,
     lastActivity: new Date().toISOString(),
     lastError: null,
     transportMeta: transportMeta as never,
+    executionBoundary: cancelSessionExecutionBoundary(session),
   });
   logger.info(`Session ${sessionId} reset via API (cleared engineSessions, engineOverride, engineSessionId, lastError)`);
   context.emit("session:updated", { sessionId });
@@ -242,9 +255,16 @@ export function pauseSessionQueue(sessionId: string, context: ApiContext): Sessi
   return { statusCode: 200, body: { status: "paused", sessionId } };
 }
 
-export async function resumeSessionQueue(sessionId: string, context: ApiContext): Promise<SessionMutationResult> {
+export async function resumeSessionQueue(sessionId: string, context: ApiContext, principal?: GatewayPrincipal): Promise<SessionMutationResult> {
   const session = getSession(sessionId);
   if (!session) return notFound();
+  const recovery = session.transportMeta?.dispatchRecovery;
+  if (recovery && typeof recovery === "object" && !Array.isArray(recovery) && recovery.state === "uncertain") {
+    if (principal?.kind !== "admin") return { statusCode: 403, body: { error: "Uncertain dispatch requires operator reconciliation", code: "dispatch_uncertain" } };
+    if (isHumanCheckpointPaused(session)) return { statusCode: 409, body: { error: "Resolve the checkpoint before resuming", code: "checkpoint_required" } };
+    patchSessionTransportMeta(sessionId, (meta) => { const next = { ...meta }; delete next.dispatchRecovery; return next; });
+    updateSession(sessionId, { status: "idle", lastError: null });
+  }
   const sessionKey = session.sessionKey || session.sourceRef || session.id;
   context.sessionManager.getQueue().resumeQueue(sessionKey);
   const redispatched = await redispatchPendingWebQueueItemsForSessionKey(context, sessionKey);

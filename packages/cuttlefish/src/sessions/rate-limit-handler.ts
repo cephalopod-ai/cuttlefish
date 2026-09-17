@@ -31,6 +31,7 @@ import { recordEngineRateLimit } from "../shared/usage-status.js";
 import { runWithEngineEnvironment } from "../shared/engine-env.js";
 import { getSession, getMessages, updateSession, patchSessionTransportMeta } from "./registry.js";
 import { resolveSessionWorkspace } from "./session-workspace.js";
+import { sessionDispatchDenial, type DispatchAuthorization } from "../gateway/session-dispatch-authorization.js";
 
 const WAIT_CANCEL_POLL_MS = 5000;
 const ENGINE_LABELS: Record<string, string> = {
@@ -150,6 +151,7 @@ export interface RateLimitHandlerHooks {
 }
 
 export interface RateLimitHandlerOpts {
+  dispatchAuthorization?: DispatchAuthorization;
   session: Session;
   /** The original prompt that hit the rate limit — used unchanged for retries. */
   prompt: string;
@@ -263,6 +265,10 @@ export async function handleRateLimit(opts: RateLimitHandlerOpts): Promise<RateL
 
         let fallbackResult: EngineResult;
         try {
+          const live = getSession(session.id);
+          if (!live) return { kind: "cancelled" };
+          const denial = sessionDispatchDenial(live, prompt, fallbackEngine, opts.dispatchAuthorization);
+          if (denial) throw new Error(denial);
           fallbackResult = await runWithEngineEnvironment(
             sessionToken ? { CUTTLEFISH_SESSION_TOKEN: sessionToken } : {},
             () => fallbackEngine.run({
@@ -274,6 +280,7 @@ export async function handleRateLimit(opts: RateLimitHandlerOpts): Promise<RateL
             model: fallbackConfig.model,
             effortLevel: fallbackEffort,
             cliFlags: employee?.cliFlags ?? cliFlags,
+            restrictToJudgeOnly: live.executionBoundary?.requirement === "read_only",
             attachments: attachments?.length ? attachments : undefined,
             sessionId: session.id,
             ...(hooks.onFallbackStream ? { onStream: hooks.onFallbackStream } : {}),
@@ -370,6 +377,10 @@ export async function handleRateLimit(opts: RateLimitHandlerOpts): Promise<RateL
       await hooks.onRetryAttempt?.({ attempt });
       if (isHumanCheckpointPaused(getSession(session.id))) return { kind: "cancelled" };
       logger.info(`Session ${session.id} retrying after usage limit (attempt ${attempt})`);
+      const live = getSession(session.id);
+      if (!live) return { kind: "cancelled" };
+      const denial = sessionDispatchDenial(live, prompt, engine, opts.dispatchAuthorization);
+      if (denial) throw new Error(denial);
 
       const retryResult = await runWithEngineEnvironment(
         sessionToken ? { CUTTLEFISH_SESSION_TOKEN: sessionToken } : {},
@@ -382,6 +393,7 @@ export async function handleRateLimit(opts: RateLimitHandlerOpts): Promise<RateL
         model: currentSession.model ?? engineConfig.model,
         effortLevel,
         cliFlags,
+        restrictToJudgeOnly: live.executionBoundary?.requirement === "read_only",
         mcpConfigPath,
         attachments: attachments?.length ? attachments : undefined,
         sessionId: session.id,

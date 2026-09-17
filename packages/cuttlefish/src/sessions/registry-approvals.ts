@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { v4 as uuidv4 } from "uuid";
 import type Database from "better-sqlite3";
 import type { Approval, ApprovalDecision, JsonObject } from "../shared/types.js";
+import { canonicalJsonStringify } from "../shared/canonical-json.js";
 
 type ApprovalRow = {
   id: string;
@@ -142,8 +143,9 @@ export function createApprovalRecordInRegistry(input: {
         .prepare("SELECT * FROM approvals WHERE session_id = ? AND type = 'fallback' AND state = 'pending'")
         .get(input.sessionId) as ApprovalRow | undefined;
       if (existing) {
-        db.prepare("UPDATE approvals SET payload = ? WHERE id = ?").run(JSON.stringify(input.payload), existing.id);
-        return getApprovalRecordFromRegistry(existing.id, deps);
+        if (canonicalJsonStringify(JSON.parse(existing.payload)) === canonicalJsonStringify(input.payload)) return rowToApproval(existing, deps);
+        // A materially different proposal needs a different review identity.
+        db.prepare("UPDATE approvals SET state = 'rejected', resolved_at = ?, decision_notes = 'Superseded by a changed proposal' WHERE id = ? AND state = 'pending'").run(new Date().toISOString(), existing.id);
       }
     }
 

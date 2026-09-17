@@ -110,7 +110,7 @@ describe("runOrchestrationTask", () => {
   });
 
   it("runs implementer and reviewer leases sequentially in review mode", async () => {
-    const { runOrchestrationTask, OrchestrationRuntime } = await loadModules();
+    const { runOrchestrationTask, OrchestrationRuntime, getSession } = await loadModules();
     const engine = new RecordingEngine();
     const runtime = new OrchestrationRuntime({ config: reviewConfig(), dbPath: ":memory:", startReaper: false });
     const ctx = makeContext(runtime, engine);
@@ -130,11 +130,31 @@ describe("runOrchestrationTask", () => {
     if (!result.ok) return;
     expect(result.sessions.map((session) => session.role)).toEqual(["seniorImplementer", "independentReviewer"]);
     expect(engine.prompts[1]).toContain("Review-only pass");
+    expect(engine.run.mock.calls[1][0].restrictToJudgeOnly).toBe(true);
+    expect(getSession(result.sessions[1].sessionId)?.executionBoundary).toMatchObject({ origin: "scheduler", requirement: "read_only" });
     expect(result.reviewPolicy.explanations[0]).toMatchObject({
       decision: "opposite_family_selected",
       selectedWorkerId: "mockReviewer",
     });
     expect(runtime.listLeases().map((lease) => lease.state)).toEqual(["released", "released"]);
+    runtime.close();
+  });
+
+  it("CUT-EA-009: refuses a protected scheduler review before invoking an incapable adapter", async () => {
+    const { runOrchestrationTask, OrchestrationRuntime, getSession } = await loadModules();
+    const engine = new RecordingEngine({ readOnly: false });
+    const runtime = new OrchestrationRuntime({ config: reviewConfig(), dbPath: ":memory:", startReaper: false });
+    const result = await runOrchestrationTask({ context: makeContext(runtime, engine), task: {
+      taskId: "task-unsupported-review", coordinatorId: "coord-unsupported-review", coordinatorTemplate: "withReview",
+      mode: "single_worker_with_review", prompt: "Implement and perform a protected review",
+    } });
+    expect(result.ok).toBe(false);
+    if (result.ok || result.state !== "failed") return;
+    expect(engine.run).toHaveBeenCalledTimes(1);
+    const reviewer = getSession(result.sessions[1].sessionId);
+    expect(reviewer?.executionBoundary?.requirement).toBe("read_only");
+    expect(reviewer?.lastError).toContain("does not support required read-only execution");
+    expect(runtime.listLeases().every((lease) => lease.state === "released")).toBe(true);
     runtime.close();
   });
 
@@ -493,6 +513,7 @@ async function loadModules() {
 
 class RecordingEngine implements Engine {
   name = "mock";
+  executionCapabilities: { readOnly: boolean };
   prompts: string[] = [];
   cwds: string[] = [];
   reviewerSawPatchDiff = false;
@@ -502,7 +523,9 @@ class RecordingEngine implements Engine {
   private remainingBlocks: number;
   private readonly throwOnPromptSubstring?: string;
 
-  constructor(opts: { blockRuns?: number; throwOnPromptSubstring?: string } = {}) {
+  constructor(opts: { blockRuns?: number; throwOnPromptSubstring?: string; readOnly?: boolean } = {}) {
+    // This inert adapter consumes the restriction; it is not native sandbox evidence.
+    this.executionCapabilities = { readOnly: opts.readOnly ?? true };
     this.remainingBlocks = opts.blockRuns ?? 0;
     this.throwOnPromptSubstring = opts.throwOnPromptSubstring;
   }

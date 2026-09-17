@@ -3,6 +3,7 @@ import { logger } from "../shared/logger.js";
 import { redactText } from "../shared/redact.js";
 import { emitSessionSummaryBestEffort, knowledgeRelayOptions } from "../knowledge/outbox-service.js";
 import { notifyParentSession } from "./callbacks.js";
+import { isHumanCheckpointPaused } from "./human-checkpoint-state.js";
 import {
   accumulateSessionCost,
   getMessages,
@@ -14,6 +15,7 @@ import {
 import type { SessionNotificationSink } from "./notification-sink.js";
 import type { CuttlefishConfig } from "../shared/types.js";
 import { markTranscriptSyncedThrough } from "../gateway/external-turns.js";
+import { currentSessionAttempt } from "../gateway/session-dispatch-authorization.js";
 
 export function maybeRevertEngineOverride(session: Session): Session {
   const meta = (session.transportMeta || {}) as Record<string, unknown>;
@@ -70,6 +72,20 @@ export const SESSION_OWNED_TRANSPORT_META_KEYS = [
   "orchestrationWorkspace",
   "orchestrationReviewPolicy",
   "boardTicketId",
+  "operatorDelegation",
+  "humanCheckpoint",
+  "managerDelegation",
+  "managerDelegationEnforcement",
+  "orchestrationLease",
+  "internalRole",
+  "activeRunId",
+  "latestRunId",
+  "retryOfRunId",
+  "replayOfRunId",
+  "leaderAck",
+  "modelFallback",
+  "dispatchRecovery",
+  "connectorReplyOutcome",
 ] as const;
 
 export function mergeTransportMeta(
@@ -85,7 +101,9 @@ export function mergeTransportMeta(
   const merged: Record<string, unknown> = { ...baseExisting, ...baseIncoming };
   for (const key of SESSION_OWNED_TRANSPORT_META_KEYS) {
     if (baseExisting[key] !== undefined) merged[key] = baseExisting[key];
+    else delete merged[key]; // An absent host field cannot be minted by a source.
   }
+  delete merged.executionBoundary; // The authoritative value is a dedicated column.
   return merged as any;
 }
 
@@ -110,7 +128,8 @@ export async function finalizeManagedSessionTurn(input: {
     ? input.result.result
     : input.result.error || "(No response from engine)";
 
-  if (!getSession(input.session.id)) {
+  let live = currentSessionAttempt(input.session);
+  if (!live) {
     logger.warn(`Dropping engine result for deleted session ${input.session.id}`);
     return;
   }
@@ -123,15 +142,18 @@ export async function finalizeManagedSessionTurn(input: {
     await input.connector.setTypingStatus(input.target.channel, input.threadTs, "").catch(() => {});
   }
   if (!input.wasInterrupted) {
+    if (!currentSessionAttempt(input.session)) return;
     await input.connector.replyMessage(input.target, redactText(responseText));
   }
   if (input.decorateMessages && input.capabilities.reactions) {
     await input.connector.removeReaction(input.target, "eyes").catch(() => {});
   }
+  live = currentSessionAttempt(input.session);
+  if (!live) return;
   const updatedSession = updateSession(input.session.id, {
     ...(input.result.sessionId?.trim() ? { engineSessionId: input.result.sessionId } : {}),
     ...(typeof input.result.contextTokens === "number" ? { lastContextTokens: input.result.contextTokens } : {}),
-    status: input.wasInterrupted
+    status: isHumanCheckpointPaused(live) ? "waiting" : input.wasInterrupted
       ? "idle"
       : input.result.error?.startsWith("Interrupted:")
         ? "interrupted"
@@ -144,7 +166,7 @@ export async function finalizeManagedSessionTurn(input: {
       return merged as any;
     })(),
     lastActivity: new Date().toISOString(),
-    lastError: input.wasInterrupted ? null : (input.result.error ?? null),
+    lastError: isHumanCheckpointPaused(live) ? live.lastError : input.wasInterrupted ? null : (input.result.error ?? null),
   });
   if (!input.wasInterrupted && input.session.engine === "claude") {
     markTranscriptSyncedThrough(input.session.id, input.result.sessionId);

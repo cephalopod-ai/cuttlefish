@@ -89,6 +89,17 @@ export function isHumanDelegationSessionEligible(
   deps: { getSession: typeof getSession } = { getSession },
 ): boolean {
   const session = deps.getSession(sessionId);
+  if (!session) return false;
+  const visited = new Set([session.id]);
+  let child = session;
+  while (child.parentSessionId) {
+    if (visited.size >= 32 || visited.has(child.parentSessionId)) return false;
+    visited.add(child.parentSessionId);
+    const parent = deps.getSession(child.parentSessionId);
+    if (!parent || parent.executionBoundaryInvalid || parent.executionBoundary?.cancelled
+      || (child.executionBoundary?.parentGeneration && child.executionBoundary.parentGeneration !== parent.executionBoundary?.generation)) return false;
+    child = parent;
+  }
   return Boolean(
     session
       && isHumanDelegateRole(session.employee, session.source)
@@ -102,9 +113,17 @@ export function isAuthorizedHumanDelegatePrincipal(
   principal: GatewayPrincipal | undefined,
   requiredScopes: OperatorDelegationScope[],
   deps: { getSession: typeof getSession } = { getSession },
+  targetSessionId?: string,
 ): principal is Extract<GatewayPrincipal, { kind: "session" }> {
   if (principal?.kind !== "session" || !isHumanDelegationSessionEligible(principal.sessionId, principal.operatorDelegationId, deps)) return false;
-  return requiredScopes.some((scope) => principal.delegatedScopes?.includes(scope));
+  const liveScopes = readActiveOperatorDelegationScopes(deps.getSession(principal.sessionId)!);
+  return (!targetSessionId || mayAccessDecisionSession(principal, targetSessionId, deps))
+    && requiredScopes.some((scope) => principal.delegatedScopes?.includes(scope) && liveScopes.includes(scope));
+}
+
+/** Decisions have the same direct-child boundary as result access, never employee-wide or transitive access. */
+export function mayAccessDecisionSession(principal: GatewayPrincipal | undefined, targetSessionId: string, deps: { getSession: typeof getSession } = { getSession }): boolean {
+  return principal?.kind !== "session" || principal.sessionId === targetSessionId || isDirectChildSession(principal.sessionId, targetSessionId, deps);
 }
 
 export function delegatedApprovalActor(

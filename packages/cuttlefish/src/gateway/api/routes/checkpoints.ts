@@ -8,7 +8,8 @@ import { badRequest, json, notFound } from "../responses.js";
 import { serializeSession } from "../serialize-session.js";
 import { resolveUserHeader } from "../../connector-reply.js";
 import { principalBodySessionForbidden, type GatewayPrincipal } from "../../scoped-token.js";
-import { delegatedApprovalActor, isAuthorizedHumanDelegatePrincipal } from "../../manager-auth.js";
+import { delegatedApprovalActor, isAuthorizedHumanDelegatePrincipal, mayAccessDecisionSession } from "../../manager-auth.js";
+import { ApprovalAuthorityError } from "../../approval-binding.js";
 
 function parseDecision(value: unknown): ApprovalDecision | null {
   return value === "approved" || value === "rejected" || value === "deferred" || value === "revised"
@@ -27,7 +28,8 @@ export async function handleCheckpointRoutes(
   if (method === "GET" && pathname === "/api/checkpoints") {
     const state = (url.searchParams.get("state") ?? "pending") as import("../../../shared/types.js").Approval["state"] | "all";
     const sessionId = url.searchParams.get("sessionId") ?? undefined;
-    json(res, listCheckpoints({ state, sessionId }));
+    const principal = (req as HttpRequest & { cuttlefishPrincipal?: GatewayPrincipal }).cuttlefishPrincipal;
+    json(res, listCheckpoints({ state, sessionId }).filter((checkpoint) => mayAccessDecisionSession(principal, checkpoint.sessionId)));
     return true;
   }
 
@@ -61,6 +63,7 @@ export async function handleCheckpointRoutes(
         ...(created.session ? { session: serializeSession(created.session, context) } : {}),
       }, 201);
     } catch (err) {
+      if (err instanceof ApprovalAuthorityError) { json(res, { error: err.message, code: "approval_authority_denied" }, 409); return true; }
       if (err instanceof Error && /required|not found/.test(err.message)) {
         if (err.message.includes("not found")) notFound(res);
         else badRequest(res, err.message);
@@ -76,6 +79,11 @@ export async function handleCheckpointRoutes(
     const checkpoint = getCheckpoint(params.id);
     if (!checkpoint) {
       notFound(res);
+      return true;
+    }
+    const principal = (req as HttpRequest & { cuttlefishPrincipal?: GatewayPrincipal }).cuttlefishPrincipal;
+    if (!mayAccessDecisionSession(principal, checkpoint.sessionId)) {
+      json(res, { error: "Checkpoint is outside this session's decision scope" }, 403);
       return true;
     }
     json(res, checkpoint);
@@ -103,7 +111,7 @@ export async function handleCheckpointRoutes(
     }
     const principal = (req as HttpRequest & { cuttlefishPrincipal?: GatewayPrincipal }).cuttlefishPrincipal;
     const requiredScopes = decision === "approved" ? ["approve", "decide"] as const : ["decide"] as const;
-    if (principal?.kind === "session" && !isAuthorizedHumanDelegatePrincipal(principal, [...requiredScopes])) {
+    if (principal?.kind === "session" && !isAuthorizedHumanDelegatePrincipal(principal, [...requiredScopes], undefined, checkpoint.sessionId)) {
       json(res, { error: "This session does not have explicit delegated authority for that decision" }, 403);
       return true;
     }
@@ -115,6 +123,8 @@ export async function handleCheckpointRoutes(
         checkpoint.id,
         {
           decision,
+          principal,
+          reviewedRevision: typeof body.reviewedRevision === "string" ? body.reviewedRevision : null,
           actor,
           notes: typeof body.notes === "string" ? body.notes : null,
           resultingAction: typeof body.resultingAction === "string" ? body.resultingAction : null,

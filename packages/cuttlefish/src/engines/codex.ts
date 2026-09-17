@@ -34,9 +34,8 @@ export function codexCliFlags(flags: string[] | undefined): string[] {
 
 /**
  * Ordinary turns run with Codex's workspace sandbox instead of the unrestricted
- * bypass. Cuttlefish still owns the higher-level security-review/checkpoint
- * gate, but the engine process no longer gets ambient same-user read access to
- * gateway credentials such as ~/.cuttlefish/gateway.json. `restrictToJudgeOnly`
+ * bypass. Gateway authentication is independent of OS isolation: CLI sandbox
+ * flags do not establish that same-user gateway files cannot be read. `restrictToJudgeOnly`
  * tightens that further to read-only for verdict/reviewer sessions.
  */
 export function codexSandboxFlags(opts: Pick<EngineRunOpts, "restrictToJudgeOnly">): string[] {
@@ -127,6 +126,7 @@ function actionableCodexError(message: string): string {
 
 export class CodexEngine implements InterruptibleEngine {
   name = "codex" as const;
+  readonly executionCapabilities = { readOnly: true };
   private liveProcesses = new Map<string, LiveProcess>();
 
   constructor(private readonly opts: CodexEngineOpts = {}) {}

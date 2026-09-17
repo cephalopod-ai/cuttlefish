@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest"
 import { MemoryRouter } from "react-router-dom"
-import { render, screen, fireEvent } from "@testing-library/react"
+import { render, screen, fireEvent, waitFor } from "@testing-library/react"
 import type { Approval, Checkpoint } from "@/lib/api"
 import { runAxe, formatViolations } from "@/test/axe"
 
@@ -11,6 +11,8 @@ const approvalsState = vi.hoisted(() => ({
   checkpoints: [] as Checkpoint[],
   checkpointsLoading: false,
   checkpointsError: null as Error | null,
+  approve: vi.fn(),
+  decide: vi.fn(),
 }))
 
 vi.mock("@/components/page-layout", () => ({
@@ -27,7 +29,7 @@ vi.mock("@/hooks/use-approvals", () => ({
     isLoading: approvalsState.approvalsLoading,
     error: approvalsState.approvalsError,
   }),
-  useApproveApproval: () => ({ mutate: vi.fn(), isPending: false, error: null }),
+  useApproveApproval: () => ({ mutate: approvalsState.approve, isPending: false, error: null }),
   useRejectApproval: () => ({ mutate: vi.fn(), isPending: false, error: null }),
 }))
 
@@ -37,7 +39,7 @@ vi.mock("@/hooks/use-checkpoints", () => ({
     isLoading: approvalsState.checkpointsLoading,
     error: approvalsState.checkpointsError,
   }),
-  useDecideCheckpoint: () => ({ mutateAsync: vi.fn(), isPending: false, error: null }),
+  useDecideCheckpoint: () => ({ mutateAsync: approvalsState.decide, isPending: false, error: null }),
 }))
 
 import ApprovalsPage from "./page"
@@ -50,6 +52,8 @@ describe("ApprovalsPage", () => {
     approvalsState.checkpoints = []
     approvalsState.checkpointsLoading = false
     approvalsState.checkpointsError = null
+    approvalsState.approve.mockReset()
+    approvalsState.decide.mockReset()
   })
 
   it("identifies an org change and the effect of approval before the operator decides", () => {
@@ -109,6 +113,30 @@ describe("ApprovalsPage", () => {
     // Detail panel shows checkpoint-specific content
     expect(screen.getByText("reports/draft.md")).toBeTruthy()
     expect(screen.getByRole("button", { name: /Revise & resume/i })).toBeTruthy()
+  })
+
+  it("CUT-EA-014: submits the displayed approval revision and identifies delegated decisions", () => {
+    approvalsState.approvals = [{ id: "review-1", sessionId: "session-1", type: "fallback", state: "pending",
+      payload: { to: { engine: "codex", model: "gpt-5.5" }, reviewBinding: { version: 1, revision: "reviewed-material" } },
+      createdAt: "2026-09-16T00:00:00.000Z", resolvedByKind: "operator_delegate" }]
+    render(<MemoryRouter><ApprovalsPage /></MemoryRouter>)
+    fireEvent.click(screen.getByRole("button", { name: "Approve & resume" }))
+    expect(approvalsState.approve).toHaveBeenCalledWith({ id: "review-1", reviewedRevision: "reviewed-material" })
+    expect(screen.getAllByText("Operator delegate").length).toBeGreaterThan(0)
+  })
+
+  it("CUT-EA-014: retains the decision draft and shows a core denial", async () => {
+    approvalsState.checkpoints = [{ id: "checkpoint-bound", sessionId: "session-1", type: "checkpoint", state: "pending",
+      payload: { decisionNeeded: "Review bounded step", why: "Approval required", options: ["revised"], reviewBinding: { version: 1, revision: "displayed-revision" } },
+      createdAt: "2026-09-16T00:00:00.000Z" }]
+    approvalsState.decide.mockRejectedValue(new Error("Reviewed approval material or target policy changed"))
+    render(<MemoryRouter><ApprovalsPage /></MemoryRouter>)
+    const draft = screen.getByPlaceholderText("Tell the agent what to change before continuing.")
+    fireEvent.change(draft, { target: { value: "Keep this revision draft" } })
+    fireEvent.click(screen.getByRole("button", { name: "Revise & resume" }))
+    await waitFor(() => expect(screen.getByText("Reviewed approval material or target policy changed")).toBeTruthy())
+    expect((draft as HTMLTextAreaElement).value).toBe("Keep this revision draft")
+    expect(approvalsState.decide).toHaveBeenCalledWith({ id: "checkpoint-bound", body: { decision: "revised", reviewedRevision: "displayed-revision", notes: "Keep this revision draft", resumePrompt: "Keep this revision draft" } })
   })
 
   it("renders approvals inside an internal scroll region", () => {

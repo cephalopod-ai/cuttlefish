@@ -325,6 +325,8 @@ export async function runOrchestrationLeaseTurn(opts: {
   const session = createSession({
     engine: opts.worker.provider,
     source: "web",
+    ingressOrigin: "scheduler",
+    executionRequirement: opts.worker.workspacePolicy === "read_only" || opts.workspace.mode === "review_bundle" ? "read_only" : "standard",
     sourceRef: sessionKey,
     connector: "web",
     sessionKey,

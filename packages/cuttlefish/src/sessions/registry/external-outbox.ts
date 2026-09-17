@@ -1,8 +1,9 @@
 import { v4 as uuidv4 } from "uuid";
 import type { ExternalKnowledgeEnvelope } from "../../shared/types.js";
 import { initDb } from "./core.js";
+import { canonicalJsonStringify as canonicalJson } from "../../shared/canonical-json.js";
 
-export type ExternalOutboxStatus = "pending" | "sending" | "delivered" | "failed";
+export type ExternalOutboxStatus = "pending" | "sending" | "delivered" | "failed" | "uncertain";
 
 export interface ExternalOutboxItem {
   id: string;
@@ -53,7 +54,12 @@ export function enqueueExternalOutboxItem(input: {
   const existing = db.prepare(
     "SELECT * FROM external_outbox WHERE sink_name = ? AND idempotency_key = ? LIMIT 1",
   ).get(input.sinkName, input.envelope.idempotencyKey) as Record<string, unknown> | undefined;
-  if (existing) return rowToExternalOutboxItem(existing);
+  if (existing) {
+    const prior = rowToExternalOutboxItem(existing);
+    const material = (envelope: ExternalKnowledgeEnvelope) => { const { envelopeId: _deliveryId, ...rest } = envelope; return canonicalJson(rest); };
+    if (material(prior.envelope) !== material(input.envelope)) throw new Error("Outbox operation identity reused with changed material");
+    return prior;
+  }
 
   const id = uuidv4();
   db.prepare(`
@@ -89,14 +95,14 @@ export function listPendingExternalOutboxItems(limit = 25): ExternalOutboxItem[]
 
 export const EXTERNAL_OUTBOX_CLAIM_LEASE_MS = 5 * 60 * 1000;
 
-/** Return rows left `sending` by a crashed process to the durable retry queue. */
+/** Unknown delivery outcomes are retained for reconciliation, never silently retried. */
 export function reclaimStaleExternalOutboxClaims(now = new Date()): number {
   const db = initDb();
   const result = db.prepare(`
     UPDATE external_outbox
-    SET status = 'pending',
+    SET status = 'uncertain',
         claim_expires_at = NULL,
-        last_error = COALESCE(last_error, 'delivery claim expired before settlement')
+        last_error = 'Unknown delivery outcome after claim expiry; operator reconciliation required'
     WHERE status = 'sending'
       AND claim_expires_at IS NOT NULL
       AND claim_expires_at <= ?
@@ -108,6 +114,7 @@ export function claimPendingExternalOutboxItems(
   limit = 25,
   now = new Date(),
   leaseMs = EXTERNAL_OUTBOX_CLAIM_LEASE_MS,
+  sinkName?: string,
 ): ExternalOutboxItem[] {
   const db = initDb();
   const nowIso = now.toISOString();
@@ -118,9 +125,10 @@ export function claimPendingExternalOutboxItems(
       SELECT id FROM external_outbox
       WHERE status = 'pending'
         AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+        AND (? IS NULL OR sink_name = ?)
       ORDER BY created_at ASC
       LIMIT ?
-    `).all(nowIso, limit) as Record<string, unknown>[];
+    `).all(nowIso, sinkName ?? null, sinkName ?? null, limit) as Record<string, unknown>[];
     for (const row of rows) {
       db.prepare(`
         UPDATE external_outbox
@@ -164,14 +172,14 @@ export function markExternalOutboxDelivered(id: string, remoteId?: string | null
 
 export const EXTERNAL_OUTBOX_MAX_ATTEMPTS = 10;
 
-export function markExternalOutboxFailed(id: string, error: string, nextAttemptAt: string): ExternalOutboxItem | undefined {
+export function markExternalOutboxFailed(id: string, error: string, nextAttemptAt: string | null): ExternalOutboxItem | undefined {
   const db = initDb();
   const fail = db.transaction((): ExternalOutboxItem | undefined => {
     const now = new Date().toISOString();
     const current = db.prepare("SELECT attempt_count, status FROM external_outbox WHERE id = ?").get(id) as Record<string, unknown> | undefined;
     if (!current || current.status !== "sending") return getExternalOutboxItem(id);
     const newCount = Number(current.attempt_count ?? 0) + 1;
-    const terminal = newCount >= EXTERNAL_OUTBOX_MAX_ATTEMPTS;
+    const terminal = nextAttemptAt === null || newCount >= EXTERNAL_OUTBOX_MAX_ATTEMPTS;
     db.prepare(`
       UPDATE external_outbox
       SET attempt_count = ?,
@@ -185,6 +193,10 @@ export function markExternalOutboxFailed(id: string, error: string, nextAttemptA
     return getExternalOutboxItem(id);
   });
   return fail();
+}
+
+export function markExternalOutboxUncertain(id: string, reason: string): void {
+  initDb().prepare("UPDATE external_outbox SET status = 'uncertain', last_error = ?, claim_expires_at = NULL, next_attempt_at = NULL WHERE id = ? AND status = 'sending'").run(reason, id);
 }
 
 export function getExternalOutboxItem(id: string): ExternalOutboxItem | undefined {

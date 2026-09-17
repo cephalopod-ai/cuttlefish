@@ -15,6 +15,8 @@ import { maybeRevertEngineOverride, mergeTransportMeta } from "./manager-helpers
 import { rateLimitPausedNotice } from "./rate-limit-handler.js";
 
 export type RouteOptions = {
+  /** Trusted caller assertion, never read from incoming content or metadata. */
+  ingressOrigin?: "connector" | "scheduler";
   employee?: Employee;
   engine?: string;
   model?: string;
@@ -58,7 +60,8 @@ export class SessionDispatcher {
       sessionKey: msg.sessionKey,
       replyContext: msg.replyContext,
       messageId: msg.messageId,
-      transportMeta: msg.transportMeta,
+      transportMeta: mergeTransportMeta(null, msg.transportMeta),
+      ingressOrigin: opts.ingressOrigin ?? "connector",
       employee: opts.employee?.name ?? undefined,
       model: opts.model ?? opts.employee?.model ?? undefined,
       effortLevel: opts.employee?.effortLevel ?? undefined,

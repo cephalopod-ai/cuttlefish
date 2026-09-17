@@ -8,11 +8,14 @@ import type {
   Session,
 } from "../shared/types.js";
 import { ApprovalStateError, createApproval, getApproval, listApprovals, resolveApproval, resolveApprovalAsAutonomous } from "./approvals.js";
-import { getSession, initDb, insertMessage, patchSessionTransportMeta, updateSession } from "../sessions/registry.js";
+import { enqueueQueueItem, getSession, initDb, insertMessage, patchSessionTransportMeta, updateSession } from "../sessions/registry.js";
 import type { ApiContext } from "./api/context.js";
 import { dispatchWebSessionRun } from "./api/session-dispatch.js";
 import { emitCheckpointDecisionBestEffort, knowledgeRelayOptions } from "../knowledge/outbox-service.js";
 import { logger } from "../shared/logger.js";
+import type { GatewayPrincipal } from "./auth.js";
+import { ApprovalAuthorityError, assertApprovalDecisionAuthority } from "./approval-binding.js";
+import { cancelSessionExecutionBoundary, queueDispatchAuthority } from "../sessions/execution-boundary.js";
 
 const CHECKPOINT_META_KEY = "humanCheckpoint";
 
@@ -159,6 +162,8 @@ export async function applyCheckpointDecision(
     notes?: string | null;
     resultingAction?: string | null;
     resumePrompt?: string | null;
+    principal?: GatewayPrincipal;
+    reviewedRevision?: string | null;
     /** ⚠️ INTENTIONAL SAFETY OVERRIDE — NOT A BUG (see gateway/autonomous-mode.ts
      *  docblock). True only for the dual-model-verdict autonomous path —
      *  never settable from an HTTP request body. Determines which resolver
@@ -176,9 +181,15 @@ export async function applyCheckpointDecision(
     }
     throw new CheckpointDecisionConflictError(checkpoint, input.decision);
   }
+  assertApprovalDecisionAuthority(checkpoint, input.principal, input.reviewedRevision);
 
   const prompt = decisionPrompt(checkpoint.payload, input.decision, input.resumePrompt ?? null);
   const resultingAction = (input.resultingAction ?? defaultResultingAction(input.decision, checkpoint.payload, input.resumePrompt ?? null)) as string;
+  if (!["resume_session", "stay_paused", "stop_session", "record_only"].includes(resultingAction)
+    || ((input.decision === "rejected" || input.decision === "deferred") && resultingAction === "resume_session")
+    || (input.decision === "deferred" && resultingAction !== "stay_paused")) throw new ApprovalAuthorityError("Decision cannot authorize that resulting action");
+  if (input.principal?.kind === "session" && ((input.resumePrompt && input.resumePrompt !== decisionPrompt(checkpoint.payload, input.decision, null))
+    || resultingAction !== defaultResultingAction(input.decision, checkpoint.payload, null))) throw new ApprovalAuthorityError("Delegated decision cannot replace the reviewed resume operation");
 
   if (resultingAction === "resume_session") {
     const session = getSession(checkpoint.sessionId);
@@ -188,8 +199,9 @@ export async function applyCheckpointDecision(
     if (!prompt) throw new Error("resumePrompt is required to resume a revised/approved checkpoint");
   }
 
-  const resolve = input.autonomous ? resolveApprovalAsAutonomous : resolveApproval;
+  const resolve = input.autonomous ? resolveApprovalAsAutonomous : (...args: Parameters<typeof resolveApproval>) => resolveApproval(...args.slice(0, 5) as [string, ApprovalDecision, string | null, string | null, string | null], { principal: input.principal, reviewedRevision: input.reviewedRevision });
   let resolved: Approval;
+  let queueItemId: string | undefined;
   try {
     // REL-003: for the resume_session outcome, commit the approval AND flip
     // the session back to "running" in one atomic transaction. Previously
@@ -212,11 +224,22 @@ export async function applyCheckpointDecision(
           input.notes ?? null,
           resultingAction,
         );
+        const target = getSession(approval.sessionId)!;
+        const authority = queueDispatchAuthority(target, prompt!);
+        const binding = approval.payload.reviewBinding;
+        if (authority && binding && typeof binding === "object" && !Array.isArray(binding) && typeof binding.revision === "string") authority.decision = {
+          approvalId: approval.id, revision: binding.revision, materialHash: binding.materialHash as string,
+          engine: target.engine, model: target.model ?? null, delegateSessionId: input.principal?.kind === "session" ? input.principal.sessionId : null,
+          delegationId: input.principal?.kind === "session" ? input.principal.operatorDelegationId ?? null : null,
+        };
+        queueItemId = enqueueQueueItem(approval.sessionId, target.sessionKey || target.sourceRef || approval.sessionId, prompt!, authority, `checkpoint:${approval.id}`);
         updateSession(approval.sessionId, {
           status: "running",
           lastActivity: new Date().toISOString(),
           lastError: null,
         });
+        updateSessionCheckpointMeta(approval.sessionId, { checkpointId: approval.id, state: approval.state,
+          resultingAction, updatedAt: new Date().toISOString() });
         return approval;
       })();
     } else {
@@ -264,11 +287,13 @@ export async function applyCheckpointDecision(
       "notification",
       resolved.resolvedByKind === "autonomous_dual_model"
         ? "✅ AI reviewers approved reconsideration. Resuming session."
+        : resolved.resolvedByKind === "operator_delegate"
+          ? "✅ Operator delegate approved the reviewed continuation. Continuation queued."
         : input.decision === "revised"
           ? "📝 Human checkpoint revised the plan. Resuming with human instructions."
           : "✅ Human checkpoint approved. Resuming session.",
     );
-    dispatchWebSessionRun(rolled, prompt!, engine, context.getConfig(), context);
+    dispatchWebSessionRun(rolled, prompt!, engine, context.getConfig(), context, { queueItemId });
     await exportCheckpointDecision(resolved, rolled, context);
     context.emit("session:updated", { sessionId: session.id });
     context.emit("approval:resolved", { approvalId: resolved.id, sessionId: resolved.sessionId, state: resolved.state });
@@ -285,7 +310,9 @@ export async function applyCheckpointDecision(
     insertMessage(
       paused.id,
       "notification",
-      input.decision === "deferred"
+      resolved.resolvedByKind === "operator_delegate"
+        ? "⏸️ Operator delegate kept the checkpoint paused. Session remains paused."
+      : input.decision === "deferred"
         ? "⏸️ Human checkpoint deferred. Session remains paused."
         : "📝 Human checkpoint revised the work. Session remains paused until resumed.",
     );
@@ -308,8 +335,11 @@ export async function applyCheckpointDecision(
       status: "error",
       lastActivity: new Date().toISOString(),
       lastError: input.notes ?? "Checkpoint rejected by operator",
+      executionBoundary: cancelSessionExecutionBoundary(session),
     }) ?? session;
-    insertMessage(stopped.id, "notification", "🚫 Human checkpoint rejected the proposed action. Session stopped.");
+    insertMessage(stopped.id, "notification", resolved.resolvedByKind === "operator_delegate"
+      ? "🚫 Operator delegate rejected the proposed action. Session stopped."
+      : "🚫 Human checkpoint rejected the proposed action. Session stopped.");
     updateSessionCheckpointMeta(stopped.id, {
       checkpointId: resolved.id,
       state: resolved.state,

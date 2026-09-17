@@ -1,9 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import type { BatchEmitResult, ExternalKnowledgeEnvelope, HealthResult, KnowledgeSink } from "../../shared/types.js";
 
 export class JsonlKnowledgeSink implements KnowledgeSink {
   readonly name = "jsonl";
+  get deliveryIdentity(): string { return createHash("sha256").update(path.resolve(this.filePath)).digest("hex"); }
 
   constructor(private readonly filePath: string) {}
 

@@ -4,6 +4,7 @@ export interface SessionNotificationSink {
     message: string,
     displayMessage?: string,
     sourceChildSessionId?: string,
+    sourceRunId?: string,
   ): Promise<void>;
   sendConnectorNotification(message: string): Promise<void>;
 }

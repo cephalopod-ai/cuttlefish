@@ -1,4 +1,5 @@
 import { getMessages, getSession, listSessionsBySource, patchSessionTransportMeta } from "./registry.js";
+import { sessionEvidenceBoundary } from "./execution-boundary.js";
 import { loadConfig } from "../shared/config.js";
 import { assertFetchOk, jsonApiHeaders } from "../gateway/internal-auth.js";
 import { logger } from "../shared/logger.js";
@@ -13,6 +14,7 @@ import { hasSessionBackgroundActivity } from "./background-activity-state.js";
 
 type ParentNotificationResult = { result?: string | null; error?: string | null; cost?: number; durationMs?: number };
 type DeferredParentNotification = {
+  runId?: unknown;
   result: ParentNotificationResult;
   options?: { alwaysNotify?: boolean } & SessionNotificationOptions;
   timer?: NodeJS.Timeout;
@@ -51,6 +53,9 @@ export function notifyParentSession(
   result: ParentNotificationResult,
   options?: { alwaysNotify?: boolean; skipBackgroundDefer?: boolean } & SessionNotificationOptions,
 ): void {
+  const liveChild = getSession(childSession.id);
+  if (!liveChild || liveChild.executionBoundary?.cancelled || liveChild.parentSessionId !== childSession.parentSessionId
+    || liveChild.transportMeta?.latestRunId !== childSession.transportMeta?.latestRunId) return;
   // A Claude Stop can settle the foreground turn while background agents still
   // have upstream requests in flight. That is progress, not a finished handoff:
   // hold one latest callback until the engine's existing quiet-window signal
@@ -72,7 +77,7 @@ export function notifyParentSession(
       flushDeferredParentNotification(childSession.id, { force: true });
     }, DEFERRED_CALLBACK_MAX_PARK_MS);
     timer.unref?.();
-    deferredParentNotifications.set(childSession.id, { result, options, timer });
+    deferredParentNotifications.set(childSession.id, { result, options, timer, runId: childSession.transportMeta?.latestRunId });
     // Arm the leader-ack record BEFORE parking the callback. The deferral map is
     // process-local and its only flush trigger is the engine's drain event, so a
     // crashed engine or a gateway restart drops the callback with no trace. Every
@@ -100,7 +105,8 @@ export function notifyParentSession(
   if (!childSession.parentSessionId) return;
   if (options?.alwaysNotify === false) return;
   const freshChild = getSession(childSession.id);
-  const currentChild = freshChild?.id === childSession.id ? freshChild : childSession;
+  if (!freshChild || freshChild.transportMeta?.latestRunId !== childSession.transportMeta?.latestRunId) return;
+  const currentChild = freshChild;
   if (shouldSuppressLeaderAckCallback(currentChild, result)) {
     logger.info(`[leader-ack] suppressing no-op callback for already-settled child report ${childSession.id}`);
     return;
@@ -145,7 +151,7 @@ export function flushDeferredParentNotification(sessionId: string, opts?: { forc
   clearDeferredTimer(sessionId);
   deferredParentNotifications.delete(sessionId);
   const child = getSession(sessionId);
-  if (!child) return false;
+  if (!child || child.transportMeta?.latestRunId !== deferred.runId || child.executionBoundary?.cancelled) return false;
   let latestAssistant: string | null | undefined = null;
   if (!deferred.result.error) {
     const messages = getMessages(sessionId);
@@ -305,7 +311,7 @@ async function _sendNotification(
 ): Promise<void> {
   const parent = getSession(childSession.parentSessionId!);
   if (!parent) return; // Parent gone or expired
-  if (parent.status === "error") return; // Parent already in error — skip
+  if (parent.status === "error" || parent.executionBoundary?.cancelled) return;
 
   const employeeName = childSession.employee || "Unknown";
   const childId = childSession.id;
@@ -339,14 +345,20 @@ async function _sendNotification(
   }
 
   if (sink) {
-    await sink.sendSessionNotification(childSession.parentSessionId!, message, displayMessage, childSession.id);
+    await sink.sendSessionNotification(childSession.parentSessionId!, withEvidenceBoundary(message, childSession, isTalkParent), displayMessage, childSession.id, typeof childSession.transportMeta?.latestRunId === "string" ? childSession.transportMeta.latestRunId : undefined);
     return;
   }
   // Carry the reporting child's id over the HTTP hop too. The sink path passes it
   // as an argument; without it here, `resolveManagerDelegationSynthesis` cannot
   // tell an out-of-batch or late child from a stale duplicate and answers
   // `already_dispatched` for both, silently swallowing the report.
-  await _sendRaw(childSession.parentSessionId!, message, displayMessage, undefined, childSession.id);
+  await _sendRaw(childSession.parentSessionId!, withEvidenceBoundary(message, childSession, isTalkParent), displayMessage, undefined, childSession.id, typeof childSession.transportMeta?.latestRunId === "string" ? childSession.transportMeta.latestRunId : undefined);
+}
+
+function withEvidenceBoundary(message: string, child: Session, voice: boolean): string {
+  const evidence = sessionEvidenceBoundary(child);
+  if (voice) { delete evidence.sessionId; delete evidence.runId; }
+  return `${message}\n\nEvidence boundary: ${JSON.stringify(evidence)}`;
 }
 
 /** Trim to a word boundary for a tidy human-facing preview. */
@@ -405,9 +417,10 @@ async function _sendRaw(
   displayMessage?: string,
   sink?: SessionNotificationSink,
   sourceChildSessionId?: string,
+  sourceRunId?: string,
 ): Promise<void> {
   if (sink) {
-    await sink.sendSessionNotification(parentSessionId, message, displayMessage, sourceChildSessionId);
+    await sink.sendSessionNotification(parentSessionId, message, displayMessage, sourceChildSessionId, sourceRunId);
     return;
   }
   const gateway = internalGatewayConnection();
@@ -420,6 +433,7 @@ async function _sendRaw(
       role: "notification",
       ...(displayMessage ? { displayMessage } : {}),
       ...(sourceChildSessionId ? { sourceChildSessionId } : {}),
+      ...(sourceRunId ? { sourceRunId } : {}),
     }),
   });
   await assertFetchOk(response, "parent notification");

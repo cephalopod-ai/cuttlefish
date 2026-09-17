@@ -39,8 +39,10 @@ import { attach, __resetAttachmentsForTest } from "../../talk/attachments.js";
 import { logger } from "../../shared/logger.js";
 import type { Session } from "../../shared/types.js";
 
+const fixtureSessions = new Map<string, Session>();
+
 function makeSession(overrides: Partial<Session> = {}): Session {
-  return {
+  const session = {
     id: "child-001",
     engine: "claude",
     engineSessionId: null,
@@ -64,11 +66,14 @@ function makeSession(overrides: Partial<Session> = {}): Session {
     lastError: null,
     ...overrides,
   } as Session;
+  fixtureSessions.set(session.id, session);
+  return session;
 }
 
 const originalFetch = globalThis.fetch;
 
 beforeEach(() => {
+  fixtureSessions.clear();
   clearSessionBackgroundActivityForTest();
   clearDeferredParentNotificationsForTest();
   vi.mocked(getMessages).mockReturnValue([]);
@@ -96,9 +101,8 @@ describe("notifyParentSession", () => {
     fetchSpy = vi.fn().mockResolvedValue({ ok: true });
     globalThis.fetch = fetchSpy as unknown as typeof fetch;
 
-    vi.mocked(getSession).mockReturnValue(
-      makeSession({ id: "parent-001", parentSessionId: null, status: "idle" }),
-    );
+    makeSession({ id: "parent-001", parentSessionId: null, status: "idle" });
+    vi.mocked(getSession).mockImplementation((id) => fixtureSessions.get(id));
   });
 
   afterEach(() => {
@@ -335,9 +339,8 @@ describe("notifyParentSession — talk parent (voice-friendly message)", () => {
     globalThis.fetch = fetchSpy as unknown as typeof fetch;
 
     // Parent session has source: "talk"
-    vi.mocked(getSession).mockReturnValue(
-      makeSession({ id: "parent-001", parentSessionId: null, status: "idle", source: "talk" }),
-    );
+    makeSession({ id: "parent-001", parentSessionId: null, status: "idle", source: "talk" });
+    vi.mocked(getSession).mockImplementation((id) => fixtureSessions.get(id));
   });
 
   afterEach(() => {
@@ -406,14 +409,13 @@ describe("notifyParentSession — talk parent (voice-friendly message)", () => {
       `Narrate the outcome aloud in 1–2 short sentences — no IDs, no URLs, no markdown. ` +
       `If there is a link or detail worth seeing, push a card. ` +
       `To follow up, delegate to this thread via /api/talk/delegate (its id is in your roster).`;
-    expect(body.message).toBe(expected);
+    expect(body.message.split("\n\nEvidence boundary:")[0]).toBe(expected);
   });
 
   it("non-talk parent keeps byte-identical message format (regression)", async () => {
     // Override to a non-talk parent
-    vi.mocked(getSession).mockReturnValue(
-      makeSession({ id: "parent-001", parentSessionId: null, status: "idle", source: "api" }),
-    );
+    makeSession({ id: "parent-001", parentSessionId: null, status: "idle", source: "api" });
+    vi.mocked(getSession).mockImplementation((id) => fixtureSessions.get(id));
     const child = makeSession({ title: "My task", employee: "test-employee" });
     notifyParentSession(child, { result: "Some result" });
     await new Promise((r) => setTimeout(r, 50));
@@ -427,7 +429,7 @@ describe("notifyParentSession — talk parent (voice-friendly message)", () => {
       `Reply preview:\n${raw}\n\n` +
       `To read the full reply: GET /api/sessions/${childId}?last=N · ` +
       `to follow up: POST /api/sessions/${childId}/message`;
-    expect(body.message).toBe(expectedMessage);
+    expect(body.message.split("\n\nEvidence boundary:")[0]).toBe(expectedMessage);
   });
 
   // --- error path tests for talk parents ---
@@ -476,7 +478,7 @@ describe("notifyParentSession — talk parent (voice-friendly message)", () => {
       `⚠️ Thread "Deploy fix" hit an error.\n\n` +
       `${errorText}\n\n` +
       `Tell the operator plainly in one short sentence — no IDs, no URLs — and offer a next step.`;
-    expect(body.message).toBe(expected);
+    expect(body.message.split("\n\nEvidence boundary:")[0]).toBe(expected);
   });
 
   it("talk parent error displayMessage: label + clean preview, no API noise", async () => {
@@ -491,16 +493,15 @@ describe("notifyParentSession — talk parent (voice-friendly message)", () => {
   });
 
   it("non-talk parent error keeps byte-identical message format (regression)", async () => {
-    vi.mocked(getSession).mockReturnValue(
-      makeSession({ id: "parent-001", parentSessionId: null, status: "idle", source: "api" }),
-    );
+    makeSession({ id: "parent-001", parentSessionId: null, status: "idle", source: "api" });
+    vi.mocked(getSession).mockImplementation((id) => fixtureSessions.get(id));
     const child = makeSession({ employee: "test-employee" });
     notifyParentSession(child, { error: "Something broke" });
     await new Promise((r) => setTimeout(r, 50));
 
     const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
     const expectedMessage = `⚠️ Employee "test-employee" (child session child-001) hit an error and could not finish: Something broke`;
-    expect(body.message).toBe(expectedMessage);
+    expect(body.message.split("\n\nEvidence boundary:")[0]).toBe(expectedMessage);
     expect(body.displayMessage).toBe(`⚠️ test-employee couldn't finish`);
   });
 });
@@ -519,9 +520,8 @@ describe("notifyRateLimitResumed — talk parent (no UUID leak)", () => {
   });
 
   it("talk parent + title → label in message, child id absent", async () => {
-    vi.mocked(getSession).mockReturnValue(
-      makeSession({ id: "parent-001", parentSessionId: null, status: "idle", source: "talk" }),
-    );
+    makeSession({ id: "parent-001", parentSessionId: null, status: "idle", source: "talk" });
+    vi.mocked(getSession).mockImplementation((id) => fixtureSessions.get(id));
     const child = makeSession({ title: "Research task" });
     notifyRateLimitResumed(child);
     await new Promise((r) => setTimeout(r, 50));
@@ -533,9 +533,8 @@ describe("notifyRateLimitResumed — talk parent (no UUID leak)", () => {
   });
 
   it("talk parent + title null → falls back to employee name, no child id", async () => {
-    vi.mocked(getSession).mockReturnValue(
-      makeSession({ id: "parent-001", parentSessionId: null, status: "idle", source: "talk" }),
-    );
+    makeSession({ id: "parent-001", parentSessionId: null, status: "idle", source: "talk" });
+    vi.mocked(getSession).mockImplementation((id) => fixtureSessions.get(id));
     const child = makeSession({ title: null, employee: "research-bot" });
     notifyRateLimitResumed(child);
     await new Promise((r) => setTimeout(r, 50));
@@ -546,9 +545,8 @@ describe("notifyRateLimitResumed — talk parent (no UUID leak)", () => {
   });
 
   it('talk parent + no title/employee → "a thread", no child id', async () => {
-    vi.mocked(getSession).mockReturnValue(
-      makeSession({ id: "parent-001", parentSessionId: null, status: "idle", source: "talk" }),
-    );
+    makeSession({ id: "parent-001", parentSessionId: null, status: "idle", source: "talk" });
+    vi.mocked(getSession).mockImplementation((id) => fixtureSessions.get(id));
     const child = makeSession({ title: null, employee: null });
     notifyRateLimitResumed(child);
     await new Promise((r) => setTimeout(r, 50));
@@ -559,30 +557,28 @@ describe("notifyRateLimitResumed — talk parent (no UUID leak)", () => {
   });
 
   it("talk parent → exact message shape (Thread label, no parenthetical)", async () => {
-    vi.mocked(getSession).mockReturnValue(
-      makeSession({ id: "parent-001", parentSessionId: null, status: "idle", source: "talk" }),
-    );
+    makeSession({ id: "parent-001", parentSessionId: null, status: "idle", source: "talk" });
+    vi.mocked(getSession).mockImplementation((id) => fixtureSessions.get(id));
     const child = makeSession({ title: "Deploy fix" });
     notifyRateLimitResumed(child);
     await new Promise((r) => setTimeout(r, 50));
 
     const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
-    expect(body.message).toBe(
+    expect(body.message.split("\n\nEvidence boundary:")[0]).toBe(
       `🔄 Thread "Deploy fix" has resumed after rate limit cleared.`,
     );
   });
 
   it("non-talk parent keeps byte-identical format (regression)", async () => {
-    vi.mocked(getSession).mockReturnValue(
-      makeSession({ id: "parent-001", parentSessionId: null, status: "idle", source: "api" }),
-    );
+    makeSession({ id: "parent-001", parentSessionId: null, status: "idle", source: "api" });
+    vi.mocked(getSession).mockImplementation((id) => fixtureSessions.get(id));
     const child = makeSession({ employee: "test-employee" });
     notifyRateLimitResumed(child);
     await new Promise((r) => setTimeout(r, 50));
 
     expect(fetchSpy).toHaveBeenCalledOnce();
     const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
-    expect(body.message).toBe(
+    expect(body.message.split("\n\nEvidence boundary:")[0]).toBe(
       `🔄 Employee "test-employee" (session child-001) has resumed after rate limit cleared.`,
     );
   });
@@ -619,7 +615,7 @@ describe("notifyParentSession — attached talk-session wakes", () => {
     });
     // Parent ('elsewhere') resolves to nothing; only talk-1 is a live talk session.
     vi.mocked(getSession).mockImplementation((id: string) =>
-      id === "talk-1" ? talkSession : undefined,
+      id === "talk-1" ? talkSession : fixtureSessions.get(id),
     );
 
     const child = makeSession({ id: "child-001", parentSessionId: "elsewhere", title: "Audit job" });
@@ -643,7 +639,7 @@ describe("notifyParentSession — attached talk-session wakes", () => {
       patchSessionMeta: () => {},
     });
     vi.mocked(getSession).mockImplementation((id: string) =>
-      id === "talk-1" ? talkSession : undefined,
+      id === "talk-1" ? talkSession : fixtureSessions.get(id),
     );
 
     // parentSessionId === the talk session → the parent-callback path notifies it.
@@ -670,7 +666,7 @@ describe("notifyParentSession — attached talk-session wakes", () => {
     });
     vi.mocked(listSessionsBySource).mockReturnValue([talkWithMeta]);
     vi.mocked(getSession).mockImplementation((id: string) =>
-      id === "talk-1" ? talkWithMeta : undefined,
+      id === "talk-1" ? talkWithMeta : fixtureSessions.get(id),
     );
 
     const child = makeSession({ id: "child-001", parentSessionId: "elsewhere", title: "Audit job" });
@@ -693,7 +689,7 @@ describe("notifyParentSession — attached talk-session wakes", () => {
       patchSessionMeta: () => {},
     });
     vi.mocked(getSession).mockImplementation((id: string) =>
-      id === "talk-1" ? talkSession : undefined,
+      id === "talk-1" ? talkSession : fixtureSessions.get(id),
     );
 
     const child = makeSession({ id: "child-001", parentSessionId: "elsewhere", title: "Audit job" });
@@ -737,9 +733,8 @@ describe("notifyParentSession — alwaysNotify suppression", () => {
     fetchSpy = vi.fn().mockResolvedValue({ ok: true });
     globalThis.fetch = fetchSpy as unknown as typeof fetch;
 
-    vi.mocked(getSession).mockReturnValue(
-      makeSession({ id: "parent-001", parentSessionId: null, status: "idle" }),
-    );
+    makeSession({ id: "parent-001", parentSessionId: null, status: "idle" });
+    vi.mocked(getSession).mockImplementation((id) => fixtureSessions.get(id));
   });
 
   afterEach(() => {

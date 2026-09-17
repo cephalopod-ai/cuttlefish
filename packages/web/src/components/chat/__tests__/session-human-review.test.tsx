@@ -55,4 +55,11 @@ describe('SessionHumanReview', () => {
     expect(approvalState.approve).not.toHaveBeenCalledWith('change-request-1')
     expect(approvalState.reject).not.toHaveBeenCalledWith('change-request-1')
   })
+
+  it('CUT-EA-014: sends the revision displayed for an in-chat approval', () => {
+    approvalState.approvals[0].payload.reviewBinding = { version: 1, revision: 'displayed-review-revision' }
+    render(<SessionHumanReview sessionId="session-hr-1" />)
+    fireEvent.click(screen.getByRole('button', { name: /approve & apply/i }))
+    expect(approvalState.approve).toHaveBeenCalledWith({ id: 'approval-hr-1', reviewedRevision: 'displayed-review-revision' })
+  })
 })

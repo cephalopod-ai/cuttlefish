@@ -308,7 +308,11 @@ operational readiness for every standing scenario.
 - `mid_pair` spawns an internal implementer session and a separate reviewer session at depth 1.
 - An execution depth guard (`isExecutionDepthBlocked`) prevents role sessions from recursively spawning additional profiles.
 - Internal roles (`implementer`, `reviewer`) are runtime-only — they are never org members.
-- The reviewer receives a read-only tool profile by default and cannot directly mutate repo contents.
+- The default read-only reviewer profile becomes a host execution requirement.
+  Codex batch supplies the supported restrictive CLI arguments; adapters without
+  read-only capability refuse protected dispatch and follow the existing reviewer
+  loss policy. A prompt/worktree alone is not containment; native OS enforcement
+  remains unverified. See [capability limits](evidence-execution-authority.md#capability-and-delivery-limits).
 - Reviewer loss policies (`block`, `replace_then_block`, `replace_then_degrade`, `degrade`) control fallback behavior when a reviewer cannot be allocated.
 - Role failover is deterministic: `resolveRoleFailoverTargets` resolves each role's `fallbackChain` in configured order, dedupes engine+model rungs, drops the primary rung, self-referential/unknown external-agent targets, and unavailable engines up front, and is capped at `MAX_ROLE_FALLBACK_CHAIN` (5). Under a `replace_then_*` loss policy the mid-pair orchestrator walks the reviewer's full resolved chain — bounded by the child-session budget and wall-clock deadline — before terminally resolving to block or degrade-to-solo; revision passes apply the same failover to the implementer role.
 - Failover chain entries may defer to an external org agent (`{ employee: name }`), resolving that employee's engine/model/effort at dispatch time; `execution.roles` payloads are structurally validated on create/update (unknown keys, chain cap, employee XOR engine+model, self/unknown employee references rejected).
@@ -638,12 +642,17 @@ operational readiness for every standing scenario.
   is a best-effort budget when those retained sections exceed the limit.
 - `GET /api/checkpoints` and `GET /api/checkpoints/:id` expose the checkpoint
   queue and history.
-- `POST /api/checkpoints/:id/decision` records a human decision and either
+- `POST /api/checkpoints/:id/decision` records an operator or bounded delegated decision and either
   keeps the run paused, stops it, records the outcome only, or resumes the
-  session with a stored or supplied prompt. Repeating the same terminal
+  session through a stable, reviewed queue intent. A delegate must echo
+  `reviewedRevision` and cannot replace the bound prompt/action; an operator may
+  revise it through this decision path. Repeating the same terminal
   decision is explicitly idempotent; a conflicting terminal decision returns
   a machine-readable conflict and leaves the original decision unchanged.
-- Autonomous dual-model decisions retain code-owned attribution; their resume notification says AI reviewers approved reconsideration. Human decisions retain human approval wording.
+- Decisions retain code-owned `human`, `operator_delegate` or
+  `autonomous_dual_model` attribution. Delegated notifications/history badges
+  identify the delegate; autonomous notifications identify the AI reviewers.
+  The UI echoes the displayed review revision and retains drafts on core denial.
 - Every decision response reads the session after its checkpoint metadata is
   persisted, so its top-level checkpoint and embedded `humanCheckpoint` state
   describe the same committed decision on the first response.
@@ -670,9 +679,13 @@ operational readiness for every standing scenario.
 - Human-delegated authority is fail-closed and turn-scoped. The directive must
   begin a direct human message (`/delegate-authority <scopes>` or the supported
   explicit “authorize/delegate/grant/give you … on my behalf” form), is bound to
-  that prompt hash in both live session state and the signed session token, and
-  is expired in the dispatch `finally` path. Agent messages, quoted directives,
-  other roles, stale/replayed tokens, and model changes fail authorization.
+  a unique issuance plus prompt digest, session/task generation, role/engine/model
+  snapshot and maximum two-hour lifetime. Program Manager grants bind the actual
+  YAML revision. Signed session credentials intersect the current grant;
+  completion expires only its own issuance. Agent messages, quoted directives,
+  other roles, stale/replayed tokens, changed policy and model changes fail
+  authorization. Own/direct-child scope does not extend to grandchildren or all
+  sessions sharing an employee.
 - Delegated human authority is restricted to `codex/gpt-6-astra`, `codex/gpt-5.5`,
   `codex/gpt-5.6-sol`, Claude Opus 5 (`claude-opus-5`, `claude-opus-4-8`, or `opus`), and
   Claude Fable (`claude-fable-5-1`, with `claude-fable-5` retained for existing
@@ -717,6 +730,29 @@ operational readiness for every standing scenario.
   to a configured remote gateway. Destinations must match the `remotes`
   allowlist, individual source files are capped at 50 MiB, and remote requests
   have a two-minute timeout plus bounded success and error response bodies.
+
+### Gateway evidence and execution authority
+
+- Public sessions expose versioned host `executionBoundary` and invalid-state
+  indication. Creation admits `executionRequirement: standard | read_only`;
+  scoped child requests can narrow and inherit the actual parent's requirement.
+- Durable queue rows bind generation, exact payload, live issuance and optional
+  producer/decision references. Denied/uncertain rows are retained; pending queue
+  APIs remain pending/running views. Session status, `lastError`, recovery metadata
+  and `execution_authority_denied` events explain protected dispatch failures.
+- Restart quarantines claimed running rows and revokes turn delegation. Operator
+  queue-resume acknowledges recovery without dispatching the uncertain row again.
+  Stopped sessions require an authenticated operator renewal for a fresh task.
+- Knowledge envelopes and run bundles retain safe historical evidence references;
+  summary derivation is bounded to 32 available input references. The knowledge
+  outbox status filter accepts `uncertain`; changing its configured destination
+  never redirects an old row to the new destination.
+- Outbound A2A sends recheck the task and current destination revision after
+  discovery and before the outbound call; known task reconciliation remains
+  available without initiating a revoked taskless replay.
+- The [maintained handoff](evidence-execution-authority.md) records source/action
+  coverage, migration/legacy limits, actual fixtures and external CLI/connector
+  residual boundaries. Upstream runtime conformance remains unverified.
 
 ### Exportable run bundles
 - `packages/cuttlefish/src/gateway/run-bundles.ts`

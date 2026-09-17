@@ -127,7 +127,7 @@ describe("external outbox registry", () => {
     );
   });
 
-  it("reclaims an expired sending lease so a post-crash relay can retry it", () => {
+  it("quarantines an expired sending lease because delivery may already have happened", () => {
     const item = reg.enqueueExternalOutboxItem({
       sinkName: "noop",
       envelope: {
@@ -150,7 +150,7 @@ describe("external outbox registry", () => {
     expect(claimed).toMatchObject({ id: item.id, status: "sending", claimExpiresAt: "2026-06-26T00:00:01.000Z" });
     expect(reg.reclaimStaleExternalOutboxClaims(new Date("2026-06-26T00:00:00.999Z"))).toBe(0);
     expect(reg.reclaimStaleExternalOutboxClaims(new Date("2026-06-26T00:00:01.000Z"))).toBeGreaterThanOrEqual(1);
-    expect(reg.getExternalOutboxItem(item.id)).toMatchObject({ status: "pending", claimExpiresAt: null });
-    expect(reg.claimPendingExternalOutboxItems(100, new Date("2026-06-26T00:00:02.000Z")).some((entry) => entry.id === item.id)).toBe(true);
+    expect(reg.getExternalOutboxItem(item.id)).toMatchObject({ status: "uncertain", claimExpiresAt: null });
+    expect(reg.claimPendingExternalOutboxItems(100, new Date("2026-06-26T00:00:02.000Z")).some((entry) => entry.id === item.id)).toBe(false);
   });
 });

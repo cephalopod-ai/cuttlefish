@@ -1,4 +1,5 @@
 import type { JsonObject } from "./json.js";
+import type { SessionExecutionBoundary } from "@cuttlefish/contracts";
 
 export type RunAttachmentKind = "file" | "folder" | "url" | "artifact";
 export type RunAttachmentAccess = "read_only" | "writable";
@@ -58,6 +59,9 @@ export interface Session {
   replyContext: JsonObject | null;
   messageId: string | null;
   transportMeta: JsonObject | null;
+  /** Dedicated registry column; never read from source-supplied transportMeta. */
+  executionBoundary?: SessionExecutionBoundary | null;
+  executionBoundaryInvalid?: boolean;
   employee: string | null;
   model: string | null;
   title: string | null;

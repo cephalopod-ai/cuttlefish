@@ -15,10 +15,12 @@ import {
   getSession,
   hasPendingQueueItemBefore,
   insertMessage,
+  patchSessionTransportMeta,
   updateSession,
 } from "../sessions/registry.js";
 import {
   buildOperatorDelegationGrant,
+  OperatorDelegationPolicyError,
   HUMAN_DELEGATION_MODELS_LABEL,
   isHumanDelegateRole,
   isHumanDelegationModelAllowed,
@@ -85,6 +87,9 @@ export async function createSessionFromRequest(input: CreateSessionInput): Promi
   const { body, context, principal, userId } = input;
   const prompt = (typeof body.prompt === "string" ? body.prompt : typeof body.message === "string" ? body.message : "").trim();
   if (!prompt) return { statusCode: 400, body: { error: "prompt or message is required" } };
+  if (body.executionRequirement !== undefined && body.executionRequirement !== "standard" && body.executionRequirement !== "read_only") {
+    return { statusCode: 400, body: { error: "executionRequirement must be standard or read_only" } };
+  }
   try {
     assertScopedArtifactReferences(body, principal);
   } catch (err) {
@@ -101,6 +106,12 @@ export async function createSessionFromRequest(input: CreateSessionInput): Promi
   // Parentage controls callbacks and graph membership, so derive it from the
   // authenticated caller rather than treating it as an optional body claim.
   const parentSessionId = principal?.kind === "session" ? principal.sessionId : requestedParent;
+  if (parentSessionId) {
+    const parent = getSession(parentSessionId);
+    if (!parent || parent.executionBoundaryInvalid || parent.executionBoundary?.cancelled) {
+      return { statusCode: 403, body: { error: "Originating session is unavailable or cancelled", code: "session_child_parent_forbidden" } };
+    }
+  }
 
   // Best-effort early rejection; dispatchEmployeeSessionRun still owns the
   // authoritative permit for the complete run.
@@ -204,9 +215,9 @@ export async function createSessionFromRequest(input: CreateSessionInput): Promi
     };
   }
 
-  const operatorDelegation = requestedDelegationScopes
-    ? buildOperatorDelegationGrant({ prompt: dispatchPrompt, scopes: requestedDelegationScopes, grantedBy: userId })
-    : undefined;
+  if (principal?.kind === "session" && body.executionRequirement === "standard" && getSession(principal.sessionId)?.executionBoundary?.requirement === "read_only") {
+    return { statusCode: 403, body: { error: "Children inherit their originating task's execution restrictions", code: "execution_scope_forbidden" } };
+  }
   const existingSingletonSession = singletonSessionKey ? getReusableHrSession() : undefined;
   const requestedHrProfile = existingSingletonSession
     ? {
@@ -238,6 +249,8 @@ export async function createSessionFromRequest(input: CreateSessionInput): Promi
     ? maybeRevertEngineOverride(existingSingletonSession)
     : createSession({
         engine: engineName,
+        ingressOrigin: principal?.kind === "admin" ? "operator" : "unknown",
+        executionRequirement: body.executionRequirement as "standard" | "read_only" | undefined,
         source: "web",
         sourceRef: sessionKey,
         connector: "web",
@@ -247,14 +260,13 @@ export async function createSessionFromRequest(input: CreateSessionInput): Promi
         employee: employeeName,
         parentSessionId,
         effortLevel: selection.effortLevel,
-        model: operatorDelegation ? delegationModel : selection.model,
+        model: requestedDelegationScopes ? delegationModel : selection.model,
         prompt: dispatchPrompt,
         promptExcerpt: typeof body.promptExcerpt === "string" ? body.promptExcerpt : prompt,
         cwd,
         portalName: config.portal?.portalName,
-        transportMeta: (workspaceProfile || operatorDelegation
+        transportMeta: (workspaceProfile
           ? {
-              ...(operatorDelegation ? { operatorDelegation } : {}),
               ...(workspaceProfile ? {
                 workspaceProfile: {
                   id: workspaceProfile.id,
@@ -265,6 +277,19 @@ export async function createSessionFromRequest(input: CreateSessionInput): Promi
             }
           : undefined) as never,
       });
+  if (requestedDelegationScopes) {
+    let grant;
+    try {
+      grant = buildOperatorDelegationGrant({ session, prompt: dispatchPrompt, scopes: requestedDelegationScopes, grantedBy: userId });
+    } catch (error) {
+      if (!existingSingletonSession) deleteSession(session.id);
+      if (!(error instanceof OperatorDelegationPolicyError)) throw error;
+      return { statusCode: 403, body: { error: error.message, code: "operator_delegation_policy_unavailable" } };
+    }
+    session = patchSessionTransportMeta(session.id, {
+      operatorDelegation: grant as never,
+    }) ?? session;
+  }
   if (existingSingletonSession && requestedHrProfile
     && (requestedHrProfile.model !== undefined || requestedHrProfile.effortLevel !== undefined)) {
     session = updateSession(session.id, {

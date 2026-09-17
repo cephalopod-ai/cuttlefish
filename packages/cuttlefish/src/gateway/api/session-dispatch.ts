@@ -9,6 +9,7 @@ import {
   deleteSession,
   getFilesByIds,
   getSession,
+  getQueueItem,
   insertMessage,
   listChildSessions,
   listPendingQueueItems,
@@ -26,7 +27,10 @@ import { claimManagerDelegationSynthesis, markManagerDelegationSynthesisDispatch
 import { runWebSession } from "../run-web-session.js";
 import type { ApiContext } from "./context.js";
 import { expireOperatorDelegationForPrompt } from "../../sessions/operator-delegation.js";
+import { admitSessionDispatch } from "../session-dispatch-authorization.js";
 import { queuedSessionResourceOptions } from "../session-resources.js";
+import { queueDispatchAuthority } from "../../sessions/execution-boundary.js";
+import type { QueueDispatchAuthority } from "@cuttlefish/contracts";
 
 export function killSessionEngines(context: ApiContext, session: Session, reason: string): { interruptible: number; killed: number } {
   const engines = new Set<Engine>();
@@ -269,8 +273,9 @@ export function dispatchWebSessionRun(
   engine: Engine,
   config: CuttlefishConfig,
   context: ApiContext,
-  opts?: { delayMs?: number; queueItemId?: string; attachments?: string[]; resourceContext?: string | null },
+  opts?: { delayMs?: number; queueItemId?: string; attachments?: string[]; resourceContext?: string | null; dispatchAuthority?: QueueDispatchAuthority | null },
 ): Promise<void> {
+  const authority = opts?.dispatchAuthority ?? queueDispatchAuthority(session, prompt);
   const run = async () => {
     const sessionKey = session.sessionKey || session.sourceRef;
     try {
@@ -282,16 +287,20 @@ export function dispatchWebSessionRun(
           ? await context.runSemaphore.acquire(config.sessions?.maxConcurrentRuns)
           : undefined;
         try {
+          const current = getSession(session.id);
+          const currentEngine = current && (context.ptyViewEngines?.[current.engine] === engine ? engine : context.sessionManager.getEngine(current.engine));
+          if (current && currentEngine && !admitSessionDispatch(current, prompt, currentEngine, context, { queueItemId: opts?.queueItemId, authority })) return;
           context.emit("session:started", { sessionId: session.id });
           if (opts?.queueItemId) context.emit("queue:updated", { sessionId: session.id, sessionKey });
-          await runWebSession(session, prompt, engine, config, context, opts?.attachments, opts?.resourceContext);
+          await runWebSession(session, prompt, engine, config, context, opts?.attachments, opts?.resourceContext, { queueItemId: opts?.queueItemId, authority });
         } finally {
           release?.();
         }
       }, opts?.queueItemId);
     } finally {
       const latest = getSession(session.id);
-      const expiredGrant = latest ? expireOperatorDelegationForPrompt(latest, prompt) : null;
+      const retained = opts?.queueItemId && getQueueItem(opts.queueItemId)?.status === "pending";
+      const expiredGrant = latest && !retained ? expireOperatorDelegationForPrompt(latest, prompt, new Date().toISOString(), authority?.delegationId) : null;
       if (expiredGrant) {
         patchSessionTransportMeta(session.id, { operatorDelegation: expiredGrant as any });
         context.emit("session:updated", { sessionId: session.id });
@@ -336,18 +345,21 @@ export async function dispatchSessionNotification(
   message: string,
   displayMessage: string | undefined,
   context: ApiContext,
-  opts?: { sourceChildSessionId?: string; bypassManagerDelegationBarrier?: boolean },
+  opts?: { sourceChildSessionId?: string; sourceRunId?: string; bypassManagerDelegationBarrier?: boolean },
 ): Promise<void> {
   const existingSession = getSession(sessionId);
-  if (!existingSession) return;
+  if (!existingSession || existingSession.executionBoundary?.cancelled) return;
   let session = maybeRevertEngineOverride(existingSession);
   const engine = context.sessionManager.getEngine(session.engine);
   if (!engine) throw new Error(`Engine "${session.engine}" not available`);
 
+  const sourceChild = opts?.sourceChildSessionId ? getSession(opts.sourceChildSessionId) : undefined;
+  if (opts?.sourceChildSessionId && (!sourceChild || sourceChild.parentSessionId !== session.id || sourceChild.executionBoundary?.cancelled
+    || (typeof sourceChild.transportMeta?.latestRunId === "string" && sourceChild.transportMeta.latestRunId !== opts.sourceRunId))) return;
+  const authority = queueDispatchAuthority(session, message, sourceChild);
   const banner = displayMessage && displayMessage.trim() ? displayMessage : message;
   insertMessage(session.id, "notification", banner);
   context.emit("session:notification", { sessionId: session.id, message: banner });
-  const sourceChild = opts?.sourceChildSessionId ? getSession(opts.sourceChildSessionId) : undefined;
   const synthesis = opts?.bypassManagerDelegationBarrier
     ? { tracked: false as const, shouldDispatch: true as const, pendingChildSessionIds: [] as [] }
     : claimManagerDelegationSynthesis(
@@ -374,12 +386,12 @@ export async function dispatchSessionNotification(
   const queue = context.sessionManager.getQueue();
   const scheduled = typeof queue.hasScheduled === "function" ? queue.hasScheduled(sessionKey)
     : typeof queue.isRunning === "function" && queue.isRunning(sessionKey);
+  const queueItemId = enqueueQueueItem(session.id, sessionKey, message, authority);
   if (session.status === "waiting" || scheduled) {
-    enqueueQueueItem(session.id, sessionKey, message);
     context.emit("queue:updated", { sessionId: session.id, sessionKey });
     return;
   }
-  dispatchEmployeeSessionRun(session, message, engine, context.getConfig(), context, employee);
+  dispatchEmployeeSessionRun(session, message, engine, context.getConfig(), context, employee, { queueItemId });
 }
 
 /** Resolve an array of file IDs to local filesystem paths for engine consumption. */

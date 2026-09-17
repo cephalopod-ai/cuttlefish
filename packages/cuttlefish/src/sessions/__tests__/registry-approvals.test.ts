@@ -78,11 +78,12 @@ describe("registry approvals helper", () => {
       payload: { reason: "retry" },
     }, deps);
 
-    expect(second.id).toBe(first.id);
-    expect(getApprovalRecordFromRegistry(first.id, deps)?.payload.reason).toBe("retry");
+    expect(second.id).not.toBe(first.id);
+    expect(getApprovalRecordFromRegistry(first.id, deps)?.state).toBe("rejected");
+    expect(getApprovalRecordFromRegistry(second.id, deps)?.payload.reason).toBe("retry");
     expect(listApprovalRecordsFromRegistry(undefined, deps)).toHaveLength(1);
 
-    const resolved = resolveApprovalRecordInRegistry(first.id, "approved", "tester", null, null, deps);
+    const resolved = resolveApprovalRecordInRegistry(second.id, "approved", "tester", null, null, deps);
     expect(resolved?.state).toBe("approved");
     expect(listApprovalRecordsFromRegistry({ state: "pending" }, deps)).toHaveLength(0);
     expect(listApprovalRecordsFromRegistry({ state: "approved" }, deps)[0]?.actor).toBe("tester");

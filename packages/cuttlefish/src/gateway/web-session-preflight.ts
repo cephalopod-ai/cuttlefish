@@ -5,6 +5,7 @@ import { notifyParentSession } from "../sessions/callbacks.js";
 import { maybeEmitTalkGraph } from "../talk/graph.js";
 import { isExecutionDepthBlocked } from "./employee-execution.js";
 import type { ApiContext } from "./api/context.js";
+import { admitSessionDispatch, type DispatchAuthorization } from "./session-dispatch-authorization.js";
 
 export interface PreparedWebSessionRun {
   currentSession: Session;
@@ -25,17 +26,13 @@ export function prepareWebSessionRun(input: {
   engine: Engine;
   config: CuttlefishConfig;
   context: ApiContext;
+  dispatchAuthorization?: DispatchAuthorization;
 }): PreparedWebSessionRun | undefined {
   let currentSession = getSession(input.session.id);
   if (!currentSession) {
     logger.info(`Skipping deleted web session ${input.session.id} before run start`);
     return undefined;
   }
-  currentSession = beginSessionRun({
-    sessionId: currentSession.id,
-    prompt: input.prompt,
-    transportMeta: currentSession.transportMeta,
-  }) ?? currentSession;
   const config = input.context.getConfig();
   // Role sessions (mid_pair reviewer / revision-implementer, executionDepth ≥ 1)
   // are internal/silent — see the notifyParentSession suppression note below.
@@ -66,6 +63,8 @@ export function prepareWebSessionRun(input: {
     }
     return undefined;
   }
+  if (!admitSessionDispatch(currentSession, input.prompt, runtimeEngine, input.context, input.dispatchAuthorization)) return undefined;
+  currentSession = beginSessionRun({ sessionId: currentSession.id, prompt: input.prompt, transportMeta: currentSession.transportMeta }) ?? currentSession;
   logger.info(`Web session ${currentSession.id} running engine "${currentSession.engine}" (model: ${currentSession.model || "default"})`);
 
   const currentStatus = getSession(currentSession.id);

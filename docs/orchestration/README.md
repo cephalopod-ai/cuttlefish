@@ -97,6 +97,14 @@ modify files." prompt prefix, and is never selected as the implementation
 workspace; an implementer kind determines which families the cross-family
 reviewer policy must avoid.
 
+The review-bundle or declared read-only workspace also persists a gateway-owned
+`read_only` execution requirement. The last dispatch check validates the current
+lease and requires a capable adapter; Codex batch supplies restrictive arguments,
+while unsupported adapters refuse before invocation. Generated bundles and prompt
+prefixes do not themselves establish a sandbox. See
+[evidence and execution authority](../evidence-execution-authority.md) for the
+capability map, stale-attempt fencing and uncertain recovery behavior.
+
 `kind:` is optional and authoritative when present. A role that omits it falls
 back to inference from its id and then its capabilities, which misfires in both
 directions — a role named `preview-generator` is classified as a reviewer

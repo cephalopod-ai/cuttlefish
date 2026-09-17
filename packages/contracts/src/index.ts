@@ -1,4 +1,6 @@
 export type { JsonObject, JsonPrimitive, JsonValue } from "./json.js";
+export type { ExecutionOriginKind, ExecutionRequirement, QueueDispatchAuthority, SessionExecutionBoundary } from "./execution-boundary.js";
+export { isQueueDispatchAuthority, isSessionExecutionBoundary } from "./execution-boundary.js";
 export type {
   ChatBlock,
   ChatBlockEnvelope,

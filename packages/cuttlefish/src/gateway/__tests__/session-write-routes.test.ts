@@ -252,7 +252,7 @@ describe("POST /api/sessions prompt validation (I-1)", () => {
   });
 
   it("rejects delegated authority from an agent or on a model outside the allowlist", async () => {
-    const { api } = await setup();
+    const { api, reg } = await setup();
     const ctx = makeCtx(api);
     ctx.getConfig = () => ({
       gateway: {},
@@ -278,7 +278,8 @@ describe("POST /api/sessions prompt validation (I-1)", () => {
     const agentReq = makeJsonReq("POST", "/api/sessions", {
       prompt: "/delegate-authority all\nResolve the release gate.",
     });
-    agentReq.cuttlefishPrincipal = { kind: "session", sessionId: "worker-run" };
+    const worker = reg.createSession({ engine: "codex", source: "web", sourceRef: "worker-run", prompt: "ordinary task" });
+    agentReq.cuttlefishPrincipal = { kind: "session", sessionId: worker.id };
     const agent = makeRes();
     await api.handleApiRequest(agentReq, agent.res, ctx);
     expect(agent.status).toBe(403);
@@ -287,6 +288,9 @@ describe("POST /api/sessions prompt validation (I-1)", () => {
 
   it("requires an authenticated admin to delegate authority on a continued session", async () => {
     const { api, reg } = await setup();
+    const managementDir = path.join(testHome.home(), "org", "management");
+    fs.mkdirSync(managementDir, { recursive: true });
+    fs.writeFileSync(path.join(managementDir, "program-manager.yaml"), "name: program-manager\nrank: program-manager\nengine: codex\nmodel: gpt-5.6-sol\n");
     const ctx = makeCtx(api);
     ctx.getConfig = () => ({
       gateway: { userHeader: "x-operator" },
@@ -541,8 +545,9 @@ describe("POST /api/sessions prompt validation (I-1)", () => {
     const hrSession = reg.getSession(String(direct.body.id));
     expect(hrSession?.employee).toBe("hr-manager");
 
+    const sender = reg.createSession({ engine: "claude", source: "web", sourceRef: "program-manager-session", prompt: "coordinate" });
     const agentRequest = makeJsonReq("POST", "/api/sessions", { employee: "hr-manager", prompt: "Agent request" });
-    agentRequest.cuttlefishPrincipal = { kind: "session", sessionId: "program-manager-session" };
+    agentRequest.cuttlefishPrincipal = { kind: "session", sessionId: sender.id };
     const agent = makeRes();
     await api.handleApiRequest(agentRequest, agent.res, ctx);
     expect(agent.status).toBe(403);
@@ -552,7 +557,7 @@ describe("POST /api/sessions prompt validation (I-1)", () => {
     await api.handleApiRequest(
       makeJsonReq("POST", "/api/sessions", {
         employee: "hr-manager",
-        parentSessionId: "program-manager-session",
+        parentSessionId: sender.id,
         prompt: "Delegated HR request",
       }),
       parented.res,
@@ -826,7 +831,7 @@ describe("POST /api/sessions/:id/stop on an idle session (I-4)", () => {
     expect(reg.getSession(session.id)?.engineSessionId).toBe("claude-resume-id");
   });
 
-  it("clears a stopped Grok resume id so a follow-up starts a fresh turn", async () => {
+  it("clears a stopped Grok resume id and requires operator renewal for a fresh turn", async () => {
     const { api, reg } = await setup();
     const ctx = makeCtx(api);
     ctx.getConfig = () => ({ gateway: {}, engines: { default: "grok", grok: { bin: "grok", model: "grok-4.5" } }, portal: {} }) as any;
@@ -846,14 +851,27 @@ describe("POST /api/sessions/:id/stop on an idle session (I-4)", () => {
     expect(stop.status).toBe(200);
     expect(reg.getSession(session.id)).toMatchObject({ status: "idle", engineSessionId: null });
 
+    const cancelledGeneration = reg.getSession(session.id)?.executionBoundary?.generation;
+    const staleFollowUp = makeRes();
+    const staleReq = makeJsonReq("POST", `/api/sessions/${session.id}/message`, { message: "continue freshly" });
+    staleReq.cuttlefishPrincipal = { kind: "session", sessionId: session.id };
+    await api.handleApiRequest(staleReq, staleFollowUp.res, ctx);
+    expect(staleFollowUp.status).toBe(403);
+    expect(hoisted.dispatchEmployeeSessionRun).not.toHaveBeenCalled();
+    expect(reg.getSession(session.id)?.executionBoundary?.generation).toBe(cancelledGeneration);
+
     const followUp = makeRes();
+    const operatorReq = makeJsonReq("POST", `/api/sessions/${session.id}/message`, { message: "continue freshly" });
+    operatorReq.cuttlefishPrincipal = { kind: "admin" };
     await api.handleApiRequest(
-      makeJsonReq("POST", `/api/sessions/${session.id}/message`, { message: "continue freshly" }),
+      operatorReq,
       followUp.res,
       ctx,
     );
 
     expect(followUp.status).toBe(200);
+    expect(reg.getSession(session.id)?.executionBoundary).toMatchObject({ cancelled: false, origin: "operator" });
+    expect(reg.getSession(session.id)?.executionBoundary?.generation).not.toBe(cancelledGeneration);
     expect(hoisted.dispatchEmployeeSessionRun).toHaveBeenCalledTimes(1);
     const dispatched = hoisted.dispatchEmployeeSessionRun.mock.calls as unknown[][];
     expect(dispatched[0]?.[0]).toMatchObject({ engine: "grok", engineSessionId: null });
@@ -984,7 +1002,7 @@ describe("session notification aggregation", () => {
     expect(hoisted.dispatchEmployeeSessionRun).toHaveBeenCalledTimes(1);
   });
 
-  it("ignores a claimed source child that is not a child of the target session", async () => {
+  it("denies a claimed source child that is not a child of the target session before storing it", async () => {
     const { api, reg } = await setup();
     const ctx = makeCtx(api);
     ctx.getConfig = () => ({ gateway: {}, engines: { default: "claude", claude: { bin: "node", model: "sonnet" } }, portal: {} }) as any;
@@ -1015,7 +1033,9 @@ describe("session notification aggregation", () => {
       ctx,
     );
 
-    expect(cap.body).toMatchObject({ status: "notification_recorded" });
+    expect(cap.status).toBe(403);
+    expect(cap.body).toMatchObject({ code: "stale_callback" });
+    expect(reg.getMessages(parent.id).some((message) => message.content.includes("forged report"))).toBe(false);
     expect(hoisted.dispatchEmployeeSessionRun).not.toHaveBeenCalled();
   });
 

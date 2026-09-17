@@ -117,7 +117,7 @@ export async function handleSessionWriteRoutes(
 
   params = matchRoute("/api/sessions/:id/queue/resume", pathname);
   if (method === "POST" && params) {
-    const result = await resumeSessionQueue(params.id, context);
+    const result = await resumeSessionQueue(params.id, context, (req as HttpRequest & { cuttlefishPrincipal?: GatewayPrincipal }).cuttlefishPrincipal);
     json(res, result.body, result.statusCode);
     return true;
   }

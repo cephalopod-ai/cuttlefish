@@ -4,7 +4,7 @@ import { Readable } from "node:stream";
 import fs from "node:fs";
 import path from "node:path";
 import { withStaticTempCuttlefishHome } from "../../test-utils/cuttlefish-home.js";
-import { buildOperatorDelegationGrant, operatorDelegationPromptHash } from "../../sessions/operator-delegation.js";
+import { buildOperatorDelegationGrant } from "../../sessions/operator-delegation.js";
 
 const { home: tmp } = withStaticTempCuttlefishHome("cuttlefish-checkpoints-");
 
@@ -18,6 +18,8 @@ let reg: Reg;
 const approvalsFile = path.join(tmp, "checkpoints.approvals.json");
 
 beforeAll(async () => {
+  fs.mkdirSync(path.join(tmp, "org", "management"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "org", "management", "program-manager.yaml"), "name: program-manager\nrank: manager\nengine: codex\nmodel: gpt-5.5\npersona: Coordinate bounded work.\n");
   api = await import("../api.js");
   store = await import("../approvals.js");
   reg = await import("../../sessions/registry.js");
@@ -73,6 +75,7 @@ function makeCtx(over: Record<string, unknown> = {}) {
       getEngine: () => undefined,
       getQueue: () => ({
         enqueue: vi.fn(async () => {}),
+        isPaused: () => true,
         getPendingCount: () => 0,
         getTransportState: (_key: string, status: string) => status,
       }),
@@ -159,19 +162,20 @@ describe("checkpoint routes", () => {
       sourceRef: "web:delegated-pm",
       employee: "program-manager",
       prompt,
-      transportMeta: { operatorDelegation: buildOperatorDelegationGrant({ prompt, scopes: ["decide"] }) as any },
     });
+    const grant = buildOperatorDelegationGrant({ session, prompt, scopes: ["decide"] });
+    reg.patchSessionTransportMeta(session.id, { operatorDelegation: grant as any });
     const checkpoint = store.createApproval({
       sessionId: session.id,
       type: "checkpoint",
       payload: { decisionNeeded: "Choose rollout timing", why: "A timing decision is required" },
     });
-    const req = makeJsonReq("POST", `/api/checkpoints/${checkpoint.id}/decision`, { decision: "deferred" });
+    const req = makeJsonReq("POST", `/api/checkpoints/${checkpoint.id}/decision`, { decision: "deferred", reviewedRevision: (checkpoint.payload.reviewBinding as any).revision });
     req.cuttlefishPrincipal = {
       kind: "session",
       sessionId: session.id,
       delegatedScopes: ["decide"],
-      operatorDelegationId: operatorDelegationPromptHash(prompt),
+      operatorDelegationId: grant.id,
     };
     const cap = makeRes();
     await api.handleApiRequest(req, cap.res, makeCtx());
@@ -365,7 +369,8 @@ describe("checkpoint routes", () => {
           getEngine: () => ({ run: vi.fn(async () => ({ sessionId: "eng-1", result: "ok" })) }),
           getQueue: () => ({
             enqueue,
-            getPendingCount: () => 0,
+            isPaused: () => true,
+        getPendingCount: () => 0,
             getTransportState: (_key: string, status: string) => status,
           }),
         },

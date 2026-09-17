@@ -1,10 +1,11 @@
+import { Readable } from "node:stream";
 import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
 import { withStaticTempCuttlefishHome } from "../../test-utils/cuttlefish-home.js";
 import type { ServerResponse } from "node:http";
 import os from "node:os";
 import fs from "node:fs";
 import path from "node:path";
-import { buildOperatorDelegationGrant, operatorDelegationPromptHash } from "../../sessions/operator-delegation.js";
+import { buildOperatorDelegationGrant } from "../../sessions/operator-delegation.js";
 
 // Isolate the DB + approvals store before importing modules that resolve paths
 // from CUTTLEFISH_HOME at load time.
@@ -79,12 +80,14 @@ describe("approvals store", () => {
     expect(store.listApprovals().map((x) => x.id)).toContain(a.id);
   });
 
-  it("dedupes a fallback approval per session", () => {
+  it("dedupes identical fallback proposals and replaces changed material", () => {
     const a = store.createApproval({ sessionId: "s1", type: "fallback", payload: { v: 1 } });
     const b = store.createApproval({ sessionId: "s1", type: "fallback", payload: { v: 2 } });
-    expect(b.id).toBe(a.id);
+    expect(b.id).not.toBe(a.id);
+    expect(store.createApproval({ sessionId: "s1", type: "fallback", payload: { v: 2 } }).id).toBe(b.id);
+    expect(store.getApproval(a.id)?.state).toBe("rejected");
     expect(store.listApprovals({ sessionId: "s1" })).toHaveLength(1);
-    expect(store.getApproval(a.id)?.payload.v).toBe(2); // payload refreshed
+    expect(store.getApproval(b.id)?.payload.v).toBe(2);
   });
 
   it("resolve flips state; only pending is listed by default", () => {
@@ -138,15 +141,17 @@ describe("approvals endpoints", () => {
       sourceRef: "web:delegated-coo",
       employee: null,
       prompt,
-      transportMeta: { operatorDelegation: buildOperatorDelegationGrant({ prompt, scopes: ["decide"] }) as any },
     });
+    const grant = buildOperatorDelegationGrant({ session, prompt, scopes: ["decide"] });
+    reg.patchSessionTransportMeta(session.id, { operatorDelegation: grant as any });
     const approval = store.createApproval({ sessionId: session.id, type: "fallback", payload: {} });
-    const req = makeReq("POST", `/api/approvals/${approval.id}/reject`) as any;
+    const req = Readable.from([Buffer.from(JSON.stringify({ reviewedRevision: (approval.payload.reviewBinding as any).revision }))]) as any;
+    Object.assign(req, { method: "POST", url: `/api/approvals/${approval.id}/reject`, headers: { host: "localhost", "content-type": "application/json" } });
     req.cuttlefishPrincipal = {
       kind: "session",
       sessionId: session.id,
       delegatedScopes: ["decide"],
-      operatorDelegationId: operatorDelegationPromptHash(prompt),
+      operatorDelegationId: grant.id,
     };
     const cap = makeRes();
     await api.handleApiRequest(req, cap.res, makeCtx());
@@ -276,7 +281,7 @@ describe("approvals endpoints", () => {
     await api.handleApiRequest(makeReq("POST", `/api/approvals/${a.id}/approve`), cap.res, makeCtx({
       sessionManager: {
         getEngine: () => ({ run: vi.fn() }),
-        getQueue: () => ({ enqueue, getPendingCount: () => 0, getTransportState: () => "running" }),
+        getQueue: () => ({ enqueue, isPaused: () => true, getPendingCount: () => 0, getTransportState: () => "running" }),
       },
     }));
     expect(cap.status).toBe(200);
@@ -305,7 +310,7 @@ describe("approvals endpoints", () => {
       await api.handleApiRequest(makeReq("POST", `/api/approvals/${a.id}/approve`), failCap.res, makeCtx({
         sessionManager: {
           getEngine: () => ({ run: vi.fn() }),
-          getQueue: () => ({ enqueue, getPendingCount: () => 0, getTransportState: () => "running" }),
+          getQueue: () => ({ enqueue, isPaused: () => true, getPendingCount: () => 0, getTransportState: () => "running" }),
         },
       }));
 
@@ -313,14 +318,14 @@ describe("approvals endpoints", () => {
       expect(store.getApproval(a.id)?.state).toBe("pending");
       const afterFail = reg.getSession(s.id);
       expect(afterFail?.engine).toBe("claude");
-      expect(((afterFail?.transportMeta ?? {}) as Record<string, any>).modelFallback?.status).toBe("approval_resume_pending");
+      expect(((afterFail?.transportMeta ?? {}) as Record<string, any>).modelFallback).toBeUndefined();
       expect(enqueue).toHaveBeenCalledTimes(0);
 
       const retryCap = makeRes();
       await api.handleApiRequest(makeReq("POST", `/api/approvals/${a.id}/approve`), retryCap.res, makeCtx({
         sessionManager: {
           getEngine: () => ({ run: vi.fn() }),
-          getQueue: () => ({ enqueue, getPendingCount: () => 0, getTransportState: () => "running" }),
+          getQueue: () => ({ enqueue, isPaused: () => true, getPendingCount: () => 0, getTransportState: () => "running" }),
         },
       }));
 
@@ -329,14 +334,14 @@ describe("approvals endpoints", () => {
       const rolled = reg.getSession(s.id);
       expect(rolled?.engine).toBe("codex");
       expect(rolled?.model).toBe("gpt-5.5");
-      expect(((rolled?.transportMeta ?? {}) as Record<string, any>).modelFallback?.status).toBe("running_on_fallback");
+      expect(((rolled?.transportMeta ?? {}) as Record<string, any>).modelFallback?.status).toBe("queued_on_fallback");
       expect(enqueue).toHaveBeenCalledTimes(1);
 
       const idempotentCap = makeRes();
       await api.handleApiRequest(makeReq("POST", `/api/approvals/${a.id}/approve`), idempotentCap.res, makeCtx({
         sessionManager: {
           getEngine: () => ({ run: vi.fn() }),
-          getQueue: () => ({ enqueue, getPendingCount: () => 0, getTransportState: () => "running" }),
+          getQueue: () => ({ enqueue, isPaused: () => true, getPendingCount: () => 0, getTransportState: () => "running" }),
         },
       }));
 

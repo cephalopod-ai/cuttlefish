@@ -12,6 +12,7 @@ import {
 import { LOGS_DIR, RUN_BUNDLES_DIR } from "../shared/paths.js";
 import type { Approval, RunAttachment, Session } from "../shared/types.js";
 import type { ApiContext } from "./api/context.js";
+import { sessionEvidenceBoundary } from "../sessions/execution-boundary.js";
 import { enrichRunAttachmentsForSession } from "./run-attachments.js";
 import { serializeSession } from "./api/serialize-session.js";
 import { gateExternalEmit } from "../policy/export-gate.js";
@@ -319,6 +320,7 @@ export function exportRunBundle(sessionId: string, context: ApiContext): Exporte
 
   writeBundleFile(bundlePath, "run.json", JSON.stringify({
     exportedAt: now,
+    evidenceBoundary: sessionEvidenceBoundary(baseSession),
     session: redactDeep(session),
     messages: redactDeep(messages),
     approvals: redactDeep(approvals),

@@ -104,6 +104,8 @@ export function serializeSession(
     replyContext: session.replyContext,
     messageId: session.messageId,
     transportMeta: session.transportMeta,
+    executionBoundary: session.executionBoundary,
+    executionBoundaryInvalid: session.executionBoundaryInvalid,
     employee: session.employee,
     model: session.model,
     title: session.title,

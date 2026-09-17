@@ -23,6 +23,9 @@ import {
 import { buildCrossRequestBrief } from "./org-services.js";
 import type { ApiContext } from "./api/context.js";
 import { saveFile } from "./files/uploads.js";
+import { sessionTaskBoundaryDenial } from "./session-dispatch-authorization.js";
+import { isHumanCheckpointPaused } from "../sessions/human-checkpoint-state.js";
+import { A2AOutboundAuthorizationError } from "../a2a/outbound.js";
 
 interface ExternalCrossRequestInput {
   requester: Employee;
@@ -30,6 +33,25 @@ interface ExternalCrossRequestInput {
   prompt: string;
   parentSessionId?: string;
   context: ApiContext;
+}
+
+function externalSendDenial(sessionId: string, context: ApiContext): string | null {
+  const session = getSession(sessionId);
+  if (!session) return "Outbound task is unavailable";
+  const runtime = context.orchestration?.runtime;
+  const denial = sessionTaskBoundaryDenial(session, { validateLease: runtime?.validateLeaseForWorker?.bind(runtime) });
+  if (denial) return denial;
+  if (session.executionBoundary?.requirement === "read_only") return "External peer cannot establish required read-only execution";
+  if (isHumanCheckpointPaused(session)) return "Outbound task is held by an unresolved checkpoint";
+  return null;
+}
+
+function recordExternalSendDenial(sessionId: string, context: ApiContext, error: A2AOutboundAuthorizationError): void {
+  const current = getSession(sessionId);
+  patchOutboundMeta(sessionId, { dispatchOutcome: "denied", dispatchError: error.message });
+  updateSession(sessionId, { status: current?.status === "waiting" || isHumanCheckpointPaused(current) ? "waiting" : "error",
+    lastActivity: new Date().toISOString(), lastError: error.message });
+  context.emit("session:updated", { sessionId, code: "execution_authority_denied", reason: error.message });
 }
 
 function remoteState(result: Message | Task): string {
@@ -534,7 +556,10 @@ async function resumeExternalRequest(
             refuseTasklessReplay(sessionId, context, checkpoint, replayConfigurationError);
             return;
           }
+          const denial = externalSendDenial(sessionId, context);
+          if (denial) throw new A2AOutboundAuthorizationError(denial);
           result = await outbound.send({
+            authorize: () => externalSendDenial(sessionId, context),
             destinationId: checkpoint.destinationId,
             skillId: checkpoint.skillId!,
             message: checkpoint.requestMessage!,
@@ -564,6 +589,7 @@ async function resumeExternalRequest(
         await finalizeRemoteResult(sessionId, checkpoint.destinationId, result, context, execution);
         return;
       } catch (error) {
+        if (error instanceof A2AOutboundAuthorizationError) { recordExternalSendDenial(sessionId, context, error); return; }
         const message = error instanceof Error ? error.message : String(error);
         attempt += 1;
         const failedAt = new Date().toISOString();
@@ -662,7 +688,10 @@ async function runExternalRequest(
   activeExternalRequests.set(sessionId, execution);
   const stopHeartbeat = startExternalRequestHeartbeat(sessionId);
   try {
+    const denial = externalSendDenial(sessionId, context);
+    if (denial) throw new A2AOutboundAuthorizationError(denial);
     let result = await outbound.send({
+      authorize: () => externalSendDenial(sessionId, context),
       destinationId: service.destinationId,
       skillId: service.skillId,
       message: brief,
@@ -687,6 +716,7 @@ async function runExternalRequest(
     await finalizeRemoteResult(sessionId, service.destinationId, result, context, execution);
   } catch (error) {
     if (execution.finalized) return;
+    if (error instanceof A2AOutboundAuthorizationError) { recordExternalSendDenial(sessionId, context, error); return; }
     if (!execution.taskId && !messageIdDeduplicationGuaranteed) {
       const message = error instanceof Error ? error.message : String(error);
       const failedAt = new Date().toISOString();
@@ -737,13 +767,13 @@ export function createExternalA2ACrossRequest(input: ExternalCrossRequestInput) 
     : undefined;
   const messageIdDeduplicationGuaranteed = destination?.messageIdDeduplication === "guaranteed"
     && destinationAgentCardUrl !== undefined;
-  const now = Date.now();
+  const requestId = randomUUID();
   const session = createSession({
     engine: "a2a",
     source: "web",
-    sourceRef: `cross-request:${now}:${input.service.providerId}`,
+    sourceRef: `cross-request:${requestId}:${input.service.providerId}`,
     connector: "web",
-    sessionKey: `cross-request:${now}:${input.service.providerId}`,
+    sessionKey: `cross-request:${requestId}:${input.service.providerId}`,
     replyContext: { source: "web" },
     parentSessionId: input.parentSessionId,
     title: `Cross request: ${input.service.name}`,

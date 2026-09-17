@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { deliverConnectorReply } from "../api.js";
+import { ConnectorPreDispatchError } from "../connector-reply.js";
 import type { Connector, Session } from "../../shared/types.js";
 
 /** Build a minimal mocked connector exposing the two methods the helper uses. */
@@ -81,8 +82,8 @@ describe("deliverConnectorReply", () => {
     expect(slack.replyMessage).not.toHaveBeenCalled();
   });
 
-  it("emits failed delivery attempts and retries connector errors", async () => {
-    slack.replyMessage.mockRejectedValueOnce(new Error("boom"));
+  it("retries a known failure before any connector send began", async () => {
+    slack.replyMessage.mockRejectedValueOnce(new ConnectorPreDispatchError("boom"));
     const emit = vi.fn();
     await expect(
       deliverConnectorReply(makeSession({ id: "s1" } as Partial<Session>), "hi", map, {
@@ -101,14 +102,14 @@ describe("deliverConnectorReply", () => {
     }));
   });
 
-  it("treats an undefined replyMessage return as a delivery failure: retries then emits reply_dropped (audit H3)", async () => {
+  it("CUT-EA-011: treats an undefined acknowledgement as uncertain without sending twice", async () => {
     slack.replyMessage.mockResolvedValue(undefined);
     const events: Array<{ event: string; payload: unknown }> = [];
     await deliverConnectorReply(makeSession(), "hello", map, {
       emit: (event: string, payload: unknown) => events.push({ event, payload }),
     } as any);
-    expect(slack.replyMessage).toHaveBeenCalledTimes(2); // DEFAULT_MAX_ATTEMPTS
-    expect(events.some((e) => e.event === "connector:reply_dropped")).toBe(true);
+    expect(slack.replyMessage).toHaveBeenCalledTimes(1);
+    expect(events.some((e) => e.event === "connector:reply_uncertain")).toBe(true);
   });
 
 });

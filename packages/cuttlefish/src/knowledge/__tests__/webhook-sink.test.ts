@@ -47,7 +47,7 @@ describe("WebhookKnowledgeSink", () => {
     expect(result.results[0].remoteId).toBe("r1");
   });
 
-  it("marks 5xx failures retryable", async () => {
+  it("marks 5xx outcomes uncertain even when the transport advertises retryability", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("unavailable", { status: 503 })));
     const sink = new WebhookKnowledgeSink({
       url: "http://127.0.0.1:9999/events",
@@ -69,7 +69,7 @@ describe("WebhookKnowledgeSink", () => {
     }]);
 
     expect(result.retryable).toBe(true);
-    expect(result.results[0]).toMatchObject({ accepted: false, retryable: true });
+    expect(result.results[0]).toMatchObject({ accepted: false, retryable: true, uncertain: true });
   });
 
   it("rejects an oversized successful acknowledgement", async () => {
@@ -93,7 +93,8 @@ describe("WebhookKnowledgeSink", () => {
       payload: { ok: true },
     }]);
 
-    expect(result).toMatchObject({ accepted: 0, rejected: 1, retryable: true });
+    expect(result).toMatchObject({ accepted: 0, rejected: 1, retryable: false });
+    expect(result.results[0].uncertain).toBe(true);
     expect(result.results[0].error).toMatch(/exceeded 2097152 bytes/);
   });
 });

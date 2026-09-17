@@ -125,7 +125,7 @@ export class SessionQueue {
         if (queueItemId) {
           const item = getQueueItem(queueItemId);
           if (!item || item.status !== "pending") return;
-          markQueueItemRunning(queueItemId);
+          if (!markQueueItemRunning(queueItemId)) return;
           queueItemStarted = true;
         }
         if (!this.cancelled.has(sessionKey)) {

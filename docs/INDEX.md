@@ -48,6 +48,9 @@ those deliberate cases.
   routing.
 - `docs/feature_inventory.md`: implemented CLI/API/UI surfaces and fidelity gaps.
 - `docs/TEST_LEDGER.md`: current validation evidence and test coverage map.
+- `docs/evidence-execution-authority.md`: maintained gateway implementation and
+  operator handoff, source-to-action coverage, delegation/approval/dispatch
+  contracts, compatibility, recovery and external-runtime limitations.
 - `docs/test_scenarios/README.md`: end-to-end playtest scenario library for
   exploratory user-facing test passes (derived from the `audit-playtest-app`
   baseline), plus per-surface scenario files under `docs/test_scenarios/`
@@ -98,6 +101,15 @@ those deliberate cases.
   the retention note above); records no decision.
 
 ## Session and Audit Log Summaries
+
+September 16 evidence/authority implementation: authenticated ingress,
+issuance-bound delegation, reviewed durable continuations, last dispatch checks,
+stale-result fencing and uncertain recovery were implemented and exercised with
+disposable inert gateways and a dashboard fixture journey. The tracked
+[handoff](evidence-execution-authority.md) and [test ledger](TEST_LEDGER.md) contain
+the maintained evidence and limitations. The local narrative is
+`docs/logs/session/092026/2026-09-16-evidence-execution-authority.md`, indexed by
+the current month's local-only session summary.
 
 September 16 operational audit: catalog-guided source review and disposable
 gateway/Chromium playtests produced persistence, startup, authentication,

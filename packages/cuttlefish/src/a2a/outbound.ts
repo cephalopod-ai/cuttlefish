@@ -19,6 +19,7 @@ import type { A2ADestinationConfig, CuttlefishConfig } from "../shared/types.js"
 import { isPrivateAddress, safeFetch, SsrfError } from "../shared/ssrf-guard.js";
 import { textPart } from "./content.js";
 import { getA2AMaxArtifactBytes, getA2AMaxInputBytes } from "./config.js";
+import { canonicalSha256 } from "../shared/canonical-json.js";
 
 const MAX_AGENT_CARD_BYTES = 1024 * 1024;
 const AGENT_CARD_CACHE_MS = 30_000;
@@ -33,6 +34,8 @@ const OUTBOUND_TERMINAL_STATES = new Set([
 ]);
 
 export interface OutboundA2ASendInput {
+  /** Host-owned last-dispatch check; peer content cannot supply this callback. */
+  authorize?: () => string | null;
   destinationId: string;
   skillId: string;
   message: string;
@@ -44,6 +47,8 @@ export interface OutboundA2ASendInput {
   historyLength?: number;
   signal?: AbortSignal;
 }
+
+export class A2AOutboundAuthorizationError extends Error {}
 
 type GuardedFetch = (url: string, init: RequestInit, options: {
   allowPrivateHosts: boolean;
@@ -168,7 +173,12 @@ export class OutboundA2AService {
     return destination;
   }
 
-  private authorizedFetch(destination: A2ADestinationConfig): typeof fetch {
+  private assertDestinationRevision(id: string, revision: string): void {
+    const current = this.getConfig().a2a?.destinations?.find((candidate) => candidate.id === id);
+    if (!current || canonicalSha256(current) !== revision) throw new A2AOutboundAuthorizationError("Outbound A2A destination policy changed before dispatch");
+  }
+
+  private authorizedFetch(destination: A2ADestinationConfig, authorize?: OutboundA2ASendInput["authorize"], revision = canonicalSha256(destination)): typeof fetch {
     const allowedOrigins = destinationOrigins(destination);
     return (async (input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
@@ -200,6 +210,9 @@ export class OutboundA2AService {
         : undefined);
       const timeoutSignal = AbortSignal.timeout(destination.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS);
       const signal = init.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal;
+      this.assertDestinationRevision(destination.id, revision);
+      const denial = authorize?.();
+      if (denial) throw new A2AOutboundAuthorizationError(denial);
       const response = await this.guardedFetch(url, {
         ...init,
         method: init.method ?? (input instanceof Request ? input.method : undefined),
@@ -243,15 +256,25 @@ export class OutboundA2AService {
     return card;
   }
 
-  private async client(destinationId: string): Promise<{ client: Client; card: AgentCard; destination: A2ADestinationConfig }> {
+  private async client(destinationId: string, authorize?: OutboundA2ASendInput["authorize"]): Promise<{ client: Client; card: AgentCard; destination: A2ADestinationConfig }> {
     const destination = this.destination(destinationId);
-    const card = await this.discover(destinationId);
+    const revision = canonicalSha256(destination);
+    let card: AgentCard;
+    try {
+      card = await this.discover(destinationId);
+    } catch (error) {
+      this.assertDestinationRevision(destinationId, revision);
+      throw error;
+    }
+    this.assertDestinationRevision(destinationId, revision);
     const factory = new ClientFactory({
-      transports: [new RestTransportFactory({ fetchImpl: this.authorizedFetch(destination) })],
+      transports: [new RestTransportFactory({ fetchImpl: this.authorizedFetch(destination, authorize, revision) })],
       preferredTransports: ["HTTP+JSON"],
       clientConfig: { polling: false },
     });
-    return { client: await factory.createFromAgentCard(card), card, destination };
+    const client = await factory.createFromAgentCard(card);
+    this.assertDestinationRevision(destinationId, revision);
+    return { client, card, destination };
   }
 
   private request(input: OutboundA2ASendInput, card: AgentCard): SendMessageRequest {
@@ -275,12 +298,16 @@ export class OutboundA2AService {
   }
 
   async send(input: OutboundA2ASendInput) {
-    const { client, card } = await this.client(input.destinationId);
+    const { client, card } = await this.client(input.destinationId, input.authorize);
+    const denial = input.authorize?.();
+    if (denial) throw new A2AOutboundAuthorizationError(denial);
     return client.sendMessage(this.request(input, card), { signal: input.signal });
   }
 
   async *sendStream(input: OutboundA2ASendInput): AsyncGenerator<StreamResponse, void, undefined> {
-    const { client, card } = await this.client(input.destinationId);
+    const { client, card } = await this.client(input.destinationId, input.authorize);
+    const denial = input.authorize?.();
+    if (denial) throw new A2AOutboundAuthorizationError(denial);
     yield* client.sendMessageStream(this.request(input, card), { signal: input.signal });
   }
 

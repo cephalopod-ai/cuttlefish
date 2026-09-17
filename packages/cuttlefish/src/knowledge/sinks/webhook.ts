@@ -1,12 +1,14 @@
 import type { BatchEmitResult, ExternalKnowledgeEnvelope, HealthResult, KnowledgeSink } from "../../shared/types.js";
 import { validateUrlForServerFetch } from "../../shared/ssrf-guard.js";
 import { readResponseText } from "../../shared/fetch-response.js";
+import { createHash } from "node:crypto";
 
 const MAX_KNOWLEDGE_RESPONSE_BYTES = 2 * 1024 * 1024;
-const MAX_KNOWLEDGE_ERROR_BYTES = 64 * 1024;
 
 export class WebhookKnowledgeSink implements KnowledgeSink {
   readonly name = "webhook";
+  get deliveryIdentity(): string { return createHash("sha256").update(JSON.stringify({ url: new URL(this.opts.url).href,
+    credentialRevision: createHash("sha256").update(this.opts.token ?? "").digest("hex") })).digest("hex"); }
 
   constructor(
     private readonly opts: {
@@ -32,6 +34,7 @@ export class WebhookKnowledgeSink implements KnowledgeSink {
     try {
       const response = await fetch(this.opts.url, {
         method: "POST",
+        redirect: "error",
         headers: {
           "content-type": "application/json",
           ...(this.opts.token ? { authorization: `Bearer ${this.opts.token}` } : {}),
@@ -41,13 +44,13 @@ export class WebhookKnowledgeSink implements KnowledgeSink {
       });
       const retryable = response.status === 429 || response.status >= 500;
       if (!response.ok) {
-        const body = await readResponseText(response, MAX_KNOWLEDGE_ERROR_BYTES).catch(() => "");
-        const error = body ? `HTTP ${response.status}: ${body}` : `HTTP ${response.status}`;
+        // Remote diagnostics may echo exported content or credentials. Persist only status.
+        const error = `HTTP ${response.status}`;
         return {
           accepted: 0,
           rejected: envelopes.length,
           retryable,
-          results: envelopes.map(() => ({ accepted: false, retryable, error })),
+          results: envelopes.map(() => ({ accepted: false, retryable, uncertain: response.status >= 500, error })),
         };
       }
       const responseText = await readResponseText(response, MAX_KNOWLEDGE_RESPONSE_BYTES);
@@ -72,8 +75,8 @@ export class WebhookKnowledgeSink implements KnowledgeSink {
       return {
         accepted: 0,
         rejected: envelopes.length,
-        retryable: true,
-        results: envelopes.map(() => ({ accepted: false, retryable: true, error })),
+        retryable: false,
+        results: envelopes.map(() => ({ accepted: false, retryable: false, uncertain: true, error })),
       };
     } finally {
       clearTimeout(timeout);

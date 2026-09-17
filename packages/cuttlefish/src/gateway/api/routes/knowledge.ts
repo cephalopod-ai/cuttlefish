@@ -15,7 +15,7 @@ export async function handleKnowledgeRoutes(
   if (method === "GET" && pathname === "/api/knowledge/outbox") {
     const statusParam = url.searchParams.get("status");
     const limitParam = Number.parseInt(url.searchParams.get("limit") || "100", 10);
-    const status = statusParam === "pending" || statusParam === "delivered" ? statusParam : undefined;
+    const status = statusParam === "pending" || statusParam === "sending" || statusParam === "delivered" || statusParam === "failed" || statusParam === "uncertain" ? statusParam : undefined;
     const limit = Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 100;
     json(res, listExternalOutboxItems({ status, limit }));
     return true;

@@ -55,6 +55,8 @@ import {
   resolveAutonomousProject,
 } from "./autonomous-mode.js";
 import { requestDualModelVerdict, type DualModelVerdictResult } from "./dual-model-verdict.js";
+import type { GatewayPrincipal } from "./auth.js";
+import { assertApprovalDecisionAuthority } from "./approval-binding.js";
 
 export type { CritiqueResult } from "./hr-critique-dispatch.js";
 
@@ -290,7 +292,7 @@ export interface ApplyResult {
  *  `resolvedByKind` audit column — is derived from this here, never from a
  *  caller-supplied string. */
 export type OrgChangeApprovalDecision =
-  | { kind: "human"; actor: string | null }
+  | { kind: "human"; actor: string | null; principal?: GatewayPrincipal; reviewedRevision?: string | null }
   | { kind: "autonomous"; notes: string };
 
 export type OrgChangeApprovalOutcome =
@@ -328,7 +330,7 @@ export async function resolveOrgChangeApproval(
   const actor = decision.kind === "human" ? decision.actor : AUTONOMOUS_ACTOR_SENTINEL;
   const resolvePending = (): Approval =>
     decision.kind === "human"
-      ? resolveApproval(approval.id, "approved", actor)
+      ? resolveApproval(approval.id, "approved", actor, null, null, decision)
       : resolveApprovalAsAutonomous(approval.id, "approved", actor, decision.notes);
 
   if (request.status === "applied") {
@@ -346,15 +348,22 @@ export async function resolveOrgChangeApproval(
   }
 
   const resolved = approval.state === "approved" ? approval : resolvePending();
+  assertApprovalDecisionAuthority(resolved, decision.kind === "human" ? decision.principal : undefined,
+    decision.kind === "human" ? decision.reviewedRevision : undefined);
   context.emit("approval:resolved", { approvalId: resolved.id, sessionId: resolved.sessionId, state: "approved" });
   recordHrDecisionMessage(
     resolved.sessionId,
     request,
-    { action: "approved", actor, autonomous: decision.kind === "autonomous" },
+    { action: "approved", actor, autonomous: decision.kind === "autonomous", delegated: decision.kind === "human" && decision.principal?.kind === "session" },
     context,
   );
   updateChangeRequestStatus(changeRequestId, "approved");
-  const applied = await applyOrgChange(request, context);
+  const applied = await applyOrgChange(request, context, () => {
+    const current = getApproval(resolved.id);
+    if (!current || current.state !== "approved") throw new Error("Org-change approval is unavailable or no longer approved");
+    assertApprovalDecisionAuthority(current, decision.kind === "human" ? decision.principal : undefined,
+      decision.kind === "human" ? decision.reviewedRevision : undefined);
+  });
   if (!applied.ok) {
     recordHrDecisionMessage(
       resolved.sessionId,
@@ -376,7 +385,7 @@ export async function resolveOrgChangeApproval(
 export function recordHrDecisionMessage(
   sessionId: string | null | undefined,
   request: OrgChangeRequest,
-  opts: { action: "approved" | "rejected" | "applied" | "failed"; actor?: string | null; error?: string | null; autonomous?: boolean },
+  opts: { action: "approved" | "rejected" | "applied" | "failed"; actor?: string | null; error?: string | null; autonomous?: boolean; delegated?: boolean },
   context?: Pick<ApiContext, "emit">,
 ): void {
   if (!sessionId) return;
@@ -387,6 +396,7 @@ export function recordHrDecisionMessage(
   // mirroring security-review.ts's buildAutonomousResumePrompt.
   const approvedLine = opts.autonomous
     ? `Autonomous approval: two independent AI reviewers (claude-fable-5-1, gpt-6-astra) both approved ${changeLabel}. Applying the approved change now.`
+    : opts.delegated ? `Operator-delegated approval received from ${actor} for ${changeLabel}. Applying the approved change now.`
     : `Human approval received from ${actor} for ${changeLabel}. Applying the approved change now.`;
   const content =
     opts.action === "approved"
@@ -421,14 +431,15 @@ const orgChangeApplyLock = new KeyedMutex();
  * validation against the LIVE roster (it may have shifted since submission), then
  * dispatches to the existing org writers, hot-reloads, and records `applied`.
  */
-export async function applyOrgChange(requestInput: OrgChangeRequest, context: ApiContext): Promise<ApplyResult> {
-  return orgChangeApplyLock.withLock(requestInput.id, () => applyOrgChangeLocked(requestInput, context));
+export async function applyOrgChange(requestInput: OrgChangeRequest, context: ApiContext, authorize?: () => void): Promise<ApplyResult> {
+  return orgChangeApplyLock.withLock(requestInput.id, () => applyOrgChangeLocked(requestInput, context, authorize));
 }
 
-async function applyOrgChangeLocked(requestInput: OrgChangeRequest, context: ApiContext): Promise<ApplyResult> {
+async function applyOrgChangeLocked(requestInput: OrgChangeRequest, context: ApiContext, authorize?: () => void): Promise<ApplyResult> {
   // Re-read fresh from disk now that we hold the lock — the caller's `request`
   // snapshot may predate another racer's apply that just completed.
-  const request = getChangeRequest(requestInput.id) ?? requestInput;
+  const request = getChangeRequest(requestInput.id);
+  if (!request) return { ok: false, error: "Change request is unavailable" };
   if (!["pending_approval", "approved"].includes(request.status)) {
     return { ok: false, error: `Change request is '${request.status}' and cannot be applied` };
   }
@@ -461,6 +472,13 @@ async function applyOrgChangeLocked(requestInput: OrgChangeRequest, context: Api
   }
 
   let ok = false;
+  // The mutex may have waited. Check the live decision at the actual writer.
+  authorize?.();
+  if (request.approvalId) {
+    const approval = getApproval(request.approvalId);
+    if (!approval || approval.state !== "approved") return { ok: false, error: "Org-change approval is unavailable or no longer approved" };
+    assertApprovalDecisionAuthority(approval);
+  }
   switch (request.changeType) {
     case "create_agent": {
       const created = validateEmployeeCreate(config, { name: request.employeeName, ...request.proposed }, registry.keys());

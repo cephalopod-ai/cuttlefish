@@ -15,7 +15,7 @@ export interface CheckpointPayload extends Record<string, unknown> {
   revisePrompt?: string | null
 }
 
-export type ApprovalResolvedByKind = "human" | "autonomous_dual_model"
+export type ApprovalResolvedByKind = "human" | "operator_delegate" | "autonomous_dual_model"
 
 export interface Approval {
   id: string
@@ -39,19 +39,30 @@ export interface Checkpoint extends Omit<Approval, "type" | "payload"> {
 }
 
 export interface CheckpointDecisionInput {
+  reviewedRevision?: string | null
   decision: ApprovalDecision
   notes?: string | null
   resultingAction?: string | null
   resumePrompt?: string | null
 }
 
+export type ApprovalDecisionRequest = string | { id: string; reviewedRevision: string }
+
+/** Echo the displayed revision; permission remains a gateway decision. */
+export function approvalDecisionRequest(approval: Approval): ApprovalDecisionRequest {
+  const binding = approval.payload.reviewBinding
+  const revision = binding && typeof binding === 'object' && !Array.isArray(binding)
+    ? (binding as Record<string, unknown>).revision : undefined
+  return typeof revision === 'string' ? { id: approval.id, reviewedRevision: revision } : approval.id
+}
+
 export const approvalApi = {
   getApprovals: (state: ApprovalState | "all" = "pending", sessionId?: string | null) =>
     get<Approval[]>(`/api/approvals?state=${state}${sessionId ? `&sessionId=${encodeURIComponent(sessionId)}` : ""}`),
-  approveApproval: (id: string) =>
-    post<{ approval: Approval; session?: Record<string, unknown> }>(`/api/approvals/${id}/approve`, {}),
-  rejectApproval: (id: string) =>
-    post<{ approval: Approval }>(`/api/approvals/${id}/reject`, {}),
+  approveApproval: (id: string, reviewedRevision?: string) =>
+    post<{ approval: Approval; session?: Record<string, unknown> }>(`/api/approvals/${id}/approve`, { reviewedRevision }),
+  rejectApproval: (id: string, reviewedRevision?: string) =>
+    post<{ approval: Approval }>(`/api/approvals/${id}/reject`, { reviewedRevision }),
   getCheckpoints: (state: ApprovalState | "all" = "pending", sessionId?: string | null) =>
     get<Checkpoint[]>(`/api/checkpoints?state=${state}${sessionId ? `&sessionId=${encodeURIComponent(sessionId)}` : ""}`),
   decideCheckpoint: (id: string, body: CheckpointDecisionInput) =>

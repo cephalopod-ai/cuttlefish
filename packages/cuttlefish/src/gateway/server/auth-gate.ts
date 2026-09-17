@@ -11,6 +11,7 @@ import {
   type GatewayPrincipal,
 } from "../auth.js";
 import { isCooSession, isDirectChildSession, isHumanDelegationSessionEligible } from "../manager-auth.js";
+import { getSession } from "../../sessions/registry.js";
 
 /**
  * Pure principal-resolution/authorization decision for the HTTP and WebSocket
@@ -127,6 +128,18 @@ export function resolvePrincipalGate(opts: {
   }
 
   if (auth.principal?.kind === "session") {
+    const session = getSession(auth.principal.sessionId);
+    if (session && (session.executionBoundaryInvalid || (auth.principal.executionGeneration && auth.principal.executionGeneration !== session.executionBoundary?.generation))) {
+      return { status: 403, reason: "Execution boundary is unavailable or session credential generation is stale" };
+    }
+    const mutation = !["GET", "HEAD"].includes((opts.method || "GET").toUpperCase());
+    if (mutation && session?.executionBoundary?.cancelled) return { status: 403, reason: "Originating task was cancelled" };
+    if (mutation && session?.executionBoundary?.requirement === "read_only") {
+      const p = path.posix.normalize(opts.pathname).toLowerCase();
+      const proposal = opts.method?.toUpperCase() === "POST" && (p === "/api/sessions" || p === "/api/checkpoints" || p === "/api/org/cross-request"
+        || p === `/api/sessions/${auth.principal.sessionId.toLowerCase()}/message`);
+      if (!proposal) return { status: 403, reason: "Read-only task does not permit this gateway mutation" };
+    }
     if (scopedTokenForbidden(opts.method, opts.pathname) && !delegatedDecisionAccess) {
       return { status: 403, reason: "Forbidden for session-scoped tokens" };
     }
@@ -139,7 +152,8 @@ export function resolvePrincipalGate(opts: {
         && (opts.isDirectChildSession ?? isDirectChildSession)(auth.principal.sessionId, childTarget);
       const messageTarget = scopedTokenSessionMessageTarget(opts.method, opts.pathname);
       const isCooMessage = messageTarget !== null
-        && (opts.isCooSession ?? isCooSession)(auth.principal.sessionId);
+        && (opts.isCooSession ?? isCooSession)(auth.principal.sessionId)
+        && (opts.isDirectChildSession ?? isDirectChildSession)(auth.principal.sessionId, messageTarget);
       if (!ownsDirectChild && !isCooMessage) {
         return { status: 403, reason: "Forbidden: session-scoped token bound to a different session" };
       }

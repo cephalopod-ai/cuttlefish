@@ -1,5 +1,6 @@
 import path from "node:path";
 import { isHumanCheckpointPaused } from "../sessions/human-checkpoint-state.js";
+import { admitSessionDispatch, currentSessionAttempt, type DispatchAuthorization } from "./session-dispatch-authorization.js";
 import type { Engine, EngineResult, CuttlefishConfig, Session, StreamDelta } from "../shared/types.js";
 import { isInterruptibleEngine } from "../shared/types.js";
 import { rungKey } from "../shared/model-escalation.js";
@@ -32,7 +33,7 @@ import { feedTalkText, flushTalkSpeech, discardTalkSpeech } from "../talk/tts-st
 import { isTalkMuted } from "../talk/mute-state.js";
 import { maybeEmitTalkGraph } from "../talk/graph.js";
 import { createModelFallbackHandoff } from "./model-fallback.js";
-import { deliverConnectorReply } from "./connector-reply.js";
+import { connectorReplyOptions, deliverConnectorReply } from "./connector-reply.js";
 import { isTurnSuperseded, clearSupersededTurnMeta } from "./session-turn-state.js";
 import { resultAlreadyInStreamedBlocks, shouldPreserveStreamedBlocks } from "./streamed-blocks.js";
 import type { ApiContext } from "./api/context.js";
@@ -43,7 +44,7 @@ export { resolveStallLeaderName, resolveTurnStallWatchdogConfig, shouldNotifyLea
 import { isExecutionDepthBlocked, resolveEffectiveExecution } from "./employee-execution.js";
 import { createScopedSessionToken } from "./auth.js";
 import { prepareWebSessionRun } from "./web-session-preflight.js";
-import { isHumanDelegateRole, isHumanDelegationModelAllowed, operatorDelegationPromptHash, readOperatorDelegationScopesForTurn } from "../sessions/operator-delegation.js";
+import { isHumanDelegateRole, isHumanDelegationModelAllowed, readActiveOperatorDelegationGrant, readOperatorDelegationScopesForTurn } from "../sessions/operator-delegation.js";
 
 export function resolveFallbackContinuationSession(
   updated: Session | undefined,
@@ -102,10 +103,14 @@ export async function runWebSession(
   context: ApiContext,
   attachments?: string[],
   resourceContext?: string | null,
+  dispatchAuthorization?: DispatchAuthorization,
 ): Promise<void> {
-  const prepared = prepareWebSessionRun({ session, prompt, engine: initialEngine, config: initialConfig, context });
+  const runtime = context.orchestration?.runtime;
+  dispatchAuthorization = { ...dispatchAuthorization, validateLease: runtime?.validateLeaseForWorker?.bind(runtime) ?? dispatchAuthorization?.validateLease };
+  const prepared = prepareWebSessionRun({ session, prompt, engine: initialEngine, config: initialConfig, context, dispatchAuthorization });
   if (!prepared) return;
   let { currentSession, config, engine, isRoleChildSession } = prepared;
+  dispatchAuthorization = { ...dispatchAuthorization, runId: typeof currentSession.transportMeta?.latestRunId === "string" ? currentSession.transportMeta.latestRunId : null };
 
   let employee: import("../shared/types.js").Employee | undefined;
   if (currentSession.employee) {
@@ -190,7 +195,8 @@ export async function runWebSession(
     const scopedSessionToken = context.apiToken
       ? createScopedSessionToken(currentSession.id, context.apiToken, {
           delegatedScopes: operatorDelegationScopes,
-          operatorDelegationId: operatorDelegationPromptHash(prompt),
+          operatorDelegationId: readActiveOperatorDelegationGrant(currentSession)?.id,
+          executionGeneration: currentSession.executionBoundary?.generation,
         })
       : undefined;
 
@@ -204,6 +210,7 @@ export async function runWebSession(
       config,
       sessionId: currentSession.id,
       sessionToken: scopedSessionToken,
+      executionBoundary: currentSession.executionBoundary,
       operatorDelegationScopes,
       hierarchy: orgHierarchy,
       voicePersona: currentSession.source === "talk" ? getOrchestratorPersona() : undefined,
@@ -557,6 +564,8 @@ export async function runWebSession(
             cliFlags: employee?.cliFlags,
           });
 
+          const liveBeforeInvocation = getSession(currentSession.id);
+          if (!liveBeforeInvocation || !admitSessionDispatch(liveBeforeInvocation, prompt, engine, context, dispatchAuthorization)) return;
           result = await runWithEngineEnvironment(
             scopedSessionToken ? { CUTTLEFISH_SESSION_TOKEN: scopedSessionToken } : {},
             () => engine.run({
@@ -568,7 +577,7 @@ export async function runWebSession(
               model: currentSession.model ?? engineConfig.model,
               effortLevel: invocation.effortLevel,
               cliFlags: invocation.cliFlags,
-              restrictToJudgeOnly: isAutonomousVerdictSession(currentSession.transportMeta),
+              restrictToJudgeOnly: liveBeforeInvocation.executionBoundary?.requirement === "read_only" || isAutonomousVerdictSession(currentSession.transportMeta),
               attachments: attachments?.length ? attachments : undefined,
               ...(contextPacket?.historyMessages ? { historyMessages: contextPacket.historyMessages } : {}),
               sessionId: currentSession.id,
@@ -625,7 +634,8 @@ export async function runWebSession(
               },
               onLateRecovery: ({ result: lateText, sessionId: engineSid }) => {
                 const live = getSession(currentSession.id);
-                if (!live || live.status === "running" || isHumanCheckpointPaused(live)) return;
+                if (!live || live.status === "running" || isHumanCheckpointPaused(live) || live.executionBoundary?.cancelled
+                  || live.transportMeta?.latestRunId !== currentSession.transportMeta?.latestRunId) return;
                 insertMessage(currentSession.id, "assistant", lateText);
                 const recovered = updateSession(currentSession.id, {
                   ...(engineSid.trim() ? { engineSessionId: engineSid } : {}),
@@ -779,6 +789,7 @@ export async function runWebSession(
       };
 
       const outcome = await handleRateLimit({
+        dispatchAuthorization,
         session: currentSession,
         prompt,
         systemPrompt,
@@ -812,6 +823,7 @@ export async function runWebSession(
           },
           onFallbackStream: emitDelta,
           onFallbackComplete: (fallbackResult) => {
+            if (!currentSessionAttempt(currentSession)) return;
             if (fallbackResult.result) {
               insertMessage(currentSession.id, "assistant", fallbackResult.result);
             }
@@ -828,7 +840,7 @@ export async function runWebSession(
               recordSuccessfulWebSessionTurn(completedFallback.id, fallbackResult);
               if (!fallbackPaused) notifyParentSession(completedFallback, { result: fallbackResult.result, error: fallbackResult.error ?? null, cost: fallbackResult.cost, durationMs: fallbackResult.durationMs }, { alwaysNotify: parentNotifyAlwaysNotify, sink: context.notificationSink });
               if (fallbackResult.result) {
-                void deliverConnectorReply(completedFallback, fallbackResult.result, context.connectors, { emit: context.emit }).catch((err) => {
+                void deliverConnectorReply(completedFallback, fallbackResult.result, context.connectors, connectorReplyOptions(completedFallback, context.emit)).catch((err) => {
                   logger.warn(`Failed to deliver connector reply for session ${completedFallback.id}: ${err instanceof Error ? err.message : String(err)}`);
                 });
               }
@@ -878,6 +890,7 @@ export async function runWebSession(
           },
           onRetryStream: emitDelta,
           onRetrySuccess: (retryResult) => {
+            if (!currentSessionAttempt(currentSession)) return;
             if (retryResult.result) {
               insertMessage(currentSession.id, "assistant", retryResult.result);
             }
@@ -901,7 +914,7 @@ export async function runWebSession(
               );
               if (!retryPaused) notifyParentSession(completedAfterRetry, { result: retryResult.result, error: retryResult.error ?? null, cost: retryResult.cost, durationMs: retryResult.durationMs }, { alwaysNotify: parentNotifyAlwaysNotify, sink: context.notificationSink });
               if (retryResult.result) {
-                void deliverConnectorReply(completedAfterRetry, retryResult.result, context.connectors, { emit: context.emit }).catch((err) => {
+                void deliverConnectorReply(completedAfterRetry, retryResult.result, context.connectors, connectorReplyOptions(completedAfterRetry, context.emit)).catch((err) => {
                   logger.warn(`Failed to deliver connector reply for session ${completedAfterRetry.id}: ${err instanceof Error ? err.message : String(err)}`);
                 });
               }
@@ -919,7 +932,7 @@ export async function runWebSession(
             maybeEmitTalkGraph(currentSession.id, "completed", { getSession, emit: context.emit });
           },
           onTimeout: () => {
-            if (isHumanCheckpointPaused(getSession(currentSession.id))) return;
+            if (!currentSessionAttempt(currentSession) || isHumanCheckpointPaused(getSession(currentSession.id))) return;
             const sourceEngine = currentSession.engine;
             const timeoutError = rateLimitTimeoutError(sourceEngine);
             notifyConnectorNotification(
@@ -958,6 +971,8 @@ export async function runWebSession(
     }
 
     const latestBeforeCompletion = getSession(currentSession.id);
+    if (!latestBeforeCompletion || latestBeforeCompletion.executionBoundary?.cancelled
+      || latestBeforeCompletion.transportMeta?.latestRunId !== currentSession.transportMeta?.latestRunId) return;
     const checkpointPaused = isHumanCheckpointPaused(latestBeforeCompletion);
     const completedSession = updateSession(currentSession.id, {
       // A stopped/superseded turn can settle after its replacement has already
@@ -989,7 +1004,7 @@ export async function runWebSession(
     }
 
     if (completedSession && !quietPreempted && result.result) {
-      await deliverConnectorReply(completedSession, result.result, context.connectors, { emit: context.emit });
+      await deliverConnectorReply(completedSession, result.result, context.connectors, connectorReplyOptions(completedSession, context.emit));
     }
     if (completedSession && !quietPreempted && context.knowledgeSink) {
       try {
@@ -1023,7 +1038,7 @@ export async function runWebSession(
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     logManagerDelegationTelemetryOnce();
-    if (!getSession(currentSession.id)) {
+    if (!currentSessionAttempt(currentSession)) {
       logger.info(`Skipping error handling for deleted web session ${currentSession.id}: ${errMsg}`);
       return;
     }

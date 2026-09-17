@@ -1,9 +1,11 @@
 import { v4 as uuidv4 } from 'uuid';
 import type Database from 'better-sqlite3';
+import { isSessionExecutionBoundary, type ExecutionOriginKind, type ExecutionRequirement, type SessionExecutionBoundary } from '@cuttlefish/contracts';
 import type { JsonObject, ReplyContext, Session } from '../../shared/types.js';
 import { initDb, parseJsonObject, rowToSession } from './core.js';
 import { portalEmployeeSlug } from '../../shared/portal-slug.js';
 import { getRunLedger } from '../../run-ledger/index.js';
+import { buildSessionExecutionBoundary } from '../execution-boundary.js';
 
 export interface CreateSessionOpts {
   engine: string;
@@ -22,6 +24,8 @@ export interface CreateSessionOpts {
   effortLevel?: string;
   cwd?: string | null;
   promptExcerpt?: string;
+  ingressOrigin?: ExecutionOriginKind;
+  executionRequirement?: ExecutionRequirement;
 }
 
 function sessionRunIdFromMeta(
@@ -92,13 +96,19 @@ export function createSession(opts: CreateSessionOpts & { prompt?: string; porta
   const groupKey = computeGroupKey(opts.source, opts.sourceRef, opts.employee);
   const replyContext = opts.replyContext ? JSON.stringify(opts.replyContext) : null;
   const transportMeta = opts.transportMeta ? JSON.stringify(opts.transportMeta) : null;
+  const parent = opts.parentSessionId ? getSession(opts.parentSessionId) : undefined;
+  const executionBoundary = buildSessionExecutionBoundary({
+    origin: opts.parentSessionId ? 'session' : opts.ingressOrigin ?? (opts.source === 'cron' ? 'scheduler' : opts.source === 'a2a' ? 'peer' : 'unknown'),
+    requirement: opts.executionRequirement,
+    parent,
+  });
 
   db.prepare(`
     INSERT INTO sessions (
-      id, engine, source, source_ref, connector, session_key, reply_context, message_id, transport_meta,
+      id, engine, source, source_ref, connector, session_key, reply_context, message_id, transport_meta, execution_boundary,
       employee, group_key, model, title, prompt_excerpt, parent_session_id, user_id, effort_level, cwd, status, created_at, last_activity
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?)
   `).run(
     id,
     opts.engine,
@@ -109,6 +119,7 @@ export function createSession(opts: CreateSessionOpts & { prompt?: string; porta
     replyContext,
     opts.messageId ?? null,
     transportMeta,
+    JSON.stringify(executionBoundary),
     opts.employee ?? null,
     groupKey,
     opts.model ?? null,
@@ -133,6 +144,8 @@ export function createSession(opts: CreateSessionOpts & { prompt?: string; porta
     replyContext: opts.replyContext ?? null,
     messageId: opts.messageId ?? null,
     transportMeta: opts.transportMeta ?? null,
+    executionBoundary,
+    executionBoundaryInvalid: false,
     employee: opts.employee ?? null,
     model: opts.model ?? null,
     title,
@@ -187,6 +200,7 @@ export function getOrCreateSessionBySessionKey(
 }
 
 export interface UpdateSessionFields {
+  executionBoundary?: SessionExecutionBoundary;
   engine?: string;
   engineSessionId?: string | null;
   status?: Session['status'];
@@ -237,6 +251,10 @@ export function updateSession(id: string, updates: UpdateSessionFields): Session
     if (updates.replyContext !== undefined) { sets.push('reply_context = ?'); values.push(updates.replyContext ? JSON.stringify(updates.replyContext) : null); }
     if (updates.messageId !== undefined) { sets.push('message_id = ?'); values.push(updates.messageId); }
     if (updates.transportMeta !== undefined) { sets.push('transport_meta = ?'); values.push(updates.transportMeta ? JSON.stringify(updates.transportMeta) : null); }
+    if (updates.executionBoundary !== undefined) {
+      if (!isSessionExecutionBoundary(updates.executionBoundary)) throw new Error('Invalid execution boundary');
+      sets.push('execution_boundary = ?'); values.push(JSON.stringify(updates.executionBoundary));
+    }
     if (updates.lastActivity !== undefined) { sets.push('last_activity = ?'); values.push(updates.lastActivity); }
     if (updates.lastError !== undefined) { sets.push('last_error = ?'); values.push(updates.lastError); }
     if (updates.title !== undefined) { sets.push('title = ?'); values.push(updates.title); }
@@ -537,7 +555,7 @@ export function duplicateSession(sourceId: string, newTitle?: string): { session
   const now = new Date().toISOString();
   const newId = uuidv4();
   const title = newTitle ?? `Copy of ${source.title || sourceId.slice(0, 8)}`;
-  const newSessionKey = `web:${Date.now()}`;
+  const newSessionKey = `web:${newId}`;
   const replayOfRunId = sessionRunIdFromMeta(source.transportMeta, 'latestRunId')
     ?? sessionRunIdFromMeta(source.transportMeta, 'activeRunId');
   const messages = db.prepare(
@@ -545,18 +563,20 @@ export function duplicateSession(sourceId: string, newTitle?: string): { session
   ).all(sourceId) as Array<{ role: string; content: string; timestamp: number; media: string | null; blocks: string | null }>;
 
   const txn = db.transaction(() => {
-    const nextTransportMeta = {
+  const nextTransportMeta: JsonObject = {
       ...(source.transportMeta ?? {}),
       ...(replayOfRunId ? { replayOfRunId } : {}),
     } satisfies JsonObject;
+    // A duplicate is history. It cannot import a live delegation or pause/attempt identity.
+    for (const key of ['operatorDelegation', 'humanCheckpoint', 'activeRunId', 'latestRunId', 'orchestrationLease', 'managerDelegation', 'managerDelegationEnforcement', 'dispatchRecovery']) delete nextTransportMeta[key];
     db.prepare(`
       INSERT INTO sessions (
         id, engine, engine_session_id, source, source_ref, connector, session_key,
-        reply_context, message_id, transport_meta,
+        reply_context, message_id, transport_meta, execution_boundary,
         employee, group_key, model, title, prompt_excerpt, parent_session_id, user_id, effort_level, cwd, status,
         total_cost, total_turns, created_at, last_activity
       )
-      VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, 'idle', 0, 0, ?, ?)
+      VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, 'idle', 0, 0, ?, ?)
     `).run(
       newId,
       source.engine,
@@ -567,6 +587,7 @@ export function duplicateSession(sourceId: string, newTitle?: string): { session
       source.replyContext ? JSON.stringify(source.replyContext) : null,
       source.messageId,
       JSON.stringify(nextTransportMeta),
+      JSON.stringify(buildSessionExecutionBoundary({ origin: 'history', requirement: source.executionBoundary?.requirement })),
       source.employee,
       computeGroupKey(source.source, source.sourceRef, source.employee),
       source.model,

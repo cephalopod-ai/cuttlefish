@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   reply_context TEXT,
   message_id TEXT,
   transport_meta TEXT,
+  execution_boundary TEXT,
   employee TEXT,
   group_key TEXT,
   model TEXT,
@@ -380,11 +381,12 @@ export function installPostMigrationSchema(db: Database.Database): void {
   db.exec(CREATE_GROUP_ACTIVITY_INDEX);
   db.exec(CREATE_CWD_ACTIVITY_INDEX);
   db.exec(`
-    CREATE TABLE IF NOT EXISTS queue_items (
+CREATE TABLE IF NOT EXISTS queue_items (
       id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL,
       session_key TEXT NOT NULL,
       prompt TEXT NOT NULL,
+      dispatch_authority TEXT,
       status TEXT NOT NULL DEFAULT 'pending',
       position INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,

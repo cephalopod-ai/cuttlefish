@@ -27,6 +27,7 @@ import { useApprovals, useApproveApproval, useRejectApproval } from '@/hooks/use
 import { useCheckpoints, useDecideCheckpoint } from '@/hooks/use-checkpoints'
 import { cn } from '@/lib/utils'
 import type { Approval, ApprovalDecision, Checkpoint } from '@/lib/api'
+import { approvalDecisionRequest } from '@/lib/api-approvals'
 
 // --- helpers ---
 
@@ -86,7 +87,8 @@ function DecisionBadge({ state }: { state: string }) {
 /** Autonomous authorization mode is an intentional feature (see the gateway's
  *  autonomous-mode.ts docblock) — this badge is what makes an unattended
  *  resolution visibly distinct from a human one, never silently identical. */
-function AutonomousBadge({ resolvedByKind }: { resolvedByKind?: 'human' | 'autonomous_dual_model' | null }) {
+function AutonomousBadge({ resolvedByKind }: { resolvedByKind?: 'human' | 'operator_delegate' | 'autonomous_dual_model' | null }) {
+  if (resolvedByKind === 'operator_delegate') return <span className="text-xs text-sky-400">Operator delegate</span>
   if (resolvedByKind !== 'autonomous_dual_model') return null
   return (
     <span
@@ -282,10 +284,10 @@ function ApprovalDetail({ approval, readOnly }: { approval: Approval; readOnly?:
             </div>
           )}
           <div className="flex gap-2">
-            <Button size="sm" disabled={busy} onClick={() => approve.mutate(approval.id)}>
+            <Button size="sm" disabled={busy} onClick={() => approve.mutate(approvalDecisionRequest(approval))}>
               <Check className="size-3.5" /> {approval.type === 'org-change' ? 'Approve & apply' : 'Approve & resume'}
             </Button>
-            <Button size="sm" variant="outline" disabled={busy} onClick={() => reject.mutate(approval.id)}>
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => reject.mutate(approvalDecisionRequest(approval))}>
               <X className="size-3.5" /> Reject
             </Button>
           </div>
@@ -311,14 +313,19 @@ function CheckpointDetail({ checkpoint, readOnly }: { checkpoint: Checkpoint; re
       setLocalError('Revision notes are required to revise and resume.')
       return
     }
+    try {
     await decide.mutateAsync({
       id: checkpoint.id,
       body: {
         decision,
+        reviewedRevision: (checkpoint.payload.reviewBinding as { revision?: string } | undefined)?.revision,
         notes: trimmed || undefined,
         resumePrompt: decision === 'revised' ? trimmed : undefined,
       },
     })
+    } catch (error) {
+      setLocalError(error instanceof Error ? error.message : "Decision failed")
+    }
   }
 
   return (

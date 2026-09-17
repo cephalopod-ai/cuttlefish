@@ -4,7 +4,7 @@ import { safeEqual } from "./auth-crypto.js";
 import type { OperatorDelegationScope } from "../sessions/operator-delegation.js";
 
 // ── Scoped session tokens ─────────────────────────────────────────────────────
-// Each session gets its own HMAC-signed token embedded in its system prompt.
+// Each session gets its own HMAC-signed token in its scoped engine environment.
 // The token authenticates the session to the gateway API but is confined by
 // scopedTokenForbidden — a prompt-injected agent cannot reach the operator
 // control plane (config, auth, system management).
@@ -19,8 +19,9 @@ export type GatewayPrincipal = { kind: "admin" } | {
   kind: "session";
   sessionId: string;
   delegatedScopes?: OperatorDelegationScope[];
-  /** Hash of the exact direct-human prompt that minted delegatedScopes. */
+  /** Unique gateway issuance, never a prompt digest or imported approval id. */
   operatorDelegationId?: string;
+  executionGeneration?: string;
 };
 
 const SCOPED_SESSION_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days (session lifetime)
@@ -29,18 +30,21 @@ const DELEGATED_SESSION_TOKEN_TTL_MS = 2 * 60 * 60 * 1000;
 export function createScopedSessionToken(
   sessionId: string,
   secret: string,
-  nowOrOptions: number | { now?: number; delegatedScopes?: OperatorDelegationScope[]; operatorDelegationId?: string } = Date.now(),
+  nowOrOptions: number | { now?: number; delegatedScopes?: OperatorDelegationScope[]; operatorDelegationId?: string; executionGeneration?: string } = Date.now(),
 ): string {
   const now = typeof nowOrOptions === "number" ? nowOrOptions : (nowOrOptions.now ?? Date.now());
   const delegatedScopes = typeof nowOrOptions === "number" ? [] : [...new Set(nowOrOptions.delegatedScopes ?? [])].sort();
   const operatorDelegationId = typeof nowOrOptions === "number" ? undefined : nowOrOptions.operatorDelegationId;
+  const executionGeneration = typeof nowOrOptions === "number" ? undefined : nowOrOptions.executionGeneration;
+  if (executionGeneration && !/^[a-zA-Z0-9-]{1,128}$/.test(executionGeneration)) throw new Error("Invalid execution generation");
   if (delegatedScopes.length > 0 && !/^[a-f0-9]{64}$/.test(operatorDelegationId ?? "")) {
-    throw new Error("Delegated session tokens require the exact operator delegation prompt hash");
+    throw new Error("Delegated session tokens require the gateway operator delegation issuance id");
   }
   const expiresAt = now + (delegatedScopes.length > 0 ? DELEGATED_SESSION_TOKEN_TTL_MS : SCOPED_SESSION_TOKEN_TTL_MS);
-  const payload = delegatedScopes.length > 0
+  const basePayload = delegatedScopes.length > 0
     ? `session:${sessionId}:${expiresAt}:${delegatedScopes.join(",")}:${operatorDelegationId}`
     : `session:${sessionId}:${expiresAt}`;
+  const payload = executionGeneration ? `${basePayload}:${executionGeneration}` : basePayload;
   const sig = crypto.createHmac("sha256", secret).update(payload).digest("base64url");
   return `${payload}.${sig}`;
 }
@@ -53,23 +57,26 @@ export function verifyScopedSessionPrincipal(token: string, secret: string, now 
     const payload = token.slice(0, lastDot);
     const sig = token.slice(lastDot + 1);
     const parts = payload.split(":");
-    if ((parts.length !== 3 && parts.length !== 5) || parts[0] !== "session") return null;
+    if (![3, 4, 5, 6].includes(parts.length) || parts[0] !== "session") return null;
+    const delegated = parts.length >= 5;
+    const executionGeneration = parts.length === 4 || parts.length === 6 ? parts[parts.length - 1] : undefined;
+    if (executionGeneration && !/^[a-zA-Z0-9-]{1,128}$/.test(executionGeneration)) return null;
     const sessionId = parts[1];
     const expiresAt = Number(parts[2]);
-    if (!sessionId || !Number.isFinite(expiresAt) || now > expiresAt) return null;
+    if (!sessionId || !Number.isFinite(expiresAt) || now >= expiresAt) return null;
     const expected = crypto.createHmac("sha256", secret).update(payload).digest("base64url");
     if (!safeEqual(sig, expected)) return null;
-    const delegatedScopes = parts.length === 5
-      ? parts[3].split(",").filter((scope): scope is OperatorDelegationScope =>
-          scope === "approve" || scope === "decide" || scope === "plan" || scope === "act")
-      : [];
-    const operatorDelegationId = parts.length === 5 && /^[a-f0-9]{64}$/.test(parts[4]) ? parts[4] : undefined;
-    if (parts.length === 5 && (!operatorDelegationId || delegatedScopes.length === 0)) return null;
+    const rawScopes = delegated ? parts[3].split(",") : [];
+    if (rawScopes.some((scope) => !["approve", "decide", "plan", "act"].includes(scope))) return null;
+    const delegatedScopes = rawScopes as OperatorDelegationScope[];
+    const operatorDelegationId = delegated && /^[a-f0-9]{64}$/.test(parts[4]) ? parts[4] : undefined;
+    if (delegated && (!operatorDelegationId || delegatedScopes.length === 0)) return null;
     return {
       kind: "session",
       sessionId,
       ...(delegatedScopes.length > 0 ? { delegatedScopes: [...new Set(delegatedScopes)] } : {}),
       ...(operatorDelegationId ? { operatorDelegationId } : {}),
+      ...(executionGeneration ? { executionGeneration } : {}),
     };
   } catch {
     return null;

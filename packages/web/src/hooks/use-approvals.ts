@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/lib/query-keys'
 import { api, type ApprovalState } from '@/lib/api'
+import type { ApprovalDecisionRequest } from '@/lib/api-approvals'
 
 /** Feature 1: the pending human-approval queue (model-fallback gates). */
 export function useApprovals(state: ApprovalState | 'all' = 'pending', sessionId?: string | null) {
@@ -19,7 +20,8 @@ export function useApprovals(state: ApprovalState | 'all' = 'pending', sessionId
 export function useApproveApproval() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (id: string) => api.approveApproval(id),
+    mutationFn: (request: ApprovalDecisionRequest) => typeof request === 'string'
+      ? api.approveApproval(request) : api.approveApproval(request.id, request.reviewedRevision),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.approvals.all })
       qc.invalidateQueries({ queryKey: queryKeys.sessions.all })
@@ -30,7 +32,8 @@ export function useApproveApproval() {
 export function useRejectApproval() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (id: string) => api.rejectApproval(id),
+    mutationFn: (request: ApprovalDecisionRequest) => typeof request === 'string'
+      ? api.rejectApproval(request) : api.rejectApproval(request.id, request.reviewedRevision),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.approvals.all })
       qc.invalidateQueries({ queryKey: queryKeys.sessions.all })

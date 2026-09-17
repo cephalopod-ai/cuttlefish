@@ -524,6 +524,7 @@ async function runReviewerPass(params: ReviewerPassParams): Promise<ReviewerPass
     const reviewerSession = spawnRoleSession({
       employee, role: "reviewer", employeeRunId, parentSession, engineName, model, effortLevel,
       label: `Review pass ${pass}`, context,
+      readOnly: (exec.reviewerToolProfile ?? "read_only") === "read_only",
     });
     spawned += 1;
     const reviewerPrompt = `${buildReviewerSystemPrompt(exec.reviewerToolProfile ?? "read_only")}\n\n${buildReviewPacketPrompt(task, implementerSummary, diffContext, implementerSessionId)}`;
@@ -710,6 +711,7 @@ function spawnRoleSession(params: {
   effortLevel?: string;
   label: string;
   context: ApiContext;
+  readOnly?: boolean;
 }): Session {
   const { employee, role, employeeRunId, parentSession, engineName, model, effortLevel, label, context } = params;
   // Deliberately no `employee:` — role sessions are runtime-only, never org
@@ -721,6 +723,7 @@ function spawnRoleSession(params: {
     sourceRef: `mid-pair:${employeeRunId}:${role}:${randomUUID()}`,
     connector: parentSession.connector ?? parentSession.source,
     parentSessionId: parentSession.id,
+    executionRequirement: params.readOnly ? "read_only" : "standard",
     model,
     effortLevel,
     // Inherit the task workspace so a revision-implementer's edits land in the

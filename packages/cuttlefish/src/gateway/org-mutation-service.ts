@@ -160,7 +160,7 @@ async function resolveChangeApproval(
 ): Promise<OrgMutationResult> {
   const { getChangeRequest, updateChangeRequestStatus } = await import("./org-changes.js");
   const { applyOrgChange, recordHrDecisionMessage } = await import("./hr-steward.js");
-  const { getApproval, resolveApproval } = await import("./approvals.js");
+  const { getApproval, resolveApproval, ApprovalStateError } = await import("./approvals.js");
   const request = getChangeRequest(id);
   if (!request) return notFound();
   if (request.status !== "pending_approval" && request.status !== "approved") {
@@ -179,8 +179,8 @@ async function resolveChangeApproval(
         sessionId: resolved.sessionId,
         state: "approved",
       });
-    } catch {
-      // Already resolved: application remains idempotent.
+    } catch (error) {
+      if (!(error instanceof ApprovalStateError) || getApproval(request.approvalId)?.state !== "approved") throw error;
     }
   }
   recordHrDecisionMessage(approvalSessionId, request, { action: "approved", actor }, context);
@@ -224,7 +224,7 @@ export async function rejectOrgChange(
 ): Promise<OrgMutationResult> {
   const { getChangeRequest, updateChangeRequestStatus } = await import("./org-changes.js");
   const { recordHrDecisionMessage } = await import("./hr-steward.js");
-  const { getApproval, resolveApproval } = await import("./approvals.js");
+  const { getApproval, resolveApproval, ApprovalStateError } = await import("./approvals.js");
   const request = getChangeRequest(id);
   if (!request) return notFound();
   if (!['pending_approval', 'approved'].includes(request.status)) {
@@ -239,8 +239,8 @@ export async function rejectOrgChange(
         sessionId: resolved.sessionId,
         state: "rejected",
       });
-    } catch {
-      // Already resolved.
+    } catch (error) {
+      if (!(error instanceof ApprovalStateError) || getApproval(request.approvalId)?.state !== "rejected") throw error;
     }
   }
   const updated = updateChangeRequestStatus(id, "rejected");

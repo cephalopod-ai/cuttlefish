@@ -13,7 +13,7 @@ import {
   listPendingExternalOutboxItems,
   markExternalOutboxDelivered,
   markExternalOutboxFailed,
-  releaseExternalOutboxClaims,
+  markExternalOutboxUncertain,
 } from "../sessions/registry.js";
 import type { SessionMessage } from "../sessions/registry/messages.js";
 import { buildCheckpointDecisionEnvelope, buildSessionSummaryEnvelope } from "./envelopes.js";
@@ -23,6 +23,8 @@ function nextAttemptAt(attemptCount: number, baseDelayMs: number, maxDelayMs: nu
   const delay = Math.min(maxDelayMs, baseDelayMs * Math.pow(2, exponent));
   return new Date(Date.now() + delay).toISOString();
 }
+
+export function knowledgeSinkIdentity(sink: KnowledgeSink): string { return sink.deliveryIdentity ? `${sink.name}:${sink.deliveryIdentity}` : sink.name; }
 
 export function knowledgeRelayOptions(config: CuttlefishConfig): {
   batchSize: number;
@@ -59,16 +61,21 @@ export async function flushKnowledgeOutboxBatch(input: {
   retryBaseDelayMs: number;
   retryMaxDelayMs: number;
 }): Promise<{ attempted: number; delivered: number; failed: number }> {
-  const items = claimPendingExternalOutboxItems(input.batchSize);
+  const claimed = claimPendingExternalOutboxItems(input.batchSize, new Date(), undefined, knowledgeSinkIdentity(input.sink));
+  const items = claimed.filter((item) => {
+    const verdict = gateExternalEmit({ kind: "knowledge:envelope", locator: null, sizeBytes: null, mimeType: null, producingRunId: null });
+    if (!verdict.allowed) markExternalOutboxFailed(item.id, "Current export policy denies delivery", null);
+    return verdict.allowed;
+  });
   if (items.length === 0) return { attempted: 0, delivered: 0, failed: 0 };
 
   let result: Awaited<ReturnType<KnowledgeSink["emit"]>>;
   try {
     result = await input.sink.emit(items.map((item) => item.envelope));
-  } catch (err) {
-    // Sink threw — release all claims back to pending so the next relay can retry.
-    releaseExternalOutboxClaims(items.map((i) => i.id));
-    throw err;
+  } catch {
+    for (const item of items) markExternalOutboxUncertain(item.id, "Unknown sink delivery outcome; reconcile before retrying");
+    logger.warn(`knowledge: unknown ${input.sink.name} delivery outcome; reconciliation required`);
+    return { attempted: items.length, delivered: 0, failed: items.length };
   }
 
   let delivered = 0;
@@ -79,6 +86,7 @@ export async function flushKnowledgeOutboxBatch(input: {
       accepted: false,
       retryable: result.retryable,
       error: "missing sink result",
+      uncertain: true,
     };
     if (emitResult.accepted) {
       markExternalOutboxDelivered(item.id, emitResult.remoteId ?? null);
@@ -86,10 +94,11 @@ export async function flushKnowledgeOutboxBatch(input: {
       logger.info(`knowledge: delivered ${item.topic} (${item.id})`);
       continue;
     }
+    if (emitResult.uncertain) { markExternalOutboxUncertain(item.id, "Unknown sink delivery outcome; reconcile before retrying"); failed += 1; continue; }
     const retryAt = nextAttemptAt(item.attemptCount + 1, input.retryBaseDelayMs, input.retryMaxDelayMs);
-    markExternalOutboxFailed(item.id, emitResult.error ?? "delivery failed", retryAt);
+    markExternalOutboxFailed(item.id, emitResult.error ?? "delivery failed", emitResult.retryable ? retryAt : null);
     failed += 1;
-    logger.warn(`knowledge: retry ${item.topic} (${item.id}) at ${retryAt}: ${emitResult.error ?? "delivery failed"}`);
+    logger.warn(`knowledge: ${emitResult.retryable ? `retry at ${retryAt}` : "delivery failed"} for ${item.topic} (${item.id})`);
   }
   return { attempted: items.length, delivered, failed };
 }
@@ -117,7 +126,7 @@ export async function emitCheckpointDecisionBestEffort(input: {
   retryMaxDelayMs: number;
 }): Promise<void> {
   const envelope = buildCheckpointDecisionEnvelope(input.checkpoint, input.session);
-  enqueueKnowledgeEnvelope(envelope, input.sink.name);
+  enqueueKnowledgeEnvelope(envelope, knowledgeSinkIdentity(input.sink));
   await relayPendingKnowledgeOutbox(input);
 }
 
@@ -130,6 +139,6 @@ export async function emitSessionSummaryBestEffort(input: {
   retryMaxDelayMs: number;
 }): Promise<void> {
   const envelope = buildSessionSummaryEnvelope(input.session, input.messages);
-  enqueueKnowledgeEnvelope(envelope, input.sink.name);
+  enqueueKnowledgeEnvelope(envelope, knowledgeSinkIdentity(input.sink));
   await relayPendingKnowledgeOutbox(input);
 }

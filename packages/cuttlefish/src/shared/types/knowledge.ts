@@ -20,6 +20,8 @@ export interface ExternalKnowledgeEnvelope<TPayload extends object = object> {
 }
 
 export interface CuttlefishSessionSummaryV1 {
+  evidenceBoundary?: JsonObject;
+  derivation?: JsonObject;
   sessionId: string;
   source: string;
   sourceRef: string;
@@ -34,6 +36,8 @@ export interface CuttlefishSessionSummaryV1 {
 }
 
 export interface CuttlefishCheckpointDecisionV1 {
+  evidenceBoundary?: JsonObject;
+  reviewBinding?: JsonObject | null;
   checkpointId: string;
   sessionId: string;
   decision: string;
@@ -46,6 +50,7 @@ export interface CuttlefishCheckpointDecisionV1 {
 }
 
 export interface EmitResult {
+  uncertain?: boolean;
   accepted: boolean;
   remoteId?: string | null;
   retryable?: boolean;
@@ -65,6 +70,8 @@ export interface HealthResult {
 }
 
 export interface KnowledgeSink {
+  /** Stable identity of the configured destination, without exposing credentials. */
+  readonly deliveryIdentity?: string;
   readonly name: string;
   emit(envelopes: ExternalKnowledgeEnvelope[]): Promise<BatchEmitResult>;
   health(): Promise<HealthResult>;

@@ -5,6 +5,7 @@ import { interruptExpiredOrchestrationLeaseSessions } from "../api/session-dispa
 import type { ApiContext } from "../api.js";
 
 export function bindOrchestrationRuntimeHandlers(runtime: OrchestrationRuntime | undefined, apiContext: ApiContext): void {
+  apiContext.orchestration = { ...apiContext.orchestration, runtime };
   runtime?.setResumeQueuedRunHandler(async ({ continuation, allocation, reviewPolicy }) => {
     const result = continuation.mode === "dual_lane"
       ? await runAllocatedDualLaneTask({

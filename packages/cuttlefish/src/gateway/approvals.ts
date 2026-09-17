@@ -8,7 +8,11 @@ import {
   listApprovalRecords,
   resolveApprovalRecord,
   resolveApprovalRecordAsAutonomous,
+  getSession,
+  initDb,
 } from "../sessions/registry.js";
+import { assertApprovalDecisionAuthority, bindApprovalPayload } from "./approval-binding.js";
+import type { GatewayPrincipal } from "./auth.js";
 
 /**
  * Persisted approval store.
@@ -55,7 +59,7 @@ export function createApproval(input: {
   payload: JsonObject;
 }): Approval {
   ensureMigrated();
-  return createApprovalRecord(input);
+  return createApprovalRecord({ ...input, payload: bindApprovalPayload(input.payload, getSession(input.sessionId)) });
 }
 
 export class ApprovalStateError extends Error {
@@ -75,14 +79,22 @@ export function resolveApproval(
   actor?: string | null,
   decisionNotes?: string | null,
   resultingAction?: string | null,
+  authority?: { principal?: GatewayPrincipal; reviewedRevision?: string | null },
 ): Approval {
   ensureMigrated();
-  const current = getApprovalRecord(id);
-  if (!current) throw new Error(`approval ${id} not found`);
-  if (current.state !== "pending") throw new ApprovalStateError(current.state);
-  const approval = resolveApprovalRecord(id, state, actor, decisionNotes, resultingAction);
-  if (!approval) throw new Error(`approval ${id} not found`);
-  return approval;
+  return initDb().transaction(() => {
+    const current = getApprovalRecord(id);
+    if (!current) throw new Error(`approval ${id} not found`);
+    if (current.state !== "pending") throw new ApprovalStateError(current.state);
+    assertApprovalDecisionAuthority(current, authority?.principal, authority?.reviewedRevision, state === "approved" ? ["approve", "decide"] : ["decide"]);
+    const approval = resolveApprovalRecord(id, state, actor, decisionNotes, resultingAction);
+    if (!approval) throw new Error(`approval ${id} not found`);
+    if (authority?.principal?.kind === "session") {
+      initDb().prepare("UPDATE approvals SET resolved_by_kind = 'operator_delegate' WHERE id = ?").run(id);
+      return getApprovalRecord(id)!;
+    }
+    return approval;
+  })();
 }
 
 /**
@@ -110,6 +122,7 @@ export function resolveApprovalAsAutonomous(
   const current = getApprovalRecord(id);
   if (!current) throw new Error(`approval ${id} not found`);
   if (current.state !== "pending") throw new ApprovalStateError(current.state);
+  assertApprovalDecisionAuthority(current);
   const approval = resolveApprovalRecordAsAutonomous(id, state, actor, decisionNotes, resultingAction);
   if (!approval) throw new Error(`approval ${id} not found`);
   return approval;

@@ -1,8 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
+import { withStaticTempCuttlefishHome } from "../../test-utils/cuttlefish-home.js";
 import type { CuttlefishConfig, Employee } from "../../shared/types.js";
 import { authorizeManagerScope, isAuthorizedHumanDelegatePrincipal, isCooSession, isDirectChildSession, isHrHumanOnlyBlocked, isHumanDelegationSessionEligible, isManagerNameAuthorizedForPrincipal } from "../manager-auth.js";
 import { buildOperatorDelegationGrant, operatorDelegationPromptHash } from "../../sessions/operator-delegation.js";
 import { HR_EMPLOYEE_NAME } from "../org-policy.js";
+
+const { home } = withStaticTempCuttlefishHome("cuttlefish-manager-authority-");
+fs.mkdirSync(path.join(home, "org", "management"), { recursive: true });
+fs.writeFileSync(path.join(home, "org", "management", "program-manager.yaml"), "name: program-manager\nrank: manager\nengine: codex\nmodel: gpt-5.6-sol\npersona: Coordinate bounded work.\n");
 
 function employee(overrides: Partial<Employee>): Employee {
   return {
@@ -130,18 +137,20 @@ describe("isCooSession", () => {
 
 describe("human-delegated operator authority", () => {
   const prompt = "/delegate-authority approve,decide\nResolve the release gate.";
-  const delegationId = operatorDelegationPromptHash(prompt);
-  const activeGrant = buildOperatorDelegationGrant({ prompt, scopes: ["approve", "decide"] });
   const eligible = {
     id: "pm-run",
     employee: "program-manager",
     source: "web",
     engine: "codex",
     model: "gpt-5.6-sol",
-    transportMeta: { operatorDelegation: activeGrant },
+    executionBoundary: { version: 1, origin: "operator", requirement: "standard", generation: "generation", parentGeneration: null, cancelled: false },
   } as any;
 
-  it("requires the eligible role, model, active grant, and exact prompt binding", () => {
+  const activeGrant = buildOperatorDelegationGrant({ session: eligible, prompt, scopes: ["approve", "decide"] });
+  eligible.transportMeta = { operatorDelegation: activeGrant };
+  const delegationId = activeGrant.id;
+
+  it("requires the eligible role, model, active grant, and exact issuance binding", () => {
     expect(isHumanDelegationSessionEligible("pm-run", delegationId, { getSession: vi.fn(() => eligible) as any })).toBe(true);
     expect(isHumanDelegationSessionEligible("pm-run", operatorDelegationPromptHash("old turn"), { getSession: vi.fn(() => eligible) as any })).toBe(false);
     expect(isHumanDelegationSessionEligible("pm-run", delegationId, { getSession: vi.fn(() => ({ ...eligible, model: "sonnet" })) as any })).toBe(false);

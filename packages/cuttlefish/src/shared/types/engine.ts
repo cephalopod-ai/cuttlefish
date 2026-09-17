@@ -2,6 +2,8 @@ import type { StreamDelta } from "./chat.js";
 
 export interface Engine {
   name: string;
+  /** Adapter capability, independent of its name/model. Does not certify OS isolation. */
+  executionCapabilities?: { readOnly: boolean };
   run(opts: EngineRunOpts): Promise<EngineResult>;
 }
 
@@ -46,10 +48,9 @@ export interface EngineRunOpts {
   sessionId?: string;
   source?: string;
   onLateRecovery?: (info: { result: string; sessionId: string }) => void;
-  /** Hard-restrict this invocation to judge-only: no writes, no shell, no
-   *  network fetch — for verdict/reviewer sessions that must only be able to
-   *  read and reason, never act. Engine-enforced (not just prompt-instructed)
-   *  where the underlying CLI supports it. */
+  /** Request the engine's supported read-only/judge restriction. Protected
+   *  dispatch also requires an explicit capability. This is not a universal
+   *  prohibition on shell, network, or same-user filesystem access. */
   restrictToJudgeOnly?: boolean;
 }
 

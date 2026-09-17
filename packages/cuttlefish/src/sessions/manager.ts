@@ -12,6 +12,7 @@ import type {
 import { isInterruptibleEngine } from "../shared/types.js";
 import {
   accumulateSessionCost,
+  beginSessionRun,
   getSession,
   getSessionBySessionKey,
   getMessages,
@@ -49,6 +50,9 @@ import { createScopedSessionToken } from "../gateway/auth.js";
 import { runWithEngineEnvironment } from "../shared/engine-env.js";
 import type { ContentScreeningResult } from "../shared/types.js";
 import { SessionDispatcher, type RouteOptions } from "./session-dispatcher.js";
+import { queueDispatchAuthority } from "./execution-boundary.js";
+import { currentSessionAttempt, sessionDispatchDenial } from "../gateway/session-dispatch-authorization.js";
+import { isHumanCheckpointPaused } from "./human-checkpoint-state.js";
 export { mergeTransportMeta } from "./manager-helpers.js";
 export type { RouteOptions } from "./session-dispatcher.js";
 
@@ -165,6 +169,7 @@ export class SessionManager {
     target: Target,
     employee?: Employee,
   ): Promise<void> {
+    const authority = queueDispatchAuthority(session, msg.text);
     const liveSession = getSession(session.id);
     if (!liveSession) {
       logger.warn(`Skipping queued turn for deleted session ${session.id}`);
@@ -176,6 +181,11 @@ export class SessionManager {
     if (!engine) {
       logger.error(`Engine "${session.engine}" not found for session ${session.id}`);
       await connector.replyMessage(target, `Error: engine "${session.engine}" not available.`);
+      return;
+    }
+    const initialDenial = sessionDispatchDenial(session, msg.text, engine, { authority });
+    if (initialDenial || session.status === "waiting") {
+      if (initialDenial) updateSession(session.id, { status: session.status === "waiting" ? "waiting" : "error", lastError: initialDenial });
       return;
     }
 
@@ -227,7 +237,7 @@ export class SessionManager {
 
     try {
       const scopedSessionToken = this.apiToken
-        ? createScopedSessionToken(session.id, this.apiToken)
+        ? createScopedSessionToken(session.id, this.apiToken, { executionGeneration: session.executionBoundary?.generation })
         : undefined;
       const systemPrompt = buildContext({
         source: session.source,
@@ -240,6 +250,7 @@ export class SessionManager {
         config: this.config,
         sessionId: session.id,
         sessionToken: scopedSessionToken,
+        executionBoundary: session.executionBoundary,
         channelName: (msg.transportMeta?.channelName as string) || undefined,
         hierarchy,
       });
@@ -410,6 +421,11 @@ export class SessionManager {
           });
       if (contextPacket) logContextPacketMetadata(contextPacket.metadata, session.id);
 
+      const liveBeforeInvocation = getSession(session.id);
+      if (!liveBeforeInvocation || liveBeforeInvocation.status === "waiting" || isHumanCheckpointPaused(liveBeforeInvocation)) return;
+      const invocationDenial = sessionDispatchDenial(liveBeforeInvocation, msg.text, engine, { authority });
+      if (invocationDenial) { updateSession(session.id, { status: "error", lastError: invocationDenial }); return; }
+      session = beginSessionRun({ sessionId: session.id, prompt: msg.text, transportMeta: liveBeforeInvocation.transportMeta }) ?? session;
       const result = await runWithEngineEnvironment(
         scopedSessionToken ? { CUTTLEFISH_SESSION_TOKEN: scopedSessionToken } : {},
         () => engine.run({
@@ -421,6 +437,7 @@ export class SessionManager {
         model: session.model ?? engineConfig.model,
         effortLevel: invocation.effortLevel,
         cliFlags: invocation.cliFlags,
+        restrictToJudgeOnly: session.executionBoundary?.requirement === "read_only",
         mcpConfigPath,
         attachments: engineAttachments.length > 0 ? engineAttachments : undefined,
         ...(contextPacket?.historyMessages ? { historyMessages: contextPacket.historyMessages } : {}),
@@ -428,7 +445,8 @@ export class SessionManager {
         source: session.source,
         onLateRecovery: ({ result: lateText, sessionId: engineSid }) => {
           const live = getSession(session.id);
-          if (!live || live.status === "running") return;
+          if (!live || live.status === "running" || isHumanCheckpointPaused(live) || live.executionBoundary?.cancelled
+            || live.transportMeta?.latestRunId !== session.transportMeta?.latestRunId) return;
           insertMessage(session.id, "assistant", lateText);
           const recovered = updateSession(session.id, {
             ...(engineSid.trim() ? { engineSessionId: engineSid } : {}),
@@ -473,6 +491,7 @@ export class SessionManager {
         const sourceEngine = session.engine;
 
         const outcome = await handleRateLimit({
+          dispatchAuthorization: { authority },
           session,
           prompt: msg.text,
           systemPrompt,
@@ -510,6 +529,7 @@ export class SessionManager {
               }
             },
             onFallbackComplete: async (fallbackResult) => {
+              if (!currentSessionAttempt(session)) return;
               const fallbackText = fallbackResult.result?.trim()
                 ? fallbackResult.result
                 : fallbackResult.error || "(No response from engine)";
@@ -522,22 +542,25 @@ export class SessionManager {
               if (decorateMessages && connector.setTypingStatus) {
                 await connector.setTypingStatus(target.channel, threadTs, "").catch(() => {});
               }
+              if (!currentSessionAttempt(session)) return;
               await replyMessageLogged(connector, target, fallbackText, session.id);
               if (decorateMessages && capabilities.reactions) {
                 await connector.removeReaction(target, "eyes").catch(() => {});
               }
 
+              const live = currentSessionAttempt(session); if (!live) return;
+              const paused = isHumanCheckpointPaused(live);
               const updated = updateSession(session.id, {
                 engineSessionId: fallbackResult.sessionId,
                 ...(typeof fallbackResult.contextTokens === "number" ? { lastContextTokens: fallbackResult.contextTokens } : {}),
-                status: fallbackResult.error ? "error" : "idle",
+                status: paused ? "waiting" : fallbackResult.error ? "error" : "idle",
                 replyContext: msg.replyContext,
                 messageId: msg.messageId ?? null,
                 transportMeta: mergeTransportMeta(getSessionBySessionKey(msg.sessionKey)?.transportMeta ?? session.transportMeta, msg.transportMeta),
                 lastActivity: new Date().toISOString(),
-                lastError: fallbackResult.error ?? null,
+                lastError: paused ? live.lastError : fallbackResult.error ?? null,
               });
-              if (updated) {
+              if (updated && !paused) {
                 notifyParentSession(updated, { result: fallbackResult.result, error: fallbackResult.error ?? null, cost: fallbackResult.cost, durationMs: fallbackResult.durationMs }, { alwaysNotify: employee?.alwaysNotify, sink: this.notificationSink });
               }
             },
@@ -596,6 +619,7 @@ export class SessionManager {
               }
             },
             onRetrySuccess: async (retryResult) => {
+              if (!currentSessionAttempt(session)) return;
               // Success or different error — handle normally
               const retryText = retryResult.result?.trim()
                 ? retryResult.result
@@ -615,18 +639,21 @@ export class SessionManager {
                 await connector.removeReaction(target, waitEmoji).catch(() => {});
               }
 
+              if (!currentSessionAttempt(session)) return;
               await replyMessageLogged(connector, target, retryText, session.id);
+              const live = currentSessionAttempt(session); if (!live) return;
+              const paused = isHumanCheckpointPaused(live);
               const retryUpdated = updateSession(session.id, {
                 ...(retryResult.sessionId?.trim() ? { engineSessionId: retryResult.sessionId } : {}),
                 ...(typeof retryResult.contextTokens === "number" ? { lastContextTokens: retryResult.contextTokens } : {}),
-                status: retryResult.error ? "error" : "idle",
+                status: paused ? "waiting" : retryResult.error ? "error" : "idle",
                 replyContext: msg.replyContext,
                 messageId: msg.messageId ?? null,
                 transportMeta: mergeTransportMeta(getSessionBySessionKey(msg.sessionKey)?.transportMeta ?? session.transportMeta, msg.transportMeta),
                 lastActivity: new Date().toISOString(),
-                lastError: retryResult.error ?? null,
+                lastError: paused ? live.lastError : retryResult.error ?? null,
               });
-              if (retryUpdated) {
+              if (retryUpdated && !paused) {
                 notifyRateLimitResumed(retryUpdated, { sink: this.notificationSink });
                 notifyConnectorNotification(
                   `✅ ${rateLimitSummary(sourceEngine)} cleared. Session ${session.id}${session.employee ? ` (${session.employee})` : ""} resumed.`,
@@ -636,6 +663,7 @@ export class SessionManager {
               }
             },
             onTimeout: async () => {
+              if (!currentSessionAttempt(session) || isHumanCheckpointPaused(getSession(session.id))) return;
               const timeoutError = rateLimitTimeoutError(sourceEngine);
               notifyConnectorNotification(
                 `❌ ${timeoutError}. Session ${session.id}${session.employee ? ` (${session.employee})` : ""} has been stopped.`,
@@ -683,13 +711,14 @@ export class SessionManager {
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       logger.error(`Session ${session.id} error: ${errMsg}`);
-
+      const live = currentSessionAttempt(session); if (!live) return;
+      const paused = isHumanCheckpointPaused(live);
       const erroredSession = updateSession(session.id, {
-        status: "error",
+        status: paused ? "waiting" : "error",
         lastActivity: new Date().toISOString(),
-        lastError: errMsg,
+        lastError: paused ? live.lastError : errMsg,
       });
-      if (erroredSession) {
+      if (erroredSession && !paused) {
         notifyParentSession(erroredSession, { error: errMsg }, { alwaysNotify: employee?.alwaysNotify, sink: this.notificationSink });
       }
 

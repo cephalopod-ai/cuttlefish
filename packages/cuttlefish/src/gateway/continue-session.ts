@@ -13,6 +13,7 @@ import {
 import { acknowledgeLeaderAck } from "../sessions/leader-ack.js";
 import {
   buildOperatorDelegationGrant,
+  OperatorDelegationPolicyError,
   isHumanDelegateRole,
   isHumanDelegationModelAllowed,
   parseOperatorDelegationScopes,
@@ -34,6 +35,7 @@ import { dispatchEmployeeSessionRun } from "./mid-pair-orchestrator.js";
 import { supersedeRunningTurn } from "./session-turn-state.js";
 import { attachResourcesToSession, attachmentMedia, describeSessionResources } from "./session-resources.js";
 import { ArtifactAccessError, assertScopedArtifactReferences } from "./artifact-access.js";
+import { buildSessionExecutionBoundary, queueDispatchAuthority } from "../sessions/execution-boundary.js";
 
 export interface ContinueSessionInput {
   sessionId: string;
@@ -65,6 +67,13 @@ export async function continueSession(input: ContinueSessionInput): Promise<Cont
   }
   const existingSession = getSession(input.sessionId);
   if (!existingSession) return { statusCode: 404, body: { error: "Not found" } };
+  if (input.principal?.kind === "session" && input.principal.sessionId !== existingSession.id
+    && !(existingSession.parentSessionId === input.principal.sessionId && getSession(input.principal.sessionId)?.employee === null)) {
+    return { statusCode: 403, body: { error: "Session is outside this task's scope", code: "session_scope_forbidden" } };
+  }
+  if (existingSession.executionBoundaryInvalid || (existingSession.executionBoundary?.cancelled && input.principal?.kind !== "admin")) {
+    return { statusCode: 403, body: { error: "Execution boundary is unavailable or task was cancelled", code: "execution_authority_denied" } };
+  }
   let session = maybeRevertEngineOverride(existingSession);
   const body = input.body;
   const prompt = (typeof body.message === "string" ? body.message : typeof body.prompt === "string" ? body.prompt : "").trim();
@@ -89,7 +98,7 @@ export async function continueSession(input: ContinueSessionInput): Promise<Cont
     ? input.operatorDelegationScopes
     : legacyScopes;
   if (requestedDelegationScopes) {
-    if (input.principal?.kind !== "admin") {
+    if (input.principal?.kind !== "admin" || isNotification) {
       return { statusCode: 403, body: { error: "Only a direct human operator message can delegate operator authority", code: "operator_delegation_human_only" } };
     }
     if (!isHumanDelegateRole(session.employee, session.source)) {
@@ -100,14 +109,6 @@ export async function continueSession(input: ContinueSessionInput): Promise<Cont
       return { statusCode: 403, body: { error: `Human-delegated authority requires one of: ${HUMAN_DELEGATION_MODELS_LABEL}`, code: "operator_delegation_model_forbidden" } };
     }
     if (!session.model && delegationModel) session = updateSession(session.id, { model: delegationModel }) ?? session;
-    session = patchSessionTransportMeta(session.id, {
-      operatorDelegation: buildOperatorDelegationGrant({
-        prompt,
-        scopes: requestedDelegationScopes,
-        grantedBy: input.userId,
-      }) as never,
-    }) ?? session;
-    input.context.emit("session:updated", { sessionId: session.id });
   }
 
   const ptyEngine = body.mode === "interactive" ? input.context.ptyViewEngines?.[session.engine] : undefined;
@@ -134,6 +135,38 @@ export async function continueSession(input: ContinueSessionInput): Promise<Cont
   const currentSession = getSession(session.id);
   if (!currentSession) return { statusCode: 404, body: { error: "Not found" } };
   session = currentSession;
+  if (session.executionBoundaryInvalid || (session.executionBoundary?.cancelled && (input.principal?.kind !== "admin" || isNotification))) {
+    return { statusCode: 403, body: { error: "Task was cancelled or its boundary is unavailable", code: "execution_authority_denied" } };
+  }
+  if (!isNotification && input.principal?.kind === "admin") {
+    if (!session.executionBoundary || session.executionBoundary.cancelled) {
+      session = updateSession(session.id, { executionBoundary: buildSessionExecutionBoundary({ origin: "operator",
+        requirement: session.executionBoundary?.requirement, parent: session.parentSessionId ? getSession(session.parentSessionId) : undefined }) }) ?? session;
+    }
+    if (requestedDelegationScopes && (!isHumanDelegateRole(session.employee, session.source) || !isHumanDelegationModelAllowed(session.engine, session.model))) {
+      return { statusCode: 403, body: { error: "Delegate eligibility changed", code: "operator_delegation_model_forbidden" } };
+    }
+    let grant;
+    try {
+      grant = requestedDelegationScopes ? buildOperatorDelegationGrant({ session, prompt, scopes: requestedDelegationScopes, grantedBy: input.userId }) : undefined;
+    } catch (error) {
+      if (!(error instanceof OperatorDelegationPolicyError)) throw error;
+      return { statusCode: 403, body: { error: error.message, code: "operator_delegation_policy_unavailable" } };
+    }
+    session = patchSessionTransportMeta(session.id, (meta) => {
+      const next = { ...meta }; delete next.operatorDelegation;
+      if (grant) next.operatorDelegation = grant as never;
+      return next;
+    }) ?? session;
+  }
+  const claimedSourceChildId = isNotification && typeof body.sourceChildSessionId === "string" ? body.sourceChildSessionId.trim() : "";
+  const sourceChildSession = claimedSourceChildId ? getSession(claimedSourceChildId) : undefined;
+  if (claimedSourceChildId && (!sourceChildSession || sourceChildSession.parentSessionId !== session.id
+    || sourceChildSession.executionBoundary?.cancelled
+    || (typeof sourceChildSession.transportMeta?.latestRunId === "string" && body.sourceRunId !== sourceChildSession.transportMeta.latestRunId)
+    || (input.principal?.kind === "session" && input.principal.sessionId !== claimedSourceChildId))) {
+    return { statusCode: 403, body: { error: "Callback does not match the current child attempt", code: "stale_callback" } };
+  }
   const insertedMessageId = insertMessage(
     session.id,
     messageRole,
@@ -143,16 +176,6 @@ export async function continueSession(input: ContinueSessionInput): Promise<Cont
   if (isNotification) {
     input.context.emit("session:notification", { sessionId: session.id, message: displayMessage });
     const currentSession = getSession(session.id) ?? session;
-    // Only honour a claimed source child that really is a child of this session,
-    // so a forged body field can't reopen someone else's synthesis barrier. An
-    // unverifiable claim degrades to the previous behaviour rather than failing.
-    const claimedSourceChildId = typeof body.sourceChildSessionId === "string" ? body.sourceChildSessionId.trim() : "";
-    const sourceChildSession = claimedSourceChildId
-      ? (() => {
-          const child = getSession(claimedSourceChildId);
-          return child?.parentSessionId === currentSession.id ? child : undefined;
-        })()
-      : undefined;
     const synthesis = claimManagerDelegationSynthesis(
       currentSession.id,
       currentSession.transportMeta,
@@ -211,7 +234,7 @@ export async function continueSession(input: ContinueSessionInput): Promise<Cont
   const scheduled = typeof queue.hasScheduled === "function" ? queue.hasScheduled(sessionKey) : queue.isRunning(sessionKey);
   let queueItemId: string | undefined;
   if (!isNotification || session.status === "waiting" || scheduled) {
-    queueItemId = enqueueQueueItem(session.id, sessionKey, prompt);
+    queueItemId = enqueueQueueItem(session.id, sessionKey, prompt, queueDispatchAuthority(session, prompt, sourceChildSession));
     input.context.emit("queue:updated", { sessionId: session.id, sessionKey });
   }
   if (attached.blocked) {

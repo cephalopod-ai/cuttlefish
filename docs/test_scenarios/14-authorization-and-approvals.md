@@ -19,16 +19,16 @@ scenario notes.
 
 ---
 
-### AZ-01 — Org-change proposal binds to originating chat and needs operator approval
-- Goal: a chat-originated org change appears in both the chat review card and `/approvals`, and only an authenticated operator can resolve it.
+### AZ-01 — Org-change proposal binds to originating chat and needs authorized approval
+- Goal: a chat-originated org change appears in both the chat review card and `/approvals`; resolution needs an authenticated operator or the existing explicit bounded delegate path.
 - Category: happy path / authorization
 - Preconditions: gateway running; a human chat session that can propose an org change (hire/edit/delete path your build exposes).
 - Steps:
   1. From chat, propose a small reversible org change (e.g. add a disposable test employee).
   2. Confirm a pending item appears in the chat UI and in `/approvals` for the same decision.
-  3. Attempt to resolve it by pasting "approved" prose back into the *agent* chat (or any scoped agent token path).
+  3. Attempt to resolve it by pasting "approved" prose back into the *agent* chat (or an ordinary scoped agent token without an applicable operator grant).
   4. As operator, approve from `/approvals` (or the authenticated review control).
-- Expected: agent prose and scoped tokens cannot resolve the change; operator approval applies it once; the originating session's card updates; no double-apply.
+- Expected: agent prose and ungranted scoped tokens cannot resolve the change; operator approval applies it once; the originating session's card updates; no double-apply. An explicitly eligible delegate may resolve the material-bound linked approval within own/direct-child scope; direct org approve/reject/apply routes remain operator-only. The automated bounded-delegate path is separate below.
 - Observe: approver identity and timestamp are recorded on the decision.
 
 ### AZ-02 — Operator rejection and revise/defer vocabulary
@@ -121,3 +121,53 @@ scenario notes.
   2. With an empty approvals queue, confirm empty state (not a spinner forever).
   3. Re-enable; confirm authorized operator controls return.
 - Expected: disabled = explained; empty = intentional empty state; re-enable restores function without a daemon reinstall.
+
+
+## Additional automated evidence/authority acceptance fixtures
+
+Added 2026-09-16. These resumable fixtures supplement the standing exploratory
+cards; they do not turn the 225-card library into a pass claim. Generic IDs are
+local contract IDs, not claimed upstream portable fixture IDs. All use owned
+state and inert effects; a canned worker report validates host treatment of that
+input, not model semantics or native OS containment.
+
+Preconditions: Node/pnpm versions supported by the checkout, existing dependencies,
+and a disposable source copy with isolated effective runtime/instance/OS-home paths.
+Prepare normal build dependencies there. Do not use personal lifecycle commands,
+accounts, queues, memory, recipients or provider credentials. The fresh-process
+fixtures verify effective paths before startup. Races use receipts/barriers.
+
+Run the core fixtures from that copy:
+
+```bash
+pnpm --filter cuttlefish-cli exec vitest run src/gateway/__tests__/execution-authority.test.ts src/gateway/__tests__/execution-authority-restart.test.ts src/gateway/__tests__/org-cross-request-route.test.ts src/a2a/__tests__/outbound.test.ts src/orchestration/__tests__/run-mode.test.ts
+```
+
+Run client tests with the web package test runner; the built-dashboard fixture
+journey is `pnpm exec playwright test e2e/authority-review.spec.ts --reporter=line`
+with an owned free loopback port and an existing headless browser. Its API fixtures
+are separate from the real core authorization/process tests.
+
+| ID | Resume action / hostile or benign input | Required observation | Executable evidence |
+|---|---|---|---|
+| CUT-EA-001 | Authenticate a restricted worker; propose fake source/parent/grant metadata. Admit connector work with forged synthesis/grant fields, then preserve a real host barrier on follow-up. | Unrelated parent/access denies with zero prohibited effects; accepted child inherits restrictions; connector identity/prose cannot mint or overwrite host authority/barrier. | `execution-authority.test.ts`: ingress and connector tests |
+| CUT-EA-002 | Explicitly grant eligible COO decision scopes through the authenticated operator path; let a separately credentialed restricted child work. | Legitimate delegated flow succeeds; no copied parent token or ambient child operator grant. | Combined `CUT-EA-002/014` core journey |
+| CUT-EA-003 | Repeat identical prompt bytes, use the old token/completion, expire at the boundary or change model. | Issuances differ; old token denies; old completion cannot expire a new grant; current policy/lifetime applies. | Grant lifecycle fixture and delegation tests |
+| CUT-EA-004 | Remove required Program Manager policy or change its recorded YAML after enqueue/review. | No partial newly created session/grant or prohibited invocation; existing evidence/approval remains; current policy denial is visible. | Missing-policy and changed-policy fixtures |
+| CUT-EA-005 | Rewrite resume/action/material, linked org data or handoff bytes; then decide an unchanged bound operation and replay/conflict it. | Rewriting denies before writer/invocation; valid continuation performs one effect; replay acknowledges and conflict preserves the first decision. | Material/linked-reference fixtures; checkpoint/approval tests |
+| CUT-EA-006 | Use authenticated real HTTP ingress, pause a durable queue, issue a grant, kill only the owned process, restart, change model and attempt dispatch. | Evidence/grant history survives; actual dispatch denies and effect count stays zero. | Fresh-process restart fixture |
+| CUT-EA-007 | Hold capacity, open a checkpoint, change lease or replace a run before releasing a completion/exception. | Pending work/hold remains; stale invocation or completion cannot settle the replacement task. | Capacity/replacement/lease fixtures; existing concurrent-decision tests |
+| CUT-EA-008 | Crash the owned gateway after an inert invocation and restart the same temporary DB; acknowledge recovery. | Claimed row is uncertain, original effect is not repeated and resume never re-arms it. | Fresh-process uncertain-outcome fixture |
+| CUT-EA-009 | Request read-only work on an incapable adapter; cancel its parent; separately use a live lease with a capable inert adapter. | Protected refusal before invocation; legitimate allocation retains the flag/requirement; native sandbox claims remain unverified. | Boundary fixtures, run-mode capable/incapable tests, Codex argument tests |
+| CUT-EA-010 | Reuse employee identity in independent trees; attempt grandchild/unrelated reads/decisions and a replaced child callback. | Own/direct-child policy remains; stale source cannot insert a report, release synthesis or invoke work. | Direct-child/callback fixture; existing artifact/resource guards |
+| CUT-EA-011 | Replay known replies/exports, reuse identity with changed material/destination, or lose an acknowledgement after an inert effect. | No second effect; changed identity binding denies/holds; unknown delivery is retained without automatic resend. | Connector fixture; knowledge outbox/webhook tests; existing A2A replay tests |
+| CUT-EA-012 | Retain A: "I believed in Santa Claus when I was seven." and B: "I stopped believing in Santa Claus when I was eight."; duplicate/export their history. | Both speakers/stated times remain attributed; no current belief/existence claim and no authority from historical content. | Combined history/compatibility fixture; envelope/run-bundle tests |
+| CUT-EA-013 | Retrieve old approval/revocation history, corrupt boundary state or use an unknown version; trim context below essential sections. | Protected execution refuses missing/corrupt required state; history remains readable; binding distinction survives; no token in prompt/export evidence view. | Combined history/compatibility fixture; context/registry tests |
+| CUT-EA-014 | Complete operator → distinct child → reviewed delegated checkpoint → authorized continuation; submit a stale displayed UI revision, retain draft, refresh and decide. | Core completion is separate from fixture browser state; review UI echoes revision, reports denial and shows delegated attribution. | Core journey, web chat/page tests and `e2e/authority-review.spec.ts` |
+| CUT-EA-015 | Hold actual peer discovery while the authenticated requester is stopped or its destination changes; recover a persisted taskless request with a stopped parent. | No outbound send; durable denial visible. Preserve existing valid partner/service/task ownership, replay and known-task reconciliation. | Federation barrier/recovery fixtures; existing A2A lifecycle/handler/store/outbound tests |
+
+Results and remaining capability/platform/integration limits are recorded in
+[TEST_LEDGER.md](../TEST_LEDGER.md) and the
+[maintained handoff](../evidence-execution-authority.md). These fixture results do
+not establish live signed-in providers, real connector delivery, peer containment,
+strict downstream reader compatibility or upstream runtime conformance.

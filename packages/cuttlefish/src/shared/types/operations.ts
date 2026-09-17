@@ -44,7 +44,7 @@ export interface Approval {
   /** Code-owned discriminator, set ONLY by resolveApprovalAsAutonomous — never
    *  settable via any HTTP request body. `null`/undefined means a human (or
    *  unattributed) resolution; this is the trustworthy audit signal, not `actor`. */
-  resolvedByKind?: "human" | "autonomous_dual_model" | null;
+  resolvedByKind?: "human" | "operator_delegate" | "autonomous_dual_model" | null;
 }
 
 export type ListableApprovalType = Exclude<Approval["type"], "checkpoint">;

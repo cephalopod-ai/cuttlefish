@@ -108,6 +108,7 @@ export function migrateQueueItemsSchema(database: Database.Database): void {
   // defensively like migrateApprovalsSchema does for approvals), there's nothing
   // to upgrade yet.
   if (cols.length === 0) return;
+  if (!cols.some((column) => column.name === 'dispatch_authority')) database.exec('ALTER TABLE queue_items ADD COLUMN dispatch_authority TEXT');
 
   // Skipped when the sessions table doesn't exist yet — no FK target to validate
   // against (mirrors the same guard in migrateMessagesSchema).
@@ -145,6 +146,7 @@ export function migrateQueueItemsSchema(database: Database.Database): void {
           session_id TEXT NOT NULL,
           session_key TEXT NOT NULL,
           prompt TEXT NOT NULL,
+          dispatch_authority TEXT,
           status TEXT NOT NULL DEFAULT 'pending',
           position INTEGER NOT NULL DEFAULT 0,
           created_at TEXT NOT NULL,
@@ -180,6 +182,7 @@ export function migrateSessionsSchema(database: Database.Database): void {
     ['reply_context', 'TEXT'],
     ['message_id', 'TEXT'],
     ['transport_meta', 'TEXT'],
+    ['execution_boundary', 'TEXT'],
     ['employee', 'TEXT'],
     ['group_key', 'TEXT'],
     ['model', 'TEXT'],

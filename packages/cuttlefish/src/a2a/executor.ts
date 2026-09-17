@@ -170,6 +170,7 @@ export class CuttlefishA2AExecutor implements AgentExecutor {
       const contextRootSessionId = this.store.getContextRoot(initial.contextId, requestContext.context);
       const attachmentInputs: unknown[] = [...parsedInput.urlResources];
       const result = await dispatchCollaborationMessage({
+        ingressOrigin: "peer",
         lane: "management",
         message: prompt,
         projectRootSessionId: contextRootSessionId,

@@ -1,4 +1,5 @@
 import type { JsonObject } from "./json.js";
+import type { SessionExecutionBoundary } from "./execution-boundary.js";
 
 export type RunAttachmentKind = "file" | "folder" | "url" | "artifact";
 export type RunAttachmentAccess = "read_only" | "writable";
@@ -59,6 +60,8 @@ export interface PublicSession {
   replyContext?: JsonObject | null;
   messageId?: string | null;
   transportMeta?: JsonObject | null;
+  executionBoundary?: SessionExecutionBoundary | null;
+  executionBoundaryInvalid?: boolean;
   employee?: string | null;
   model?: string | null;
   title?: string | null;
