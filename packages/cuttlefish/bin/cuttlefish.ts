@@ -26,6 +26,8 @@ program
   .name("cuttlefish")
   .description("Lightweight AI gateway daemon")
   .version(pkg.version)
+  // The bare-invocation action suppresses Commander's implicit help command.
+  .helpCommand(true)
   .option("-i, --instance <name>", "Target the canonical instance (must be cuttlefish)");
 
 program.exitOverride();
@@ -637,7 +639,8 @@ try {
   await program.parseAsync();
 } catch (err) {
   const code = (err as { code?: unknown } | null)?.code;
-  if (code === "commander.helpDisplayed" || code === "commander.version") process.exitCode = 0;
+  const exitCode = (err as { exitCode?: unknown } | null)?.exitCode;
+  if (code === "commander.helpDisplayed" || code === "commander.version" || (code === "commander.help" && exitCode === 0)) process.exitCode = 0;
   else if (typeof code === "string" && code.startsWith("commander.") && !process.argv.includes("--json")) {
     // Commander already wrote the usage error before exitOverride threw it.
     process.exitCode = 1;

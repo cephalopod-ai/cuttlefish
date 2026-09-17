@@ -127,6 +127,80 @@ function makeReq(method: string, urlPath: string, body?: unknown) {
 }
 
 describe("PUT /api/config", () => {
+  it.each([
+    ["malformed YAML", "gateway: [\n"],
+    ["a sequence", "- unexpected\n"],
+    ["a scalar", "unexpected\n"],
+    ["an empty document", "\n"],
+  ])("preserves an existing config containing %s", async (_kind, original) => {
+    const currentConfig = configModule.loadConfig();
+    const reloadConfig = vi.fn();
+    const ctx = {
+      getConfig: () => currentConfig, reloadConfig, emit: vi.fn(),
+      sessionManager: { getEngine: () => undefined },
+    } as unknown as ApiContext;
+    const configPath = path.join(tmpHome, "config.yaml");
+    // A valid unredacted snapshot reproduces the data-loss path even after the
+    // old merge loses its original secret values. Sanitized GET parity is
+    // asserted separately below.
+    const snapshot = yaml.load(fs.readFileSync(configPath, "utf-8"));
+    fs.writeFileSync(configPath, original);
+
+    const response = makeRes();
+    await api.handleApiRequest(makeReq("PUT", "/api/config", snapshot), response.res, ctx);
+
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe("CONFIG_INVALID_ON_DISK");
+    expect(fs.readFileSync(configPath, "utf-8")).toBe(original);
+    expect(reloadConfig).not.toHaveBeenCalled();
+  });
+
+  it("preserves an unreadable existing config instead of treating it as absent", async () => {
+    const currentConfig = configModule.loadConfig();
+    const configPath = path.join(tmpHome, "config.yaml");
+    const snapshot = yaml.load(fs.readFileSync(configPath, "utf-8"));
+    const reloadConfig = vi.fn();
+    const ctx = {
+      getConfig: () => currentConfig, reloadConfig, emit: vi.fn(),
+      sessionManager: { getEngine: () => undefined },
+    } as unknown as ApiContext;
+    fs.unlinkSync(configPath);
+    fs.mkdirSync(configPath);
+    const marker = path.join(configPath, "preserve.txt");
+    fs.writeFileSync(marker, "owned unreadable-config fixture");
+
+    try {
+      const response = makeRes();
+      await api.handleApiRequest(makeReq("PUT", "/api/config", snapshot), response.res, ctx);
+      expect(response.status).toBe(409);
+      expect(response.body.code).toBe("CONFIG_UNREADABLE");
+      expect(fs.readFileSync(marker, "utf-8")).toBe("owned unreadable-config fixture");
+      expect(reloadConfig).not.toHaveBeenCalled();
+    } finally {
+      fs.unlinkSync(marker);
+      fs.rmdirSync(configPath);
+    }
+  });
+
+  it("creates a genuinely absent config from a valid unredacted snapshot", async () => {
+    const currentConfig = configModule.loadConfig();
+    const configPath = path.join(tmpHome, "config.yaml");
+    const snapshot = yaml.load(fs.readFileSync(configPath, "utf-8"));
+    const reloadConfig = vi.fn();
+    const ctx = {
+      getConfig: () => currentConfig, reloadConfig, emit: vi.fn(),
+      sessionManager: { getEngine: () => undefined },
+    } as unknown as ApiContext;
+    fs.unlinkSync(configPath);
+
+    const response = makeRes();
+    await api.handleApiRequest(makeReq("PUT", "/api/config", snapshot), response.res, ctx);
+
+    expect(response.status).toBe(200);
+    expect(yaml.load(fs.readFileSync(configPath, "utf-8"))).toEqual(snapshot);
+    expect(reloadConfig).toHaveBeenCalledOnce();
+  });
+
   it("accepts a full sanitized GET payload unchanged", async () => {
     let currentConfig = configModule.loadConfig();
     const ctx = {

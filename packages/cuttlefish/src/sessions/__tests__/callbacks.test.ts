@@ -117,7 +117,7 @@ describe("notifyParentSession", () => {
     expect(url).toBe("http://127.0.0.1:8888/api/sessions/parent-001/message");
     expect(opts.headers).toMatchObject({
       "Content-Type": "application/json",
-      "X-Cuttlefish-Token": "test-api-token",
+      Authorization: "Bearer test-api-token",
     });
 
     const body = JSON.parse(opts.body);

@@ -11,6 +11,7 @@ import {
 import { fileIdsToMedia, rehomeAttachmentsToSession } from "./files.js";
 import { patchSessionTransportMeta } from "../sessions/registry.js";
 import type { ApiContext } from "./api/context.js";
+import type { GatewayPrincipal } from "./scoped-token.js";
 
 function combinedResourceSpecs(body: Record<string, unknown>): unknown[] {
   const attachments = Array.isArray(body.attachments) ? body.attachments : [];
@@ -32,6 +33,7 @@ export async function attachResourcesToSession(
   session: Session,
   body: Record<string, unknown>,
   context: ApiContext,
+  principal?: GatewayPrincipal,
 ): Promise<AttachedSessionResources> {
   const existing = enrichRunAttachmentsForSession(session);
   const incomingSpecs = combinedResourceSpecs(body);
@@ -48,11 +50,11 @@ export async function attachResourcesToSession(
   // legacy string-id path re-homes files into the target session; doing that
   // before validating sibling resource objects can leave files moved even
   // though the API request is rejected.
-  const validatedIncoming = await resolveIncomingRunAttachments(incomingSpecs, context);
+  const validatedIncoming = await resolveIncomingRunAttachments(incomingSpecs, context, principal);
   if (legacyFileIds.length > 0) rehomeAttachmentsToSession(legacyFileIds, session.id);
 
   const incoming = legacyFileIds.length > 0
-    ? await resolveIncomingRunAttachments(incomingSpecs, context)
+    ? await resolveIncomingRunAttachments(incomingSpecs, context, principal)
     : validatedIncoming;
   const merged = mergeRunAttachments(existing, incoming);
   const screened = await screenRunAttachmentsForSession(

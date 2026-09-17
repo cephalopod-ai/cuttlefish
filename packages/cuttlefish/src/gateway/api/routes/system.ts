@@ -16,7 +16,8 @@ import { readJsonBody, readBodyRaw, BodyTooLargeError } from "../../http-helpers
 import { safeWriteFile } from "../../../shared/safe-write.js";
 import type { ApiContext } from "../context.js";
 import { badRequest, json, serverError } from "../responses.js";
-import { sanitizeConfigForApi, deepMerge } from "../../config-sanitize.js";
+import { sanitizeConfigForApi } from "../../config-sanitize.js";
+import { updateConfigFromApi } from "../../config-update-service.js";
 import { CONFIG_REVISION_HEADER, checkConfigRevision, currentConfigRevision } from "../../config-revision.js";
 import { ttsStatus, validateTtsText, streamTtsSentences } from "../../../talk/tts-stream.js";
 
@@ -92,17 +93,12 @@ export async function handleSystemRoutes(
       }, 409);
       return true;
     }
-    let existing: Record<string, unknown> = {};
-    try {
-      existing = yaml.load(fs.readFileSync(CONFIG_PATH, "utf-8")) as Record<string, unknown> || {};
-    } catch { /* start fresh if unreadable */ }
-    const merged = deepMerge(existing, body);
-    const configProblems = validateConfigShape(merged);
-    if (configProblems.length > 0) {
-      badRequest(res, `Invalid config:\n- ${configProblems.join("\n- ")}`);
+    const updated = updateConfigFromApi(body);
+    if (!updated.ok) {
+      if (updated.status === 400) badRequest(res, updated.error);
+      else json(res, { error: updated.error, code: updated.code }, updated.status);
       return true;
     }
-    saveConfigAtomic(merged);
     context.reloadConfig?.();
     invalidateModelRegistry();
     logger.info("Config updated via API");

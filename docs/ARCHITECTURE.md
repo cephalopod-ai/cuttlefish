@@ -6,6 +6,7 @@ Cuttlefish is a pnpm/Turborepo TypeScript monorepo with two primary packages:
 
 - `packages/cuttlefish`: CLI, gateway daemon, engine adapters, connectors, session registry, orchestration runtime, and static web serving.
 - `packages/web`: Vite/React dashboard served by the daemon after build.
+- `packages/contracts`: shared TypeScript contracts used by the daemon and dashboard.
 
 The intended architecture is "a bus, not a brain": Cuttlefish coordinates external AI
 coding CLIs and adds routing, scheduling, connectors, persistence, and UI without
@@ -16,6 +17,10 @@ owning model reasoning.
 - CLI entrypoint: `packages/cuttlefish/bin/cuttlefish.ts`
 - Gateway lifecycle/server: `packages/cuttlefish/src/gateway/`
 - API router: `packages/cuttlefish/src/gateway/api.ts`
+- HTTP path parsing: shared `gateway/request-url.ts`, used by transport authorization
+  and API dispatch. Routes adapt inputs and service results; focused services own
+  persistence and validation, including `gateway/config-update-service.ts`,
+  `cron/jobs.ts` and `gateway/department-rename.ts`.
 - Engine adapters: `packages/cuttlefish/src/engines/`
 - Sessions and persistence: `packages/cuttlefish/src/sessions/`
 - Orchestration: `packages/cuttlefish/src/orchestration/`
@@ -30,6 +35,11 @@ owning model reasoning.
   instance inspection resolve the same active home, and detached restart requests
   coalesce behind a restart lock.
 - Config/org/skills/templates: initialized and migrated from package templates.
+- Config and cron mutations read complete on-disk state before replacement;
+  degraded cron reads are not mutation inputs. Atomic file replacement completes
+  all bytes and flushes the file by default; directory fsync is best-effort.
+  Department rename has a durable intent for forward recovery and refuses a
+  new rename while an unresolved intent remains.
 - Sessions/messages/files/artifacts/queue/archive/approval state: SQLite-backed registry modules.
 - Optional external knowledge export state: SQLite-backed `external_outbox`
   rows plus optional JSONL append output under `~/.cuttlefish/knowledge/`.

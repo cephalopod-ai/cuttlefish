@@ -564,6 +564,97 @@ describe("POST /api/sessions prompt validation (I-1)", () => {
   });
 });
 
+describe("session-scoped child parent admission", () => {
+  async function parentFixture() {
+    const { api, reg } = await setup();
+    const ctx = makeCtx(api);
+    ctx.getConfig = () => ({ gateway: {}, engines: { default: "claude", claude: { bin: "node", model: "sonnet" } }, portal: {} }) as any;
+    ctx.sessionManager.getEngine = () => ({ name: "claude" }) as any;
+    const caller = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:caller", prompt: "caller" });
+    const other = reg.createSession({ engine: "claude", source: "web", sourceRef: "web:other", prompt: "other" });
+    return { api, reg, ctx, caller, other };
+  }
+
+  it("rejects a different parent before persistence or dispatch", async () => {
+    const { api, reg, ctx, caller, other } = await parentFixture();
+    const req = makeJsonReq("POST", "/api/sessions", { prompt: "benign child task", parentSessionId: other.id });
+    req.cuttlefishPrincipal = { kind: "session", sessionId: caller.id };
+    const cap = makeRes();
+    await api.handleApiRequest(req, cap.res, ctx);
+    expect(cap.status).toBe(403);
+    expect(cap.body).toMatchObject({ code: "session_child_parent_forbidden" });
+    expect(reg.listSessions()).toHaveLength(2);
+    expect(ctx.emit).not.toHaveBeenCalled();
+    expect(hoisted.dispatchEmployeeSessionRun).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, null, "", "   ", "own"])("derives the caller parent for %j", async (parent) => {
+    const { api, reg, ctx, caller } = await parentFixture();
+    const req = makeJsonReq("POST", "/api/sessions", {
+      prompt: "benign child task",
+      parentSessionId: parent === "own" ? caller.id : parent,
+    });
+    req.cuttlefishPrincipal = { kind: "session", sessionId: caller.id };
+    const cap = makeRes();
+    await api.handleApiRequest(req, cap.res, ctx);
+    expect(cap.status, JSON.stringify(cap.body)).toBe(201);
+    expect(reg.getSession(String(cap.body.id))?.parentSessionId).toBe(caller.id);
+    expect(hoisted.dispatchEmployeeSessionRun).toHaveBeenCalledOnce();
+    expect(hoisted.dispatchEmployeeSessionRun.mock.calls).toEqual([
+      expect.arrayContaining([expect.objectContaining({ id: cap.body.id, parentSessionId: caller.id })]),
+    ]);
+  });
+
+  it("rejects a missing caller instead of creating an orphan", async () => {
+    const { api, reg, ctx } = await parentFixture();
+    const req = makeJsonReq("POST", "/api/sessions", { prompt: "benign child task" });
+    req.cuttlefishPrincipal = { kind: "session", sessionId: "missing-caller" };
+    const cap = makeRes();
+    await api.handleApiRequest(req, cap.res, ctx);
+    expect(cap.status).toBe(403);
+    expect(reg.listSessions()).toHaveLength(2);
+    expect(ctx.emit).not.toHaveBeenCalled();
+    expect(hoisted.dispatchEmployeeSessionRun).not.toHaveBeenCalled();
+  });
+
+  it("retains operator-selected parenting", async () => {
+    const { api, reg, ctx, other } = await parentFixture();
+    const req = makeJsonReq("POST", "/api/sessions", { prompt: "benign child task", parentSessionId: other.id });
+    req.cuttlefishPrincipal = { kind: "admin" };
+    const cap = makeRes();
+    await api.handleApiRequest(req, cap.res, ctx);
+    expect(cap.status, JSON.stringify(cap.body)).toBe(201);
+    expect(reg.getSession(String(cap.body.id))?.parentSessionId).toBe(other.id);
+    expect(hoisted.dispatchEmployeeSessionRun).toHaveBeenCalledOnce();
+  });
+
+  it.each(["create", "resources", "continue"])("threads the principal through %s artifact admission", async (operation) => {
+    const { api, reg, ctx, caller, other } = await parentFixture();
+    const { saveFile } = await import("../files/uploads.js");
+    const foreign = await saveFile({
+      id: "benign-foreign-upload", filename: "benign.txt", buffer: Buffer.from("ordinary fixture text"),
+      customPath: null, open: false, sessionId: other.id,
+    }, ctx);
+    vi.mocked(ctx.emit).mockClear();
+    const before = reg.getSession(caller.id);
+    const messages = reg.getMessages(caller.id);
+    const endpoint = operation === "create" ? "/api/sessions"
+      : `/api/sessions/${caller.id}/${operation === "continue" ? "message" : "resources"}`;
+    const req = makeJsonReq("POST", endpoint, { prompt: "benign task", resources: [{ artifactId: foreign.id }] });
+    req.cuttlefishPrincipal = { kind: "session", sessionId: caller.id };
+    const cap = makeRes();
+    await api.handleApiRequest(req, cap.res, ctx);
+    expect(cap.status, JSON.stringify(cap.body)).toBe(403);
+    expect(cap.body).toMatchObject({ code: "artifact_scope_forbidden" });
+    expect(reg.listSessions()).toHaveLength(2);
+    expect(reg.getSession(caller.id)).toEqual(before);
+    expect(reg.getMessages(caller.id)).toEqual(messages);
+    expect(reg.getFile(foreign.id)?.path).toBe(foreign.path);
+    expect(ctx.emit).not.toHaveBeenCalled();
+    expect(hoisted.dispatchEmployeeSessionRun).not.toHaveBeenCalled();
+  });
+});
+
 describe("POST /api/sessions/bulk-delete duplicate ids (I-2)", () => {
   it("reports a full success, not a partial failure, when the same id is submitted twice", async () => {
     const { api, reg } = await setup();

@@ -13,14 +13,14 @@ import { appendAudit, sha256Hex } from "./audit-log.js";
  *
  * Guarantees per call:
  *   1. validate() runs BEFORE any tmp file exists — a bad value never touches disk.
- *   2. bytes are written to a pid-scoped tmp in the SAME dir, then fsync'd.
+ *   2. complete bytes are written to a pid-scoped tmp in the SAME dir, then fsync'd.
  *   3. the prior target is rotated into `.bak.N` (optional) before replacement.
  *   4. renameSync(tmp, target) — atomic swap on POSIX.
- *   5. the parent directory fd is fsync'd so the rename itself is durable.
+ *   5. the parent directory fd is fsync'd best-effort (filesystem permitting).
  *   6. mode is re-applied (rename can carry tmp's mode; chmod is defensive).
  *   7. an audit record (sha256 of bytes, chained) is appended (optional).
- * On ANY failure the tmp file is unlinked in `finally`, so a thrown validate or
- * a mid-write crash never leaves a `.tmp-<pid>` turd or a half-written target.
+ * Catchable write failures remove the tmp in `finally`, retaining the prior target
+ * until rename. Abrupt process death can leave a tmp; it is not the target file.
  *
  * Synchronous by design: all current writers are sync, so this stays a drop-in
  * replacement without async-coloring callers. An async variant can be added
@@ -80,6 +80,7 @@ export function safeWriteFile(
   opts: SafeWriteOpts = {},
 ): void {
   const doFsync = opts.fsync !== false;
+  const bytes = typeof data === "string" ? Buffer.from(data, "utf-8") : data;
   const dir = path.dirname(filePath);
   fs.mkdirSync(dir, { recursive: true });
 
@@ -87,11 +88,8 @@ export function safeWriteFile(
   let fd: number | null = null;
   try {
     fd = fs.openSync(tmpPath, "w", opts.mode ?? 0o666);
-    if (typeof data === "string") {
-      fs.writeSync(fd, data);
-    } else {
-      fs.writeSync(fd, data, 0, data.length);
-    }
+    // The full-write helper retries short writes; this function owns fd/flush.
+    fs.writeFileSync(fd, bytes);
     if (doFsync) fs.fsyncSync(fd);
     fs.closeSync(fd);
     fd = null;
@@ -120,7 +118,6 @@ export function safeWriteFile(
   }
 
   if (opts.audit) {
-    const bytes = typeof data === "string" ? Buffer.from(data, "utf-8") : data;
     appendAudit({
       actor: opts.audit.actor,
       file: filePath,

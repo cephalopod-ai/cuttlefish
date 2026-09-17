@@ -292,28 +292,32 @@ export function BoardWorkerSection({
           placeholder="15"
         />
       </FieldRow>
-      <FieldRow label="Weekday Window">
+      <FieldRow label="Weekday Window" multiple>
         <div className="flex gap-[var(--space-2)]">
           <SettingsInput
+            ariaLabel="Weekday Window Start"
             value={config.boardWorker?.schedule?.weekday?.start ?? ""}
             onChange={(v) => updateConfig(["boardWorker", "schedule", "weekday", "start"], v.trim() || undefined)}
             placeholder="22:00"
           />
           <SettingsInput
+            ariaLabel="Weekday Window End"
             value={config.boardWorker?.schedule?.weekday?.end ?? ""}
             onChange={(v) => updateConfig(["boardWorker", "schedule", "weekday", "end"], v.trim() || undefined)}
             placeholder="04:00"
           />
         </div>
       </FieldRow>
-      <FieldRow label="Weekend Window">
+      <FieldRow label="Weekend Window" multiple>
         <div className="flex gap-[var(--space-2)]">
           <SettingsInput
+            ariaLabel="Weekend Window Start"
             value={config.boardWorker?.schedule?.weekend?.start ?? ""}
             onChange={(v) => updateConfig(["boardWorker", "schedule", "weekend", "start"], v.trim() || undefined)}
             placeholder="22:00"
           />
           <SettingsInput
+            ariaLabel="Weekend Window End"
             value={config.boardWorker?.schedule?.weekend?.end ?? ""}
             onChange={(v) => updateConfig(["boardWorker", "schedule", "weekend", "end"], v.trim() || undefined)}
             placeholder="04:00"

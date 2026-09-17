@@ -11,6 +11,7 @@ import {
   refreshCuttlefishPaths,
   resolveHome,
   setCuttlefishHomeForTest,
+  TEMPLATE_DIR,
 } from "../paths.js";
 
 const prevHome = process.env.CUTTLEFISH_HOME;
@@ -23,6 +24,12 @@ afterEach(() => {
 });
 
 describe("Cuttlefish runtime paths", () => {
+  it("resolves the shipped template and real package version in source mode", async () => {
+    expect(path.resolve(TEMPLATE_DIR)).toBe(path.resolve(PKG, "template"));
+    expect(fs.existsSync(path.join(TEMPLATE_DIR, "CLAUDE.md"))).toBe(true);
+    const { getPackageVersion } = await import("../version.js");
+    expect(getPackageVersion()).toBe(JSON.parse(fs.readFileSync(path.join(PKG, "package.json"), "utf-8")).version);
+  });
   it("computes paths from an explicit environment without mutating exports", () => {
     const home = path.join(os.tmpdir(), "cuttlefish-paths-explicit");
     const paths = getCuttlefishPaths({ CUTTLEFISH_HOME: home });

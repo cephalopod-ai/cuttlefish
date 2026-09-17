@@ -87,6 +87,9 @@ export async function runStart(opts: { daemon?: boolean; port?: number }): Promi
   const status = getStatus(config.gateway.port);
   if (status.error) {
     console.error(`Error: ${status.error}`);
+    if (/^Port \d+ is occupied/.test(status.error)) {
+      console.error('Choose a free port with "cuttlefish start -p <port>", or update gateway.port in config.yaml.');
+    }
     process.exit(1);
   }
   if (status.running) {

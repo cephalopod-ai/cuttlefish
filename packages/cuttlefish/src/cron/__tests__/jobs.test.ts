@@ -90,6 +90,34 @@ describe("loadJobs", () => {
     expect(fs.existsSync(jobsPath)).toBe(true);
   });
 
+  it.each([
+    "{ not valid json",
+    JSON.stringify({ jobs: [] }),
+    JSON.stringify([makeJob({ enabled: false }), { id: 123 }]),
+  ])("reports a failed backup honestly while preserving %s", async (original) => {
+    const cronDir = path.join(tmpHome, "cron");
+    fs.mkdirSync(cronDir, { recursive: true });
+    const jobsPath = path.join(cronDir, "jobs.json");
+    fs.writeFileSync(jobsPath, original);
+    const copy = vi.spyOn(fs, "copyFileSync").mockImplementationOnce(() => {
+      throw new Error("fixture backup unavailable");
+    });
+    try {
+      const { logger } = await import("../../shared/logger.js");
+      const jobs = loadJobs();
+      expect(jobs.length).toBe(original.includes("test-job") ? 1 : 0);
+      const messages = [...vi.mocked(logger.error).mock.calls, ...vi.mocked(logger.warn).mock.calls]
+        .map(([message]) => String(message)).join("\n");
+      expect(messages).toContain("Failed to back up");
+      expect(messages).toContain("fixture backup unavailable");
+      expect(messages).not.toContain("copy saved");
+      expect(fs.readFileSync(jobsPath, "utf-8")).toBe(original);
+      expect(fs.readdirSync(cronDir)).toEqual(["jobs.json"]);
+    } finally {
+      copy.mockRestore();
+    }
+  });
+
   it("keeps a job with an invalid (but well-typed) schedule string, rather than dropping it", async () => {
     // GET /api/cron intentionally surfaces already-persisted jobs with a broken
     // schedule (scheduleValid: false) instead of hiding them — see

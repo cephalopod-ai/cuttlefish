@@ -12,7 +12,7 @@ import { runCronJob } from "./runner.js";
 import { logger } from "../shared/logger.js";
 import type { SessionManager } from "../sessions/manager.js";
 import { getSessionBySessionKey } from "../sessions/registry.js";
-import { appendRunLog, loadJobs, saveJobs } from "./jobs.js";
+import { appendRunLog, loadJobs, loadJobsForMutation, saveJobs } from "./jobs.js";
 
 let tasks: ScheduledTask[] = [];
 let currentSessionManager: SessionManager;
@@ -197,7 +197,7 @@ export async function triggerCronJob(idOrName: string): Promise<CronTriggerResul
 }
 
 export function setCronJobEnabled(idOrName: string, enabled: boolean): CronJob | undefined {
-  const jobs = loadJobs();
+  const jobs = loadJobsForMutation();
   const index = jobs.findIndex((job) => matchesJob(job, idOrName));
   if (index === -1) return undefined;
   jobs[index] = { ...jobs[index], enabled };

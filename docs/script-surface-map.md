@@ -5,7 +5,7 @@ subcommands for deterministic automation sweeps, CI probe selection, and any
 external surface-metadata generators. It supersedes any generated classification
 that conflicts with the evidence recorded here.
 
-Last updated: 2026-08-16
+Last updated: 2026-09-16
 
 ## Classification Key
 
@@ -119,8 +119,13 @@ node packages/cuttlefish/dist/bin/cuttlefish.js status
 ### `build` — Compile TypeScript and copy web output
 
 ```
-turbo build && rm -rf packages/cuttlefish/dist/web && cp -r packages/web/out packages/cuttlefish/dist/web
+pnpm build
 ```
+
+The root `package.json` runs `turbo run build --filter=@cuttlefish/web`,
+then `turbo run build --filter=cuttlefish-cli`, then an inline Node script
+using `fs.rmSync` and `fs.cpSync` to replace the CLI's embedded dashboard
+from `packages/web/out`.
 
 | Field | Value |
 | --- | --- |
@@ -128,19 +133,19 @@ turbo build && rm -rf packages/cuttlefish/dist/web && cp -r packages/web/out pac
 | mutates_state | true (writes `dist/`) |
 | interactive | false |
 | bounded | true |
-| posix_only | **true** — uses `rm -rf` and `cp -r` in the postbuild step |
-| automated_probe_default | **conditional** — safe in CI; POSIX-shell dependency limits cross-platform use |
+| posix_only | false — generated web copy uses Node filesystem APIs |
+| automated_probe_default | **conditional** — build in CI or after stopping a source-checkout daemon; replacing its generated files while it is running can break lazy imports |
 
 ### `test` — Run all package test suites (bounded)
 
 ```
-turbo run test
+turbo run test --concurrency=1
 ```
 
 | Field | Value |
 | --- | --- |
 | destructive | false |
-| mutates_state | false |
+| mutates_state | true — native fixtures, disposable worker homes and shipped CLI rebuilds; no intended operator runtime mutation |
 | interactive | false |
 | bounded | true |
 | posix_only | false |
@@ -308,6 +313,7 @@ without a subcommand.
 
 | Subcommand | Notes |
 | --- | --- |
+| `cuttlefish help [command]` | Successful root/command discovery; unknown targets retain a nonzero exit |
 | `cuttlefish status` | Shows daemon status; no mutations |
 | `cuttlefish list` | Lists the canonical Cuttlefish instance for the active `CUTTLEFISH_HOME`; no mutations except refreshing/backfilling the legacy registry entry |
 | `cuttlefish limits` | Shows engine rate limits; no mutations |
@@ -374,9 +380,9 @@ following surfaces unless an explicit exception is documented:
 pnpm typecheck
 pnpm lint
 pnpm test
-pnpm --filter cuttlefish typecheck
-pnpm --filter cuttlefish lint
-pnpm --filter cuttlefish exec vitest run
+pnpm --filter cuttlefish-cli typecheck
+pnpm --filter cuttlefish-cli lint
+pnpm --filter cuttlefish-cli exec vitest run
 pnpm --filter @cuttlefish/web typecheck
 pnpm --filter @cuttlefish/web lint
 pnpm --filter @cuttlefish/web exec vitest run

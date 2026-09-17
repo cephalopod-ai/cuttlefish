@@ -85,6 +85,12 @@ function assessSingleResolvedPath(resolved: string): FileReadAssessment {
   }
   if (isInsidePath(resolved, path.join(home, ".ssh"))) return { allowed: false, reason: "Refusing to read SSH secrets" };
   if (isInsidePath(resolved, path.join(cuttlefishHome, "secrets"))) return { allowed: false, reason: "Refusing to read Cuttlefish secrets" };
+  // Engine handoff files contain resolved custom MCP headers/environment.
+  // Filename/content heuristics cannot establish whether those values are secrets.
+  const mcpConfigRoot = path.join(cuttlefishHome, "tmp", "mcp");
+  if (isInsidePath(resolved, mcpConfigRoot) || isInsidePath(resolved, realpathOrResolved(mcpConfigRoot))) {
+    return { allowed: false, reason: "Refusing to read resolved MCP credentials" };
+  }
   if (isInsidePath(resolved, GATEWAY_INFO_FILE)) return { allowed: false, reason: "Refusing to read the Cuttlefish gateway admin token" };
   // Audit D-F9/F-06: config.yaml holds connector bot tokens / signing secrets.
   if (isInsidePath(resolved, path.join(cuttlefishHome, "config.yaml"))) return { allowed: false, reason: "Refusing to read the Cuttlefish config (connector credentials)" };

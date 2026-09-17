@@ -50,6 +50,8 @@ vi.mock("../../shared/logger.js", () => ({
 import { handleApiRequest } from "../api.js";
 import type { ApiContext } from "../api.js";
 import { invalidateModelRegistry } from "../../shared/models.js";
+import { appendRunLog } from "../../cron/jobs.js";
+import type { CronRunEntry } from "../../shared/types.js";
 
 interface CapturedRes {
   res: ServerResponse;
@@ -301,6 +303,125 @@ describe("GET /api/cron — invalid schedules", () => {
         lastRun: null,
       }),
     ]);
+  });
+});
+
+describe("cron mutation state admission", () => {
+  it.each(['[{"fixture":', '{"jobs":[]}', '[{"id":42}]'])("refuses creation over invalid existing state %s", async (original) => {
+    fs.writeFileSync(cronJobsFile, original);
+    // Exercise the degraded read cache before mutation admission.
+    const read = makeRes();
+    await handleApiRequest(makeReq("GET", "/api/cron"), read.res, ctx);
+    expect(read.status).toBe(200);
+    const cap = makeRes();
+    await handleApiRequest(makeReq("POST", "/api/cron", { id: "owned-job", enabled: false }), cap.res, ctx);
+    expect(cap.status).toBe(409);
+    expect(cap.body).toMatchObject({ code: "CRON_INVALID_ON_DISK" });
+    expect(fs.readFileSync(cronJobsFile, "utf-8")).toBe(original);
+  });
+
+  it.each(["PUT", "DELETE"])("refuses %s over a valid subset with invalid siblings", async (method) => {
+    const original = JSON.stringify([
+      { id: "owned-job", name: "Owned", enabled: false, schedule: "0 * * * *", prompt: "" },
+      { id: 42, name: "Invalid sibling", enabled: false, schedule: "0 * * * *", prompt: "" },
+    ]);
+    fs.writeFileSync(cronJobsFile, original);
+    const read = makeRes();
+    await handleApiRequest(makeReq("GET", "/api/cron"), read.res, ctx);
+    expect(read.status).toBe(200);
+    expect(read.body).toEqual([expect.objectContaining({ id: "owned-job" })]);
+    const cap = makeRes();
+    await handleApiRequest(makeReq(method, "/api/cron/owned-job", method === "PUT" ? { name: "Changed" } : undefined), cap.res, ctx);
+    expect(cap.status).toBe(409);
+    expect(cap.body).toMatchObject({ code: "CRON_INVALID_ON_DISK" });
+    expect(fs.readFileSync(cronJobsFile, "utf-8")).toBe(original);
+  });
+
+  it("retains absent-state creation and valid update/delete workflows", async () => {
+    const create = makeRes();
+    await handleApiRequest(makeReq("POST", "/api/cron", { id: "owned-job", enabled: false }), create.res, ctx);
+    expect(create.status).toBe(201);
+    const update = makeRes();
+    await handleApiRequest(makeReq("PUT", "/api/cron/owned-job", { name: "Changed" }), update.res, ctx);
+    expect(update.status).toBe(200);
+    expect(update.body).toMatchObject({ name: "Changed" });
+    const remove = makeRes();
+    await handleApiRequest(makeReq("DELETE", "/api/cron/owned-job"), remove.res, ctx);
+    expect(remove.status).toBe(200);
+    expect(JSON.parse(fs.readFileSync(cronJobsFile, "utf-8"))).toEqual([]);
+  });
+
+  it("refuses name-based scheduler mutation over an invalid sibling", async () => {
+    const original = JSON.stringify([
+      { id: "owned-job", name: "Owned", enabled: false, schedule: "0 * * * *", prompt: "" },
+      { id: 42, name: "Invalid sibling", enabled: false, schedule: "0 * * * *", prompt: "" },
+    ]);
+    fs.writeFileSync(cronJobsFile, original);
+    const { setCronJobEnabled } = await import("../../cron/scheduler.js");
+    expect(() => setCronJobEnabled("Owned", false)).toThrow("repair it before modifying jobs");
+    expect(fs.readFileSync(cronJobsFile, "utf-8")).toBe(original);
+  });
+});
+
+describe("cron identity and history", () => {
+  it("reports persistence failure as a server error and preserves existing state", async () => {
+    fs.mkdirSync(cronJobsFile);
+    const marker = path.join(cronJobsFile, "preserve.txt");
+    fs.writeFileSync(marker, "owned cron I/O fixture");
+
+    const response = makeRes();
+    await handleApiRequest(makeReq("POST", "/api/cron", { id: "owned-job", enabled: false }), response.res, ctx);
+
+    expect(response.status).toBe(500);
+    expect(fs.readFileSync(marker, "utf-8")).toBe("owned cron I/O fixture");
+  });
+
+  it("rejects duplicate creation without changing the stored jobs", async () => {
+    const body = { id: "owned-job", name: "First", enabled: false };
+    const first = makeRes();
+    await handleApiRequest(makeReq("POST", "/api/cron", body), first.res, ctx);
+    expect(first.status).toBe(201);
+    const original = fs.readFileSync(cronJobsFile, "utf-8");
+
+    const duplicate = makeRes();
+    await handleApiRequest(makeReq("POST", "/api/cron", { ...body, name: "Second" }), duplicate.res, ctx);
+
+    expect(duplicate.status).toBe(409);
+    expect(duplicate.body).toMatchObject({ code: "CRON_ID_CONFLICT" });
+    expect(fs.readFileSync(cronJobsFile, "utf-8")).toBe(original);
+  });
+
+  it("rejects a new identity colliding with a legacy normalized log", async () => {
+    const original = JSON.stringify([
+      { id: ".legacy-job", name: "Legacy", enabled: false, schedule: "0 * * * *", prompt: "" },
+    ]);
+    fs.writeFileSync(cronJobsFile, original);
+
+    const response = makeRes();
+    await handleApiRequest(makeReq("POST", "/api/cron", { id: "legacy-job", enabled: false }), response.res, ctx);
+
+    expect(response.status).toBe(409);
+    expect(response.body).toMatchObject({ code: "CRON_ID_CONFLICT" });
+    expect(fs.readFileSync(cronJobsFile, "utf-8")).toBe(original);
+  });
+
+  it("reads legacy history from the log path used by the native writer", async () => {
+    const job = { id: ".legacy-job", name: "Legacy", enabled: false, schedule: "0 * * * *", prompt: "" };
+    fs.writeFileSync(cronJobsFile, JSON.stringify([job]));
+    const entry: CronRunEntry = {
+      runId: "owned-run", timestamp: "2026-09-16T00:00:00.000Z", status: "success",
+      trigger: "manual", resultPreview: "harmless history fixture",
+    };
+    appendRunLog(job.id, entry);
+
+    const history = makeRes();
+    await handleApiRequest(makeReq("GET", `/api/cron/${job.id}/runs`), history.res, ctx);
+    expect(history.status).toBe(200);
+    expect(history.body).toEqual([entry]);
+
+    const list = makeRes();
+    await handleApiRequest(makeReq("GET", "/api/cron"), list.res, ctx);
+    expect(list.body).toEqual([expect.objectContaining({ id: job.id, lastRun: entry })]);
   });
 });
 

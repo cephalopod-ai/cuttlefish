@@ -16,8 +16,10 @@ Current local-only source paths:
 
 - Session details: `docs/logs/session/062026/`
 - Session details: `docs/logs/session/072026/`
+- September 2026 session details: `docs/logs/session/092026/`; monthly synthesis: `docs/logs/session/092026-session-summary.md`
 - Audit details: `docs/audits/` and `docs/audits/062026/`
 - Audit details: `docs/audits/072026/`
+- September 16 operational audit: `docs/audits/2026-09-16-operational-audit.md`; evidence: `docs/audits/2026-09-16-operational/`; monthly synthesis: `docs/audits/092026-audit-summary.md`
 - Giles generated compliance logs: `governance/logs/`
 - Runtime logs: `logs/`
 

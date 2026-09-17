@@ -16,6 +16,8 @@ import {
   shouldInlineAttachmentText,
 } from "./content-screening.js";
 import { openUntrustedContentCheckpoint } from "./security-review.js";
+import { resolveAttachmentArtifact } from "./artifact-access.js";
+import type { GatewayPrincipal } from "./scoped-token.js";
 
 const RUN_ATTACHMENTS_META_KEY = "runAttachments";
 
@@ -277,13 +279,13 @@ export async function screenRunAttachmentsForSession(
 export async function resolveIncomingRunAttachments(
   input: unknown,
   context: ApiContext,
+  principal?: GatewayPrincipal,
 ): Promise<RunAttachment[]> {
   if (!Array.isArray(input)) return [];
   const resolved: RunAttachment[] = [];
   for (const item of input) {
     if (typeof item === "string" && item.trim()) {
-      const artifact = getFile(item.trim());
-      if (!artifact) throw new Error(`Attachment artifact not found: ${item}`);
+      const artifact = resolveAttachmentArtifact(item.trim(), principal);
       resolved.push(attachmentFromArtifact(artifact));
       continue;
     }
@@ -299,8 +301,7 @@ export async function resolveIncomingRunAttachments(
       throw new Error("each attachment must specify exactly one of artifactId, path, or url");
     }
     if (artifactId) {
-      const artifact = getFile(artifactId);
-      if (!artifact) throw new Error(`Attachment artifact not found: ${artifactId}`);
+      const artifact = resolveAttachmentArtifact(artifactId, principal);
       const att = attachmentFromArtifact(artifact);
       att.access = normalizeAccess(raw.access);
       att.intendedUse = safeTrim(raw.intendedUse);

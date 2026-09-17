@@ -20,7 +20,7 @@ import {
   type FileClassification,
   type FileReadAssessment,
 } from "./files/read-security.js";
-import { badRequest, json, notFound, serverError } from "./files/responses.js";
+import { badRequest, fileDownload, json, notFound, serverError } from "./files/responses.js";
 import {
   cleanupOldUploads,
   ensureFilesDir,
@@ -125,6 +125,11 @@ export async function handleFilesRequest(
     }
     try {
       const c = classifyBuffer(read.realPath, read.buffer);
+      if (reqUrl.searchParams.get("download") === "1") {
+        // Preserve preview redaction for text; binary downloads retain exact bytes.
+        fileDownload(res, path.basename(read.realPath), c.mime, c.binary ? read.buffer : Buffer.from(c.content ?? "", "utf8"));
+        return true;
+      }
       json(res, {
         path: requested,
         ...(exposeResolved ? { resolvedPath: read.realPath } : {}),

@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { withStaticTempCuttlefishHome } from "../../test-utils/cuttlefish-home.js";
 
 const { home: _tmp } = withStaticTempCuttlefishHome("cuttlefish-session-resources-");
@@ -129,5 +130,65 @@ describe("persisted session resource dispatch", () => {
     expect(attached.blocked).toBe(true);
 
     expect(sessionResources.queuedSessionResourceOptions(reg.getSession(session.id)!)).toEqual({});
+  });
+});
+
+describe("session-scoped artifact admission", () => {
+  async function fixture() {
+    const session = reg.createSession({ engine: "claude", source: "web", sourceRef: `scoped:${crypto.randomUUID()}`, transportMeta: { keep: "unchanged" } });
+    const other = reg.createSession({ engine: "claude", source: "web", sourceRef: `other:${crypto.randomUUID()}` });
+    const { saveFile } = await import("../files/uploads.js");
+    const upload = async (sessionId: string) => saveFile({
+      id: crypto.randomUUID(), filename: "benign.txt", buffer: Buffer.from("ordinary fixture text"),
+      customPath: null, open: false, sessionId,
+    }, makeCtx());
+    const own = await upload(session.id);
+    const foreign = await upload(other.id);
+    const plainPath = path.join(_tmp, `unproven-${crypto.randomUUID()}.txt`);
+    fs.writeFileSync(plainPath, "ordinary fixture text");
+    const unproven = reg.insertFile({ id: crypto.randomUUID(), filename: "plain.txt", size: 21, mimetype: "text/plain", path: plainPath });
+    return { session, own, foreign, unproven, principal: { kind: "session" as const, sessionId: session.id } };
+  }
+
+  it.each(["legacy", "object", "missing", "unproven"])("refuses %s references before screening or persistence", async (kind) => {
+    const { session, foreign, unproven, principal } = await fixture();
+    const id = kind === "missing" ? "missing-artifact" : kind === "unproven" ? unproven.id : foreign.id;
+    const body = kind === "legacy" ? { attachments: [id] } : { resources: [{ artifactId: id }] };
+    const before = reg.getSession(session.id)!.transportMeta;
+    const screenSpy = vi.spyOn(runAttachments, "screenRunAttachmentsForSession");
+    try {
+      await expect(sessionResources.attachResourcesToSession(session, body, makeCtx(), principal)).rejects.toMatchObject({
+        name: "ArtifactAccessError",
+      });
+      expect(screenSpy).not.toHaveBeenCalled();
+      expect(reg.getSession(session.id)!.transportMeta).toEqual(before);
+    } finally { screenSpy.mockRestore(); }
+  });
+
+  it.each(["legacy", "object"])("accepts native own-session uploads as %s references", async (kind) => {
+    const { session, own, principal } = await fixture();
+    const body = kind === "legacy" ? { attachments: [own.id] } : { resources: [{ artifactId: own.id }] };
+    const result = await sessionResources.attachResourcesToSession(session, body, makeCtx(), principal);
+    expect(result.promptBlock).toContain("ordinary fixture text");
+    expect(runAttachments.listRunAttachments(result.session)[0]?.artifactId).toBe(own.id);
+  });
+
+  it("retains operator access to ordinary registered artifacts", async () => {
+    const { session, unproven } = await fixture();
+    const result = await sessionResources.attachResourcesToSession(session, { resources: [{ artifactId: unproven.id }] }, makeCtx(), { kind: "admin" });
+    expect(result.promptBlock).toContain("ordinary fixture text");
+    expect(runAttachments.listRunAttachments(result.session)[0]?.artifactId).toBe(unproven.id);
+  });
+
+  it("validates the whole set before screening an allowed sibling", async () => {
+    const { session, own, foreign, principal } = await fixture();
+    const screenSpy = vi.spyOn(runAttachments, "screenRunAttachmentsForSession");
+    try {
+      await expect(sessionResources.attachResourcesToSession(session, { attachments: [own.id], resources: [{ artifactId: foreign.id }] }, makeCtx(), principal))
+        .rejects.toMatchObject({ name: "ArtifactAccessError" });
+      expect(screenSpy).not.toHaveBeenCalled();
+      expect(reg.getFile(own.id)?.path).toBe(own.path);
+      expect(reg.getSession(session.id)!.transportMeta).toEqual({ keep: "unchanged" });
+    } finally { screenSpy.mockRestore(); }
   });
 });

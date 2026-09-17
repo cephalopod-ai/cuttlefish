@@ -185,7 +185,8 @@ export async function handleSessionWriteRoutes(
     if (method === "POST") {
       const parsed = await readJsonObjectBody(req, res);
       if (!parsed.ok) return true;
-      const result = await attachSessionResources(params.id, parsed.body, context);
+      const principal = (req as HttpRequest & { cuttlefishPrincipal?: GatewayPrincipal }).cuttlefishPrincipal;
+      const result = await attachSessionResources(params.id, parsed.body, context, principal);
       json(res, result.body, result.statusCode);
       return true;
     }

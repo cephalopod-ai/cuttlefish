@@ -24,6 +24,8 @@ import { serializeSession } from "./api/serialize-session.js";
 import { deleteSessionsWithBoardCleanup } from "./lifecycle-delete.js";
 import { attachResourcesToSession } from "./session-resources.js";
 import { requestExternalA2ACrossRequestStop } from "./external-a2a-cross-request.js";
+import { ArtifactAccessError } from "./artifact-access.js";
+import type { GatewayPrincipal } from "./scoped-token.js";
 
 export interface SessionMutationResult {
   statusCode: number;
@@ -74,17 +76,21 @@ export async function attachSessionResources(
   sessionId: string,
   body: Record<string, unknown>,
   context: ApiContext,
+  principal?: GatewayPrincipal,
 ): Promise<SessionMutationResult> {
   const session = getSession(sessionId);
   if (!session) return notFound();
   try {
-    const attached = await attachResourcesToSession(session, body, context);
+    const attached = await attachResourcesToSession(session, body, context, principal);
     context.emit("session:updated", { sessionId });
     return {
       statusCode: 201,
       body: { attachments: serializeSession(attached.session, context).attachments ?? [] },
     };
   } catch (err) {
+    if (err instanceof ArtifactAccessError) {
+      return { statusCode: 403, body: { error: err.message, code: "artifact_scope_forbidden" } };
+    }
     return { statusCode: 400, body: { error: err instanceof Error ? err.message : "invalid resources" } };
   }
 }

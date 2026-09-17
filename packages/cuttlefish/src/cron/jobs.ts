@@ -4,7 +4,7 @@ import type { CronJob, CronRunEntry } from "../shared/types.js";
 import { CRON_JOBS, CRON_RUNS } from "../shared/paths.js";
 import { safeWriteFile } from "../shared/safe-write.js";
 import { logger } from "../shared/logger.js";
-import { parseStoredCronJob, sanitizeCronLogId } from "./validation.js";
+import { buildCronJob, parseStoredCronJob, patchCronJob, sanitizeCronLogId } from "./validation.js";
 
 interface CronJobsCacheEntry {
   fingerprint: string;
@@ -32,14 +32,22 @@ export function resetLoadJobsCacheForTests(): void {
 }
 
 /** Backs up the current jobs.json contents next to the original, best-effort. */
-function backupJobsFile(suffix: string): string {
+function backupJobsFile(suffix: string): string | null {
   const backupPath = `${CRON_JOBS}.${suffix}-${Date.now()}`;
   try {
     fs.copyFileSync(CRON_JOBS, backupPath);
-  } catch {
-    // best effort — the original file is still on disk
+    return backupPath;
+  } catch (err) {
+    logger.error(
+      `Failed to back up cron jobs file ${CRON_JOBS}: ${err instanceof Error ? err.message : err}. ` +
+      "The original remains on disk; preserve it before repair.",
+    );
+    return null;
   }
-  return backupPath;
+}
+
+function backupStatus(backupPath: string | null): string {
+  return backupPath ? `Original copy saved to ${backupPath}` : "No backup copy was saved; original remains on disk";
 }
 
 export function loadJobs(): CronJob[] {
@@ -67,7 +75,7 @@ export function loadJobs(): CronJob[] {
     const backupPath = backupJobsFile("corrupt");
     logger.error(
       `Failed to parse cron jobs file ${CRON_JOBS}: ${err instanceof Error ? err.message : err}. ` +
-      `Corrupt copy saved to ${backupPath}; running with zero cron jobs.`,
+      `${backupStatus(backupPath)}; running with zero cron jobs.`,
     );
     cronJobsCache = { fingerprint, jobs: [] };
     return [];
@@ -76,7 +84,7 @@ export function loadJobs(): CronJob[] {
     const backupPath = backupJobsFile("corrupt");
     logger.error(
       `Cron jobs file ${CRON_JOBS} did not contain a JSON array. ` +
-      `Corrupt copy saved to ${backupPath}; running with zero cron jobs.`,
+      `${backupStatus(backupPath)}; running with zero cron jobs.`,
     );
     cronJobsCache = { fingerprint, jobs: [] };
     return [];
@@ -106,19 +114,107 @@ export function loadJobs(): CronJob[] {
     const backupPath = backupJobsFile("invalid");
     logger.warn(
       `${invalidCount} invalid cron job entr${invalidCount === 1 ? "y" : "ies"} dropped from ${CRON_JOBS}. ` +
-      `Original copy saved to ${backupPath}; running with ${validJobs.length} valid job(s).`,
+      `${backupStatus(backupPath)}; running with ${validJobs.length} valid job(s).`,
     );
   }
   cronJobsCache = { fingerprint, jobs: cloneJobs(validJobs) };
   return validJobs;
 }
 
+export class CronJobsStateError extends Error {
+  constructor() {
+    super("Cron jobs file is invalid; repair it before modifying jobs");
+    this.name = "CronJobsStateError";
+  }
+}
+
+/** Runtime reads may continue with a valid subset. Mutations must preserve the
+ * complete original when its syntax or any stored entry is invalid. Never use
+ * the degraded read cache as permission to replace that state. */
+export function loadJobsForMutation(): CronJob[] {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(CRON_JOBS, "utf-8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw err;
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) throw new CronJobsStateError();
+    return parsed.map((entry) => parseStoredCronJob(entry));
+  } catch {
+    throw new CronJobsStateError();
+  }
+}
+
 export function saveJobs(jobs: CronJob[]): void {
-  // Atomic + fsync-durable + audited (canonical, low-churn state).
+  loadJobsForMutation();
+  // Atomic replacement, file fsync and audit for canonical, low-churn state.
   safeWriteFile(CRON_JOBS, JSON.stringify(jobs, null, 2) + "\n", {
     audit: { actor: "gateway", op: "cron.save" },
   });
   cronJobsCache = null;
+}
+
+export class CronIdConflictError extends Error {
+  constructor() {
+    super("Cron job id already exists or shares an existing job's run-log filename");
+    this.name = "CronIdConflictError";
+  }
+}
+
+export class CronJobValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CronJobValidationError";
+  }
+}
+
+/** Validate identity and persist without an await between loading and saving. */
+export function createCronJob(body: unknown): { job: CronJob; jobs: CronJob[] } {
+  let job: CronJob;
+  try {
+    job = buildCronJob(body);
+  } catch (err) {
+    throw new CronJobValidationError(err instanceof Error ? err.message : "Invalid cron job");
+  }
+  const jobs = loadJobsForMutation();
+  // Legacy IDs remain readable, but new jobs must not share their normalized log.
+  if (jobs.some((existing) => sanitizeCronLogId(existing.id) === job.id)) {
+    throw new CronIdConflictError();
+  }
+  jobs.push(job);
+  saveJobs(jobs);
+  return { job, jobs };
+}
+
+export function updateCronJob(id: string, body: unknown): { job: CronJob; jobs: CronJob[] } | null {
+  const jobs = loadJobsForMutation();
+  const index = jobs.findIndex((job) => job.id === id);
+  if (index === -1) return null;
+  let job: CronJob;
+  try {
+    job = { ...patchCronJob(jobs[index], body), id };
+  } catch (err) {
+    throw new CronJobValidationError(err instanceof Error ? err.message : "Invalid cron update");
+  }
+  jobs[index] = job;
+  saveJobs(jobs);
+  return { job, jobs };
+}
+
+export function deleteCronJob(id: string): { removed: CronJob; jobs: CronJob[] } | null {
+  const jobs = loadJobsForMutation();
+  const index = jobs.findIndex((job) => job.id === id);
+  if (index === -1) return null;
+  const removed = jobs.splice(index, 1)[0];
+  saveJobs(jobs);
+  return { removed, jobs };
+}
+
+export function cronRunLogPath(jobId: string): string {
+  return path.join(CRON_RUNS, `${sanitizeCronLogId(jobId)}.jsonl`);
 }
 
 export const DEFAULT_MAX_RUN_LOG_ENTRIES = 1000;
@@ -142,7 +238,7 @@ export function appendRunLog(jobId: string, entry: CronRunEntry, opts: { maxEntr
   // jobId is attacker/user-controlled via the cron API body (SEC-CFDB-005); sanitize
   // it before it becomes part of the run-log path so control chars/newlines cannot
   // forge fake log entries and path separators cannot escape CRON_RUNS.
-  const logPath = path.join(CRON_RUNS, `${sanitizeCronLogId(jobId)}.jsonl`);
+  const logPath = cronRunLogPath(jobId);
   fs.appendFileSync(logPath, JSON.stringify(entry) + "\n", "utf-8");
   pruneRunLog(logPath, opts.maxEntries ?? DEFAULT_MAX_RUN_LOG_ENTRIES);
 }

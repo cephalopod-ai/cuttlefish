@@ -43,6 +43,16 @@ describe("cron job validation", () => {
       delivery: { connector: "slack", channel: "#ops" },
     });
   });
+
+  it.each([".leading", "a/b", "a\\b", "line\nbreak", "a\u0000b"])(
+    "rejects new IDs requiring log filename normalization: %j", (id) => {
+      expect(() => buildCronJob({ id, enabled: false })).toThrow(/id/);
+    },
+  );
+
+  it.each(["daily-digest_v2", "ops α", "café"])("preserves safe explicit identities: %s", (id) => {
+    expect(buildCronJob({ id, enabled: false }).id).toBe(id);
+  });
 });
 
 describe("sanitizeCronLogId", () => {

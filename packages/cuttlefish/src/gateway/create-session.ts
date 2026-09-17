@@ -38,6 +38,7 @@ import { isHrHumanOnlyBlocked } from "./manager-auth.js";
 import { dispatchEmployeeSessionRun } from "./mid-pair-orchestrator.js";
 import { HR_EMPLOYEE_NAME, HR_SESSION_KEY } from "./org-policy.js";
 import { attachResourcesToSession } from "./session-resources.js";
+import { ArtifactAccessError, assertScopedArtifactReferences } from "./artifact-access.js";
 import {
   buildWorkspaceProfilePrompt,
   resolveWorkspaceProfile,
@@ -84,6 +85,22 @@ export async function createSessionFromRequest(input: CreateSessionInput): Promi
   const { body, context, principal, userId } = input;
   const prompt = (typeof body.prompt === "string" ? body.prompt : typeof body.message === "string" ? body.message : "").trim();
   if (!prompt) return { statusCode: 400, body: { error: "prompt or message is required" } };
+  try {
+    assertScopedArtifactReferences(body, principal);
+  } catch (err) {
+    if (!(err instanceof ArtifactAccessError)) throw err;
+    return { statusCode: 403, body: { error: err.message, code: "artifact_scope_forbidden" } };
+  }
+  const requestedParent = typeof body.parentSessionId === "string" ? body.parentSessionId : undefined;
+  if (principal?.kind === "session" && requestedParent?.trim() && requestedParent !== principal.sessionId) {
+    return {
+      statusCode: 403,
+      body: { error: "Session-scoped callers can only parent children to their own session", code: "session_child_parent_forbidden" },
+    };
+  }
+  // Parentage controls callbacks and graph membership, so derive it from the
+  // authenticated caller rather than treating it as an optional body claim.
+  const parentSessionId = principal?.kind === "session" ? principal.sessionId : requestedParent;
 
   // Best-effort early rejection; dispatchEmployeeSessionRun still owns the
   // authoritative permit for the complete run.
@@ -104,7 +121,7 @@ export async function createSessionFromRequest(input: CreateSessionInput): Promi
   }
   const dispatchPrompt = workspaceProfile ? buildWorkspaceProfilePrompt(workspaceProfile, prompt) : prompt;
   const employeeName = coercePortalEmployee(body.employee as string | null | undefined, config.portal?.portalName);
-  const isParentedRequest = typeof body.parentSessionId === "string" && body.parentSessionId.trim().length > 0;
+  const isParentedRequest = Boolean(parentSessionId?.trim());
   if (principal?.kind === "session" && [body.cwd, body.workspaceProfile, body.engine, body.model, body.effortLevel]
     .some((value) => value !== undefined && value !== null && value !== "")) {
     return {
@@ -180,6 +197,13 @@ export async function createSessionFromRequest(input: CreateSessionInput): Promi
     }
   }
 
+  if (principal?.kind === "session" && !getSession(principal.sessionId)) {
+    return {
+      statusCode: 403,
+      body: { error: "The parent session no longer exists", code: "session_child_parent_forbidden" },
+    };
+  }
+
   const operatorDelegation = requestedDelegationScopes
     ? buildOperatorDelegationGrant({ prompt: dispatchPrompt, scopes: requestedDelegationScopes, grantedBy: userId })
     : undefined;
@@ -221,7 +245,7 @@ export async function createSessionFromRequest(input: CreateSessionInput): Promi
         replyContext: { source: "web" },
         userId,
         employee: employeeName,
-        parentSessionId: typeof body.parentSessionId === "string" ? body.parentSessionId : undefined,
+        parentSessionId,
         effortLevel: selection.effortLevel,
         model: operatorDelegation ? delegationModel : selection.model,
         prompt: dispatchPrompt,
@@ -264,7 +288,7 @@ export async function createSessionFromRequest(input: CreateSessionInput): Promi
   const newSessionMedia = fileIdsToMedia(body.attachments);
   let attached;
   try {
-    attached = await attachResourcesToSession(session, body, context);
+    attached = await attachResourcesToSession(session, body, context, principal);
   } catch (err) {
     if (!existingSingletonSession) {
       try {
@@ -275,7 +299,10 @@ export async function createSessionFromRequest(input: CreateSessionInput): Promi
         // The original resource error remains the actionable failure.
       }
     }
-    return { statusCode: 400, body: { error: err instanceof Error ? err.message : "invalid resources" } };
+    return {
+      statusCode: err instanceof ArtifactAccessError ? 403 : 400,
+      body: { error: err instanceof Error ? err.message : "invalid resources", ...(err instanceof ArtifactAccessError ? { code: "artifact_scope_forbidden" } : {}) },
+    };
   }
   session = attached.session;
 

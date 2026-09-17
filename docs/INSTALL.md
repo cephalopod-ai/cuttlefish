@@ -15,7 +15,7 @@ Override with `CUTTLEFISH_HOME`.
 | **npm** `npm install -g cuttlefish-cli` | Everyday installs | Public package; verify the requested version with `npm view cuttlefish-cli version` |
 | **Homebrew** (macOS/Linux) | Formula users | Updated automatically after a successful npm publish; inspect `Formula/cuttlefish.rb` for its pinned version |
 | **GitHub Release archive** | Offline / pinned platform trees with native modules prebuilt | Use a release that actually lists the platform asset. `v0.23.6` is the newest release with archives; `v0.23.7` has none, and `v0.23.9` (the recovery release that supersedes it and the unpublished `v0.23.8`) is not tagged or published yet |
-| **Source** | Contributors and pre-publish installs | Always works |
+| **Source** | Contributors and pre-publish installs | Available independently of publication; requires the documented toolchain and native dependencies |
 
 ---
 
@@ -146,7 +146,7 @@ Known Windows differences and limitations:
 
 ## macOS / Linux
 
-> **Current release state (2026-09-06):** `v0.23.9` is the recovery release
+> **Release readback (2026-09-16):** `v0.23.9` is the recovery release
 > prepared for the incomplete `v0.23.7` publication and unpublished `v0.23.8`
 > candidate, but it is not tagged or published yet. Today `npm install -g
 > cuttlefish-cli` resolves to `0.23.6`, the Homebrew formula pins `0.23.6`, and
@@ -154,6 +154,14 @@ Known Windows differences and limitations:
 > lists none). Before a pinned install, verify that npm or the GitHub Release
 > lists the requested package or platform archive; source installation remains
 > available independently of the release pipeline.
+
+The September 16 local audit used macOS, Node `24.13.0` and pnpm `10.6.4`;
+frozen-lock installation, build and package verification are recorded in
+[TEST_LEDGER.md](TEST_LEDGER.md). This is local validation, not a fresh Windows
+or Linux installation drill. `.nvmrc` pins the development runtime and manifest
+engines declare `>=24 <25`; `.npmrc` uses `engine-strict=false`, so installation
+does not enforce that requirement. Verify `node --version` before installing
+native modules.
 
 ### npm (after publication)
 

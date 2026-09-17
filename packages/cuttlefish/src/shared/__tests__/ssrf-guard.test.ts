@@ -10,6 +10,12 @@ vi.mock("undici", async (importOriginal) => {
 });
 
 describe("ssrf-guard: isPrivateAddress", () => {
+  it.each(["fe81::1", "fea0::1", "febf::1", "FF02::1", "ffff::1"])("refuses the complete link-local/multicast category: %s", (ip) => {
+    expect(isPrivateAddress(ip)).toBe(true);
+  });
+  it("retains a public IPv6 positive control", () => {
+    expect(isPrivateAddress("2001:4860:4860::8888")).toBe(false);
+  });
   it("flags loopback, private, link-local and reserved IPv4", () => {
     for (const ip of ["127.0.0.1", "10.1.2.3", "192.168.0.5", "172.16.0.1", "169.254.1.1", "0.0.0.0", "100.64.0.1", "224.0.0.1"]) {
       expect(isPrivateAddress(ip), ip).toBe(true);
@@ -25,6 +31,19 @@ describe("ssrf-guard: isPrivateAddress", () => {
       expect(isPrivateAddress(ip), ip).toBe(false);
     }
   });
+
+  it.each([
+    "::ffff:7f00:1", "0:0:0:0:0:ffff:7f00:1", "::FFFF:7F00:0001",
+    "0:0:0:0:0:ffff:127.0.0.1", "0:0:0:0:0:0:0:1", "0:0:0:0:0:0:0:0",
+  ])("classifies equivalent private address representations consistently: %s", (ip) => {
+    expect(isPrivateAddress(ip)).toBe(true);
+  });
+
+  it.each(["::ffff:808:808", "0:0:0:0:0:ffff:8.8.8.8", "::ffff:8.8.8.8"])(
+    "allows equivalent public mapped representations: %s", (ip) => {
+      expect(isPrivateAddress(ip)).toBe(false);
+    },
+  );
 });
 
 describe("ssrf-guard: checkPublicUrl (SEC-F-003)", () => {
@@ -79,6 +98,11 @@ describe("ssrf-guard: safeFetch redirect re-validation (SEC-SSRF-001)", () => {
     await expect(safeFetch("https://8.8.8.8/redirector")).rejects.toBeInstanceOf(SsrfError);
     // The second hop (to the private address) must never be fetched.
     expect(undiciFetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a mapped private category before calling the network stub", async () => {
+    await expect(safeFetch("http://[::ffff:7f00:1]/fixture")).rejects.toBeInstanceOf(SsrfError);
+    expect(undiciFetchMock).not.toHaveBeenCalled();
   });
 
   it("refuses a redirect to loopback", async () => {

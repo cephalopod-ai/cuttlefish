@@ -37,6 +37,20 @@ export function json(res: ServerResponse, data: unknown, status = 200): void {
   res.end(JSON.stringify(data));
 }
 
+/** Send a bounded read result as a download, after policy and text redaction. */
+export function fileDownload(res: ServerResponse, filename: string, mime: string, bytes: Buffer): void {
+  const safeName = filename.replace(/[^\w.\- ]/g, "_");
+  const encodedName = encodeURIComponent(filename).replace(/['()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+  res.writeHead(200, {
+    "Content-Type": mime,
+    "Content-Disposition": `attachment; filename="${safeName}"; filename*=UTF-8''${encodedName}`,
+    "Content-Length": bytes.length,
+    "X-Content-Type-Options": "nosniff",
+    "Cache-Control": "no-store",
+  });
+  res.end(bytes);
+}
+
 export function badRequest(res: ServerResponse, message: string): void {
   json(res, { error: message }, 400);
 }

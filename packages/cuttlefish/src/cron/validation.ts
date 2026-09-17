@@ -56,7 +56,7 @@ function isUnsafeLogIdChar(ch: string): boolean {
 }
 
 /**
- * Strips characters that are unsafe for use as a filesystem path segment or in
+ * Replaces characters that are unsafe for use as a filesystem path segment or in
  * a single-line log entry (path separators and control characters, including
  * newlines) from a cron job id, and strips leading "." segments so the id
  * cannot resolve to "." / ".." path components. `id` is attacker/user-controlled
@@ -81,8 +81,12 @@ export function buildCronJob(body: unknown): CronJob {
   rejectUnknown(body, CREATE_FIELDS);
   const schedule = optionalString(body, "schedule") ?? "0 * * * *";
   if (!cron.validate(schedule)) throw new Error("schedule must be a valid cron expression");
+  const id = optionalString(body, "id") ?? crypto.randomUUID();
+  if (sanitizeCronLogId(id) !== id) {
+    throw new Error("id must not contain path separators, control characters or leading dots");
+  }
   return {
-    id: optionalString(body, "id") ?? crypto.randomUUID(),
+    id,
     name: optionalString(body, "name") ?? "untitled",
     enabled: optionalBoolean(body, "enabled") ?? true,
     schedule,

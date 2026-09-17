@@ -11,6 +11,7 @@ import type { CuttlefishConfig } from "../shared/types.js";
 import { startGateway } from "./server.js";
 import { loadConfig } from "../shared/config.js";
 import { installProcessErrorHandlers } from "./process-guards.js";
+import { parseGatewayPid } from "./lifecycle-pid.js";
 
 const MIN_NODE_MAJOR = 24;
 const DAEMON_LOCK_FILE = path.join(CUTTLEFISH_HOME, "daemon.lock");
@@ -128,8 +129,8 @@ function acquireDaemonLock(): () => void {
     writeLock(process.pid);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
-    const stalePid = Number.parseInt(fs.readFileSync(DAEMON_LOCK_FILE, "utf8").trim(), 10);
-    if (Number.isFinite(stalePid) && pidIsAlive(stalePid)) {
+    const stalePid = parseGatewayPid(fs.readFileSync(DAEMON_LOCK_FILE, "utf8"));
+    if (stalePid !== null && pidIsAlive(stalePid)) {
       throw new Error(`Another cuttlefish daemon is already running (pid ${stalePid}). Stop it before starting a second instance.`);
     }
     fs.rmSync(DAEMON_LOCK_FILE, { force: true });
@@ -138,8 +139,8 @@ function acquireDaemonLock(): () => void {
 
   const release = () => {
     try {
-      const recordedPid = Number.parseInt(fs.readFileSync(DAEMON_LOCK_FILE, "utf8").trim(), 10);
-      if (!Number.isFinite(recordedPid) || recordedPid === process.pid) {
+      const recordedPid = parseGatewayPid(fs.readFileSync(DAEMON_LOCK_FILE, "utf8"));
+      if (recordedPid === null || recordedPid === process.pid) {
         fs.rmSync(DAEMON_LOCK_FILE, { force: true });
       }
     } catch {
@@ -153,6 +154,7 @@ function acquireDaemonLock(): () => void {
 
 /** Record the live gateway process so every lifecycle mode is manageable by the CLI. */
 export function writeGatewayPid(pid = process.pid): void {
+  if (parseGatewayPid(String(pid)) !== pid) throw new RangeError("Gateway PID must be a positive process identity");
   fs.mkdirSync(path.dirname(PID_FILE), { recursive: true });
   safeWriteFile(PID_FILE, String(pid), { fsync: false });
 }
@@ -160,7 +162,7 @@ export function writeGatewayPid(pid = process.pid): void {
 /** Remove the PID file only when it still belongs to this gateway process. */
 export function clearGatewayPid(pid = process.pid): void {
   try {
-    const recordedPid = Number.parseInt(fs.readFileSync(PID_FILE, "utf8").trim(), 10);
+    const recordedPid = parseGatewayPid(fs.readFileSync(PID_FILE, "utf8"));
     if (recordedPid === pid) fs.unlinkSync(PID_FILE);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
@@ -315,8 +317,8 @@ export function acquireRestartLock(lockPath = RESTART_LOCK_FILE): boolean {
     return true;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
-    const ownerPid = Number.parseInt(fs.readFileSync(lockPath, "utf8").trim(), 10);
-    if (Number.isFinite(ownerPid) && pidIsAlive(ownerPid)) return false;
+    const ownerPid = parseGatewayPid(fs.readFileSync(lockPath, "utf8"));
+    if (ownerPid !== null && pidIsAlive(ownerPid)) return false;
     fs.rmSync(lockPath, { force: true });
     return acquireRestartLock(lockPath);
   }
@@ -324,8 +326,8 @@ export function acquireRestartLock(lockPath = RESTART_LOCK_FILE): boolean {
 
 export function releaseRestartLock(ownerPid = process.pid, lockPath = RESTART_LOCK_FILE): void {
   try {
-    const recordedPid = Number.parseInt(fs.readFileSync(lockPath, "utf8").trim(), 10);
-    if (!Number.isFinite(recordedPid) || recordedPid === ownerPid) fs.rmSync(lockPath, { force: true });
+    const recordedPid = parseGatewayPid(fs.readFileSync(lockPath, "utf8"));
+    if (recordedPid === null || recordedPid === ownerPid) fs.rmSync(lockPath, { force: true });
   } catch {
     // The lock may already have been removed after a failed handoff.
   }
@@ -384,7 +386,11 @@ export function restartDetached(): boolean {
 function signalGateway(port?: number): number | null {
   // Try PID file first
   if (fs.existsSync(PID_FILE)) {
-    const pid = parseInt(fs.readFileSync(PID_FILE, "utf-8").trim(), 10);
+    const pid = parseGatewayPid(fs.readFileSync(PID_FILE, "utf-8"));
+    if (pid === null) {
+      logger.warn(`Invalid gateway PID file ${PID_FILE}; refusing to signal a process. Preserve and inspect its contents before retrying.`);
+      return null;
+    }
 
     try {
       process.kill(pid, "SIGTERM");
@@ -442,7 +448,7 @@ export async function stopAndWait(port?: number, timeoutMs = 10_000): Promise<bo
   try {
     if (
       fs.existsSync(PID_FILE) &&
-      parseInt(fs.readFileSync(PID_FILE, "utf-8").trim(), 10) === pid
+      parseGatewayPid(fs.readFileSync(PID_FILE, "utf-8")) === pid
     ) {
       fs.unlinkSync(PID_FILE);
     }
@@ -555,7 +561,10 @@ export function getStatus(portOverride?: number): GatewayStatus {
   }
 
   if (fs.existsSync(PID_FILE)) {
-    const pid = parseInt(fs.readFileSync(PID_FILE, "utf-8").trim(), 10);
+    const pid = parseGatewayPid(fs.readFileSync(PID_FILE, "utf-8"));
+    if (pid === null) {
+      return { running: false, pid: null, error: `Invalid gateway PID file ${PID_FILE}; preserve and inspect its contents before retrying.` };
+    }
     try {
       process.kill(pid, 0);
       return { running: true, pid };

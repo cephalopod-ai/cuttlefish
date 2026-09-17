@@ -101,6 +101,12 @@ export function recoverInterruptedDepartmentRename(orgDir = ORG_DIR): void {
   const intent = readRenameIntent(orgDir);
   if (!intent) return;
   try {
+    const oldDir = path.join(orgDir, intent.previousDepartment);
+    const newDir = path.join(orgDir, intent.department);
+    if (fs.existsSync(oldDir) && fs.existsSync(newDir)) {
+      logger.warn(`department-rename recovery: target "${intent.department}" already exists; leaving files and intent marker for manual review`);
+      return;
+    }
     for (const name of intent.employees) {
       const filePath = findEmployeeYamlPath(name);
       if (!filePath) {
@@ -117,8 +123,6 @@ export function recoverInterruptedDepartmentRename(orgDir = ORG_DIR): void {
         }
       }
     }
-    const oldDir = path.join(orgDir, intent.previousDepartment);
-    const newDir = path.join(orgDir, intent.department);
     if (fs.existsSync(oldDir) && !fs.existsSync(newDir)) {
       fs.mkdirSync(path.dirname(newDir), { recursive: true });
       fs.renameSync(oldDir, newDir);
@@ -175,6 +179,10 @@ export function renameDepartment(
   // Self-heal any rename left mid-flight by a prior crash before starting a
   // new one, so its ghost state can never compound with this operation.
   recoverInterruptedDepartmentRename(orgDir);
+  // The single marker owns unfinished work. A new intent must not replace it.
+  if (fs.existsSync(intentPath(orgDir))) {
+    return { ok: false, status: 409, error: "An interrupted department rename is unresolved; inspect org files before renaming departments" };
+  }
 
   const previousDepartment = oldDepartment.trim();
   const department = newDepartment.trim();

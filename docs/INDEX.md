@@ -37,9 +37,9 @@ those deliberate cases.
   [v0.0.2](changes/releases/v0.0.2-workinprogress.md),
   [v0.0.1](changes/releases/v0.0.1-rebrand-jinn.md) — the pre-`0.23.x` tag
   names CHANGELOG.md's history note refers to).
-- `docs/USER_MANUAL.md`
-- `docs/QDRANT_SETUP.md`: maintained user manual for setup, workflows,
+- `docs/USER_MANUAL.md`: maintained user manual for setup, workflows,
   persistence, recovery, and troubleshooting.
+- `docs/QDRANT_SETUP.md`: optional Qdrant setup and configuration.
 - `docs/ARCHITECTURE.md`: current architecture summary, component map,
   persistence map, boundaries, risks, and extension points.
 - `docs/SPECIFICATION.md`: source-grounded product specification with
@@ -98,6 +98,17 @@ those deliberate cases.
   the retention note above); records no decision.
 
 ## Session and Audit Log Summaries
+
+September 16 operational audit: catalog-guided source review and disposable
+gateway/Chromium playtests produced persistence, startup, authentication,
+attachment, cron, accessibility and CLI discovery repairs. Local validation,
+explicit provider/platform gaps and held decisions are recorded in
+[TEST_LEDGER.md](TEST_LEDGER.md) and [TODO_LEDGER.md](TODO_LEDGER.md).
+The current machine's detailed report and monthly synthesis are local-only:
+`docs/audits/2026-09-16-operational-audit.md`,
+`docs/audits/092026-audit-summary.md`, and
+`docs/logs/session/092026-session-summary.md`. These files may be absent from
+another checkout and are not promoted for publication by this index update.
 
 September 6 context modularization: the 957-line session context source is now
 815 lines, with API guidance and budget selection extracted. Repaired summary

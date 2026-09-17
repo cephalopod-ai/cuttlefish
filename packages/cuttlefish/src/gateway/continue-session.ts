@@ -33,6 +33,7 @@ import {
 import { dispatchEmployeeSessionRun } from "./mid-pair-orchestrator.js";
 import { supersedeRunningTurn } from "./session-turn-state.js";
 import { attachResourcesToSession, attachmentMedia, describeSessionResources } from "./session-resources.js";
+import { ArtifactAccessError, assertScopedArtifactReferences } from "./artifact-access.js";
 
 export interface ContinueSessionInput {
   sessionId: string;
@@ -56,6 +57,12 @@ function configuredEngineModel(config: CuttlefishConfig, engine: string): string
 }
 
 export async function continueSession(input: ContinueSessionInput): Promise<ContinueSessionResult> {
+  try {
+    assertScopedArtifactReferences(input.body, input.principal);
+  } catch (err) {
+    if (!(err instanceof ArtifactAccessError)) throw err;
+    return { statusCode: 403, body: { error: err.message, code: "artifact_scope_forbidden" } };
+  }
   const existingSession = getSession(input.sessionId);
   if (!existingSession) return { statusCode: 404, body: { error: "Not found" } };
   let session = maybeRevertEngineOverride(existingSession);
@@ -113,8 +120,11 @@ export async function continueSession(input: ContinueSessionInput): Promise<Cont
     attached = { session, ...describeSessionResources(session) };
   } else {
     try {
-      attached = await attachResourcesToSession(session, body, input.context);
+      attached = await attachResourcesToSession(session, body, input.context, input.principal);
     } catch (error) {
+      if (error instanceof ArtifactAccessError) {
+        return { statusCode: 403, body: { error: error.message, code: "artifact_scope_forbidden" } };
+      }
       return { statusCode: 400, body: { error: error instanceof Error ? error.message : "invalid resources" } };
     }
   }

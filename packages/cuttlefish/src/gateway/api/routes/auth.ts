@@ -90,6 +90,10 @@ export async function handleAuthRoutes(
       json(res, { error: auth.reason || "Unauthorized" }, 401);
       return true;
     }
+    if (auth.principal?.kind !== "admin") {
+      json(res, { error: "Only the operator can create pairing codes" }, 403);
+      return true;
+    }
     const bearer = hasGatewayBearerAuth(req.headers, context.gatewayAuthToken);
     const localBrowser = isLoopback(req.socket.remoteAddress)
       && isLoopbackHost(Array.isArray(req.headers.host) ? req.headers.host[0] : req.headers.host);

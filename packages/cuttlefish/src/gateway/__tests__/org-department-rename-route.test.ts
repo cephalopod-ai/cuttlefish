@@ -320,6 +320,49 @@ describe("recoverInterruptedDepartmentRename (DFI-002)", () => {
     expect(readEmployee("platform", "dev").department).toBe("platform");
   });
 
+  it("preserves both departments and intent when a recovery target already exists", async () => {
+    writeEmployee("platform", "dev");
+    writeEmployee("product", "pm");
+    writeIntentMarker({ previousDepartment: "platform", department: "product", employees: ["dev"] });
+    const orgDir = path.join(tmpHome, "org");
+    const marker = path.join(orgDir, ".department-rename-pending.json");
+    const before = [marker, path.join(orgDir, "platform", "dev.yaml"), path.join(orgDir, "product", "pm.yaml")]
+      .map((file) => ({ file, bytes: fs.readFileSync(file) }));
+    const { recoverInterruptedDepartmentRename } = await import("../department-rename.js");
+
+    recoverInterruptedDepartmentRename(orgDir);
+    recoverInterruptedDepartmentRename(orgDir);
+
+    for (const { file, bytes } of before) expect(fs.readFileSync(file)).toEqual(bytes);
+  });
+
+  it("does not replace an unresolved recovery intent with an unrelated rename", async () => {
+    writeEmployee("platform", "dev");
+    writeEmployee("other", "third");
+    writeIntentMarker({ previousDepartment: "platform", department: "product", employees: ["missing"] });
+    const marker = path.join(tmpHome, "org", ".department-rename-pending.json");
+    const before = fs.readFileSync(marker);
+    const { renameDepartment } = await import("../department-rename.js");
+
+    const result = renameDepartment("other", "third-dept");
+
+    expect(result).toMatchObject({ ok: false, status: 409 });
+    expect(fs.readFileSync(marker)).toEqual(before);
+    expect(readEmployee("other", "third").department).toBe("other");
+    expect(fs.existsSync(path.join(tmpHome, "org", "third-dept"))).toBe(false);
+  });
+
+  it("clears an intent left after the directory move completed", async () => {
+    writeEmployee("product", "dev");
+    writeIntentMarker({ previousDepartment: "platform", department: "product", employees: ["dev"] });
+    const { recoverInterruptedDepartmentRename } = await import("../department-rename.js");
+
+    recoverInterruptedDepartmentRename(path.join(tmpHome, "org"));
+
+    expect(readEmployee("product", "dev").department).toBe("product");
+    expect(fs.existsSync(path.join(tmpHome, "org", ".department-rename-pending.json"))).toBe(false);
+  });
+
   it("self-heals a leftover marker at the start of the next renameDepartment call", async () => {
     writeEmployee("platform", "dev");
     const { updateEmployeeYaml } = await import("../org.js");

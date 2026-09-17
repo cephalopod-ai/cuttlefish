@@ -15,6 +15,16 @@ import {
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
 describe("instance-identity env list (UPS-A9)", () => {
+  it("gives a worker without a home helper its own runtime and registry", async () => {
+    const workerHome = process.env.CUTTLEFISH_HOME;
+    expect(workerHome).toBeDefined();
+    expect(path.basename(workerHome!)).toMatch(/^cuttlefish-vitest-worker-/);
+    expect(fs.statSync(workerHome!).isDirectory()).toBe(true);
+    const paths = await import("../paths.js");
+    expect(paths.CUTTLEFISH_HOME).toBe(workerHome);
+    expect(path.relative(workerHome!, paths.SESSIONS_DB)).toBe(path.join("sessions", "registry.db"));
+    expect(paths.INSTANCES_REGISTRY).toBe(path.join(workerHome!, "instances.json"));
+  });
   it("covers the variables that name which instance a process belongs to", () => {
     for (const key of ["CUTTLEFISH_HOME", "CUTTLEFISH_INSTANCE", "CUTTLEFISH_GATEWAY_URL", "CUTTLEFISH_GATEWAY_TOKEN"]) {
       expect(INSTANCE_IDENTITY_ENV_VARS).toContain(key);
@@ -34,9 +44,9 @@ describe("instance-identity env list (UPS-A9)", () => {
 
   it("actually scrubbed the worker environment this test is running in", () => {
     for (const key of INSTANCE_IDENTITY_ENV_VARS) {
-      // CUTTLEFISH_HOME is legitimately re-set by the temp-home test helpers,
-      // so only assert on the ones nothing re-sets.
-      if (key === "CUTTLEFISH_HOME") continue;
+      // Setup deliberately replaces these two destinations with owned worker
+      // paths; their safety is asserted separately above.
+      if (key === "CUTTLEFISH_HOME" || key === "CUTTLEFISH_INSTANCES_REGISTRY") continue;
       expect(process.env[key]).toBeUndefined();
     }
   });

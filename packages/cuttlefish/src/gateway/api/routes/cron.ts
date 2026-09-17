@@ -1,13 +1,10 @@
 import cron from "node-cron";
 import fs from "node:fs";
-import path from "node:path";
 import type { IncomingMessage as HttpRequest, ServerResponse } from "node:http";
 import type { CronJob } from "../../../shared/types.js";
-import { CRON_RUNS } from "../../../shared/paths.js";
 import { logger } from "../../../shared/logger.js";
-import { loadJobs, saveJobs } from "../../../cron/jobs.js";
+import { createCronJob, updateCronJob, deleteCronJob, CronIdConflictError, CronJobValidationError, CronJobsStateError, cronRunLogPath, loadJobs } from "../../../cron/jobs.js";
 import { reloadScheduler, startCronJobRun } from "../../../cron/scheduler.js";
-import { buildCronJob, patchCronJob } from "../../../cron/validation.js";
 import { readJsonBody } from "../../http-helpers.js";
 import { readJsonlTail } from "../../jsonl-tail.js";
 import type { ApiContext } from "../context.js";
@@ -24,6 +21,18 @@ function serializeCronJob(job: CronJob, lastRun: Record<string, unknown> | null 
   };
 }
 
+function respondToMutationError(err: unknown, res: ServerResponse): boolean {
+  if (err instanceof CronJobsStateError || err instanceof CronIdConflictError) {
+    json(res, { error: err.message, code: err instanceof CronJobsStateError ? "CRON_INVALID_ON_DISK" : "CRON_ID_CONFLICT" }, 409);
+    return true;
+  }
+  if (err instanceof CronJobValidationError) {
+    badRequest(res, err.message);
+    return true;
+  }
+  return false;
+}
+
 export async function handleCronRoutes(
   method: string,
   pathname: string,
@@ -36,7 +45,7 @@ export async function handleCronRoutes(
   if (method === "GET" && params) {
     const limit = Math.min(500, Math.max(1, parseInt(url.searchParams.get("limit") || "", 10) || 50));
     const runId = url.searchParams.get("runId");
-    const runFile = path.join(CRON_RUNS, `${params.id}.jsonl`);
+    const runFile = cronRunLogPath(params.id);
     const { entries, skipped } = await readJsonlTail(runFile, runId ? 500 : limit * 4);
     const seen = new Set<string>();
     const runs = [];
@@ -56,7 +65,7 @@ export async function handleCronRoutes(
   if (method === "GET" && pathname === "/api/cron") {
     const jobs = loadJobs();
     const enriched = await Promise.all(jobs.map(async (job) => {
-      const runFile = path.join(CRON_RUNS, `${job.id}.jsonl`);
+      const runFile = cronRunLogPath(job.id);
       const { entries } = await readJsonlTail(runFile, 1);
       return serializeCronJob(job, (entries[0] as Record<string, unknown> | undefined) ?? null);
     }));
@@ -67,63 +76,56 @@ export async function handleCronRoutes(
   if (method === "POST" && pathname === "/api/cron") {
     const parsed = await readJsonBody(req, res);
     if (!parsed.ok) return true;
-    const jobs = loadJobs();
-    let newJob: CronJob;
+    let created: ReturnType<typeof createCronJob>;
     try {
-      newJob = buildCronJob(parsed.body);
+      created = createCronJob(parsed.body);
     } catch (err) {
-      badRequest(res, err instanceof Error ? err.message : "Invalid cron job");
-      return true;
+      if (respondToMutationError(err, res)) return true;
+      throw err;
     }
-    jobs.push(newJob);
-    saveJobs(jobs);
-    reloadScheduler(jobs, context.getConfig(), context.connectors);
-    json(res, newJob, 201);
+    reloadScheduler(created.jobs, context.getConfig(), context.connectors);
+    json(res, created.job, 201);
     return true;
   }
 
   params = matchRoute("/api/cron/:id", pathname);
   if (method === "PUT" && params) {
     const routeParams = params;
-    // CONC-004: read the request body (an await point) *before* loading
-    // jobs.json, mirroring the POST handler above. Loading first and reading
-    // the body second — the prior order — left an await gap between
-    // loadJobs() and saveJobs() during which a concurrent PUT/POST/DELETE
-    // could save its own change; this handler would then overwrite it with a
-    // save built from its now-stale snapshot (lost update). With no await
-    // between load and save, the two are effectively atomic under Node's
-    // single-threaded event loop.
+    // Read the body before the synchronous domain mutation (CONC-004), so
+    // concurrent gateway requests cannot interleave its load and save.
     const parsed = await readJsonBody(req, res);
     if (!parsed.ok) return true;
-    const jobs = loadJobs();
-    const idx = jobs.findIndex((job) => job.id === routeParams.id);
-    if (idx === -1) {
+    let updated: ReturnType<typeof updateCronJob>;
+    try {
+      updated = updateCronJob(routeParams.id, parsed.body);
+    } catch (err) {
+      if (respondToMutationError(err, res)) return true;
+      throw err;
+    }
+    if (!updated) {
       notFound(res);
       return true;
     }
-    try {
-      jobs[idx] = { ...patchCronJob(jobs[idx], parsed.body), id: routeParams.id };
-    } catch (err) {
-      badRequest(res, err instanceof Error ? err.message : "Invalid cron update");
-      return true;
-    }
-    saveJobs(jobs);
-    reloadScheduler(jobs, context.getConfig(), context.connectors);
-    json(res, jobs[idx]);
+    reloadScheduler(updated.jobs, context.getConfig(), context.connectors);
+    json(res, updated.job);
     return true;
   }
 
   params = matchRoute("/api/cron/:id", pathname);
   if (method === "DELETE" && params) {
     const routeParams = params;
-    const jobs = loadJobs();
-    const idx = jobs.findIndex((job) => job.id === routeParams.id);
-    if (idx === -1) {
+    let deleted: ReturnType<typeof deleteCronJob>;
+    try {
+      deleted = deleteCronJob(routeParams.id);
+    } catch (err) {
+      if (respondToMutationError(err, res)) return true;
+      throw err;
+    }
+    if (!deleted) {
       notFound(res);
       return true;
     }
-    const removed = jobs.splice(idx, 1)[0];
-    saveJobs(jobs);
+    const { removed, jobs } = deleted;
     reloadScheduler(jobs, context.getConfig(), context.connectors);
     json(res, { deleted: removed.id, name: removed.name });
     return true;

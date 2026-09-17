@@ -1,8 +1,14 @@
 import type React from "react"
+import { createContext, useContext, useId } from "react"
 
-// Presentational form primitives for the settings page (no local state; all
-// driven by props). Extracted from settings/page.tsx (audit AS-001
-// modularization) — no behavior change.
+// Shared label identity keeps visual rows and nested form controls associated.
+const SettingsFieldContext = createContext<{ labelId: string; controlId?: string } | null>(null)
+
+function useSettingsField() {
+  const field = useContext(SettingsFieldContext)
+  const ownId = useId()
+  return { labelId: field?.labelId, controlId: field?.controlId ?? ownId }
+}
 
 export function Section({
   title,
@@ -30,20 +36,31 @@ export function Section({
 export function FieldRow({
   label,
   children,
+  multiple = false,
 }: {
   label: string
   children: React.ReactNode
+  multiple?: boolean
 }) {
+  const labelId = useId()
+  const controlId = multiple ? undefined : `${labelId}-control`
+  const Label = multiple ? "span" : "label"
   return (
     <div
+      role={multiple ? "group" : undefined}
+      aria-labelledby={multiple ? labelId : undefined}
       className="flex items-center justify-between py-[var(--space-2)] gap-[var(--space-4)]"
     >
-      <label
+      <Label
+        id={labelId}
+        htmlFor={controlId}
         className="text-[length:var(--text-subheadline)] text-[var(--text-secondary)] shrink-0"
       >
         {label}
-      </label>
-      <div className="w-[240px] shrink-0">{children}</div>
+      </Label>
+      <SettingsFieldContext.Provider value={{ labelId, controlId }}>
+        <div className="w-[240px] shrink-0">{children}</div>
+      </SettingsFieldContext.Provider>
     </div>
   )
 }
@@ -61,14 +78,20 @@ export function SettingsInput({
   onChange,
   type = "text",
   placeholder,
+  ariaLabel,
 }: {
   value: string
   onChange: (v: string) => void
   type?: string
   placeholder?: string
+  ariaLabel?: string
 }) {
+  const field = useSettingsField()
   return (
     <input
+      id={field.controlId}
+      aria-label={ariaLabel}
+      aria-labelledby={ariaLabel ? undefined : field.labelId}
       type={type}
       value={value}
       onChange={(e) => onChange(e.target.value)}
@@ -89,8 +112,11 @@ export function SettingsTextarea({
   placeholder?: string
   rows?: number
 }) {
+  const field = useSettingsField()
   return (
     <textarea
+      id={field.controlId}
+      aria-labelledby={field.labelId}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
@@ -109,8 +135,11 @@ export function SettingsSelect({
   onChange: (v: string) => void
   options: { value: string; label: string }[]
 }) {
+  const field = useSettingsField()
   return (
     <select
+      id={field.controlId}
+      aria-labelledby={field.labelId}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       className="w-full bg-[var(--bg-secondary)] border border-[var(--separator)] rounded-[var(--radius-sm)] px-[10px] py-[6px] text-[length:var(--text-footnote)] text-[var(--text-primary)] cursor-pointer"
@@ -127,12 +156,19 @@ export function SettingsSelect({
 export function ToggleSwitch({
   checked,
   onChange,
+  ariaLabel,
 }: {
   checked: boolean
   onChange: (v: boolean) => void
+  ariaLabel?: string
 }) {
+  const field = useSettingsField()
   return (
     <button
+      type="button"
+      id={field.controlId}
+      aria-label={ariaLabel}
+      aria-labelledby={ariaLabel ? undefined : field.labelId}
       role="switch"
       aria-checked={checked}
       onClick={() => onChange(!checked)}

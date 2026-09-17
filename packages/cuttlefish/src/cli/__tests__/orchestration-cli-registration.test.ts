@@ -45,6 +45,25 @@ describe("shipped orchestration CLI registration (TS-RIG-001)", () => {
     expect(result.stderr).toBe("");
   });
 
+  it("supports the help command for root and subcommands without running their actions", () => {
+    for (const args of [["help"], ["help", "start"], ["help", "scheduler"]]) {
+      const result = runCli(args);
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("Usage: cuttlefish");
+      expect(result.stderr).toBe("");
+    }
+  });
+
+  it("preserves errors for a missing subcommand and an unknown help target", () => {
+    for (const args of [["skills"], ["help", "unknown-audit-command"]]) {
+      const result = runCli(args);
+
+      expect(result.status).toBe(1);
+      expect(result.stdout + result.stderr).not.toMatch(/\n\s+at /);
+    }
+  });
+
   it("prints usage errors once and preserves JSON error output", () => {
     for (const args of [["start", "--bogus-flag"], ["status", "extra"], ["skills", "add"]]) {
       const result = runCli(args);

@@ -68,6 +68,7 @@ const EXT_TO_LANG: Record<string, string> = {
 };
 
 const MARKDOWN_EXTS = new Set(["md", "markdown"]);
+const RASTER_IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif", "image/bmp"]);
 
 /** Extract a lowercase extension (without the dot) from a path, "" if none. */
 function getExt(p: string): string {
@@ -111,6 +112,7 @@ export function FileView({
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [imageFailed, setImageFailed] = useState(false);
 
   // Resolve whether to use a dark or light highlighter theme from the current
   // concrete theme id on <html>.
@@ -133,6 +135,7 @@ export function FileView({
     setError(null);
     setNotFound(false);
     setData(null);
+    setImageFailed(false);
 
     fetch(`/api/files/read?path=${encodeURIComponent(path)}`)
       .then(async (res) => {
@@ -181,6 +184,8 @@ export function FileView({
   const isMarkdown = MARKDOWN_EXTS.has(ext) || data?.mime === "text/markdown";
   const lang = EXT_TO_LANG[ext] ?? "text";
   const codeTheme = syntaxTheme(isDark);
+  const downloadUrl = `/api/files/read?path=${encodeURIComponent(path)}&download=1`;
+  const isRasterImage = !!data && RASTER_IMAGE_MIMES.has(data.mime);
 
   const body = (
     <>
@@ -226,12 +231,20 @@ export function FileView({
 
       {!loading && data && !data.tooLarge && data.binary && (
         <div className="text-[length:var(--text-body)] text-[var(--text-secondary)]">
-          <p>
-            Binary file ({data.mime}, {formatSize(data.size)}) — cannot
-            preview.
-          </p>
+          {isRasterImage ? (
+            imageFailed ? <p>Unable to preview image.</p> : (
+              <img
+                src={downloadUrl}
+                alt={path.split(/[\\/]/).pop() ?? "Image preview"}
+                className="max-w-full h-auto rounded-[var(--radius-md,12px)]"
+                onError={() => setImageFailed(true)}
+              />
+            )
+          ) : (
+            <p>Binary file ({data.mime}, {formatSize(data.size)}) — cannot preview.</p>
+          )}
           <a
-            href={`/api/files/read?path=${encodeURIComponent(path)}`}
+            href={downloadUrl}
             download
             className="inline-block mt-[var(--space-3)] text-[var(--accent)] underline"
           >

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { simulateScenario } from "../simulation.js";
+import { MatrixScheduler, runSimulation } from "../scheduler.js";
 import type { OrchestrationConfig, AllocationRequest } from "../types.js";
 const config: OrchestrationConfig = {
   workers: [{ id: "worker", provider: "fixture", family: "fixture", tier: "local", capabilities: ["read"], tools: [], maxConcurrentTasks: 1, costClass: "near_zero", workspacePolicy: "read_only" }],
@@ -8,6 +9,27 @@ const config: OrchestrationConfig = {
 };
 const request: AllocationRequest = { taskId: "task", coordinatorId: "coord", requiredRoles: ["reader"], optionalRoles: [], priority: "normal", leaseDurationMs: 1000 };
 describe("public simulation clock", () => {
+  it("retains allocation snapshots when a later step releases the live lease", () => {
+    const result = simulateScenario(config, { steps: [{ allocate: request }, { release: { taskId: "task" } }] });
+    const allocation = result.steps[0].result;
+    expect(allocation).toMatchObject({
+      ok: true, allocation: { state: "allocated", leases: [expect.objectContaining({ state: "running" })] },
+    });
+    expect(result.steps[1].result).toMatchObject({ state: "released" });
+    expect(result.leases[0].state).toBe("released");
+  });
+
+  it("keeps direct simulation history independent of subsequent scheduler mutations", () => {
+    const scheduler = new MatrixScheduler(config, { now: () => new Date(0) });
+    const steps = runSimulation(scheduler, [{ allocate: request }]);
+    const snapshot = structuredClone(steps);
+    const lease = scheduler.resolveLease({ taskId: request.taskId });
+    scheduler.releaseLease(lease.leaseId);
+
+    expect(steps).toEqual(snapshot);
+    expect(scheduler.listLeases()[0].state).toBe("released");
+  });
+
   it("replays identically with no wall-clock timestamps", () => {
     const scenario = { steps: [{ allocate: request }, { release: { taskId: "task" } }] };
     const first = simulateScenario(config, scenario);

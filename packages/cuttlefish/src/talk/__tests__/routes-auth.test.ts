@@ -121,7 +121,7 @@ describe("handleTalkApi delegate auth", () => {
       expect.objectContaining({
         headers: expect.objectContaining({
           "Content-Type": "application/json",
-          "X-Cuttlefish-Token": "route-api-token",
+          Authorization: "Bearer route-api-token",
         }),
       }),
     );

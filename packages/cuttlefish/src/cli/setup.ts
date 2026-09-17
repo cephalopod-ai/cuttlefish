@@ -765,7 +765,9 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
     initDb();
     ok("Sessions database initialized");
   } catch (err) {
-    warn(`Failed to initialize sessions database: ${err}`);
+    // The registry is essential durable state; do not claim a usable setup when
+    // it cannot open. Optional engine and skills checks remain advisory.
+    throw new Error("Failed to initialize sessions database; repair it before starting the gateway", { cause: err });
   }
 
   // 7. Create cron/jobs.json (seed the disabled HR performance-review jobs from

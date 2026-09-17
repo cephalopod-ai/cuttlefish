@@ -606,19 +606,21 @@ export function runSimulation(
   >,
 ): SimulationStepResult[] {
   return steps.map((step, index) => {
+    // Scheduler results contain live allocation/lease objects. Capture each
+    // event before the next step can mutate them, preserving historical truth.
     if ("allocate" in step) {
-      return { step: index + 1, action: "allocate", result: scheduler.requestAllocation(step.allocate) };
+      return structuredClone({ step: index + 1, action: "allocate", result: scheduler.requestAllocation(step.allocate) });
     }
     if ("release" in step) {
       const lease = scheduler.resolveLease(step.release);
-      return { step: index + 1, action: "release", result: scheduler.releaseLease(lease.leaseId) };
+      return structuredClone({ step: index + 1, action: "release", result: scheduler.releaseLease(lease.leaseId) });
     }
     if ("heartbeat" in step) {
-      return { step: index + 1, action: "heartbeat", result: scheduler.heartbeatLease(step.heartbeat.leaseId) };
+      return structuredClone({ step: index + 1, action: "heartbeat", result: scheduler.heartbeatLease(step.heartbeat.leaseId) });
     }
     const expired = scheduler.expireLeases(new Date(step.expire.now));
     const retried = scheduler.retryQueued();
-    return { step: index + 1, action: "expire", result: { expired, retried } };
+    return structuredClone({ step: index + 1, action: "expire", result: { expired, retried } });
   });
 }
 

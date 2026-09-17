@@ -16,6 +16,7 @@ import { resolvePrincipalGate } from "./auth-gate.js";
 import type { GatewayPrincipal } from "../scoped-token.js";
 import { engineAvailable, engineUnavailableMessage, isKnownEngine } from "../../shared/models.js";
 import type { CuttlefishA2AAdapter } from "../../a2a/index.js";
+import { parseGatewayRequestUrl } from "../request-url.js";
 
 export type GatewayWebSocket = WebSocket & { cuttlefishPrincipal?: GatewayPrincipal };
 
@@ -110,12 +111,18 @@ export function createGatewayTransports({
     // CF2-120: resolve the principal and enforce scoped-token constraints
     // unconditionally — not just when authRequiredNow() is true — so a
     // presented scoped session token is always honored as a constraint, even
-    // on the default (loopback, auth-not-required) deployment. See
+    // when the operator explicitly disables gateway authentication. See
     // auth-gate.ts for the full rationale.
+    const parsedUrl = parseGatewayRequestUrl(req);
+    if (!parsedUrl) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Invalid request URL" }));
+      return;
+    }
     const gate = resolvePrincipalGate({
       req,
       method: req.method,
-      pathname,
+      pathname: parsedUrl.pathname,
       authRequiredNow,
       gatewayAuthToken,
       cuttlefishHome,

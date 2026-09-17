@@ -44,7 +44,7 @@ You've already installed the best agent CLIs. Cuttlefish turns that pile of term
 
 ## Quickstart
 
-> **Prerequisites:** Node.js **24** (the repo pins **24.13.0** via `.nvmrc` and root tooling enforces `>=24 <25`), and at least one agent CLI installed **and signed in**. Source installs also need **pnpm 10+**. Cuttlefish orchestrates engines and can't run a session without one.
+> **Prerequisites:** Node.js **24** (the repo pins **24.13.0** via `.nvmrc` and declares `>=24 <25` in `package.json`), and at least one agent CLI installed **and signed in**. Source installs also need **pnpm 10+**. Package installation does not enforce the Node range (`engine-strict=false`); use the pinned runtime for native modules. Cuttlefish orchestrates engines and can't run a session without one.
 
 Full install matrix (npm, Homebrew, GitHub archives, Windows): **[`docs/INSTALL.md`](docs/INSTALL.md)**.
 
@@ -369,7 +369,7 @@ pnpm dev     # gateway (:8888) + Vite dev server (:5888) with hot reload
 
 Open **[http://localhost:5888](http://localhost:5888)** - Vite proxies `/api` and `/ws` to the gateway.
 
-> **Prerequisites:** Node.js **24.13.0** (the repo pins it via `.nvmrc` + `engine-strict` - native modules like `better-sqlite3` are ABI-locked), pnpm 10+, and at least one engine CLI. See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for the full setup.
+> **Prerequisites:** Node.js **24.13.0** (pinned via `.nvmrc`; native modules such as `better-sqlite3` depend on the Node ABI), pnpm 10+, and at least one signed-in engine CLI. See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for the full setup and [the user manual](docs/USER_MANUAL.md) for persistence and recovery.
 
 ---
 

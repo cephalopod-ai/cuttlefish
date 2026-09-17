@@ -56,19 +56,34 @@ function ipv4IsPrivate(ip: string): boolean {
 function ipv6IsPrivate(ip: string): boolean {
   const lc = ip.toLowerCase();
   if (lc === "::1" || lc === "::") return true; // loopback / unspecified
-  if (lc.startsWith("fe80")) return true; // link-local
+  const prefix = Number.parseInt(lc.split(":")[0] || "0", 16);
+  if ((prefix & 0xffc0) === 0xfe80) return true; // FE80::/10 link-local
+  if ((prefix & 0xff00) === 0xff00) return true; // FF00::/8 multicast
   if (lc.startsWith("fc") || lc.startsWith("fd")) return true; // unique local (fc00::/7)
   return false;
 }
 
 /** True if `ip` (a literal address) is loopback, private, link-local, or reserved. */
 export function isPrivateAddress(ip: string): boolean {
-  // IPv4-mapped IPv6 (e.g. ::ffff:127.0.0.1) — check the embedded IPv4.
-  const mapped = ip.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i);
-  const candidate = mapped ? mapped[1] : ip;
-  const kind = net.isIP(candidate);
-  if (kind === 4) return ipv4IsPrivate(candidate);
-  if (kind === 6) return ipv6IsPrivate(candidate);
+  const kind = net.isIP(ip);
+  if (kind === 4) return ipv4IsPrivate(ip);
+  if (kind === 6) {
+    let normalized: string;
+    try {
+      // Use the same IPv6 representation as URL validation, including expanded
+      // loopback and dotted/hexadecimal IPv4-mapped forms. This performs no I/O.
+      normalized = new URL(`http://[${ip}]/`).hostname.slice(1, -1);
+    } catch {
+      return true;
+    }
+    const mapped = normalized.match(/^::ffff:([\da-f]{1,4}):([\da-f]{1,4})$/i);
+    if (mapped) {
+      const high = Number.parseInt(mapped[1], 16);
+      const low = Number.parseInt(mapped[2], 16);
+      return ipv4IsPrivate([high >>> 8, high & 255, low >>> 8, low & 255].join("."));
+    }
+    return ipv6IsPrivate(normalized);
+  }
   return true; // not a valid IP literal → treat as unsafe
 }
 

@@ -112,3 +112,81 @@ describe("file upload side effects", () => {
     });
   });
 });
+
+describe("generated resolved MCP file policy", () => {
+  async function generatedFixture(sessionId: string) {
+    const { writeMcpConfigFile } = await import("../../mcp/resolver.js");
+    // Normal producer, inert command and harmless strings: no process is run.
+    return writeMcpConfigFile({ mcpServers: {
+      fixture: { command: "fixture-never-spawned", env: { FIXTURE_VALUE: "ordinary-value" } },
+    } }, sessionId);
+  }
+
+  it("refuses the normal producer output before returning bytes", async () => {
+    const generated = await generatedFixture("policy-direct");
+    try {
+      expect(fs.statSync(generated).mode & 0o777).toBe(0o600);
+      const read = files.readFileUnderPolicy(generated, {
+        maxBytes: 1024, authenticated: true,
+        context: { getConfig: () => ({ gateway: {} }) } as any,
+      });
+      expect(read).toMatchObject({ ok: false, code: "blocked" });
+      expect(read).not.toHaveProperty("buffer");
+    } finally { fs.rmSync(generated, { force: true }); }
+  });
+
+  it("retains the sensitive-path refusal when arbitrary reads are enabled", async () => {
+    const generated = await generatedFixture("policy-arbitrary");
+    try {
+      expect(files.readFileUnderPolicy(generated, {
+        maxBytes: 1024,
+        context: { getConfig: () => ({ gateway: { allowArbitraryFileRead: true } }) } as any,
+      })).toMatchObject({ ok: false, code: "blocked" });
+    } finally { fs.rmSync(generated, { force: true }); }
+  });
+
+  it("recognizes a canonical path through a directory alias", async () => {
+    const generated = await generatedFixture("policy-alias");
+    const alias = path.join(tmpHome, "mcp-directory-alias");
+    fs.symlinkSync(path.dirname(generated), alias, "dir");
+    const requested = path.join(alias, path.basename(generated));
+    try {
+      expect(files.assessFileRead(requested).allowed).toBe(false);
+      expect(files.readFileUnderPolicy(requested, { maxBytes: 1024 })).toMatchObject({ ok: false, code: "blocked" });
+    } finally {
+      fs.unlinkSync(alias);
+      fs.rmSync(generated, { force: true });
+    }
+  });
+
+  it("continues reading ordinary managed text and reports a missing file", () => {
+    const normal = path.join(tmpHome, "ordinary-managed.txt");
+    fs.writeFileSync(normal, "ordinary fixture text");
+    const read = files.readFileUnderPolicy(normal, { maxBytes: 1024 });
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.buffer.toString()).toBe("ordinary fixture text");
+    expect(files.readFileUnderPolicy(path.join(tmpHome, "missing-fixture.txt"), { maxBytes: 1024 }))
+      .toMatchObject({ ok: false, code: "not_found" });
+  });
+
+  it("refuses canonical producer output when the MCP directory is an alias", async () => {
+    const mcpDir = path.join(tmpHome, "tmp", "mcp");
+    const backup = `${mcpDir}-fixture-backup`;
+    const external = fs.mkdtempSync(path.join(os.tmpdir(), "cuttlefish-mcp-root-alias-fixture-"));
+    fs.renameSync(mcpDir, backup);
+    fs.symlinkSync(external, mcpDir, "dir");
+    try {
+      const generated = await generatedFixture("policy-root-alias");
+      const canonical = fs.realpathSync.native(generated);
+      expect(files.assessFileRead(canonical).allowed).toBe(false);
+      expect(files.readFileUnderPolicy(generated, {
+        maxBytes: 1024,
+        context: { getConfig: () => ({ gateway: { allowArbitraryFileRead: true } }) } as any,
+      })).toMatchObject({ ok: false, code: "blocked" });
+    } finally {
+      fs.unlinkSync(mcpDir);
+      fs.renameSync(backup, mcpDir);
+      fs.rmSync(external, { recursive: true, force: true });
+    }
+  });
+});

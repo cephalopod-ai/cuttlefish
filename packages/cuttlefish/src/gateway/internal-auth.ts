@@ -20,7 +20,8 @@ export function apiAuthHeaders(
 ): Record<string, string> {
   const token = normalizedToken(apiToken) ??
     (opts.fallbackToGatewayInfo === false ? undefined : gatewayInfoApiToken());
-  return token ? { "X-Cuttlefish-Token": token } : {};
+  // Internal callers use the same accepted carrier as the strict operator gate.
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 export function jsonApiHeaders(

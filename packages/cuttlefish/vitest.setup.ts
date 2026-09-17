@@ -11,8 +11,13 @@
  * would cache it against the real `node:os` and silently disarm a later
  * `vi.mock("node:os")`. The list below is therefore a copy of
  * `INSTANCE_IDENTITY_ENV_VARS` in `src/shared/instance-env.ts`;
- * `src/shared/__tests__/instance-env-list.test.ts` fails if the two drift.
+ * `src/shared/__tests__/instance-env.test.ts` fails if the two drift.
  */
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterAll } from "vitest";
+
 const INSTANCE_IDENTITY_ENV_VARS = [
   "CUTTLEFISH_HOME",
   "CUTTLEFISH_INSTANCE",
@@ -28,5 +33,14 @@ const INSTANCE_IDENTITY_ENV_VARS = [
 for (const key of INSTANCE_IDENTITY_ENV_VARS) {
   delete process.env[key];
 }
+
+// Removing inherited identity alone exposes the default personal-home fallback.
+// Give modules without a temp-home helper a fresh state/registry destination.
+const workerHome = fs.mkdtempSync(path.join(os.tmpdir(), "cuttlefish-vitest-worker-"));
+process.env.CUTTLEFISH_HOME = workerHome;
+process.env.CUTTLEFISH_INSTANCES_REGISTRY = path.join(workerHome, "instances.json");
+afterAll(() => {
+  fs.rmSync(workerHome, { recursive: true, force: true });
+});
 
 export { INSTANCE_IDENTITY_ENV_VARS as VITEST_SCRUBBED_INSTANCE_ENV_VARS };

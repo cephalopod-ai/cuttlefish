@@ -1,5 +1,5 @@
 import { Check, RotateCcw, Trash2 } from "lucide-react"
-import { lazy, Suspense, useState } from "react"
+import { lazy, Suspense, useId, useState } from "react"
 import { EmojiPicker } from "@/components/ui/emoji-picker"
 import { RemoteAccessPanel } from "@/components/auth/remote-access-panel"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
@@ -128,6 +128,7 @@ export function AppearanceSection({
           />
         </label>
         <input
+          aria-label="Custom accent hex color"
           type="text"
           placeholder="#3B82F6"
           value={customHex}
@@ -177,6 +178,7 @@ export function CooEmojiSection({
         </div>
         <div className="relative flex items-center gap-[var(--space-4)]">
           <button
+            aria-label="Choose COO emoji"
             onClick={() => setShowEmojiPicker(!showEmojiPicker)}
             className="flex size-12 items-center justify-center cursor-pointer bg-transparent border-none p-0"
           >
@@ -250,14 +252,16 @@ export function BrandingSection({
   setSubtitleValue,
   subtitleValue,
 }: BrandingSectionProps) {
+  const brandingId = useId()
   return (
     <Section title="Branding">
       <div className="flex flex-col gap-[var(--space-3)]">
         <div>
-          <label className="block text-[length:var(--text-caption1)] text-[var(--text-tertiary)] mb-[var(--space-1)]">
+          <label htmlFor={`${brandingId}-portal-name`} className="block text-[length:var(--text-caption1)] text-[var(--text-tertiary)] mb-[var(--space-1)]">
             Portal Name
           </label>
           <input
+            id={`${brandingId}-portal-name`}
             type="text"
             className="apple-input w-full bg-[var(--bg-secondary)] border border-[var(--separator)] rounded-[var(--radius-sm)] px-[10px] py-[6px] text-[length:var(--text-footnote)] text-[var(--text-primary)]"
             placeholder="Cuttlefish"
@@ -271,10 +275,11 @@ export function BrandingSection({
         </div>
 
         <div>
-          <label className="block text-[length:var(--text-caption1)] text-[var(--text-tertiary)] mb-[var(--space-1)]">
+          <label htmlFor={`${brandingId}-portal-subtitle`} className="block text-[length:var(--text-caption1)] text-[var(--text-tertiary)] mb-[var(--space-1)]">
             Portal Subtitle
           </label>
           <input
+            id={`${brandingId}-portal-subtitle`}
             type="text"
             className="apple-input w-full bg-[var(--bg-secondary)] border border-[var(--separator)] rounded-[var(--radius-sm)] px-[10px] py-[6px] text-[length:var(--text-footnote)] text-[var(--text-primary)]"
             placeholder="Command Centre"
@@ -285,10 +290,11 @@ export function BrandingSection({
         </div>
 
         <div>
-          <label className="block text-[length:var(--text-caption1)] text-[var(--text-tertiary)] mb-[var(--space-1)]">
+          <label htmlFor={`${brandingId}-operator-name`} className="block text-[length:var(--text-caption1)] text-[var(--text-tertiary)] mb-[var(--space-1)]">
             Operator Name
           </label>
           <input
+            id={`${brandingId}-operator-name`}
             type="text"
             className="apple-input w-full bg-[var(--bg-secondary)] border border-[var(--separator)] rounded-[var(--radius-sm)] px-[10px] py-[6px] text-[length:var(--text-footnote)] text-[var(--text-primary)]"
             placeholder="Your Name"
@@ -302,10 +308,11 @@ export function BrandingSection({
         </div>
 
         <div>
-          <label className="block text-[length:var(--text-caption1)] text-[var(--text-tertiary)] mb-[var(--space-1)]">
+          <label htmlFor={`${brandingId}-portal-emoji`} className="block text-[length:var(--text-caption1)] text-[var(--text-tertiary)] mb-[var(--space-1)]">
             Portal Emoji
           </label>
           <input
+            id={`${brandingId}-portal-emoji`}
             type="text"
             className="apple-input w-[80px] text-center text-[length:var(--text-title2)] px-[8px] py-[6px] bg-[var(--bg-secondary)] border border-[var(--separator)] rounded-[var(--radius-sm)]"
             placeholder="Optional"
@@ -316,10 +323,11 @@ export function BrandingSection({
         </div>
 
         <div>
-          <label className="block text-[length:var(--text-caption1)] text-[var(--text-tertiary)] mb-[var(--space-1)]">
+          <label htmlFor={`${brandingId}-language`} className="block text-[length:var(--text-caption1)] text-[var(--text-tertiary)] mb-[var(--space-1)]">
             Language
           </label>
           <select
+            id={`${brandingId}-language`}
             value={languageValue}
             onChange={(e) => setLanguageValue(e.target.value)}
             onBlur={() => {
@@ -390,12 +398,14 @@ export function NotificationsSection({
             </span>
             <span className="flex justify-center">
               <ToggleSwitch
+                ariaLabel={`${NOTIFICATION_EVENT_LABELS[eventClass]} Badge`}
                 checked={notificationPreferences[eventClass].badge}
                 onChange={(v) => setNotificationPreference(eventClass, "badge", v)}
               />
             </span>
             <span className="flex justify-center">
               <ToggleSwitch
+                ariaLabel={`${NOTIFICATION_EVENT_LABELS[eventClass]} Toast`}
                 checked={notificationPreferences[eventClass].toast}
                 onChange={(v) => setNotificationPreference(eventClass, "toast", v)}
               />

@@ -7,7 +7,7 @@ import path from "node:path";
 const { home: tmpHome } = withStaticTempCuttlefishHome("cuttlefish-start-test-");
 
 const lifecycle = vi.hoisted(() => ({
-  getStatus: vi.fn(() => ({ running: true, pid: 123 })),
+  getStatus: vi.fn((): { running: boolean; pid: number; error?: string } => ({ running: true, pid: 123 })),
   restartDetached: vi.fn(() => true),
   startForeground: vi.fn(),
   startDaemon: vi.fn(),
@@ -44,6 +44,43 @@ afterAll(() => {
 });
 
 describe("runStart", () => {
+  it("preserves invalid PID inspection guidance without suggesting a port change", async () => {
+    lifecycle.getStatus.mockReturnValueOnce({ running: false, pid: 0, error: "Invalid gateway PID file; preserve and inspect its contents before retrying." });
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const stopped = new Error("fixture process exit");
+    const exit = vi.spyOn(process, "exit").mockImplementation(() => { throw stopped; });
+    try {
+      await expect(runStart({ daemon: true })).rejects.toBe(stopped);
+      expect(exit).toHaveBeenCalledWith(1);
+      expect(error).toHaveBeenCalledWith(expect.stringContaining("preserve and inspect"));
+      expect(error).not.toHaveBeenCalledWith(expect.stringContaining("free port"));
+      expect(lifecycle.startDaemon).not.toHaveBeenCalled();
+    } finally {
+      exit.mockRestore();
+      error.mockRestore();
+    }
+  });
+
+  it("names a safe remedy when an unowned process occupies the requested port", async () => {
+    lifecycle.getStatus.mockReturnValueOnce({ running: false, pid: 0, error: "Port 8891 is occupied by PID 123, but no Cuttlefish PID file exists." });
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const stopped = new Error("fixture process exit");
+    const exit = vi.spyOn(process, "exit").mockImplementation(() => { throw stopped; });
+    try {
+      await expect(runStart({ daemon: true, port: 8891 })).rejects.toBe(stopped);
+      expect(exit).toHaveBeenCalledWith(1);
+      expect(lifecycle.getStatus).toHaveBeenCalledWith(8891);
+      expect(lifecycle.startDaemon).not.toHaveBeenCalled();
+      expect(lifecycle.startForeground).not.toHaveBeenCalled();
+      expect(lifecycle.restartDetached).not.toHaveBeenCalled();
+      expect(error).toHaveBeenCalledWith(expect.stringContaining("Port 8891 is occupied"));
+      expect(error).toHaveBeenCalledWith(expect.stringMatching(/free port.*cuttlefish start -p.*gateway\.port.*config\.yaml/));
+    } finally {
+      exit.mockRestore();
+      error.mockRestore();
+    }
+  });
+
   it("is idempotent when a gateway is already running", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     await runStart({ daemon: false });

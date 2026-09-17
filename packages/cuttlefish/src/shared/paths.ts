@@ -220,7 +220,9 @@ export let KNOWLEDGE_DIR = initialPaths.KNOWLEDGE_DIR;
 export let KNOWLEDGE_OUTBOX_JSONL = initialPaths.KNOWLEDGE_OUTBOX_JSONL;
 export let EMAIL_DIR = initialPaths.EMAIL_DIR;
 
-export const TEMPLATE_DIR = path.join(__dirname, "..", "..", "..", "template");
+// Source tools execute src/shared/*.ts; published JavaScript executes from
+// dist/src/shared/*.js (tsconfig rootDir="."). Neither path depends on cwd.
+export const TEMPLATE_DIR = path.resolve(__dirname, __filename.endsWith(".ts") ? "../.." : "../../..", "template");
 export const TEMPLATE_MIGRATIONS_DIR = path.join(TEMPLATE_DIR, "migrations");
 
 /** Path to the global instances registry; tests/tools may isolate it explicitly. */

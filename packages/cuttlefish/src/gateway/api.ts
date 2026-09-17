@@ -30,6 +30,7 @@ import { handleSystemRoutes } from "./api/routes/system.js";
 import { handleInspectRoutes } from "./api/routes/inspect.js";
 import { handleCollaborationRoutes } from "./api/routes/collaboration.js";
 import { handleA2AOutboundRoutes } from "./api/routes/a2a-outbound.js";
+import { parseGatewayRequestUrl } from "./request-url.js";
 
 export type { ApiContext } from "./api/context.js";
 export { normalizeBlockDeltaForTurn, shouldPersistFinalAssistantMessage, finalBlocksForAssistantMessage } from "./api/block-finalize.js";
@@ -61,7 +62,11 @@ export async function handleApiRequest(
   res: ServerResponse,
   context: ApiContext,
 ): Promise<void> {
-  const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
+  const url = parseGatewayRequestUrl(req);
+  if (!url) {
+    json(res, { error: "Invalid request URL" }, 400);
+    return;
+  }
   const pathname = url.pathname;
   const method = req.method || "GET";
   (res as ResWithEncoding).__acceptEncoding = req.headers["accept-encoding"];

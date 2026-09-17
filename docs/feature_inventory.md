@@ -1,5 +1,46 @@
 # Feature Inventory
 
+## Operational persistence and request guards (2026-09-16)
+
+- `cuttlefish help` and `cuttlefish help <command>` are successful discovery
+  paths. Essential sessions-database initialization failure stops setup.
+- Config saves reject invalid request values with `400`; invalid or unreadable
+  existing YAML returns `409 CONFIG_INVALID_ON_DISK` or `CONFIG_UNREADABLE`,
+  preserving bytes for repair.
+- Cron creates require safe unique IDs, including normalized legacy run-log
+  identity. Duplicates return `409 CRON_ID_CONFLICT`; history readers and writers
+  share log paths. Invalid complete job state returns `409 CRON_INVALID_ON_DISK`
+  on mutations even after a degraded read. Logs distinguish successful backups
+  from failed copies. A malformed read does not authorize replacing the file.
+- Interrupted department rename recovery preserves both directories on target
+  collision and retains unresolved intent. New renames return `409` until the
+  earlier work can finish; no automatic department merge is performed.
+- HTTP transport authorization and API routing share URL parsing. Scoped child
+  creation validates and derives its parent from live caller identity. New
+  artifact references require the scoped caller's own canonical managed session
+  uploads before mutation/dispatch. Operator references and historical replay
+  retain their existing policies.
+- Generated MCP credential directories are denied by inline read policy for
+  lexical paths and canonical directory aliases, including arbitrary-read mode.
+  Arbitrary hard-link provenance is not established by this guard.
+- Settings inputs have associated native/ARIA labels; numeric fields expose
+  appropriate input types. The audit checked 75 controls in the owned dashboard.
+- `/file` renders supported raster images and downloads binary bytes using
+  `/api/files/read?path=...&download=1`. Policy, 5 MiB cap and text redaction apply
+  before sending this representation with attachment, nosniff and no-store
+  headers. SVG and other binary documents remain downloads; larger managed
+  uploads retain `/api/files/:id` download.
+- Inert simulation records retain snapshots across later lease changes. Atomic
+  replacement completes physically short writes for UTF-8 and Buffer inputs;
+  catchable failures before rename preserve the target. Directory fsync remains
+  best-effort, and abrupt process death can leave temporary files.
+- Default core Vitest workers use owned disposable runtime paths after credential
+  scrubbing. Source and shipped builds resolve the same package templates/version.
+
+Validation and limits are in [TEST_LEDGER.md](TEST_LEDGER.md). These implementations
+do not establish signed-in provider behavior, external connector delivery or
+operational readiness for every standing scenario.
+
 ## Twilio SMS connector
 
 - `packages/cuttlefish/src/connectors/twilio/index.ts`
@@ -298,6 +339,8 @@
 ### Remote access pairing code panel
 - `packages/web/src/components/auth/remote-access-panel.tsx`
 - The settings remote-access panel controls pairing codes and shows paired browsers.
+- Pairing-code creation also requires administrator authority at the API producer;
+  a session-scoped agent token receives `403` even on its permitted auth route.
 - Gateway authentication is required by default on loopback and network binds.
   A browser opened by interactive `cuttlefish start` receives a one-time,
   60-second launch capability in the URL fragment and exchanges it for a

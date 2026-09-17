@@ -44,6 +44,28 @@ describe("safeWriteFile", () => {
     expect(Array.from(fs.readFileSync(target))).toEqual([1, 2, 3]);
   });
 
+  it.each(["multibyte α🙂 text", Buffer.from([1, 2, 3, 4, 5])])("completes physically short writes for %s", (input) => {
+    const target = path.join(dir, "short.bin");
+    const originalWrite = fs.writeSync;
+    const shortWrite = vi.spyOn(fs, "writeSync").mockImplementation((
+      fd: number,
+      data: string | NodeJS.ArrayBufferView,
+      offset?: number | null,
+      length?: number | BufferEncoding | null,
+      position?: number | null,
+    ) => {
+      if (typeof data === "string") return originalWrite(fd, Buffer.from(data).subarray(0, 1));
+      return originalWrite(fd, data, offset ?? 0, Math.min(typeof length === "number" ? length : data.byteLength, 1), position);
+    });
+    try {
+      safeWriteFile(target, input);
+      expect(fs.readFileSync(target)).toEqual(Buffer.from(input));
+      expect(leftoverTmps()).toEqual([]);
+    } finally {
+      shortWrite.mockRestore();
+    }
+  });
+
   it("fsyncs the file fd and the parent dir fd by default", () => {
     const fsyncSpy = vi.spyOn(fs, "fsyncSync");
     const target = path.join(dir, "f.txt");
@@ -86,6 +108,22 @@ describe("crash-safety", () => {
     writeSpy.mockRestore();
     expect(leftoverTmps()).toEqual([]);
     expect(fs.existsSync(target)).toBe(false);
+  });
+
+  it("preserves the prior target when a partial write is followed by an error", () => {
+    const target = path.join(dir, "prior.txt");
+    fs.writeFileSync(target, "prior complete bytes");
+    const originalWrite = fs.writeSync;
+    const write = vi.spyOn(fs, "writeSync")
+      .mockImplementationOnce((fd, data) => originalWrite(fd, Buffer.from(data).subarray(0, 1)))
+      .mockImplementationOnce(() => { throw new Error("fixture disk full after partial write"); });
+    try {
+      expect(() => safeWriteFile(target, "new multibyte α🙂 bytes")).toThrow("fixture disk full after partial write");
+      expect(fs.readFileSync(target, "utf-8")).toBe("prior complete bytes");
+      expect(leftoverTmps()).toEqual([]);
+    } finally {
+      write.mockRestore();
+    }
   });
 });
 
