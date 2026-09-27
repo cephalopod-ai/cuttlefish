@@ -1338,7 +1338,8 @@ describe("external A2A cross-request settlement", () => {
         destinations: [{
           id,
           agentCardUrl: "https://peer.example/.well-known/agent-card.json",
-          token: "0123456789abcdef",
+          // Placeholder of the minimum credential length; the outbound client is mocked.
+          token: "x".repeat(16),
           allowedSkills: ["research"],
           services: [{ name: "external-research", description: "Research via an A2A peer", skillId: "research" }],
         }],
