@@ -48,6 +48,11 @@ You've already installed the best agent CLIs. Cuttlefish turns that pile of term
 
 Full install matrix (npm, Homebrew, GitHub archives, Windows): **[`docs/INSTALL.md`](docs/INSTALL.md)**.
 
+> **Command notation.** Examples that begin with `cuttlefish` assume a packaged
+> install. In a source checkout, use `pnpm cuttlefish` instead. For commands
+> whose output will be parsed, use `pnpm --silent cuttlefish … --json` so
+> pnpm's script banner does not share standard output with the JSON document.
+
 ### Source (works today on every platform)
 
 ```bash
@@ -117,10 +122,6 @@ cuttlefish restart    # restart safely (detached; works even from inside a sessi
 cuttlefish status     # is the daemon running?
 ```
 
-For a command that writes machine-readable `--json` output from a source
-checkout, use `pnpm --silent cuttlefish … --json`; pnpm's normal script banner
-would otherwise share stdout with the JSON payload.
-
 Cuttlefish uses `~/.cuttlefish` by default. Set `CUTTLEFISH_HOME` to use a
 separate active home for lifecycle commands and `cuttlefish list`; concurrent
 restart requests coalesce while the detached handoff is in progress.
@@ -146,7 +147,7 @@ Three ideas make Cuttlefish click:
 
 ---
 
-## Engines - bring your own
+## Engines: bring your own
 
 Cuttlefish detects whichever agent CLIs are on your `PATH` and makes them interchangeable engines. Switch per session or per employee in the dashboard; engines whose binary isn't installed are simply hidden. Model discovery is best-effort: supported CLIs are queried at boot, while configured and conservative built-in catalogs keep other engines usable when discovery is unavailable.
 
@@ -194,7 +195,7 @@ Cuttlefish drives the **real interactive `claude` binary inside a [node-pty](htt
 
 ---
 
-## The org system
+## The organization system
 
 Employees are plain YAML files in `~/.cuttlefish/org/`. Each has a persona, a rank, a department, an engine, and a place in the hierarchy:
 
@@ -265,7 +266,7 @@ mcp:
 
 Full server catalog, per-employee opt-out/allow-lists, and env-secret handling: **[MCP guide](packages/cuttlefish/template/docs/mcp.md)**.
 
-## Lineage And Credit
+## Lineage and credit
 
 Cuttlefish is forked from [`repo-makeover/jinn`](https://github.com/repo-makeover/jinn), itself a substantial rework of the original [`hristo2612/jinn`](https://github.com/hristo2612/jinn). Both remain the technical lineage and MIT-licensed basis for this work, and we gratefully credit their authors.
 
@@ -273,7 +274,7 @@ Where Jinn established the core idea - a lightweight gateway that orchestrates a
 
 ---
 
-## What people build with it
+## What people build with Cuttlefish
 
 - **A Slack bot that actually ships work** - @mention an employee, it codes, and reports back in-thread.
 - **An always-on content pipeline** - cron jobs research, draft, fact-check, and publish on a schedule, reviewed by a COO.
@@ -352,7 +353,7 @@ controls, supported operations, and current transport limits.
 
 ## Roadmap
 
-Cuttlefish is in active development. Shipped recently: the orchestration Command Center, approval gates, the run ledger and artifact-lineage provenance stores, ten-engine support, file attachments, internal agent-to-agent messaging, opt-in external A2A HTTP+JSON federation, shared memory, and live streaming. On deck:
+Cuttlefish is in active development. Shipped recently: the orchestration Command Center, approval gates, the run ledger and artifact-lineage provenance stores, eleven-engine support, file attachments, internal agent-to-agent messaging, opt-in external A2A HTTP+JSON federation, shared memory, and live streaming. On deck:
 
 - **Engines** - deeper local-model support (llama.cpp and richer local-agent adapters), engine fallback chains.
 - **Connectors** - iMessage, outbound email/reply workflows, generic webhooks.
@@ -371,7 +372,7 @@ git clone https://github.com/cephalopod-ai/cuttlefish.git
 cd cuttlefish
 pnpm install
 pnpm run setup   # one-time: builds all packages and creates ~/.cuttlefish
-pnpm dev     # gateway (:8888) + Vite dev server (:5888) with hot reload
+pnpm dev         # gateway (:8888) + Vite dev server (:5888) with hot reload
 ```
 
 Open **[http://localhost:5888](http://localhost:5888)** - Vite proxies `/api` and `/ws` to the gateway.
