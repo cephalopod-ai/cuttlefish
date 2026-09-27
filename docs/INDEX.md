@@ -148,7 +148,7 @@ tracked audit/session files.
 
 September 2026: the resumed playtest used installed native engines, real local
 IMAP, disposable gateway restarts/crashes, browser interactions and orchestration
-recovery. Its final225-card matrix records18 Pass,180 Partial,17 Fail and10 Blocked;
+recovery. Its final 225-card matrix records 18 Pass, 180 Partial, 17 Fail, and 10 Blocked;
 21 findings were repaired, with one background-result observation still open.
 The earlier report's broad local-environment blockers are superseded; permissions
 were available. Detailed evidence remains local under the audit/session trees.
@@ -207,7 +207,7 @@ describe superseded experiments and should not override `README.md`,
 `docs/feature_inventory.md`.
 
 - `docs/audits/2026-09-05-playtest-resumed-final.md`: final resumed playtest report, repair results, remaining limitations and explicit reasons for unexecuted variations.
-- `docs/audits/2026-09-05-playtest-final-matrix.md`: all225 card dispositions; partial coverage is not a pass.
+- `docs/audits/2026-09-05-playtest-final-matrix.md`: all 225 card dispositions; partial coverage is not a pass.
 - `docs/audits/2026-09-05-playtest-closing-review.md`: scoped transitive review and separate completeness inspection.
 - `docs/audits/2026-09-05-queued-defect-repair.md`: repair of the queued/unresolved findings that needed no operator decision, and the decision-blocked backlog recorded in their place.
 - `docs/audits/2026-09-05-orchestration-dataflow-walkthrough.md`: role/mode, trust-boundary and run-state maps for the agent-to-agent seams, the four findings repaired, and the four recorded as needing an operator decision.

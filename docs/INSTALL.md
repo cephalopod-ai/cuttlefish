@@ -8,6 +8,12 @@ name is `cuttlefish-cli`.
 Default runtime home: `~/.cuttlefish` (Windows: `%USERPROFILE%\.cuttlefish`).
 Override with `CUTTLEFISH_HOME`.
 
+> **Command notation.** Examples that begin with `cuttlefish` apply to npm,
+> Homebrew, and archive installations. In a source checkout, use
+> `pnpm cuttlefish` instead. For machine-readable output, use
+> `pnpm --silent cuttlefish … --json` so pnpm's script banner stays out of the
+> JSON stream.
+
 ## Install paths (pick one)
 
 | Path | Best for | Status |
@@ -222,10 +228,8 @@ cuttlefish stop
 cuttlefish restart
 ```
 
-From a **source checkout** without a global install, prefix with `pnpm`
-(`pnpm cuttlefish status`). For machine-readable JSON from source, use
-`pnpm --silent cuttlefish … --json` so pnpm’s script banner does not pollute
-stdout.
+From a **source checkout** without a global install, use the command form in
+the notation callout above (for example, `pnpm cuttlefish status`).
 
 Sign in to each engine CLI before expecting model sessions — `--version` on an
 engine only proves the binary is present, not that you are authenticated.

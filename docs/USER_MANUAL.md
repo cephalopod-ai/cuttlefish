@@ -1,19 +1,19 @@
 # User Manual
 
-## What Cuttlefish Does
+## What Cuttlefish does
 
 Cuttlefish is a local gateway daemon and web dashboard for coordinating professional AI
 coding CLIs. It runs external engines such as Claude Code, Codex, Grok,
 Antigravity, Pi, Hermes, and Kiro through a shared org/delegation model.
 
-## Who It Is For
+## Who it is for
 
 - Operators who already use coding-agent CLIs and want one local dashboard.
 - Teams experimenting with AI "employees", departments, cron jobs, connectors,
   and controlled delegation.
 - Developers who want local orchestration without replacing official engine CLIs.
 
-## Core Concepts
+## Core concepts
 
 - **Gateway daemon:** local Node process that serves the API and dashboard.
 - **Engine:** external CLI Cuttlefish invokes for model work.
@@ -24,10 +24,30 @@ Antigravity, Pi, Hermes, and Kiro through a shared org/delegation model.
 - **Orchestration:** scheduler/runtime for multi-role tasks, leases,
   continuations, holds, worktrees, and dual-lane operations.
 
-## Installation And Setup
+## Installation and setup
 
 Canonical install instructions (Windows, macOS, Linux; npm, archives, source):
 **[INSTALL.md](INSTALL.md)**.
+
+### Command notation
+
+Examples that begin with `cuttlefish` assume a packaged installation. From a
+source checkout, substitute `pnpm cuttlefish`. For example:
+
+```bash
+# Packaged installation
+cuttlefish status
+
+# Source checkout
+pnpm cuttlefish status
+
+# Source checkout with machine-readable output
+pnpm --silent cuttlefish status --json
+```
+
+Use `--silent` for JSON-producing source commands so pnpm's script banner does
+not share standard output with the JSON document. Commands later in this manual
+use the shorter packaged-install form.
 
 1. Install Node.js 24.x. This repo pins Node 24.13.0 via `.nvmrc` and declares `>=24 <25` in its manifest. Installation warns rather than enforcing that range; use the pinned version for native modules.
 2. Install and sign in to at least one engine CLI.
@@ -60,9 +80,9 @@ rerun setup before starting. Optional engine probes and optional documentation
 downloads can warn without preventing local initialization. A reachable dashboard
 still needs a signed-in engine to execute work.
 
-## Common Workflows
+## Common workflows
 
-### Start And Stop
+### Start and stop
 
 ```bash
 cuttlefish start
@@ -86,22 +106,19 @@ does not distinguish reuse of a valid positive PID after abrupt termination.
 Help exits successfully; missing subcommands and unknown help targets retain
 error exit codes.
 
-### Pair Another Browser
+### Pair another browser
 
 ```bash
 cuttlefish pair
 cuttlefish unpair --json
 ```
 
-From a source checkout, run JSON-producing commands with pnpm's quiet mode so
-the script banner does not pollute stdout: `pnpm --silent cuttlefish unpair --json`.
-
 Creating pairing codes requires an authenticated operator with administrator
 authority. A session-scoped agent token cannot create them. Use the local
 authenticated dashboard or `cuttlefish pair`; revoking a paired browser ends
 that browser's access without revoking other paired browsers.
 
-### Instance Model
+### Instance model
 
 ```bash
 cuttlefish list
@@ -114,7 +131,7 @@ restart requests coalesce while a detached restart is already in progress. The
 inherited `create`, `remove`, and `nuke` surfaces are disabled or limited so
 automation cannot silently create additional named instances.
 
-### Manage Skills
+### Manage skills
 
 ```bash
 cuttlefish skills find testing
@@ -128,7 +145,7 @@ instance and reports that state without rerunning the global installer. If an
 installer exits nonzero but the requested skill is discovered and recorded,
 the command reports the successful final state and retains the installer detail.
 
-### Use The Dashboard
+### Use the dashboard
 
 Routes are defined in `packages/web/src/main.tsx`:
 
@@ -151,7 +168,7 @@ Routes are defined in `packages/web/src/main.tsx`:
 Unknown client paths redirect to `/` so stale deep links recover to the primary
 chat workspace instead of leaving an empty dashboard shell.
 
-### Sending messages and files
+### Send messages and files
 
 The chat composer keeps your draft and attachments until the gateway accepts
 the request. If an upload or message request fails, correct the problem and
@@ -223,7 +240,7 @@ Twilio SMS can create or continue a session from an allowlisted phone number
 and return the completed response by SMS. Follow [the Twilio SMS setup guide](TWILIO_SMS.md)
 to configure credentials, an SMS-capable sender, and the signed inbound webhook.
 
-## Persistence And Files
+## Persistence and files
 
 - Sessions, messages, registry data, queue state, files, archives, approvals, and
   orchestration state are persisted in the active Cuttlefish home.
@@ -232,7 +249,7 @@ to configure credentials, an SMS-capable sender, and the signed inbound webhook.
 - Local audit/session/Giles/runtime artifacts in the source checkout are not part
   of runtime persistence and are ignored by Git.
 
-## Error Handling And Recovery
+## Error handling and recovery
 
 - `cuttlefish status` reports daemon state and useful gateway details.
 - Rate-limit and engine-unavailable paths are handled through session metadata and
@@ -267,7 +284,7 @@ to configure credentials, an SMS-capable sender, and the signed inbound webhook.
 | Hermes hidden or failing | `hermes` not on `PATH` or provider credentials missing | See `docs/engines-hermes.md`. |
 | Orchestration controls disabled | Runtime disabled or unavailable | Check `orchestration.enabled` and `/orchestration` status. |
 
-## Known Limitations
+## Known limitations
 
 - Hermes is metered by its configured provider, unlike subscription-wrapped engines.
 - Kiro credit usage is an estimate; see `docs/known-diagnostics.md`.
@@ -281,7 +298,7 @@ to configure credentials, an SMS-capable sender, and the signed inbound webhook.
   `PLAY-RESUME-20260905-R22` in [the TODO ledger](TODO_LEDGER.md); the September 16
   no-provider run does not supersede that live observation.
 
-## See Also
+## See also
 
 - `docs/ARCHITECTURE.md`
 - `docs/SPECIFICATION.md`
