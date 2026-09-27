@@ -42,6 +42,17 @@ describe("computeInteractiveTurnStats — cumulative totals for the whole transc
     expect(computeInteractiveTurnStats(file, "opus")?.cost?.cost).toBeCloseTo(5, 5);
     expect(computeInteractiveTurnStats(file, "sonnet")?.cost?.cost).toBeCloseTo(3, 5);
     expect(computeInteractiveTurnStats(file, "haiku")?.cost?.cost).toBeCloseTo(1, 5);
+    expect(computeInteractiveTurnStats(file, "fable")?.cost?.cost).toBeCloseTo(10, 5);
+  });
+
+  it("prices Opus 5.5 at its own rate, not the unknown-model default", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cuttlefish-stats-opus55-"));
+    const file = path.join(tmp, "sess.jsonl");
+    fs.writeFileSync(file, "");
+    appendAssistantUsage(file, { input_tokens: 1_000_000, output_tokens: 1_000_000 });
+
+    // $4/M in + $20/M out. DEFAULT_PRICE would report $90 and trip cost caps early.
+    expect(computeInteractiveTurnStats(file, "claude-opus-5-5")?.cost?.cost).toBeCloseTo(24, 5);
   });
 });
 

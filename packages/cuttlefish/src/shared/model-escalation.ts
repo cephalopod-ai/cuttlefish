@@ -8,7 +8,7 @@
  *
  *   small  (terra / haiku / gemini-flash / qwen / gpt-mini)
  *     → mid   (sol / sonnet)
- *       → large (astra / opus / gemini-pro)
+ *       → large (astra / opus / fable / gemini-pro)
  *
  * Pure resolver (no I/O) so it is exhaustively unit-testable; the caller supplies
  * availability and performs the re-dispatch. The ladder is overridable via config
@@ -68,9 +68,16 @@ export const DEFAULT_MODEL_LADDER: ModelLadder = [
   [
     { engine: "codex", model: "gpt-6-astra" },
     { engine: "codex", model: "gpt-5.5" },
+    { engine: "claude", model: "claude-opus-5-5" },
     { engine: "claude", model: "claude-opus-5" },
     { engine: "claude", model: "opus" },
     { engine: "antigravity", model: "gemini-3.1-pro-high" },
+    // Fable must be on the ladder: an unlisted model is treated as tier 0, so a
+    // stalled Fable worker would otherwise "escalate" down to the mid tier.
+    // Listed last so escalating INTO this tier prefers the cheaper rungs.
+    { engine: "claude", model: "claude-fable-5-1" },
+    { engine: "claude", model: "claude-fable-5" },
+    { engine: "claude", model: "fable" },
   ],
 ];
 

@@ -61,6 +61,17 @@ describe("fresh-install: talk seeding + config guidance", () => {
     expect(setup).toMatch(/globalChain:\s+- \{ engine: claude, model: claude-opus-5, effortLevel: max/s);
   });
 
+  it("seeds Opus 5.5 and the full `claude --effort` ladder on every current non-Haiku row", () => {
+    const setup = readFileSync(SETUP, "utf-8");
+    for (const [id, label] of [
+      ["claude-fable-5-1", "Fable 5\\.1"],
+      ["claude-opus-5-5", "Opus 5\\.5"],
+      ["claude-sonnet-5", "Sonnet 5"],
+    ]) {
+      expect(setup).toMatch(new RegExp(`id: ${id}, label: "${label}".*effortLevels: \\[low, medium, high, xhigh, max\\], contextWindow: 1000000`));
+    }
+  });
+
   it("seeds every registered engine and canonical Antigravity model ids", () => {
     const setup = readFileSync(SETUP, "utf-8");
     for (const engine of ["claude", "codex", "antigravity", "grok", "pi", "kiro", "hermes", "ollama", "kilo", "aider", "vibe"]) {

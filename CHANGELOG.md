@@ -3,6 +3,15 @@
 ## [Unreleased]
 
 ### Fixed
+- **A Fable worker no longer escalates down a tier.** Claude Fable was missing
+  from the built-in model ladder, so escalation treated the most capable model
+  as an unknown tier-0 model and moved a stalled Fable worker to Sol or Sonnet.
+  Fable now sits in the top tier and recovers sideways to another provider's
+  top-tier model.
+- **Opus 5.5 turns are costed at its own rate.** A `claude-opus-5-5` session
+  had no price row and was costed at the unknown-model default (about 3.75x
+  its real $4/$20 per million tokens), which tripped execution cost caps early.
+  The `fable` alias had the same gap.
 - **`cuttlefish status` shows gateway details again.** Since gateway auth became
   the default, the CLI's unauthenticated probe of `/api/status` was answered
   401 and silently dropped the port and session lines. `status` now reads the
@@ -38,6 +47,15 @@
   only; the production audit was already clean.
 
 ### Changed
+- **Claude Opus 5.5 and the full Claude effort range.** Fresh configuration
+  lists Opus 5.5 (`claude-opus-5-5`, 1M context) and offers `xhigh` and `max`
+  on Fable 5.1, Opus 5.5 and Sonnet 5, matching the effort levels
+  `claude --effort` accepts. A synthesized Claude registry (no `models.claude`
+  block) offers the same range. The top escalation tier tries Opus 5.5 before
+  Opus 5. The `opus` alias expands to Opus 5.5 when the registry lists it and to
+  Opus 5 otherwise, and the new `fable` alias expands to Fable 5.1 or Fable 5.
+  Defaults, the shipped `claude-opus-5` fallback rung, and the delegated-authority
+  model allowlist are unchanged.
 - **Orchestration roles can declare what they are.** `roles.yaml` accepts an
   optional `kind:` — `implementer`, `reviewer`, `independent_reviewer`,
   `adversarial_reviewer`, `architect`, `qa` — and it is authoritative when

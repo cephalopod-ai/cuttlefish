@@ -86,7 +86,8 @@ export const CODEX_DEFAULT_MODEL = "gpt-6-astra";
 
 /** Conservative per-engine defaults used when synthesizing (no `models:` block). */
 const SYNTH_DEFAULTS: Record<EngineName, { supportsEffort: boolean; effortLevels: string[]; fallbackModel: string }> = {
-  claude: { supportsEffort: true, effortLevels: ["low", "medium", "high"], fallbackModel: "opus" },
+  // Mirrors the `claude --effort` choices (low|medium|high|xhigh|max).
+  claude: { supportsEffort: true, effortLevels: ["low", "medium", "high", "xhigh", "max"], fallbackModel: "opus" },
   codex: { supportsEffort: true, effortLevels: ["low", "medium", "high", "xhigh", "max", "ultra"], fallbackModel: CODEX_DEFAULT_MODEL },
   antigravity: { supportsEffort: false, effortLevels: [], fallbackModel: ANTIGRAVITY_DEFAULT_MODEL },
   grok: { supportsEffort: true, effortLevels: GROK_EFFORT_LEVELS, fallbackModel: "grok-4.6" },

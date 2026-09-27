@@ -359,11 +359,15 @@ operational readiness for every standing scenario.
 
 ### Session model alias expansion
 - `packages/cuttlefish/src/sessions/session-patch.ts`
-- The session create and session-patch API now accept short Claude model aliases:
-  `sonnet` → `claude-sonnet-5`, `opus` → `claude-opus-5`,
-  `haiku` → `claude-haiku-4-5`. Aliases are expanded before registry
-  validation so callers using convenience names receive a valid session instead of
-  an "unknown model" rejection.
+- The session create and session-patch API now accept short Claude model aliases,
+  matching the `claude --model` aliases: `fable` → `claude-fable-5-1` (else
+  `claude-fable-5`), `opus` → `claude-opus-5-5` (else `claude-opus-5`),
+  `sonnet` → `claude-sonnet-5`, `haiku` → `claude-haiku-4-5`. Each alias expands
+  to its newest candidate that the registry actually lists, so an older
+  `config.yaml` without the newest id keeps working. A registry that lists the
+  literal alias id (the shipped template lists `opus`) keeps it unexpanded.
+  Aliases are expanded before registry validation so callers using convenience
+  names receive a valid session instead of an "unknown model" rejection.
 - Only the `claude` engine is affected; other engines pass the model string through unchanged.
 
 ### Agent process crash session status
@@ -862,6 +866,10 @@ operational readiness for every standing scenario.
   middle tier and Astra in the top tier. Same-tier recovery uses another
   provider; it does not downgrade Astra to an older Codex model. Explicit
   agent/global fallback chains retain their configured order.
+- The top tier also lists Claude Opus 5.5 (ahead of Opus 5) and, last, Claude
+  Fable (`claude-fable-5-1`, `claude-fable-5`, `fable`). A Fable worker therefore
+  recovers sideways to another provider's top-tier model instead of being
+  treated as an unknown tier-0 model and routed down to Sol or Sonnet.
 - Autonomous authorization pairs the fixed `claude-fable-5-1` and
   `gpt-6-astra` reviewers, retaining judge-only execution and the requirement
   that both approve. Historical approval badges describe the independent
