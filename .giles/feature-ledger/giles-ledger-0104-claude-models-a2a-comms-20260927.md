@@ -26,6 +26,13 @@ Claude CLI (2.1.283) exposes, and repaired confirmed agent-to-agent defects.
 
 **status:** implemented; validation results recorded below.
 
+**PR #97 review follow-up:** The Claude model and effort-range portion of this
+entry is the required feature-ledger record for PR #97, “Add Claude Opus 5.5,
+full claude --effort range, and fix Fable escalation downgrade.” The review
+follow-up verified that this tracked entry records the feature id, action
+summary, touched files, validation, remaining open items, and provenance; no
+runtime change was needed to address the ledger-only finding.
+
 **provenance:** direct source inspection, `claude --help` output from the
 installed CLI, and a read-only subagent review of the A2A, collaboration and
 orchestration paths whose findings were re-verified by reading before patching.
@@ -56,6 +63,14 @@ and 3,291 tests with 3 skipped; `tsc --noEmit` passed; eslint passed on every
 changed source and test file. Each comms regression test (5) and the Fable
 escalation test were confirmed to fail with the source fix reverted. The web
 package, e2e and Windows jobs were not run locally (CI runs them).
+
+For the PR #97 review follow-up, `pnpm typecheck` and `pnpm lint` passed, and a
+field-presence check confirmed this entry retains all six required ledger
+fields. `pnpm test` passed the contracts and web packages, then reported one
+cuttlefish-cli failure before the run was stopped after 164 of 367 CLI files;
+the slow execution-authority restart file that was active near the failure was
+rerun directly and passed both tests. The incomplete full-suite rerun is
+reported as a residual validation limitation rather than as a passing check.
 
 **remaining open items:**
 - Existing homes keep their `models.claude` catalog; Opus 5.5 and the wider
