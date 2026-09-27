@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { Employee, Session } from "../../shared/types.js";
 import { resolveOrgHierarchy } from "../../gateway/org-hierarchy.js";
 import {
+  latestDirectManagementSession,
+  latestWritableSessionForEmployee,
   managementRoster,
   resolveManagementRecipients,
   resolveTeamRecipients,
@@ -44,6 +46,28 @@ const projectSession = (id: string, employeeId: string): Session => ({
   createdAt: "2026-01-01T00:00:00Z",
   lastActivity: "2026-01-01T00:00:00Z",
   lastError: null,
+});
+
+describe("operator messages never continue an inbound A2A task session", () => {
+  // A2A task sessions are management-lane sessions with source "web"; their
+  // replies are projected to the external partner as the task's artifact.
+  const operator = { ...projectSession("operator-thread", "lead"), lastActivity: "2026-01-01T00:00:00Z" };
+  const a2aByKey = { ...projectSession("a2a-new", "lead"), sessionKey: "a2a:task:t-1", lastActivity: "2026-01-03T00:00:00Z" };
+  const a2aByMeta = {
+    ...projectSession("a2a-linked", "lead"),
+    transportMeta: { a2a: { taskId: "t-2", contextId: "c-2", clientId: "partner", service: "svc", skillId: "svc" } },
+    lastActivity: "2026-01-02T00:00:00Z",
+  };
+
+  it("management lane skips A2A sessions even when they are the most recent", () => {
+    expect(latestDirectManagementSession([a2aByKey, a2aByMeta, operator], "lead")?.id).toBe("operator-thread");
+    expect(latestDirectManagementSession([a2aByKey, a2aByMeta], "lead")).toBeUndefined();
+  });
+
+  it("team lane skips A2A sessions even when they are the most recent", () => {
+    expect(latestWritableSessionForEmployee([a2aByKey, a2aByMeta, operator], "lead")?.id).toBe("operator-thread");
+    expect(latestWritableSessionForEmployee([a2aByKey], "lead")).toBeUndefined();
+  });
 });
 
 describe("collaboration recipient resolution", () => {

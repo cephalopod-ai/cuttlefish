@@ -13,6 +13,7 @@ interface TranscriptUsage {
 const MODEL_PRICES: Record<string, { in: number; out: number }> = {
   "claude-fable-5-1": { in: 10, out: 50 },
   "claude-fable-5": { in: 10, out: 50 },
+  "claude-opus-5-5": { in: 4, out: 20 },
   // The current Opus tier prices at 5/25, not the 15/75 of the retired Opus 4.
   "claude-opus-5": { in: 5, out: 25 },
   "claude-opus-4-8": { in: 5, out: 25 },
@@ -28,6 +29,9 @@ const MODEL_PRICES: Record<string, { in: number; out: number }> = {
   // template registers `opus` as a literal registry id, so `resolveModelAlias`
   // keeps it and the session's model string arrives here unexpanded. Without
   // these rows an alias session silently falls through to DEFAULT_PRICE.
+  // `opus` may resolve to Opus 5.5 (4/20) or Opus 5 (5/25) depending on the
+  // CLI build; the higher rate is kept so cost caps never under-count.
+  fable: { in: 10, out: 50 },
   opus: { in: 5, out: 25 },
   sonnet: { in: 3, out: 15 },
   haiku: { in: 1, out: 5 },

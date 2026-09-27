@@ -11,13 +11,19 @@ import { logger } from "../shared/logger.js";
  * contract. A deployment is free to register a model under the literal id
  * `opus` or `haiku` (the shipped `cuttlefish setup` template does exactly this —
  * see cli/setup.ts), in which case the requested id is already valid and must
- * NOT be rewritten. The date-suffixed targets below are only used when the
+ * NOT be rewritten. The full-id targets below are only used when the
  * literal alias is not itself a registered id.
+ *
+ * Each alias lists candidates newest-first, matching the `claude --model` alias
+ * contract ("an alias for the latest model"). The first registered candidate
+ * wins, so an install whose registry predates a release (e.g. still lists
+ * `claude-opus-5` but not `claude-opus-5-5`) keeps resolving the alias.
  */
-const CLAUDE_MODEL_ALIASES: Record<string, string> = {
-  sonnet: "claude-sonnet-5",
-  opus: "claude-opus-5",
-  haiku: "claude-haiku-4-5",
+const CLAUDE_MODEL_ALIASES: Record<string, readonly string[]> = {
+  fable: ["claude-fable-5-1", "claude-fable-5"],
+  opus: ["claude-opus-5-5", "claude-opus-5"],
+  sonnet: ["claude-sonnet-5"],
+  haiku: ["claude-haiku-4-5"],
 };
 
 /**
@@ -39,11 +45,13 @@ export function resolveModelAlias(engine: string, model: string, knownModelIds?:
   if (engine !== "claude") return model;
   // (1) An id the registry already knows wins — aliases never override a real id.
   if (knownModelIds?.has(model)) return model;
-  const expanded = CLAUDE_MODEL_ALIASES[model.toLowerCase()];
-  if (expanded === undefined) return model;
-  // (2) Only expand when the expansion is itself a registry id (or we have no
-  // registry to check against — preserve legacy behavior).
-  if (!knownModelIds || knownModelIds.has(expanded)) return expanded;
+  const candidates = CLAUDE_MODEL_ALIASES[model.toLowerCase()];
+  if (candidates === undefined) return model;
+  // (2) Only expand to a candidate that is itself a registry id (or, with no
+  // registry to check against, the newest candidate — preserve legacy behavior).
+  if (!knownModelIds) return candidates[0];
+  const expanded = candidates.find((id) => knownModelIds.has(id));
+  if (expanded !== undefined) return expanded;
   // (3) Expansion isn't registered either — keep the literal so the registry
   // check reports the id the operator actually requested.
   return model;

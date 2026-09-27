@@ -172,6 +172,31 @@ describe("resolveModelEscalation (default ladder)", () => {
     expect(got).toEqual({ engine: "codex", model: "gpt-x", via: "higher" });
   });
 
+  it.each(["claude-fable-5-1", "claude-fable-5", "fable"])(
+    "a stalled %s worker never escalates down into the mid tier",
+    (fromModel) => {
+      // Fable was missing from the ladder, so findTier() returned -1 and the
+      // resolver treated the most capable model as tier 0 → Sol/Sonnet.
+      const got = resolveModelEscalation({
+        fromEngine: "claude",
+        fromModel,
+        triedRungs: new Set([rungKey("claude", fromModel)]),
+        isAvailable: allAvailable,
+      });
+      expect(got).toEqual({ engine: "codex", model: "gpt-6-astra", via: "sibling" });
+    },
+  );
+
+  it("escalating into the large tier prefers Opus 5.5 over Opus 5 on claude", () => {
+    const got = resolveModelEscalation({
+      fromEngine: "claude",
+      fromModel: "claude-sonnet-5",
+      triedRungs: new Set([rungKey("claude", "claude-sonnet-5")]),
+      isAvailable: (engine) => engine === "claude",
+    });
+    expect(got).toEqual({ engine: "claude", model: "claude-opus-5-5", via: "higher" });
+  });
+
   it("sanity: the default ladder is ordered low → high", () => {
     expect(DEFAULT_MODEL_LADDER).toHaveLength(3);
     expect(DEFAULT_MODEL_LADDER[0].some((r) => r.model === "claude-haiku-4-5")).toBe(true);

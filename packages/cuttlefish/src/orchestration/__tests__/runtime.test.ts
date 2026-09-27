@@ -510,7 +510,9 @@ describe("OrchestrationRuntime continuation dispatch", () => {
           human_edits: null,
           regressions: null,
           disposition: "selected",
-          timestamp: "2026-06-24T10:00:00.000Z",
+          // Relative to now: scores older than DEFAULT_TELEMETRY_SCORE_MAX_AGE_MS
+          // (90 days) weigh 0, so a fixed date silently stops exercising routing.
+          timestamp: new Date(Date.now() - 60 * 60 * 1_000).toISOString(),
         }),
       ].join("\n"));
       const runtimeModule = await import("../runtime.js");

@@ -35,7 +35,7 @@ describe("synthesizeFromEngineConfig (backward-compat fallback)", () => {
   it("uses per-engine effort semantics: claude flag, codex config, grok flag, antigravity/ollama none", () => {
     const reg = synthesizeFromEngineConfig(cfg({}));
     expect(reg.claude.effortMechanism).toBe("claude-flag");
-    expect(reg.claude.models[0].effortLevels).toEqual(["low", "medium", "high"]);
+    expect(reg.claude.models[0].effortLevels).toEqual(["low", "medium", "high", "xhigh", "max"]);
     expect(reg.codex.effortMechanism).toBe("codex-config");
     expect(reg.codex.models[0].effortLevels).toContain("xhigh");
     expect(reg.grok.effortMechanism).toBe("grok-flag");

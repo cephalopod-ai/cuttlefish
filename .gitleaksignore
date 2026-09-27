@@ -33,3 +33,7 @@ packages/cuttlefish/src/gateway/__tests__/org-cross-request-route.test.ts:generi
 packages/cuttlefish/src/gateway/__tests__/org-cross-request-route.test.ts:generic-api-key:596
 packages/cuttlefish/src/gateway/__tests__/org-cross-request-route.test.ts:generic-api-key:693
 packages/cuttlefish/src/gateway/__tests__/org-cross-request-route.test.ts:generic-api-key:821
+
+# Reviewed false positive: the same 16-character hexadecimal A2A fixture in
+# history (commit 9daeeda). The current tree uses a non-literal placeholder.
+packages/cuttlefish/src/gateway/__tests__/org-cross-request-route.test.ts:generic-api-key:1341

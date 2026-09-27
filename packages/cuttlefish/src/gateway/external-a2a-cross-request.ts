@@ -26,6 +26,7 @@ import { saveFile } from "./files/uploads.js";
 import { sessionTaskBoundaryDenial } from "./session-dispatch-authorization.js";
 import { isHumanCheckpointPaused } from "../sessions/human-checkpoint-state.js";
 import { A2AOutboundAuthorizationError } from "../a2a/outbound.js";
+import { notifyParentSession } from "../sessions/callbacks.js";
 
 interface ExternalCrossRequestInput {
   requester: Employee;
@@ -33,6 +34,49 @@ interface ExternalCrossRequestInput {
   prompt: string;
   parentSessionId?: string;
   context: ApiContext;
+}
+
+/**
+ * Report a settled outbound request to the requesting agent, as run-web-session
+ * does for internal cross-requests. Only settled states are reported: a remote
+ * INPUT_REQUIRED leaves the session `waiting`, and notifyParentSession itself
+ * drops the callback when the request was stopped locally (cancelled boundary).
+ */
+function settleRequester(sessionId: string, context: ApiContext, result?: string): void {
+  const session = getSession(sessionId);
+  if (!session?.parentSessionId) return;
+  if (session.status === "idle") {
+    notifyParentSession(session, { result: result ?? null, error: null }, { sink: context.notificationSink });
+  } else if (session.status === "error" || session.status === "interrupted") {
+    notifyParentSession(session, { error: session.lastError ?? "External A2A request failed" }, { sink: context.notificationSink });
+  }
+}
+
+/**
+ * Cancel a remote task, or return it unchanged if it already settled.
+ *
+ * A conformant peer answers a cancel on a terminal task with TaskNotCancelable
+ * (our own inbound executor does). Retrying that cancel can only exhaust the
+ * reconciliation budget and mark the session `error`, discarding a completed
+ * result; the remote terminal state decides the local one instead.
+ */
+async function cancelOrReadSettled(
+  outbound: NonNullable<ApiContext["a2aOutbound"]>,
+  destinationId: string,
+  taskId: string,
+): Promise<Message | Task> {
+  try {
+    return await outbound.cancelTask(destinationId, taskId);
+  } catch (cancelError) {
+    let task: Task | undefined;
+    try {
+      task = await outbound.getTask(destinationId, taskId);
+    } catch {
+      throw cancelError;
+    }
+    if (task && externalA2ATaskIsTerminal(task)) return task;
+    throw cancelError;
+  }
 }
 
 function externalSendDenial(sessionId: string, context: ApiContext): string | null {
@@ -52,6 +96,7 @@ function recordExternalSendDenial(sessionId: string, context: ApiContext, error:
   updateSession(sessionId, { status: current?.status === "waiting" || isHumanCheckpointPaused(current) ? "waiting" : "error",
     lastActivity: new Date().toISOString(), lastError: error.message });
   context.emit("session:updated", { sessionId, code: "execution_authority_denied", reason: error.message });
+  settleRequester(sessionId, context);
 }
 
 function remoteState(result: Message | Task): string {
@@ -207,6 +252,7 @@ function refuseTasklessReplay(
     } as never,
   });
   context.emit("session:updated", { sessionId });
+  settleRequester(sessionId, context);
 }
 
 /** Identify sessions the generic boot sweeps must preserve for A2A recovery. */
@@ -285,6 +331,7 @@ function failExternalRequestReconciliation(
     } as never,
   });
   context.emit("session:updated", { sessionId });
+  settleRequester(sessionId, context);
 }
 
 function remoteMessageRowId(
@@ -482,6 +529,7 @@ async function finalizeRemoteResult(
   }
   execution.finalized = true;
   context.emit("session:updated", { sessionId });
+  settleRequester(sessionId, context, text);
 }
 
 /** Persist stop intent and propagate it once the remote task identity is known. */
@@ -527,6 +575,7 @@ async function resumeExternalRequest(
         lastError: "Outbound A2A service is unavailable",
       });
       context.emit("session:updated", { sessionId });
+      settleRequester(sessionId, context);
       return;
     }
     let attempt = checkpoint.reconciliationAttempts;
@@ -543,7 +592,7 @@ async function resumeExternalRequest(
         let result: Message | Task;
         if (taskId) {
           result = execution.cancelRequested
-            ? await outbound.cancelTask(checkpoint.destinationId, taskId)
+            ? await cancelOrReadSettled(outbound, checkpoint.destinationId, taskId)
             : await outbound.waitForTask(checkpoint.destinationId, taskId, {
                 signal: execution.controller.signal,
                 onUpdate: async (task) => {
@@ -570,7 +619,7 @@ async function resumeExternalRequest(
           if (isA2ATask(result)) {
             await recordRemoteProgress(sessionId, checkpoint.destinationId, result, context, execution);
             if (execution.cancelRequested && !externalA2ATaskIsTerminal(result)) {
-              result = await outbound.cancelTask(checkpoint.destinationId, result.id);
+              result = await cancelOrReadSettled(outbound, checkpoint.destinationId, result.id);
             } else if (!externalA2ATaskIsTerminal(result)) {
               result = await outbound.waitForTask(checkpoint.destinationId, result.id, {
                 signal: execution.controller.signal,
@@ -674,6 +723,7 @@ async function runExternalRequest(
       lastError: "Outbound A2A service is unavailable",
     });
     context.emit("session:updated", { sessionId });
+    settleRequester(sessionId, context);
     return;
   }
   updateSession(sessionId, { status: "running", lastActivity: new Date().toISOString(), lastError: null });
@@ -702,7 +752,7 @@ async function runExternalRequest(
     if (isA2ATask(result)) {
       await recordRemoteProgress(sessionId, service.destinationId, result, context, execution);
       if (execution.cancelRequested && !externalA2ATaskIsTerminal(result)) {
-        result = await outbound.cancelTask(service.destinationId, result.id);
+        result = await cancelOrReadSettled(outbound, service.destinationId, result.id);
         await finalizeRemoteResult(sessionId, service.destinationId, result, context, execution);
         return;
       }
@@ -732,6 +782,7 @@ async function runExternalRequest(
           : `Outbound A2A send outcome is unknown and was not replayed: ${message}`,
       });
       context.emit("session:updated", { sessionId });
+      settleRequester(sessionId, context);
       return;
     }
     // Any error after the durable request checkpoint enters the same retrying

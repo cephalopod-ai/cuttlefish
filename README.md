@@ -176,6 +176,13 @@ Terra → Sol, Luna → Terra. Keep the catalog ids unchanged so each model stay
 selectable. Astra must be available to the signed-in Codex account; see the
 [OpenAI model documentation](https://learn.chatgpt.com/docs/models).
 
+New installs also list Claude Opus 5.5 (`claude-opus-5-5`) and offer the full
+`claude --effort` range (`low` to `max`) on Fable 5.1, Opus 5.5 and Sonnet 5.
+Claude has no live model discovery, so existing homes keep their `models.claude`
+catalog: to use Opus 5.5 there, add its row from a fresh `cuttlefish setup`
+template, and add `xhigh`/`max` to the other rows' `effortLevels` to expose them
+in the picker.
+
 > **Hermes cost note.** Unlike the subscription-wrapped engines, Hermes owns its own model loop and bills **per token** on the provider configured in `~/.hermes`. It streams over the Agent Client Protocol (ACP) and runs fully auto-approved. See [`docs/engines-hermes.md`](docs/engines-hermes.md).
 
 <details>

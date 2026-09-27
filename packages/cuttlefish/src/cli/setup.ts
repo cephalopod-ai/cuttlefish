@@ -313,10 +313,11 @@ models:
     default: claude-fable-5-1
     effortMechanism: claude-flag
     models:
-      - { id: claude-fable-5-1, label: "Fable 5.1", supportsEffort: true, effortLevels: [low, medium, high], contextWindow: 1000000 }
+      - { id: claude-fable-5-1, label: "Fable 5.1", supportsEffort: true, effortLevels: [low, medium, high, xhigh, max], contextWindow: 1000000 }
+      - { id: claude-opus-5-5, label: "Opus 5.5", supportsEffort: true, effortLevels: [low, medium, high, xhigh, max], contextWindow: 1000000 }
       - { id: claude-opus-5, label: "Opus 5", supportsEffort: true, effortLevels: [low, medium, high, xhigh, max], contextWindow: 1000000 }
       - { id: opus, label: "Opus (latest alias)", supportsEffort: true, effortLevels: [low, medium, high, xhigh, max], contextWindow: 1000000 }
-      - { id: claude-sonnet-5, label: "Sonnet 5", supportsEffort: true, effortLevels: [low, medium, high], contextWindow: 1000000 }
+      - { id: claude-sonnet-5, label: "Sonnet 5", supportsEffort: true, effortLevels: [low, medium, high, xhigh, max], contextWindow: 1000000 }
       - { id: claude-haiku-4-5, label: "Haiku 4.5", supportsEffort: true, effortLevels: [low, medium, high], contextWindow: 200000 }
   codex:
     default: gpt-6-astra

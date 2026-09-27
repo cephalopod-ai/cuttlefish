@@ -9,12 +9,23 @@ export function isEmployeeActive(employee: Employee): boolean {
   return employee.lifecycle === undefined || employee.lifecycle === "active" || employee.lifecycle === "probation";
 }
 
+/**
+ * Sessions serving an inbound A2A task. They are created on the management lane
+ * with `source: "web"`, but their assistant output is projected to the external
+ * partner as the task artifact, so operator messages must never be continued in
+ * one. Checks the session key too: it is set at creation, before `transportMeta.a2a`
+ * is patched in.
+ */
+function isInboundA2ASession(session: Session): boolean {
+  return session.sessionKey.startsWith("a2a:task:") || Boolean(session.transportMeta?.a2a);
+}
+
 export function latestWritableSessionForEmployee(
   sessions: readonly Session[],
   employeeId: string,
 ): Session | undefined {
   return sessions
-    .filter((session) => session.employee === employeeId)
+    .filter((session) => session.employee === employeeId && !isInboundA2ASession(session))
     .sort((a, b) => b.lastActivity.localeCompare(a.lastActivity) || a.id.localeCompare(b.id))[0];
 }
 
@@ -144,6 +155,7 @@ export function latestDirectManagementSession(sessions: readonly Session[], reci
     .filter((session) =>
       !session.parentSessionId
       && session.source === "web"
+      && !isInboundA2ASession(session)
       && (recipientId === COO_RECIPIENT_ID ? !session.employee : session.employee === recipientId),
     )
     .sort((a, b) => b.lastActivity.localeCompare(a.lastActivity) || a.id.localeCompare(b.id))[0];

@@ -96,6 +96,19 @@ describe("model alias resolution against the shipped registry (opus/haiku 400 re
     expect(r).toMatchObject({ ok: true, model: "claude-opus-5" });
   });
 
+  it("expands 'opus' to the newest registered Opus (5.5) when both 5.5 and 5 are registered", () => {
+    const c = cfg();
+    c.models!.claude!.models.push({ id: "claude-opus-5-5", label: "Opus 5.5", supportsEffort: true, effortLevels: ["low", "medium", "high", "xhigh", "max"] });
+    const r = validateNewSessionSelection(c, { engine: "claude", model: "opus" });
+    expect(r).toMatchObject({ ok: true, model: "claude-opus-5-5" });
+  });
+
+  it("expands 'fable' to the registered Fable id, falling back to Fable 5 on older registries", () => {
+    // shippedCfg() predates Fable 5.1: only claude-fable-5 is registered.
+    const r = validateNewSessionSelection(shippedCfg(), { engine: "claude", model: "fable" });
+    expect(r).toMatchObject({ ok: true, model: "claude-fable-5" });
+  });
+
   it("patches model to 'opus' against the shipped registry without rewriting it", () => {
     const r = validateSessionPatch(shippedCfg(), "claude", "claude-sonnet-5", { model: "opus" });
     expect(r).toMatchObject({ ok: true, updates: { model: "opus" } });
