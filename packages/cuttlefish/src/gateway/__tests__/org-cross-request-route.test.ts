@@ -1328,3 +1328,149 @@ provides:
     expect(third.body.chain).toContain("content-writer→platform-dev");
   });
 });
+
+describe("external A2A cross-request settlement", () => {
+  function configureExternalResearch(ctx: any, id: string): void {
+    const baseConfig = ctx.getConfig();
+    ctx.getConfig = () => ({
+      ...baseConfig,
+      a2a: {
+        destinations: [{
+          id,
+          agentCardUrl: "https://peer.example/.well-known/agent-card.json",
+          token: "0123456789abcdef",
+          allowedSkills: ["research"],
+          services: [{ name: "external-research", description: "Research via an A2A peer", skillId: "research" }],
+        }],
+      },
+    });
+  }
+
+  function remoteTask(id: string, state: number, text?: string) {
+    return {
+      id,
+      contextId: `${id}-context`,
+      status: {
+        state,
+        message: text === undefined ? undefined : {
+          messageId: `${id}-${state}`,
+          taskId: id,
+          contextId: `${id}-context`,
+          role: 2,
+          parts: [{ content: { $case: "text", value: text }, filename: "", mediaType: "text/plain" }],
+          metadata: {},
+          extensions: [],
+          referenceTaskIds: [],
+        },
+        timestamp: new Date().toISOString(),
+      },
+      artifacts: [],
+      history: [],
+      metadata: {},
+    };
+  }
+
+  function requesterSession(reg: any) {
+    return reg.createSession({
+      engine: "claude",
+      source: "web",
+      sourceRef: "web:requester",
+      prompt: "delegate research",
+      employee: "content-writer",
+    });
+  }
+
+  it("wakes the requesting agent when the remote task completes", async () => {
+    const { api, reg } = await setup();
+    const requester = requesterSession(reg);
+    const ctx = makeCtx();
+    configureExternalResearch(ctx, "notify-peer");
+    ctx.notificationSink = { sendSessionNotification: vi.fn(async () => {}), sendConnectorNotification: vi.fn(async () => {}) };
+    ctx.a2aOutbound = {
+      send: vi.fn(async () => remoteTask("remote-notify-task", 3, "Remote research completed")),
+      waitForTask: vi.fn(),
+    };
+    const cap = makeRes();
+
+    await api.handleApiRequest(makeJsonReq("POST", "/api/org/cross-request", {
+      fromEmployee: "content-writer",
+      service: "external-research",
+      prompt: "Research this protocol",
+      parentSessionId: requester.id,
+    }), cap.res, ctx);
+
+    expect(cap.status).toBe(201);
+    await vi.waitFor(() => expect(ctx.notificationSink.sendSessionNotification).toHaveBeenCalledWith(
+      requester.id,
+      expect.stringContaining("Remote research completed"),
+      expect.any(String),
+      cap.body.sessionId,
+      expect.anything(),
+    ));
+    expect(ctx.notificationSink.sendSessionNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a failed external request to the requesting agent as an error", async () => {
+    const { api, reg } = await setup();
+    const requester = requesterSession(reg);
+    const ctx = makeCtx();
+    configureExternalResearch(ctx, "failing-peer");
+    ctx.notificationSink = { sendSessionNotification: vi.fn(async () => {}), sendConnectorNotification: vi.fn(async () => {}) };
+    ctx.a2aOutbound = { send: vi.fn(async () => { throw new Error("socket hang up"); }), waitForTask: vi.fn() };
+    const cap = makeRes();
+
+    await api.handleApiRequest(makeJsonReq("POST", "/api/org/cross-request", {
+      fromEmployee: "content-writer",
+      service: "external-research",
+      prompt: "Research this protocol",
+      parentSessionId: requester.id,
+    }), cap.res, ctx);
+
+    await vi.waitFor(() => expect(reg.getSession(cap.body.sessionId)?.status).toBe("error"));
+    await vi.waitFor(() => expect(ctx.notificationSink.sendSessionNotification).toHaveBeenCalledWith(
+      requester.id,
+      expect.stringContaining("socket hang up"),
+      expect.any(String),
+      cap.body.sessionId,
+      expect.anything(),
+    ));
+  });
+
+  it("settles on the remote result when a local stop's cancel is refused as already terminal", async () => {
+    const { api, reg, lifecycle } = await setup();
+    const ctx = makeCtx();
+    configureExternalResearch(ctx, "not-cancelable-peer");
+    const working = remoteTask("remote-done-task", 2);
+    const completed = remoteTask("remote-done-task", 3, "Remote finished before the cancel landed");
+    const cancelTask = vi.fn(async () => { throw new Error("Task cannot be canceled: already completed"); });
+    const getTask = vi.fn(async () => completed);
+    ctx.a2aOutbound = {
+      send: vi.fn(async () => working),
+      waitForTask: vi.fn(async (_destinationId: string, _taskId: string, options: { signal: AbortSignal }) => new Promise((_, reject) => {
+        options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true });
+      })),
+      cancelTask,
+      getTask,
+    };
+    const cap = makeRes();
+
+    await api.handleApiRequest(makeJsonReq("POST", "/api/org/cross-request", {
+      fromEmployee: "content-writer",
+      service: "external-research",
+      prompt: "Exercise a refused cancel",
+    }), cap.res, ctx);
+    await vi.waitFor(() => expect(reg.getSession(cap.body.sessionId)?.transportMeta?.a2aOutbound).toMatchObject({
+      taskId: "remote-done-task",
+      state: "TASK_STATE_WORKING",
+    }));
+
+    lifecycle.stopSession(cap.body.sessionId, ctx);
+
+    // Previously the refused cancel was retried until the reconciliation budget
+    // ran out and the session was marked `error`, dropping the completed result.
+    await vi.waitFor(() => expect(reg.getSession(cap.body.sessionId)).toMatchObject({ status: "idle", lastError: null }));
+    expect(reg.getMessages(cap.body.sessionId).at(-1)?.content).toContain("Remote finished before the cancel landed");
+    expect(cancelTask).toHaveBeenCalledTimes(1);
+    expect(getTask).toHaveBeenCalledWith("not-cancelable-peer", "remote-done-task");
+  });
+});

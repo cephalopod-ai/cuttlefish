@@ -3,6 +3,22 @@
 ## [Unreleased]
 
 ### Fixed
+- **Operator messages no longer land in an inbound A2A task.** A2A task
+  sessions are created on the management lane with `source: "web"`, so the
+  management and team pickers could choose one as an employee's latest thread.
+  The operator's message then ran inside the partner's task, and the reply was
+  projected back to the external partner as the task result. Both pickers now
+  skip A2A task sessions.
+- **External A2A cross-requests report back to the requesting agent.** An
+  outbound request that completed, failed, or was refused never called the
+  parent-session callback that internal cross-requests use, so the requester
+  was never woken and no leader-ack was armed. Every settled exit now notifies
+  the requester. A remote INPUT_REQUIRED still leaves the request `waiting`.
+- **A local stop no longer discards a remote result that won the race.** A
+  conformant peer answers a cancel on an already-finished task with
+  TaskNotCancelable. That cancel was retried until reconciliation gave up and
+  the session was marked `error`, losing the completed output. A refused
+  cancel now reads the task back and settles on its terminal state.
 - **A Fable worker no longer escalates down a tier.** Claude Fable was missing
   from the built-in model ladder, so escalation treated the most capable model
   as an unknown tier-0 model and moved a stalled Fable worker to Sol or Sonnet.
