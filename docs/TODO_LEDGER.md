@@ -53,6 +53,11 @@ recorded `config-schema` duplications, and an intermittent `resolve-bin` probe
 failure; see [2026-09-05-queued-defect-repair.md](audits/2026-09-05-queued-defect-repair.md)
 and [TODO_HISTORY.md](TODO_HISTORY.md).
 
+The 2026-09-27 playtest found `PT-27SEP26-001` (board save dropping omitted
+tickets), `PT-27SEP26-002` (unknown CLI command wording) and `PT-27SEP26-003`
+(blank onboarding name). All three were repaired the same day and moved to
+[TODO_HISTORY.md](TODO_HISTORY.md).
+
 The five control-plane entries require selected GitHub/npm changes or privileged
 readback; this run did not authorize publication or admin-setting changes.
 The earlier sandbox limitation is historical, not the current permission model.

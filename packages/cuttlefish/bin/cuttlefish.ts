@@ -36,6 +36,13 @@ if (process.argv.includes("--json")) {
 }
 
 program.action(() => {
+  // This root action is what lets a bare invocation print help, but it also
+  // makes Commander read an unrecognized first word as an excess root
+  // argument ("too many arguments"). Report it as the unknown command it is,
+  // with Commander's own "Did you mean" suggestion.
+  if (program.args.length > 0) {
+    (program as unknown as { unknownCommand(): never }).unknownCommand();
+  }
   program.outputHelp();
 });
 
@@ -634,6 +641,11 @@ program
       await runInspectPolicy();
     });
 }
+
+// Root only, so an unknown word reaches the root action above. Subcommands copy
+// this setting when they are created, so it must stay after every .command()
+// call; each subcommand keeps its own "too many arguments for '<name>'" check.
+program.allowExcessArguments(true);
 
 try {
   await program.parseAsync();

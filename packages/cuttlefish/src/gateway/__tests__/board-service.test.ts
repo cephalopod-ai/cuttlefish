@@ -35,10 +35,15 @@ function ticket(id: string, source?: string): BoardTicket {
 }
 
 describe("board-service mergeBoardTickets", () => {
-  it("preserves omitted session tickets during manual board writes", () => {
+  it("preserves omitted manual and session tickets during board writes", () => {
     const current = [ticket("manual-old"), ticket("session-s1", "session")];
     const incoming = [ticket("manual-new")];
-    expect(mergeBoardTickets(current, incoming).map((t) => t.id)).toEqual(["manual-new", "session-s1"]);
+    expect(mergeBoardTickets(current, incoming).map((t) => t.id)).toEqual(["manual-new", "manual-old", "session-s1"]);
+  });
+
+  it("removes a manual ticket only when its id is in deletedIds", () => {
+    const current = [ticket("manual-old"), ticket("manual-keep")];
+    expect(mergeBoardTickets(current, [], new Set(["manual-old"])).map((t) => t.id)).toEqual(["manual-keep"]);
   });
 
   it("allows explicit deletion of a session ticket", () => {
@@ -238,6 +243,27 @@ describe("board-service mergeBoardTickets", () => {
     expect(board?.tickets.map((entry) => entry.id)).toEqual(["keep"]);
     expect(board?.deletedTickets.map((entry) => entry.id)).toEqual(["drop"]);
     expect(board?.deletedTickets[0]?.deletedAt).toBeTruthy();
+  });
+
+  it("keeps stored tickets when a partial save rejects its only ticket (PT-27SEP26-001)", () => {
+    const orgDir = fs.mkdtempSync(path.join(os.tmpdir(), "cuttlefish-board-service-"));
+    fs.mkdirSync(path.join(orgDir, "general"), { recursive: true });
+
+    writeMergedBoardPartial(orgDir, "general", { tickets: [ticket("stored")] });
+    const { written, rejected } = writeMergedBoardPartial(orgDir, "general", {
+      tickets: [{ id: "bad", title: "", status: "nope" }],
+    });
+
+    expect(rejected).toHaveLength(1);
+    expect(written.map((entry) => entry.id)).toEqual(["stored"]);
+    const afterRejected = readBoardState(orgDir, "general");
+    expect(afterRejected?.tickets.map((entry) => entry.id)).toEqual(["stored"]);
+    expect(afterRejected?.deletedTickets).toEqual([]);
+
+    writeMergedBoardPartial(orgDir, "general", { tickets: [], deletedIds: ["stored"] });
+    const afterDelete = readBoardState(orgDir, "general");
+    expect(afterDelete?.tickets).toEqual([]);
+    expect(afterDelete?.deletedTickets.map((entry) => entry.id)).toEqual(["stored"]);
   });
 
   it("restores a ticket when it reappears in active tickets", () => {

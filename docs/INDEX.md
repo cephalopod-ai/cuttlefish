@@ -102,6 +102,17 @@ those deliberate cases.
 
 ## Session and Audit Log Summaries
 
+September 27 playtest: a disposable gateway and Chromium pass over the standing
+225-card library executed 25 cards (5 pass, 1 fail, 19 partial), blocked 7, and
+did not start 193. It confirmed three defects: a board save that drops omitted
+operator tickets, unknown CLI commands reported as extra arguments, and an
+onboarding step that accepts an empty operator name. All three were repaired
+the same day with regression tests; closure evidence is in
+[TODO_HISTORY.md](TODO_HISTORY.md). The local report is
+`docs/audits/grok-playtest-cuttlefish-27SEP26-findings.md`. The handoff is
+`docs/logs/session/092026/2026-09-27-grok-playtest.md`. This is not a
+full-library or compliance result.
+
 September 16 evidence/authority implementation: authenticated ingress,
 issuance-bound delegation, reviewed durable continuations, last dispatch checks,
 stale-result fencing and uncertain recovery were implemented and exercised with

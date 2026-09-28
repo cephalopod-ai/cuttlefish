@@ -456,9 +456,12 @@ export function mergeBoardTickets(
   }
   const incomingIds = new Set(filteredIncoming.map((ticket) => ticket.id).filter(Boolean));
   const merged = [...filteredIncoming];
+  // Omission is never a delete. Only `deletedIds` removes a stored ticket, and
+  // that path routes it through the recycle bin. Treating omission as removal
+  // let a save whose tickets were all rejected, or a board snapshot taken before
+  // another writer added a ticket, erase tickets the caller never named.
   for (const ticket of current) {
-    if (ticket?.source !== "session") continue;
-    if (incomingIds.has(ticket.id) || deletedIds.has(ticket.id)) continue;
+    if (incomingIds.has(ticket?.id) || deletedIds.has(ticket?.id)) continue;
     merged.push(ticket);
   }
   return merged;

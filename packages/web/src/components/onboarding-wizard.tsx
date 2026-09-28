@@ -134,6 +134,10 @@ export function OnboardingWizard({ forceOpen, onClose }: OnboardingWizardProps) 
   })
 
   const TOTAL_STEPS = 5
+  // The COO greets the operator by this name, so step 0 cannot be skipped
+  // with it blank (the gateway would store no name at all).
+  const operatorNameMissing = !localOperator.trim()
+  const nextBlocked = step === 0 && operatorNameMissing
 
   // First-run detection — check server-side flag, not just localStorage
   useEffect(() => {
@@ -205,8 +209,9 @@ export function OnboardingWizard({ forceOpen, onClose }: OnboardingWizardProps) 
   const handleNext = useCallback(async () => {
     // Commit name/operator/language on step 0
     if (step === 0) {
+      if (!localOperator.trim()) return
       setPortalName(localName || null)
-      setOperatorName(localOperator || null)
+      setOperatorName(localOperator.trim())
       setLanguage(localLanguage || "English")
     }
 
@@ -223,7 +228,7 @@ export function OnboardingWizard({ forceOpen, onClose }: OnboardingWizardProps) 
       try {
         await api.completeOnboarding({
           portalName: localName || undefined,
-          operatorName: localOperator || undefined,
+          operatorName: localOperator.trim() || undefined,
           language: localLanguage || undefined,
           engine: engineChoice.engine,
           model: engineChoice.model,
@@ -404,9 +409,15 @@ export function OnboardingWizard({ forceOpen, onClose }: OnboardingWizardProps) 
                     type="text"
                     className="apple-input w-full bg-[var(--fill-tertiary)] rounded-[var(--radius-md)] px-3 py-2 text-[length:var(--text-subheadline)] text-[var(--text-primary)] outline-none border border-transparent focus:border-[var(--accent)] transition-colors placeholder:text-[var(--text-quaternary)]"
                     placeholder="Your Name"
+                    aria-required="true"
                     value={localOperator}
                     onChange={(e) => setLocalOperator(e.target.value)}
                   />
+                  {operatorNameMissing && (
+                    <p className="text-[length:var(--text-caption1)] text-[var(--text-tertiary)] mt-[var(--space-1)]">
+                      Your name is required
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -735,7 +746,9 @@ export function OnboardingWizard({ forceOpen, onClose }: OnboardingWizardProps) 
           )}
           <button
             onClick={handleNext}
-            disabled={submitting}
+            disabled={submitting || nextBlocked}
+            title={nextBlocked ? "Your name is required" : undefined}
+            aria-label={nextBlocked ? "Next — your name is required" : undefined}
             className="px-[var(--space-6)] py-[var(--space-2)] rounded-[var(--radius-md)] bg-[var(--accent)] text-[var(--accent-contrast)] border-none cursor-pointer text-[length:var(--text-subheadline)] font-[var(--weight-semibold)] transition-all duration-150 inline-flex items-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {step === 0
