@@ -76,6 +76,9 @@ operational readiness for every standing scenario.
 - Settings can reopen the onboarding wizard after setup is complete. When no
   engine is available, the wizard shows installation/binary-path guidance and
   saves preferences without creating an initial chat session.
+- The wizard's first step requires an operator name. Next stays disabled while
+  the name is blank or whitespace, and the trimmed name is what onboarding
+  saves.
 - Explicit `engines.<name>.bin` paths govern both execution and availability:
   an unusable override is unavailable even if the default CLI exists on `PATH`.
 - Fresh setup probes and seeds all 11 registered engine adapters. Codex,
@@ -182,6 +185,11 @@ operational readiness for every standing scenario.
 - An unchanged legacy ticket carried in a whole-board save cannot block deletion
   of another ticket because of its stale assignee; newly created or edited
   tickets still require an active employee in the same department.
+- `PUT /api/org/departments/:name/board` never deletes by omission. A stored
+  ticket missing from the request is kept; only an id listed in `deletedIds`
+  removes a ticket, and that moves it to the recycle bin. A save whose tickets
+  are all rejected (`status: "partial"`) therefore leaves stored tickets in
+  place.
 
 ### Kanban ticket card time display
 - `packages/web/src/components/kanban/ticket-card.tsx`
@@ -443,6 +451,9 @@ operational readiness for every standing scenario.
   Availability does not establish authentication or remaining quota.
 - Onboarding submits effort only when the selected engine/model supports it.
 - A bare `cuttlefish` invocation prints normal discovery help and exits zero.
+  An unrecognized first word (for example `cuttlefish strat`) exits nonzero
+  with `unknown command` and a "Did you mean" suggestion; extra arguments to a
+  real command still name that command.
   Commands offering `--json` return a `{status:"error",message}` object on
   stdout with a nonzero exit for action and parser failures; human-mode errors
   remain concise on stderr.

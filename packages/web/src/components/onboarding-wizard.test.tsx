@@ -9,12 +9,13 @@ const mocks = vi.hoisted(() => ({
   getOnboarding: vi.fn(),
   completeOnboarding: vi.fn(),
   createSession: vi.fn(),
+  settings: {} as { operatorName?: string },
 }))
 
 vi.mock("@/lib/api", () => ({ api: mocks }))
 vi.mock("@/routes/settings-provider", () => ({
   useSettings: () => ({
-    settings: {}, setPortalName: vi.fn(), setOperatorName: vi.fn(),
+    settings: mocks.settings, setPortalName: vi.fn(), setOperatorName: vi.fn(),
     setAccentColor: vi.fn(), setLanguage: vi.fn(),
   }),
 }))
@@ -37,6 +38,7 @@ describe("onboarding availability and replay", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
+    mocks.settings = { operatorName: "Test Operator" }
     mocks.getEngines.mockResolvedValue(registry(false))
     mocks.getOnboarding.mockResolvedValue({ onboarded: true, needed: false })
     mocks.completeOnboarding.mockResolvedValue({ status: "ok" })
@@ -108,5 +110,27 @@ describe("onboarding availability and replay", () => {
     expect(localStorage.getItem("cuttlefish-onboarded")).toBe("true")
     fireEvent.click(screen.getByRole("button", { name: "Re-run Onboarding Wizard" }))
     await screen.findByText("Welcome to Cuttlefish")
+  })
+
+  it("keeps step 1 while the operator name is blank and saves the typed name (PT-27SEP26-003)", async () => {
+    mocks.settings = {}
+    render(<MemoryRouter><OnboardingWizard forceOpen /></MemoryRouter>)
+    await screen.findByText("Welcome to Cuttlefish")
+    const blocked = screen.getByRole("button", { name: "Next — your name is required" }) as HTMLButtonElement
+    expect(blocked.disabled).toBe(true)
+    fireEvent.click(blocked)
+    expect(screen.getByText("Welcome to Cuttlefish")).toBeTruthy()
+
+    const nameInput = screen.getByPlaceholderText("Your Name")
+    fireEvent.change(nameInput, { target: { value: "   " } })
+    expect((screen.getByRole("button", { name: "Next — your name is required" }) as HTMLButtonElement).disabled).toBe(true)
+
+    fireEvent.change(nameInput, { target: { value: "  Ada Operator  " } })
+    expect(screen.queryByText("Your name is required")).toBeNull()
+    next(3)
+    await screen.findByText(/No AI engine is available/)
+    next(1)
+    fireEvent.click(screen.getByRole("button", { name: "Get Started" }))
+    await waitFor(() => expect(mocks.completeOnboarding).toHaveBeenCalledWith(expect.objectContaining({ operatorName: "Ada Operator" })))
   })
 })

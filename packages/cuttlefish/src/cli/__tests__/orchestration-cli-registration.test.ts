@@ -64,6 +64,24 @@ describe("shipped orchestration CLI registration (TS-RIG-001)", () => {
     }
   });
 
+  it("reports an unknown root word as an unknown command, not an extra argument (PT-27SEP26-002)", () => {
+    const typo = runCli(["strat"]);
+    expect(typo.status).toBe(1);
+    expect(typo.stdout).toBe("");
+    expect(typo.stderr).toContain("error: unknown command 'strat'");
+    expect(typo.stderr).toContain("Did you mean start?");
+    expect(typo.stderr).not.toContain("Expected 0 arguments");
+
+    const unknown = runCli(["notacommand"]);
+    expect(unknown.status).toBe(1);
+    expect(unknown.stderr).toContain("error: unknown command 'notacommand'");
+    expect(unknown.stderr).not.toMatch(/\n\s+at /);
+
+    const extra = runCli(["status", "extraneous-arg"]);
+    expect(extra.status).toBe(1);
+    expect(extra.stderr).toContain("too many arguments for 'status'");
+  });
+
   it("prints usage errors once and preserves JSON error output", () => {
     for (const args of [["start", "--bogus-flag"], ["status", "extra"], ["skills", "add"]]) {
       const result = runCli(args);

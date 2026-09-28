@@ -3,6 +3,20 @@
 ## [Unreleased]
 
 ### Fixed
+- **A department board save no longer deletes tickets it did not mention.**
+  `PUT /api/org/departments/:name/board` kept omitted tickets only when they
+  came from a session, so a save whose only ticket was rejected answered
+  `status: "partial"` and emptied the board, bypassing the recycle bin.
+  Omitted tickets are now always kept. Only ids in `deletedIds` are removed,
+  and they go to the recycle bin. The dashboard already sent `deletedIds` for
+  every delete and move.
+- **Unknown commands are reported as unknown commands.** `cuttlefish strat`
+  said "too many arguments. Expected 0 arguments" because the root help action
+  took the word as an argument. It now says `unknown command 'strat'` and
+  suggests `start`. `cuttlefish status extra` still names `status`.
+- **Onboarding requires an operator name.** The first wizard step advanced
+  with a blank name and saved no name at all. Next now stays disabled until a
+  non-blank name is entered, and the trimmed name is saved.
 - **Operator messages no longer land in an inbound A2A task.** A2A task
   sessions are created on the management lane with `source: "web"`, so the
   management and team pickers could choose one as an employee's latest thread.
