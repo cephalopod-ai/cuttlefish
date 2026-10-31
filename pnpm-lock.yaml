@@ -72,7 +72,7 @@ importers:
         version: 1.19.0(typescript@6.0.3)
       '@slack/bolt':
         specifier: ^5.1.0
-        version: 5.1.0(@types/express@5.0.6)(undici@8.11.2)
+        version: 5.1.0(@types/express@5.0.6)(undici@8.12.3)
       '@whiskeysockets/baileys':
         specifier: 7.0.0-rc14
         version: 7.0.0-rc14(sharp@0.35.5(@types/node@26.6.4))
@@ -116,8 +116,8 @@ importers:
         specifier: 6.1.2
         version: 6.1.2
       undici:
-        specifier: ^8.11.0
-        version: 8.11.2
+        specifier: ^8.12.2
+        version: 8.12.3
       uuid:
         specifier: ^14.0.2
         version: 14.0.2
@@ -4699,8 +4699,8 @@ packages:
     resolution: {integrity: sha512-IDxfleLmmbSskfWSUATiN1nfn2rDuvnMOqb5CWR92iIfojA0Ud+ulOAAEQ57LPr9rWmsreUyf5lwyao+7GNNVw==}
     engines: {node: '>=20.18.1'}
 
-  undici@8.11.2:
-    resolution: {integrity: sha512-u4UB2/IrKdU6lFxumHmmo1a3fCQO5tzQllRorfoRS63txhrB7xTpSn1PftwC4qEHkOaqP95fCWW4lJzwErwzhQ==}
+  undici@8.12.3:
+    resolution: {integrity: sha512-+fdndUTwBP86cVjihTp21hZHo7d6oj1c/47XPA3lL8mM0XHs+C4EkcjmgRsFnFk2f/UONGDy9ItBItmXsLOQHw==}
     engines: {node: '>=22.19.0'}
 
   unified@11.0.5:
@@ -6464,11 +6464,11 @@ snapshots:
       domhandler: 5.0.3
       selderee: 0.12.0
 
-  '@slack/bolt@5.1.0(@types/express@5.0.6)(undici@8.11.2)':
+  '@slack/bolt@5.1.0(@types/express@5.0.6)(undici@8.12.3)':
     dependencies:
       '@slack/logger': 5.0.0
       '@slack/oauth': 4.0.0
-      '@slack/socket-mode': 3.0.1(undici@8.11.2)
+      '@slack/socket-mode': 3.0.1(undici@8.12.3)
       '@slack/types': 3.1.0
       '@slack/web-api': 8.1.1
       '@types/express': 5.0.6
@@ -6492,13 +6492,13 @@ snapshots:
       '@types/node': 26.6.4
       jsonwebtoken: 9.0.3
 
-  '@slack/socket-mode@3.0.1(undici@8.11.2)':
+  '@slack/socket-mode@3.0.1(undici@8.12.3)':
     dependencies:
       '@slack/logger': 5.0.0
       '@slack/web-api': 8.1.1
       '@types/node': 26.6.4
       eventemitter3: 5.0.4
-      undici: 8.11.2
+      undici: 8.12.3
 
   '@slack/types@3.1.0': {}
 
@@ -8287,7 +8287,7 @@ snapshots:
       parse5: 8.0.1
       saxes: 6.0.0
       tough-cookie: 6.0.2
-      undici: 8.11.2
+      undici: 8.12.3
       w3c-xmlserializer: 6.0.0
       webidl-conversions: 8.0.1
       whatwg-mimetype: 5.0.0
@@ -9914,7 +9914,7 @@ snapshots:
 
   undici@7.29.0: {}
 
-  undici@8.11.2: {}
+  undici@8.12.3: {}
 
   unified@11.0.5:
     dependencies:
