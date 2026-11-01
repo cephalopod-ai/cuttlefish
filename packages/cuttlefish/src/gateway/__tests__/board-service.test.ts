@@ -266,6 +266,57 @@ describe("board-service mergeBoardTickets", () => {
     expect(afterDelete?.deletedTickets.map((entry) => entry.id)).toEqual(["stored"]);
   });
 
+  it("rejects duplicate identities in a strict save without replacing the stored board", () => {
+    const orgDir = fs.mkdtempSync(path.join(os.tmpdir(), "cuttlefish-board-duplicate-"));
+    const file = boardPath(orgDir, "general");
+    writeBoardTickets(orgDir, "general", [ticket("stored")]);
+    const before = fs.readFileSync(file, "utf-8");
+
+    expect(() => writeMergedBoard(orgDir, "general", {
+      tickets: [ticket("duplicate"), { ...ticket("duplicate"), title: "another version" }, ticket("valid")],
+    })).toThrow(/unique ids.*duplicate/);
+
+    expect(fs.readFileSync(file, "utf-8")).toBe(before);
+  });
+
+  it("rejects every duplicate group in a partial save while retaining stored and unrelated valid tickets", () => {
+    const orgDir = fs.mkdtempSync(path.join(os.tmpdir(), "cuttlefish-board-duplicate-"));
+    writeBoardTickets(orgDir, "general", [ticket("stored"), ticket("omitted")]);
+
+    const result = writeMergedBoardPartial(orgDir, "general", {
+      tickets: [
+        { ...ticket("stored"), title: "ambiguous first" },
+        { ...ticket("stored"), title: "ambiguous second" },
+        ticket("new-duplicate"),
+        ticket("new-duplicate"),
+        ticket("accepted"),
+      ],
+    });
+
+    expect(result.rejected.map(({ index, id }) => ({ index, id }))).toEqual([
+      { index: 0, id: "stored" }, { index: 1, id: "stored" },
+      { index: 2, id: "new-duplicate" }, { index: 3, id: "new-duplicate" },
+    ]);
+    expect(result.rejected.every((entry) => entry.error.includes("duplicated"))).toBe(true);
+    expect(result.written.map((entry) => entry.id)).toEqual(["accepted", "stored", "omitted"]);
+    const saved = readBoardState(orgDir, "general");
+    expect(saved?.tickets).toEqual(result.written);
+    expect(saved?.tickets.find((entry) => entry.id === "stored")?.title).toBe("stored");
+    expect(saved?.deletedTickets).toEqual([]);
+  });
+
+  it("does not choose a valid duplicate as the winner when its sibling is malformed", () => {
+    const orgDir = fs.mkdtempSync(path.join(os.tmpdir(), "cuttlefish-board-duplicate-"));
+    const { written, rejected } = writeMergedBoardPartial(orgDir, "general", {
+      tickets: [ticket("ambiguous"), { ...ticket("ambiguous"), title: "" }, ticket("accepted")],
+    });
+
+    expect(written.map((entry) => entry.id)).toEqual(["accepted"]);
+    expect(rejected.map((entry) => entry.index)).toEqual([0, 1]);
+    expect(rejected[0].error).toContain("duplicated");
+    expect(rejected[1].error).toContain("title must be a non-empty string");
+  });
+
   it("restores a ticket when it reappears in active tickets", () => {
     const orgDir = fs.mkdtempSync(path.join(os.tmpdir(), "cuttlefish-board-service-"));
     const deptDir = path.join(orgDir, "software-delivery");

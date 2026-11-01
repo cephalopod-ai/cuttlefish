@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { runCronJob } from "../runner.js";
 import type { CronJob, Connector, CuttlefishConfig } from "../../shared/types.js";
+import { getSession } from "../../sessions/registry.js";
+
+vi.mock("../../sessions/registry.js", () => ({ getSession: vi.fn() }));
 
 // Stub appendRunLog so we don't touch the filesystem
 vi.mock("../jobs.js", () => ({
@@ -70,6 +73,37 @@ function makeMockSessionManager(delayMs = 0) {
 describe("runCronJob — latency alerting", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.clearAllMocks();
+    vi.mocked(getSession).mockReturnValue({ id: "sess-123", status: "idle", lastError: null } as any);
+  });
+
+  it.each(["waiting", "running", "interrupted", "error"] as const)("does not report an incomplete %s session as successful", async (status) => {
+    vi.mocked(getSession).mockReturnValue({ id: "sess-123", status, lastError: null } as any);
+    const result = await runCronJob(makeJob(), makeMockSessionManager(), makeConfig(), new Map());
+    expect(result.status).toBe("error");
+    expect(result.error).toContain(status === "error" ? "error" : status);
+  });
+
+  it("does not report a missing session as successful", async () => {
+    vi.mocked(getSession).mockReturnValue(undefined);
+    const result = await runCronJob(makeJob(), makeMockSessionManager(), makeConfig(), new Map());
+    expect(result.status).toBe("error");
+    expect(result.error).toMatch(/completed session/i);
+  });
+
+  it("does not report a route without a session as successful", async () => {
+    const result = await runCronJob(makeJob(), { route: vi.fn().mockResolvedValue(undefined) } as any, makeConfig(), new Map());
+    expect(result.status).toBe("error");
+    expect(getSession).not.toHaveBeenCalled();
+  });
+
+  it("preserves the session error and alerts once", async () => {
+    vi.mocked(getSession).mockReturnValue({ status: "error", lastError: "engine unavailable" } as any);
+    const connector = makeMockConnector();
+    const result = await runCronJob(makeJob(), makeMockSessionManager(), makeConfig(), new Map([["slack", connector]]));
+    expect(result.status).toBe("error");
+    expect(result.error).toBe("engine unavailable");
+    expect(connector.sendMessage).toHaveBeenCalledOnce();
   });
 
   it("sends a Slack alert when job duration exceeds alertThresholdMs", async () => {

@@ -4,7 +4,7 @@ Thanks for your interest in contributing. This guide covers the basics.
 
 ## Prerequisites
 
-- Node.js 24.x (the repo pins 24.13.0 via `.nvmrc` and root tooling enforces `>=24 <25`)
+- Node.js 24.x (the repo pins 24.13.0 via `.nvmrc` and declares `>=24 <25`; installation warns rather than enforcing the range)
 - pnpm 10+
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) (`npm install -g @anthropic-ai/claude-code`)
 
@@ -17,7 +17,7 @@ Thanks for your interest in contributing. This guide covers the basics.
    ```
 3. Initialize Cuttlefish (one-time - builds all packages and creates `~/.cuttlefish`):
    ```bash
-   pnpm setup
+   pnpm run setup
    ```
    This is safe to re-run; it skips files that already exist.
 4. Start development mode:

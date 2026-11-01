@@ -59,7 +59,7 @@ use the shorter packaged-install form.
    - **Source** (all platforms, supported before npm publication): see the root
      README / `INSTALL.md`
 
-4. Initialize the local Cuttlefish home (skipped automatically by `install.ps1` unless `-SkipSetup`):
+4. Initialize the local Cuttlefish home (`install.ps1` runs this automatically unless `-SkipSetup` is passed):
 
 ```bash
 cuttlefish setup
@@ -165,8 +165,8 @@ Routes are defined in `packages/web/src/main.tsx`:
 - `/skills`: local skill browsing and management
 - `/file`: file viewer
 
-Unknown client paths redirect to `/` so stale deep links recover to the primary
-chat workspace instead of leaving an empty dashboard shell.
+Unknown client paths show a not-found page with a link back to `/`, so stale deep
+links have a visible recovery path instead of leaving an empty dashboard shell.
 
 ### Send messages and files
 

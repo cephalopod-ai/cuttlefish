@@ -33,6 +33,23 @@ describe("MCP resolver", () => {
     ]);
   });
 
+  it("preserves remote MCP headers as literal Codex HTTP header keys and values", () => {
+    const headers = { "X-Project": "fixture", "X.Version": 'v1 "quoted" \\ value\nnext' };
+    const config = { browser: { enabled: false }, custom: {
+      remote: { url: "https://mcp.example.test", headers },
+    } };
+    const original = structuredClone(config);
+    const resolved = resolveMcpServers(config);
+    const expectedHeaders = String.raw`{ "X-Project" = "fixture", "X.Version" = "v1 \"quoted\" \\ value\nnext" }`;
+
+    expect(codexMcpConfigFlags(resolved)).toEqual([
+      "-c", 'mcp_servers.remote.url="https://mcp.example.test"',
+      "-c", `mcp_servers.remote.http_headers=${expectedHeaders}`,
+    ]);
+    expect(config).toEqual(original);
+    expect(resolved.mcpServers.remote).toMatchObject({ headers });
+  });
+
   it("pins each built-in npx package and does not launch the retired fetch package", () => {
     const resolved = resolveMcpServers({
       browser: { enabled: true, provider: "puppeteer" },

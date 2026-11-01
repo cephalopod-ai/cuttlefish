@@ -1,5 +1,31 @@
 # Feature Inventory
 
+## Compatibility and workflow repairs (2026-11-01)
+
+- Settings default/fallback engine choices cover all eleven supported engines,
+  including saved Hermes preferences. Engine configuration preserves saved model
+  IDs; narrow layouts reflow controls. Speech settings name the language selector,
+  report load/save/download failures, and retain rejected language additions for retry.
+- Codex, Grok, Hermes and Vibe retain explicit terminal errors alongside partial
+  output. Vibe/Hermes model selection follows advertised ACP configuration options
+  or the legacy models extension; rejected selections are not cached as accepted.
+- Codex remote MCP overrides preserve configured HTTP headers. Initial live
+  orchestration accepts the `template` alias with canonical-key precedence;
+  early execution failures finalize the run and release unused running leases.
+- Session duplication copies finalized history and preserves tool metadata,
+  sequence, media and blocks. Validated board saves reject incoming duplicate
+  ticket identities;
+  partial saves reject each member of an ambiguous group and retain unrelated
+  valid and omitted stored tickets. Board clients encode department/ticket URL
+  segments, and rejected dispatch request bodies stop before domain calls.
+- Clearing a session queue permanently cancels its earlier queued work while
+  allowing new work. Watcher shutdown cancels pending reloads; PTYs are trimmed
+  to the idle cap when turns/viewers finish without evicting active/viewed terminals.
+  Failed restart readiness remains nonzero, and cron success requires a known
+  completed session rather than merely an absent error flag.
+- Windows installation guidance pins Node 24.13.0 to match the supported runtime;
+  contributor initialization explicitly invokes `pnpm run setup`.
+
 ## Operational persistence and request guards (2026-09-16)
 
 - `cuttlefish help` and `cuttlefish help <command>` are successful discovery

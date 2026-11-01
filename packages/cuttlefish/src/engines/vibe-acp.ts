@@ -5,6 +5,7 @@ import type { InterruptibleEngine, EngineRunOpts, EngineResult } from "../shared
 import { logger } from "../shared/logger.js";
 import { resolveBin } from "../shared/resolve-bin.js";
 import { HermesRpc } from "./hermes-jsonrpc.js";
+import { readAcpModelSelection, selectAcpModel, type AcpModelSelection } from "./acp-model-selection.js";
 import { mapSessionUpdate, extractPromptText } from "./vibe-protocol.js";
 import { buildEngineEnv } from "../shared/engine-env.js";
 import { capAppend, ENGINE_OUTPUT_MAX } from "../shared/cap-append.js";
@@ -25,7 +26,7 @@ interface VibeProc {
   handle: ProcHandle;
   alive: boolean;
   vibeSessionId?: string;
-  currentModelId?: string;
+  modelSelection: AcpModelSelection;
   initialized: Promise<void>;
 }
 
@@ -81,6 +82,7 @@ export class VibeAcpEngine implements InterruptibleEngine {
     const entry: VibeProc = {
       handle,
       alive: true,
+      modelSelection: {},
       initialized: handle.rpc.request("initialize", { protocolVersion: 1, clientCapabilities: {} }).then(() => {}),
     };
     handle.onExit(() => {
@@ -114,7 +116,8 @@ export class VibeAcpEngine implements InterruptibleEngine {
           if (!p.vibeSessionId) {
             if (opts.resumeSessionId) {
               try {
-                await rpc.request("session/load", { sessionId: opts.resumeSessionId, cwd: opts.cwd, mcpServers: [] });
+                const loaded = await rpc.request<Record<string, unknown>>("session/load", { sessionId: opts.resumeSessionId, cwd: opts.cwd, mcpServers: [] });
+                p.modelSelection = readAcpModelSelection(loaded);
                 p.vibeSessionId = opts.resumeSessionId;
               } catch (loadErr) {
                 logger.warn(
@@ -123,14 +126,12 @@ export class VibeAcpEngine implements InterruptibleEngine {
                 );
                 const ns = await rpc.request<Record<string, unknown>>("session/new", { cwd: opts.cwd, mcpServers: [] });
                 p.vibeSessionId = String(ns.sessionId);
-                const models = ns.models as Record<string, unknown> | undefined;
-                p.currentModelId = models?.currentModelId ? String(models.currentModelId) : undefined;
+                p.modelSelection = readAcpModelSelection(ns);
               }
             } else {
               const ns = await rpc.request<Record<string, unknown>>("session/new", { cwd: opts.cwd, mcpServers: [] });
               p.vibeSessionId = String(ns.sessionId);
-              const models = ns.models as Record<string, unknown> | undefined;
-              p.currentModelId = models?.currentModelId ? String(models.currentModelId) : undefined;
+              p.modelSelection = readAcpModelSelection(ns);
             }
             // Vibe's own mode vocabulary (ask/plan/accept-edits/auto-approve) differs
             // from Hermes's dont_ask; auto-approve matches Cuttlefish's own
@@ -138,9 +139,8 @@ export class VibeAcpEngine implements InterruptibleEngine {
             await rpc.request("session/set_mode", { sessionId: p.vibeSessionId, modeId: "auto-approve" }).catch(() => {});
           }
 
-          if (opts.model && opts.model !== p.currentModelId) {
-            await rpc.request("session/set_model", { sessionId: p.vibeSessionId, modelId: opts.model }).catch(() => {});
-            p.currentModelId = opts.model;
+          if (opts.model) {
+            p.modelSelection = await selectAcpModel(rpc, p.vibeSessionId!, p.modelSelection, opts.model);
           }
         })(),
         new Promise<never>((_, rej) => {
@@ -198,7 +198,7 @@ export class VibeAcpEngine implements InterruptibleEngine {
 
       const stop = String(res.stopReason ?? res.stop_reason ?? "");
       const error =
-        !resultText && (stop === "refusal" || stop === "cancelled")
+        (stop === "refusal" || stop === "cancelled")
           ? `Vibe turn ended: ${stop}`
           : undefined;
 
@@ -217,7 +217,7 @@ export class VibeAcpEngine implements InterruptibleEngine {
         sessionId: vibeSessionId || "",
         result: resultText,
         contextTokens: lastContext,
-        error: resultText ? undefined : msg,
+        error: msg,
       };
     } finally {
       if (watchdog) clearTimeout(watchdog);

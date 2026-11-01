@@ -2,6 +2,7 @@
 // editing lives in settings-email-section; engine/model/effort editing lives in
 // settings-engine-configuration.
 // Re-exports preserve the original imports and component identity; keep them.
+import { SETTINGS_ENGINE_OPTIONS } from "./settings-constants"
 import type { SharedConfigProps } from "./settings-config-section-types"
 export { EmailSettingsSection } from "./settings-email-section"
 export { EngineConfigurationSection } from "./settings-engine-configuration"
@@ -100,15 +101,7 @@ export function GatewayWorkspacesSection({
         <SettingsSelect
           value={config.engines?.default ?? "claude"}
           onChange={(v) => updateConfig(["engines", "default"], v)}
-          options={[
-            { value: "claude", label: "Claude" },
-            { value: "codex", label: "Codex" },
-            { value: "grok", label: "Grok" },
-            { value: "ollama", label: "Ollama" },
-            { value: "kilo", label: "Kilo" },
-            { value: "aider", label: "Aider" },
-            { value: "vibe", label: "Vibe" },
-          ]}
+          options={SETTINGS_ENGINE_OPTIONS}
         />
       </FieldRow>
       <FieldRow label="Default Working Dir">
@@ -200,18 +193,7 @@ export function RecoveryFallbacksSection({
         <SettingsSelect
           value={config.sessions?.fallbackEngine ?? "codex"}
           onChange={(v) => updateConfig(["sessions", "fallbackEngine"], v)}
-          options={[
-            { value: "claude", label: "Claude" },
-            { value: "codex", label: "Codex" },
-            { value: "antigravity", label: "Antigravity" },
-            { value: "grok", label: "Grok" },
-            { value: "pi", label: "Pi" },
-            { value: "kiro", label: "Kiro" },
-            { value: "ollama", label: "Ollama" },
-            { value: "kilo", label: "Kilo" },
-            { value: "aider", label: "Aider" },
-            { value: "vibe", label: "Vibe" },
-          ]}
+          options={SETTINGS_ENGINE_OPTIONS}
         />
       </FieldRow>
       <FieldHint>

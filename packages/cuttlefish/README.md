@@ -1,6 +1,6 @@
 # Cuttlefish
 
-> A lightweight AI gateway daemon that orchestrates professional AI coding CLIs — **Claude Code, Codex, Grok, Antigravity, Pi, Hermes, Kiro, Ollama, Kilo, and Aider** — behind one unified process. Cuttlefish is a bus, not a brain.
+> A lightweight AI gateway daemon that orchestrates professional AI coding CLIs — **Claude Code, Codex, Grok, Antigravity, Pi, Hermes, Kiro, Ollama, Kilo, Aider, and Vibe** — behind one unified process. Cuttlefish is a bus, not a brain.
 
 [![npm version](https://img.shields.io/npm/v/cuttlefish-cli.svg)](https://www.npmjs.com/package/cuttlefish-cli)
 [![license: MIT](https://img.shields.io/npm/l/cuttlefish-cli.svg)](https://github.com/cephalopod-ai/cuttlefish)
@@ -12,7 +12,7 @@
 
 ## What is Cuttlefish?
 
-Cuttlefish is an open-source AI gateway that wraps battle-tested AI coding CLIs — **Claude Code, Codex, Grok, Antigravity, Pi, Hermes, Kiro, Ollama, Kilo, and Aider** — behind a single daemon. It routes tasks to the right engine, runs a hierarchical org of AI "employees", schedules background work with cron, talks to your tools through connectors, and ships a full web dashboard and voice mode — all on top of the official CLIs you already trust.
+Cuttlefish is an open-source AI gateway that wraps battle-tested AI coding CLIs — **Claude Code, Codex, Grok, Antigravity, Pi, Hermes, Kiro, Ollama, Kilo, Aider, and Vibe** — behind a single daemon. It routes tasks to the right engine, runs a hierarchical org of AI "employees", schedules background work with cron, talks to your tools through connectors, and ships a full web dashboard with chat voice input and read-aloud playback — all on top of the official CLIs you already trust.
 
 **Cuttlefish is a bus, not a brain.** Most AI agent frameworks reinvent the wheel — custom tool-calling loops, brittle context management, hand-rolled retries — and bill you per token on top. Cuttlefish instead delegates to the professional CLIs and adds only what they're missing: routing, an org system, scheduling, connectors, and a UI.
 
@@ -74,11 +74,11 @@ shutdown, and overlapping restart requests coalesce.
 
 ## ✨ Features
 
-- **Multi-engine** — Claude Code, Codex, Grok, Antigravity, Pi, Hermes, Kiro, Ollama, Kilo, and Aider behind one API; switch engine and model per task or per employee.
+- **Multi-engine** — Claude Code, Codex, Grok, Antigravity, Pi, Hermes, Kiro, Ollama, Kilo, Aider, and Vibe behind one API; switch engine and model per task or per employee.
 - **AI org system** — hierarchical "employees" with personas, ranks, and departments. Delegate work down the tree; results flow back up through a COO.
 - **Cron & background jobs** — schedule recurring agent work and long-running tasks; review the output before it reaches you.
 - **Connectors** — Slack and more, so your agents can message, report, and act.
-- **Web dashboard + voice** — chat UI, live org chart, kanban board, logs, usage limits, and a hands-free talk mode.
+- **Web dashboard + voice** — chat UI with voice input and per-message read-aloud playback, live org chart, kanban board, logs, and usage limits.
 - **Skills** — reusable Markdown playbooks your agents follow step by step.
 - **Matrix orchestration** — durable runtime, queue controls, dual-lane runs, recovery/requeue flows, worktree execution, and a dedicated orchestration dashboard.
 - **Operator controls** — approvals, archives, stricter file handling, and stronger backend/frontend coverage than the upstream baseline.

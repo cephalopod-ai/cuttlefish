@@ -29,7 +29,8 @@ Override with `CUTTLEFISH_HOME`.
 
 1. **Node.js 24**
    - macOS/Linux: [nodejs.org](https://nodejs.org/), `nvm`, `fnm`, etc.
-   - Windows (admin OK): `winget install --id OpenJS.NodeJS.LTS -e`
+   - Windows (admin OK): `winget install --id OpenJS.NodeJS.LTS -e --version 24.13.0`
+   - Pin the version above: the unversioned LTS package can select a newer, unsupported Node major.
    - Windows (no admin): download the **Windows Binary (.zip)** from
      [nodejs.org/dist](https://nodejs.org/dist/) (e.g. `node-v24.x.x-win-x64.zip`),
      extract under `%LOCALAPPDATA%\Programs\`, and add that folder to your user `PATH`.

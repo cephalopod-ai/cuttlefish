@@ -71,8 +71,8 @@ those deliberate cases.
 - `docs/DOC_MAINTENANCE.md`: documentation update contract for future changes.
 - `docs/DOCUMENTATION_INVENTORY.md`: inventory of canonical, current,
   historical, local-only, and generated documentation surfaces.
-- `docs/STRUCTURE_COMPLIANCE.md`: documentation structure and retention-policy
-  compliance report.
+- `docs/STRUCTURE_COMPLIANCE.md`: historical August 16 structure/retention review;
+  its tool observations and recommendations are not current prerequisites.
 - `docs/UPSTREAM_DIFF_BASELINE.md`: source-grounded comparison between this
   checkout and the configured upstream baseline.
 - `docs/LOG_ARCHIVE.md`: raw-log retention policy and durable summary index.
@@ -96,6 +96,18 @@ those deliberate cases.
   interoperability evidence, and current transport limits.
 
 ## Session and Audit Log Summaries
+
+November 1 non-security audit: a repository inventory, sampled domain reviews,
+installed-provider compatibility checks and disposable browser/protocol probes
+found 24 defects, now repaired. The final suite passed 4,316 tests across 501
+files with three existing skips; typecheck, lint, build, ten fixture E2E tests
+and package verification passed. See
+[TEST_LEDGER.md](TEST_LEDGER.md), [TODO_HISTORY.md](TODO_HISTORY.md) and
+[feature_inventory.md](feature_inventory.md) for tracked results and behavior.
+Security was excluded. Real-provider generation, native Windows/Linux behavior
+and the full 225-card playtest remain unverified. Detailed local-only evidence:
+`docs/audits/2026-11-01-nonsecurity-audit.md` and
+`docs/logs/session/112026/2026-11-01-nonsecurity-audit.md`.
 
 September 27 playtest: a disposable gateway and Chromium pass over the standing
 225-card library executed 25 cards (5 pass, 1 fail, 19 partial), blocked 7, and
@@ -175,15 +187,18 @@ published tree during log retention:
 Curated summaries of completed campaigns (for example the August 2026
 agent-skills audit and repair campaign, the July 2026 comprehensive audit and
 repair campaign, and the SB-CUT-001 collaboration completion) are reflected
-in `docs/TODO_LEDGER.md`, `docs/TODO_HISTORY.md`, `docs/TEST_LEDGER.md`, and
-the `.giles/feature-ledger/` entries rather than in tracked raw-log files.
+in `docs/TODO_LEDGER.md`, `docs/TODO_HISTORY.md`, and `docs/TEST_LEDGER.md`.
+Retired `.giles/feature-ledger/` references are historical provenance; previously
+tracked entries can be recovered from Git history, and other local entries may
+be unavailable in a fresh checkout.
 
 ## FleetView Implementation Status
 
 - `docs/plans/2026-07-10-fleetview-ux-implementation-plan.md`: the reference
   roadmap for the FleetView web dashboard. Phases 0–6 each have an implemented,
-  scoped slice; remaining UX backlog and validation limits are deliberately
-  deferred and recorded in their corresponding Giles feature-ledger entries.
+  scoped slice. Its dated implementation notes and historical ledger references
+  describe the validation and residual backlog of those phases; they do not
+  require current Giles tooling or establish current coverage.
 
 ## Historical Design And Planning Archives
 

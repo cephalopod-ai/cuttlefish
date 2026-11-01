@@ -73,7 +73,7 @@ pnpm cuttlefish start
 ### Windows (PowerShell)
 
 ```powershell
-# Node 24 on PATH first (winget install OpenJS.NodeJS.LTS, or portable zip from nodejs.org)
+# Node 24 on PATH first (winget install --id OpenJS.NodeJS.LTS -e --version 24.13.0, or a Node 24 portable zip)
 git clone https://github.com/cephalopod-ai/cuttlefish.git
 cd cuttlefish
 .\scripts\install.ps1 -FromSource -Force   # build, install to %LOCALAPPDATA%\Programs\cuttlefish, PATH shim, setup

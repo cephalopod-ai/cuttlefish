@@ -140,6 +140,118 @@ describe("runOrchestrationTask", () => {
     runtime.close();
   });
 
+  it.each([
+    { template: "withReview" },
+    { coordinatorTemplate: "withReview", template: "unknown-template" },
+  ])("normalizes the template alias while preserving canonical-key precedence: %j", async (template) => {
+    const { runOrchestrationTask, OrchestrationRuntime } = await loadModules();
+    const engine = new RecordingEngine();
+    const runtime = new OrchestrationRuntime({ config: reviewConfig(), dbPath: ":memory:", startReaper: false });
+    try {
+      const result = await runOrchestrationTask({ context: makeContext(runtime, engine), task: {
+        taskId: "task-template-alias", coordinatorId: "coord-template-alias",
+        ...template, mode: "single_worker_with_review", prompt: "Implement using a template",
+      } });
+      expect(result.ok).toBe(true);
+      expect(engine.run).toHaveBeenCalledTimes(2);
+      expect(runtime.listLeases().every((lease) => lease.state === "released")).toBe(true);
+    } finally {
+      runtime.close();
+    }
+  });
+
+  it("releases unstarted roles and finalizes the ledger when the first role returns an error", async () => {
+    const { runOrchestrationTask, OrchestrationRuntime } = await loadModules();
+    const { getRunLedger } = await import("../../run-ledger/index.js");
+    const engine = new RecordingEngine({ throwOnPromptSubstring: "fail-first-role" });
+    const runtime = new OrchestrationRuntime({ config: reviewConfig(), dbPath: ":memory:", startReaper: false });
+    try {
+      const result = await runOrchestrationTask({ context: makeContext(runtime, engine), task: {
+        taskId: "task-first-role-error", coordinatorId: "coord-first-role-error",
+        coordinatorTemplate: "withReview", mode: "single_worker_with_review", prompt: "fail-first-role",
+      } });
+      expect(result).toMatchObject({ ok: false, state: "failed" });
+      expect(engine.run).toHaveBeenCalledTimes(1);
+      expect(runtime.listLeases()).toHaveLength(2);
+      expect(runtime.listLeases().every((lease) => lease.state === "released")).toBe(true);
+      expect(getRunLedger().listRuns({ engine: "orchestration" }).find((run) => run.title === "task-first-role-error/coord-first-role-error"))
+        .toMatchObject({ currentState: "failed" });
+    } finally {
+      runtime.close();
+    }
+  });
+
+  it("releases unstarted roles and finalizes thrown session-setup failure", async () => {
+    const { runOrchestrationTask, OrchestrationRuntime } = await loadModules();
+    const { getRunLedger } = await import("../../run-ledger/index.js");
+    const cfg = reviewConfig();
+    cfg.workers[0].provider = "missing-engine";
+    const runtime = new OrchestrationRuntime({ config: cfg, dbPath: ":memory:", startReaper: false });
+    try {
+      await expect(runOrchestrationTask({ context: makeContext(runtime, new RecordingEngine()), task: {
+        taskId: "task-first-role-setup", coordinatorId: "coord-first-role-setup",
+        coordinatorTemplate: "withReview", mode: "single_worker_with_review", prompt: "Never dispatched",
+      } })).rejects.toThrow("engine for worker provider missing-engine is not available");
+      expect(runtime.listLeases()).toHaveLength(2);
+      expect(runtime.listLeases().every((lease) => lease.state === "released")).toBe(true);
+      expect(getRunLedger().listRuns({ engine: "orchestration" }).find((run) => run.title === "task-first-role-setup/coord-first-role-setup"))
+        .toMatchObject({ currentState: "failed", lastError: "engine for worker provider missing-engine is not available" });
+    } finally {
+      runtime.close();
+    }
+  });
+
+  it("includes post-ledger workspace setup in failure cleanup", async () => {
+    const { runAllocatedOrchestrationTask, OrchestrationRuntime } = await loadModules();
+    const { getRunLedger } = await import("../../run-ledger/index.js");
+    const runtime = new OrchestrationRuntime({ config: config(), dbPath: ":memory:", startReaper: false });
+    try {
+      const allocated = runtime.requestAllocation({
+        taskId: "task-workspace-setup", coordinatorId: "coord-workspace-setup", requiredRoles: ["seniorImplementer"],
+        optionalRoles: [], priority: "normal", leaseDurationMs: 60_000,
+      });
+      expect(allocated.ok).toBe(true);
+      if (!allocated.ok) return;
+      const context = makeContext(runtime, new RecordingEngine());
+      context.getConfig = () => { throw new Error("workspace configuration unavailable"); };
+      await expect(runAllocatedOrchestrationTask({ context, mode: "single_worker", task: {
+        taskId: "task-workspace-setup", coordinatorId: "coord-workspace-setup", prompt: "Never dispatched",
+        priority: "normal", leaseDurationMs: 60_000,
+      }, allocation: allocated.allocation, reviewPolicy: allocated.reviewPolicy })).rejects.toThrow("workspace configuration unavailable");
+      expect(runtime.listLeases().every((lease) => lease.state === "released")).toBe(true);
+      expect(getRunLedger().listRuns({ engine: "orchestration" }).find((run) => run.title === "task-workspace-setup/coord-workspace-setup"))
+        .toMatchObject({ currentState: "failed", lastError: "workspace configuration unavailable" });
+    } finally {
+      runtime.close();
+    }
+  });
+
+  it.each(["released", "expired"] as const)("preserves an already-%s lease during failure cleanup", async (state) => {
+    const { runAllocatedOrchestrationTask, OrchestrationRuntime } = await loadModules();
+    const engine = new RecordingEngine();
+    const runtime = new OrchestrationRuntime({ config: config(), dbPath: ":memory:", startReaper: false });
+    try {
+      const allocated = runtime.requestAllocation({
+        taskId: "task-terminal-lease", coordinatorId: "coord-terminal-lease", requiredRoles: ["seniorImplementer"],
+        optionalRoles: [], priority: "normal", leaseDurationMs: 60_000,
+      });
+      expect(allocated.ok).toBe(true);
+      if (!allocated.ok) return;
+      if (state === "released") runtime.releaseLease(allocated.allocation.leases[0].leaseId);
+      else runtime.expireLeases(new Date(Date.now() + 120_000));
+
+      await expect(runAllocatedOrchestrationTask({ context: makeContext(runtime, engine), mode: "single_worker", task: {
+        taskId: "task-terminal-lease", coordinatorId: "coord-terminal-lease", prompt: "Never dispatched",
+        priority: "normal", leaseDurationMs: 60_000,
+      }, allocation: allocated.allocation, reviewPolicy: allocated.reviewPolicy })).rejects.toThrow("is not valid");
+
+      expect(runtime.listLeases()).toMatchObject([{ state }]);
+      expect(engine.run).not.toHaveBeenCalled();
+    } finally {
+      runtime.close();
+    }
+  });
+
   it("CUT-EA-009: refuses a protected scheduler review before invoking an incapable adapter", async () => {
     const { runOrchestrationTask, OrchestrationRuntime, getSession } = await loadModules();
     const engine = new RecordingEngine({ readOnly: false });

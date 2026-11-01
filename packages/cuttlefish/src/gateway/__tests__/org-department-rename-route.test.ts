@@ -100,6 +100,28 @@ afterEach(() => {
 });
 
 describe("PATCH /api/org/departments/:name", () => {
+  it.each([{ body: null }, { body: [] }, { body: 42 }, { body: "product" }])("rejects non-object body $body before renaming", async ({ body }) => {
+    writeEmployee("platform", "dev");
+    const service = await import("../org-mutation-service.js");
+    const rename = vi.spyOn(service, "renameOrgDepartment");
+    const api = await import("../api.js");
+    const ctx = makeCtx();
+    const cap = makeRes();
+
+    await api.handleApiRequest(
+      makeJsonReq("PATCH", "/api/org/departments/platform", body),
+      cap.res,
+      ctx,
+    );
+
+    expect(cap.status).toBe(400);
+    expect(cap.body).toEqual({ error: "Invalid JSON body: expected an object" });
+    expect(rename).not.toHaveBeenCalled();
+    expect(readEmployee("platform", "dev").department).toBe("platform");
+    expect(ctx.reloadOrg).not.toHaveBeenCalled();
+    expect(ctx.emit).not.toHaveBeenCalled();
+  });
+
   it("renames matching employee departments and moves the board directory", async () => {
     writeEmployee("platform", "dev");
     fs.writeFileSync(path.join(tmpHome, "org", "platform", "board.json"), JSON.stringify([{ id: "t1", status: "todo" }]));

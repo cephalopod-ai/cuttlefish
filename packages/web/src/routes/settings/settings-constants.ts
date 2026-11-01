@@ -28,6 +28,23 @@ export const WHISPER_LANGUAGES: Record<string, string> = {
   lt: "Lithuanian", lv: "Latvian", sl: "Slovenian", et: "Estonian",
 }
 
+// Keep settings engine selectors on one list, including engines not installed yet.
+export const SETTINGS_ENGINE_OPTIONS = [
+  { value: "claude", label: "Claude" },
+  { value: "codex", label: "Codex" },
+  { value: "antigravity", label: "Antigravity" },
+  { value: "grok", label: "Grok" },
+  { value: "pi", label: "Pi" },
+  { value: "kiro", label: "Kiro" },
+  { value: "hermes", label: "Hermes" },
+  { value: "ollama", label: "Ollama" },
+  { value: "kilo", label: "Kilo" },
+  { value: "aider", label: "Aider" },
+  { value: "vibe", label: "Vibe" },
+] as const
+
+type SettingsEngineName = typeof SETTINGS_ENGINE_OPTIONS[number]["value"]
+
 // Config type (gateway API)
 export interface Config {
   email?: {
@@ -67,6 +84,7 @@ export interface Config {
     grok?: { bin?: string; model?: string; effortLevel?: string }
     pi?: { bin?: string; model?: string; effortLevel?: string }
     kiro?: { bin?: string; model?: string; effortLevel?: string; creditBudget?: number; billingAnchorDay?: number }
+    hermes?: { bin?: string; model?: string }
     ollama?: { bin?: string; model?: string }
     kilo?: { bin?: string; model?: string; effortLevel?: string }
     aider?: { bin?: string; model?: string }
@@ -88,7 +106,7 @@ export interface Config {
     maxCostUsd?: number
     interruptOnNewMessage?: boolean
     rateLimitStrategy?: "wait" | "fallback"
-    fallbackEngine?: "claude" | "codex" | "antigravity" | "grok" | "pi" | "kiro" | "ollama" | "kilo" | "aider" | "vibe"
+    fallbackEngine?: SettingsEngineName
   }
   connectors?: {
     slack?: {

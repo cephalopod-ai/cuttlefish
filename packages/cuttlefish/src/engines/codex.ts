@@ -206,6 +206,9 @@ export class CodexEngine implements InterruptibleEngine {
       let resultText = "";
       let numTurns = 0;
       let turnError: string | null = null;
+      // A preamble is not a completed answer: explicit terminal failures remain
+      // failures even when the provider has already streamed useful partial text.
+      let terminalFailure: string | null = null;
       let lastContextTokens: number | undefined;
       let lineBuf = "";
       let hardTimeout: NodeJS.Timeout | undefined;
@@ -257,7 +260,9 @@ export class CodexEngine implements InterruptibleEngine {
         resolve({
           sessionId: resolvedThreadId,
           result: resultText,
-          error: resultText.trim() ? undefined : (turnError ? actionableCodexError(turnError) : undefined),
+          error: terminalFailure
+            ? actionableCodexError(terminalFailure)
+            : resultText.trim() ? undefined : (turnError ? actionableCodexError(turnError) : undefined),
           numTurns: numTurns || undefined,
           ...(typeof lastContextTokens === "number" ? { contextTokens: lastContextTokens } : {}),
         });
@@ -323,12 +328,14 @@ export class CodexEngine implements InterruptibleEngine {
               if (onStream) onStream({ type: "error", content: parsed.message });
               break;
             case "usage":
+              terminalFailure = null;
               resetTextBlockRun();
               numTurns++;
               if (parsed.contextTokens) lastContextTokens = parsed.contextTokens;
               scheduleTerminalSettle(); // turn.completed = end of turn
               break;
             case "turn_failed":
+              terminalFailure = parsed.message;
               resetTextBlockRun();
               turnError = parsed.message;
               if (onStream) onStream({ type: "error", content: parsed.message });
@@ -371,6 +378,7 @@ export class CodexEngine implements InterruptibleEngine {
                 resultText = parsed.delta.content; // final message wins (see above)
                 break;
               case "usage":
+                terminalFailure = null;
                 numTurns++;
                 if (parsed.contextTokens) lastContextTokens = parsed.contextTokens;
                 break;
@@ -378,6 +386,7 @@ export class CodexEngine implements InterruptibleEngine {
                 turnError = parsed.message;
                 break;
               case "turn_failed":
+                terminalFailure = parsed.message;
                 turnError = parsed.message;
                 break;
             }
@@ -407,13 +416,14 @@ export class CodexEngine implements InterruptibleEngine {
         }
 
         if (code === 0 || (code !== null && threadId)) {
-          // A non-empty agent message means the turn genuinely succeeded — don't
-          // surface a transient/benign error item (e.g. the `web_search_request`
-          // deprecation notice that codex emits before the answer) as a failure.
+          // Keep completed output despite benign CLI diagnostics or shutdown noise.
+          // An explicit turn.failed still wins over any preamble or partial text.
           resolve({
             sessionId: resolvedThreadId,
             result: resultText,
-            error: resultText.trim() ? undefined : (turnError ? actionableCodexError(turnError) : undefined),
+            error: terminalFailure
+              ? actionableCodexError(terminalFailure)
+              : resultText.trim() ? undefined : (turnError ? actionableCodexError(turnError) : undefined),
             numTurns: numTurns || undefined,
             ...(typeof lastContextTokens === "number" ? { contextTokens: lastContextTokens } : {}),
           });

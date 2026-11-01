@@ -49,17 +49,17 @@ export function FieldRow({
     <div
       role={multiple ? "group" : undefined}
       aria-labelledby={multiple ? labelId : undefined}
-      className="flex items-center justify-between py-[var(--space-2)] gap-[var(--space-4)]"
+      className="flex flex-col items-stretch justify-between py-[var(--space-2)] gap-[var(--space-2)] sm:flex-row sm:items-center sm:gap-[var(--space-4)]"
     >
       <Label
         id={labelId}
         htmlFor={controlId}
-        className="text-[length:var(--text-subheadline)] text-[var(--text-secondary)] shrink-0"
+        className="min-w-0 text-[length:var(--text-subheadline)] text-[var(--text-secondary)]"
       >
         {label}
       </Label>
       <SettingsFieldContext.Provider value={{ labelId, controlId }}>
-        <div className="w-[240px] shrink-0">{children}</div>
+        <div className="min-w-0 w-full sm:w-[240px] sm:shrink-0">{children}</div>
       </SettingsFieldContext.Provider>
     </div>
   )
@@ -96,7 +96,7 @@ export function SettingsInput({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
-      className="apple-input w-full bg-[var(--bg-secondary)] border border-[var(--separator)] rounded-[var(--radius-sm)] px-[10px] py-[6px] text-[length:var(--text-footnote)] text-[var(--text-primary)]"
+      className="apple-input min-w-0 w-full bg-[var(--bg-secondary)] border border-[var(--separator)] rounded-[var(--radius-sm)] px-[10px] py-[6px] text-[length:var(--text-footnote)] text-[var(--text-primary)]"
     />
   )
 }
@@ -121,7 +121,7 @@ export function SettingsTextarea({
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
       rows={rows}
-      className="w-full bg-[var(--bg-secondary)] border border-[var(--separator)] rounded-[var(--radius-sm)] px-[10px] py-[8px] text-[length:var(--text-footnote)] text-[var(--text-primary)] resize-y"
+      className="min-w-0 w-full bg-[var(--bg-secondary)] border border-[var(--separator)] rounded-[var(--radius-sm)] px-[10px] py-[8px] text-[length:var(--text-footnote)] text-[var(--text-primary)] resize-y"
     />
   )
 }
@@ -133,7 +133,7 @@ export function SettingsSelect({
 }: {
   value: string
   onChange: (v: string) => void
-  options: { value: string; label: string }[]
+  options: readonly { value: string; label: string }[]
 }) {
   const field = useSettingsField()
   return (
@@ -142,7 +142,7 @@ export function SettingsSelect({
       aria-labelledby={field.labelId}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full bg-[var(--bg-secondary)] border border-[var(--separator)] rounded-[var(--radius-sm)] px-[10px] py-[6px] text-[length:var(--text-footnote)] text-[var(--text-primary)] cursor-pointer"
+      className="min-w-0 w-full bg-[var(--bg-secondary)] border border-[var(--separator)] rounded-[var(--radius-sm)] px-[10px] py-[6px] text-[length:var(--text-footnote)] text-[var(--text-primary)] cursor-pointer"
     >
       {options.map((o) => (
         <option key={o.value} value={o.value}>

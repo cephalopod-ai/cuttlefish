@@ -355,7 +355,7 @@ export const api = {
   triggerCronJob: (id: string) =>
     post<Record<string, unknown>>(`/api/cron/${id}/trigger`, {}),
   getDepartmentBoard: (name: string) =>
-    get<DepartmentBoardResponse>(`/api/org/departments/${name}/board`),
+    get<DepartmentBoardResponse>(`/api/org/departments/${encodeURIComponent(name)}/board`),
   getSkills: () => get<Record<string, unknown>[]>("/api/skills"),
   getSkill: (name: string) => get<Record<string, unknown>>(`/api/skills/${name}`),
   // The config document is read and written through lib/api-config.ts, which is
@@ -373,13 +373,13 @@ export const api = {
   getActivity: () =>
     get<Array<{ event: string; payload: unknown; ts: number }>>("/api/activity"),
   updateDepartmentBoard: (name: string, data: UpdateDepartmentBoardPayload) =>
-    put<UpdateDepartmentBoardResponse>(`/api/org/departments/${name}/board`, data),
+    put<UpdateDepartmentBoardResponse>(`/api/org/departments/${encodeURIComponent(name)}/board`, data),
   dispatchTicket: (department: string, ticketId: string) =>
-    post<DispatchTicketResponse>(`/api/org/departments/${department}/tickets/${ticketId}/dispatch`, {}),
+    post<DispatchTicketResponse>(`/api/org/departments/${encodeURIComponent(department)}/tickets/${encodeURIComponent(ticketId)}/dispatch`, {}),
   escalateToLead: (department: string, ticketId: string) =>
-    post<DispatchTicketResponse>(`/api/org/departments/${department}/tickets/${ticketId}/dispatch`, { routeToManager: true }),
+    post<DispatchTicketResponse>(`/api/org/departments/${encodeURIComponent(department)}/tickets/${encodeURIComponent(ticketId)}/dispatch`, { routeToManager: true }),
   getTicketSession: (department: string, ticketId: string) =>
-    get<TicketSessionResponse>(`/api/org/departments/${department}/tickets/${ticketId}/session`),
+    get<TicketSessionResponse>(`/api/org/departments/${encodeURIComponent(department)}/tickets/${encodeURIComponent(ticketId)}/session`),
   sttStatus: () =>
     get<{ available: boolean; model: string | null; downloading: boolean; progress: number; languages: string[] }>("/api/stt/status"),
   sttDownload: () =>

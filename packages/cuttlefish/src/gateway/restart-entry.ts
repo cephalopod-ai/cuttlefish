@@ -41,9 +41,8 @@ async function main(): Promise<void> {
   const connectHost = !config.gateway?.host || config.gateway.host === "0.0.0.0" ? "127.0.0.1" : config.gateway.host;
   const listening = await waitForPortListening(port, connectHost);
   if (!listening) {
-    logger.error(`restart-entry: fresh daemon did not bind port ${port} before timeout`);
-    process.exitCode = 1;
-    return;
+    // Reject the workflow so the outer success handler cannot erase this failure.
+    throw new Error(`fresh daemon did not bind port ${port} before timeout`);
   }
   logger.info("restart-entry: done");
 }
