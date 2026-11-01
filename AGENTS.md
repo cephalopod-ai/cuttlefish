@@ -1,3 +1,10 @@
+## Tool-independent agent work
+
+Dory and Giles are not prerequisites for agent work in this repository.
+Do not require their CLIs, MCP tools, checkpoints, scans, sidecars, or feature
+ledgers. Use current source, Git history, repository-native logs, and the
+relevant tests for evidence; report skipped or unavailable checks honestly.
+
 # Agent Execution Contract
 
 This file is the canonical repo-wide instruction contract for coding, audit,
@@ -72,49 +79,13 @@ monorepo**. It declares `family: application`, `repo_type: service`,
   `README.md`, "How the Claude engine works").
 - Never commit secrets or `~/.cuttlefish` runtime state.
 
-<!-- GILES:FEATURE-LEDGER:START -->
-## Giles feature ledger requirement
-
-Before making implementation, refactor, config, test, or documentation changes, identify the active feature or task.
-
-For each feature-level change, append or update the repo-local Giles feature ledger under:
-
-`.giles/feature-ledger/`
-
-Each ledger entry must record:
-
-- feature id
-- short action summary
-- touched files
-- validation run
-- remaining open items
-- provenance
-
-Do not claim completion unless the ledger and validation results are updated.
-Do not overwrite prior ledger entries.
-If reconstructing history from archive/session/audit logs, mark provenance as reconstructed or inferred.
-<!-- GILES:FEATURE-LEDGER:END -->
-<!-- GILES:DOCS-GOVERNANCE:START -->
-## Giles Compliance
+## Validation evidence
 
 - README.md and docs/INDEX.md are required read-order surfaces for repository
   orientation.
 - Mermaid diagrams must follow `docs/agent/mermaid-diagram-guidance.md`.
 - Documentation patch rules: documentation must be source-grounded; no invented
   or fabricated facts, claims, or docs; verify before writing.
-- Treat `.giles/*.yaml` as advisory/discovery-only until validated by a fresh
-  Giles scan.
-- `.giles` artifacts are local advisory sidecar outputs that may not be
-  available without Giles. Canonical compliance data lives under
-  `governance/logs/`, while governing repo policy lives under `governance/`,
-  `docs/`, and this `AGENTS.md` contract.
-- Agents record evidence and do not declare compliance. Only Giles writes or
-  refreshes canonical compliance status, and agents must report residual risks,
-  skipped checks, and validation failures plainly.
-- Cloud/remote agents or agents without local Giles/Dory access may ignore Giles
-  and Dory requirements; those requirements are waived when the tools are
-  unavailable, and the agent should continue with the repo contract plus visible
-  disclosure.
 - orchestrator/router file contract: router files are allowed to grow in number
   of registrations, but not in domain behavior.
 - Orchestrator/router file contract: orchestrator/router files may only
@@ -123,8 +94,6 @@ If reconstructing history from archive/session/audit logs, mark provenance as re
   not host business rules, persistence mutation, validation algorithms,
   lifecycle/state machines, dedup/merge/repair logic, or archive/file parsing;
   new non-routing behavior belongs in focused domain modules.
-<!-- GILES:DOCS-GOVERNANCE:END -->
-
 ## Documentation Rules
 
 - `README.md` and `docs/INDEX.md` are the orientation surfaces. Keep
