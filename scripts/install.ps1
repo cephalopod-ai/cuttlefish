@@ -81,7 +81,7 @@ function Assert-Node24 {
   $node = Get-Command node -ErrorAction SilentlyContinue
   if (-not $node) {
     Write-Err "Node.js is not on PATH. Install Node 24 (LTS) first:"
-    Write-Host "  winget install --id OpenJS.NodeJS.LTS -e"
+    Write-Host "  winget install --id OpenJS.NodeJS.LTS -e --version 24.13.0"
     Write-Host "  # or portable zip: https://nodejs.org/dist/  (major version 24 only: >=24 <25)"
     exit 1
   }
@@ -89,7 +89,7 @@ function Assert-Node24 {
   $major = [int]($raw.Split(".")[0])
   if ($major -ne 24) {
     Write-Err "Cuttlefish requires Node.js 24.x (found $raw)."
-    Write-Host "  winget install --id OpenJS.NodeJS.LTS -e"
+    Write-Host "  winget install --id OpenJS.NodeJS.LTS -e --version 24.13.0"
     exit 1
   }
   Write-Info "Node.js $raw OK"

@@ -41,7 +41,7 @@ describe("knowledge outbox service", () => {
     const svc = await import("../outbox-service.js");
     reg.initDb();
 
-    svc.enqueueKnowledgeEnvelope({
+    const queued = svc.enqueueKnowledgeEnvelope({
       envelopeId: "env-1",
       producer: "cuttlefish",
       schemaVersion: "1",
@@ -72,7 +72,9 @@ describe("knowledge outbox service", () => {
     });
 
     expect(result).toEqual({ attempted: 1, delivered: 1, failed: 0 });
-    expect(reg.listExternalOutboxItems({ limit: 10 })[0]).toEqual(expect.objectContaining({
+    // Other cases intentionally retain pending/uncertain rows in this fixture.
+    // Assert this operation's outcome rather than relying on timestamp ordering.
+    expect(reg.getExternalOutboxItem(queued!.id)).toEqual(expect.objectContaining({
       status: "delivered",
       remoteId: "remote-1",
     }));

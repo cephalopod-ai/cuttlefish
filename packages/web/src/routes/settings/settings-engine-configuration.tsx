@@ -1,7 +1,7 @@
 // Engine binary, model and effort draft editing for the settings page.
 // Extracted from settings-config-sections.tsx in a behavior-preserving modularization.
 // The facade re-exports EngineConfigurationSection.
-import { useEffect } from "react"
+import { Fragment, useEffect } from "react"
 import type { SharedConfigProps } from "./settings-config-section-types"
 import { FieldHint, FieldRow, Section, SettingsInput, SettingsSelect } from "./settings-fields"
 
@@ -30,7 +30,7 @@ export function EngineConfigurationSection({
     // A registry refresh must not make the select display a different model than the draft.
     return options.some((option) => option.value === currentModel)
       ? options
-      : [...options, { value: currentModel, label: `${currentModel} (configured)` }]
+      : [...options, { value: currentModel, label: currentModel ? `${currentModel} (configured)` : "Engine default" }]
   }
 
   const codexPersistedEffort = config.engines?.codex?.effortLevel
@@ -125,6 +125,55 @@ export function EngineConfigurationSection({
       </FieldRow>
 
       <div className="border-t border-[var(--separator)] mt-[var(--space-3)] pt-[var(--space-3)]" />
+
+      {([
+        { name: "antigravity", label: "Antigravity", bin: "agy" },
+        { name: "pi", label: "Pi", bin: "pi" },
+        { name: "kiro", label: "Kiro", bin: "kiro-cli" },
+        { name: "hermes", label: "Hermes", bin: "hermes" },
+      ] as const).map(({ name, label, bin }) => {
+        // Leave an absent model to the engine's configured default; registry
+        // refreshes must preserve an explicit model even when it is not listed.
+        const model = config.engines?.[name]?.model ?? ""
+        const persistedEffort = name === "pi" || name === "kiro" ? config.engines?.[name]?.effortLevel : undefined
+        const effortChoices = effortOptions(name, model || undefined, [{ value: "default", label: "Default" }])
+        const visibleEffortChoices = persistedEffort && !effortChoices.some((option) => option.value === persistedEffort)
+          ? [...effortChoices, { value: persistedEffort, label: `${persistedEffort} (configured)` }]
+          : effortChoices
+        return (
+          <Fragment key={name}>
+            <div className="text-[length:var(--text-caption1)] font-[var(--weight-semibold)] text-[var(--text-tertiary)] mb-[var(--space-2)]">
+              {label}
+            </div>
+            <FieldRow label="Binary Path">
+              <SettingsInput
+                value={config.engines?.[name]?.bin ?? ""}
+                onChange={(value) => updateConfig(["engines", name, "bin"], value)}
+                placeholder={bin}
+              />
+            </FieldRow>
+            <FieldRow label="Model">
+              <SettingsSelect
+                value={model}
+                onChange={(value) => updateConfig(["engines", name, "model"], value || undefined)}
+                options={configuredModelOptions(name, model, [
+                  { value: model, label: model || "Engine default" },
+                ])}
+              />
+            </FieldRow>
+            {(name === "pi" || name === "kiro") && (
+              <FieldRow label="Effort Level">
+                <SettingsSelect
+                  value={persistedEffort ?? "default"}
+                  onChange={(value) => updateConfig(["engines", name, "effortLevel"], value)}
+                  options={visibleEffortChoices}
+                />
+              </FieldRow>
+            )}
+            <div className="border-t border-[var(--separator)] mt-[var(--space-3)] pt-[var(--space-3)]" />
+          </Fragment>
+        )
+      })}
 
       <div className="text-[length:var(--text-caption1)] font-[var(--weight-semibold)] text-[var(--text-tertiary)] mb-[var(--space-2)]">
         Grok

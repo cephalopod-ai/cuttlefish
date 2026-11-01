@@ -4,7 +4,7 @@ import type { IncomingMessage as HttpRequest, ServerResponse } from "node:http";
 import { ORG_DIR } from "../../../shared/paths.js";
 import { logger } from "../../../shared/logger.js";
 import { getSession, listSessions } from "../../../sessions/registry.js";
-import { readJsonBody } from "../../http-helpers.js";
+import { readJsonBody, readJsonObjectBody } from "../../http-helpers.js";
 import { isDirectChildSession } from "../../manager-auth.js";
 import type { GatewayPrincipal } from "../../auth.js";
 import { defaultBoardState, readBoardArray, readBoardState } from "../../board-service.js";
@@ -264,9 +264,9 @@ export async function handleOrgRoutes(
 
   params = matchRoute("/api/org/departments/:name", pathname);
   if (method === "PATCH" && params) {
-    const parsed = await readJsonBody(req, res);
+    const parsed = await readJsonObjectBody(req, res);
     if (!parsed.ok) return true;
-    const body = parsed.body as Record<string, unknown>;
+    const body = parsed.body;
     const nextName = typeof body.name === "string" ? body.name.trim() : "";
     const result = await renameOrgDepartment(params.name, nextName, context);
     json(res, result.body, result.statusCode);
@@ -381,8 +381,10 @@ export async function handleOrgRoutes(
 
   params = matchRoute("/api/org/departments/:name/tickets/:id/dispatch", pathname);
   if (method === "POST" && params) {
-    const body = req.method === "POST" ? await readJsonBody(req, res).then((r) => (r.ok ? r.body : {})) : {};
-    const routeToManager = (body as Record<string, unknown>).routeToManager === true;
+    // A parser rejection already sent its response; it must never become a dispatch.
+    const parsed = await readJsonObjectBody(req, res);
+    if (!parsed.ok) return true;
+    const routeToManager = parsed.body.routeToManager === true;
     const result = await dispatchTicket(
       params.name,
       params.id,

@@ -493,14 +493,33 @@ describe("CodexEngine — error / failure handling", () => {
     expect(quota.result.error).toBe("429 Too Many Requests");
   });
 
-  it("does not surface a turn error when a non-empty answer was produced", async () => {
+  it("keeps explicit terminal failure even when a partial answer was produced", async () => {
     const { result } = await runWith({}, [
       threadStarted("t1"),
-      turnFailed("transient hiccup"),
       agentMessage("but here is the answer"),
+      turnFailed("stream interrupted"),
     ]);
     expect(result.result).toBe("but here is the answer");
-    // Non-empty result.trim() => error is suppressed.
+    expect(result.error).toBe("stream interrupted");
+  });
+
+  it("keeps a trailing terminal failure when the last line has no newline", async () => {
+    const { result } = await runWith({}, [threadStarted("t1"), agentMessage("partial")], {
+      closeCode: 1,
+      trailingNoNewline: turnFailed("disconnected"),
+    });
+    expect(result.result).toBe("partial");
+    expect(result.error).toBe("disconnected");
+  });
+
+  it("keeps an explicitly completed answer despite a nonzero shutdown exit", async () => {
+    const { result } = await runWith({}, [
+      threadStarted("t1"),
+      errorItem("transient notice"),
+      agentMessage("complete answer"),
+      turnCompleted({ input_tokens: 12, output_tokens: 3 }),
+    ], { closeCode: 1 });
+    expect(result.result).toBe("complete answer");
     expect(result.error).toBeUndefined();
   });
 

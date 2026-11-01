@@ -231,6 +231,12 @@ function codexMcpServerFlags(name: string, server: McpServerConfig): string[] {
   const flags: string[] = [];
   if ("url" in server && server.url) {
     flags.push("-c", `${prefix}.url=${tomlString(server.url)}`);
+    if (server.headers) {
+      // Headers use an inline table so dots or punctuation in literal header
+      // names cannot be interpreted as TOML configuration paths.
+      const headers = Object.entries(server.headers).map(([key, value]) => `${tomlString(key)} = ${tomlString(value)}`);
+      flags.push("-c", `${prefix}.http_headers={ ${headers.join(", ")} }`);
+    }
     const bearer = (server as any).bearer_token_env_var ?? (server as any).bearerTokenEnvVar;
     if (typeof bearer === "string" && bearer) flags.push("-c", `${prefix}.bearer_token_env_var=${tomlString(bearer)}`);
     return flags;

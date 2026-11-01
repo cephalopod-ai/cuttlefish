@@ -450,6 +450,25 @@ describe("grokVisibleDeltas (live streaming + dedup contract)", () => {
 });
 
 describe("GrokEngine run", () => {
+  it("keeps an explicit error after partial answer text", async () => {
+    const { result } = await runWith([
+      JSON.stringify({ session_id: "grok-failure" }),
+      JSON.stringify({ type: "content_delta", delta: "partial answer" }),
+      JSON.stringify({ type: "error", message: "provider disconnected" }),
+    ], {}, 1);
+    expect(result.result).toBe("partial answer");
+    expect(result.error).toBe("provider disconnected");
+  });
+
+  it("keeps a completed answer despite a nonzero shutdown exit", async () => {
+    const { result } = await runWith([
+      JSON.stringify({ session_id: "grok-completed" }),
+      JSON.stringify({ type: "result", result: "complete answer", done: true }),
+    ], {}, 1);
+    expect(result.result).toBe("complete answer");
+    expect(result.error).toBeUndefined();
+  });
+
   it("streams answer text live AND accumulates the identical canonical result", async () => {
     const { result, deltas, call } = await runWith([
       JSON.stringify({ session_id: "grok-session-1" }),

@@ -1,6 +1,14 @@
-# Structure & Convention Compliance
+# Structure & Convention Compliance — Historical Snapshot
 
-- Governing authority: Giles conventions as constrained by the repository contract.
+> Historical review: August 16, 2026, using an August 12 Giles snapshot. The
+> observations and recommendations below are preserved as evidence of that review,
+> not as current obligations or a current compliance result. Since then,
+> `AGENTS.md` has removed Dory/Giles prerequisites and tracked local artifacts have
+> been removed from the published tree. Current work follows `AGENTS.md`, current
+> source, Git history and relevant checks; no Giles rerun or feature ledger is
+> required. Historical tool-specific findings have not been revalidated here.
+
+- Historical governing authority used for this review: Giles conventions as constrained by the repository contract.
 - Authority sources: `AGENTS.md` retention blocks, `.gitignore`, `docs/INDEX.md`,
   `.giles/audit_report.yaml` and `.giles/compliance_status.yaml` (both generated
   2026-08-12T13:52:58Z), `governance/logs/giles_compliance_todo.{json,md}`

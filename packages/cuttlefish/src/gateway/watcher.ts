@@ -12,12 +12,23 @@ export interface WatcherCallbacks {
 }
 
 let watchers: FSWatcher[] = [];
+let cancelDebounces: Array<() => void> = [];
 
 function debounce(fn: () => void, ms: number): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null;
-  return () => {
+  let stopped = false;
+  cancelDebounces.push(() => {
+    stopped = true;
     if (timer) clearTimeout(timer);
-    timer = setTimeout(fn, ms);
+    timer = null;
+  });
+  return () => {
+    if (stopped) return;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = null;
+      fn();
+    }, ms);
   };
 }
 
@@ -141,6 +152,10 @@ export function startWatchers(callbacks: WatcherCallbacks): void {
 export async function stopWatchers(): Promise<void> {
   const activeWatchers = watchers;
   watchers = [];
+  // Cancel scheduled reloads before any asynchronous close can yield to them.
+  const cancellations = cancelDebounces;
+  cancelDebounces = [];
+  for (const cancel of cancellations) cancel();
   const results = await Promise.allSettled(activeWatchers.map((w) => w.close()));
   const failures = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
   if (failures.length > 0) {

@@ -69,7 +69,7 @@ function Harness({
 }
 
 describe("EngineConfigurationSection", () => {
-  it.each(["claude", "codex", "grok", "ollama", "kilo", "vibe"] as const)(
+  it.each(["claude", "codex", "antigravity", "grok", "pi", "kiro", "hermes", "ollama", "kilo", "vibe"] as const)(
     "keeps the configured %s model visible when a live registry omits it",
     (engine) => {
       const savedModel = `${engine}-custom-model`
@@ -112,6 +112,23 @@ describe("EngineConfigurationSection", () => {
       : fallback} />)
     expect(findSelectByValue("configured-model")).toBe(select)
     expect(select.options).toHaveLength(2)
+    expect(JSON.parse(screen.getByTestId("config").textContent ?? "{}")).toEqual(initialConfig)
+  })
+
+  it.each([
+    ["antigravity", "agy"], ["pi", "pi"], ["kiro", "kiro-cli"], ["hermes", "hermes"],
+  ] as const)("edits the %s binary without replacing its custom model", (engine, bin) => {
+    const initialConfig: Config = { engines: { [engine]: { bin, model: `${engine}-custom-model` } } }
+    render(<Harness initialConfig={initialConfig} />)
+    fireEvent.change(screen.getByPlaceholderText(bin), { target: { value: `/test/${bin}` } })
+    const draft = JSON.parse(screen.getByTestId("config").textContent ?? "{}")
+    expect(draft.engines[engine]).toEqual({ bin: `/test/${bin}`, model: `${engine}-custom-model` })
+  })
+
+  it.each(["pi", "kiro"] as const)("keeps a configured %s effort visible while its registry is unavailable", (engine) => {
+    const initialConfig: Config = { engines: { [engine]: { model: "custom-model", effortLevel: "custom-effort" } } }
+    render(<Harness initialConfig={initialConfig} />)
+    expect(findSelectByValue("custom-effort").selectedOptions[0].textContent).toBe("custom-effort (configured)")
     expect(JSON.parse(screen.getByTestId("config").textContent ?? "{}")).toEqual(initialConfig)
   })
 

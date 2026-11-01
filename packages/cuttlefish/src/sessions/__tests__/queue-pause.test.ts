@@ -22,6 +22,70 @@ import {
 const tick = (ms = 20) => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe("SessionQueue pause/resume", () => {
+  it("does not revive cleared work or subtract it from a fresh generation's depth", async () => {
+    const queue = new SessionQueue();
+    const seen: string[] = [];
+    let releaseFirst!: () => void;
+    let releaseFresh!: () => void;
+    const first = queue.enqueue("connector:clear", async () => {
+      seen.push("first");
+      await new Promise<void>((resolve) => { releaseFirst = resolve; });
+    });
+    await tick();
+    const old = queue.enqueue("connector:clear", async () => { seen.push("old"); });
+    queue.clearQueue("connector:clear");
+    queue.clearCancelled("connector:clear");
+    const fresh = queue.enqueue("connector:clear", async () => {
+      seen.push("fresh");
+      await new Promise<void>((resolve) => { releaseFresh = resolve; });
+    });
+    const later = queue.enqueue("connector:clear", async () => { seen.push("later"); });
+    expect(queue.getPendingCount("connector:clear")).toBe(2);
+    releaseFirst();
+    await tick();
+    expect(seen).toEqual(["first", "fresh"]);
+    expect(queue.getPendingCount("connector:clear")).toBe(1);
+    releaseFresh();
+    await Promise.all([first, old, fresh, later]);
+    expect(seen).toEqual(["first", "fresh", "later"]);
+    expect(queue.getPendingCount("connector:clear")).toBe(0);
+  });
+
+  it("drains cleared paused work without unpausing fresh work", async () => {
+    const queue = new SessionQueue();
+    const key = "connector:paused-clear";
+    const oldRun = vi.fn();
+    const freshRun = vi.fn();
+    queue.pauseQueue(key);
+    const old = queue.enqueue(key, async () => { oldRun(); });
+    await tick();
+    queue.clearQueue(key);
+    queue.clearCancelled(key);
+    const fresh = queue.enqueue(key, async () => { freshRun(); });
+    await old;
+    await tick();
+    expect(oldRun).not.toHaveBeenCalled();
+    expect(freshRun).not.toHaveBeenCalled();
+    expect(queue.isPaused(key)).toBe(true);
+    queue.resumeQueue(key);
+    await fresh;
+    expect(freshRun).toHaveBeenCalledOnce();
+    expect(queue.hasScheduled(key)).toBe(false);
+  });
+
+  it("keeps work accepted while cancelled separate from the fresh generation", async () => {
+    const queue = new SessionQueue();
+    const oldRun = vi.fn();
+    const freshRun = vi.fn();
+    queue.clearQueue("connector:cancelled");
+    const old = queue.enqueue("connector:cancelled", async () => { oldRun(); });
+    queue.clearCancelled("connector:cancelled");
+    const fresh = queue.enqueue("connector:cancelled", async () => { freshRun(); });
+    await Promise.all([old, fresh]);
+    expect(oldRun).not.toHaveBeenCalled();
+    expect(freshRun).toHaveBeenCalledOnce();
+  });
+
   it("holds queued tasks while paused and wakes them promptly on resume", async () => {
     const queue = new SessionQueue();
     const key = "slack:C123";

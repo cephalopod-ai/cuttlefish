@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { api } from "@/lib/api"
 import { WHISPER_LANGUAGES } from "./settings-constants"
 import { Section } from "./settings-fields"
@@ -16,48 +16,81 @@ export function SttSettingsSection() {
   } | null>(null)
   const [saving, setSaving] = useState(false)
   const [addLang, setAddLang] = useState("")
+  const [statusError, setStatusError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [downloadPending, setDownloadPending] = useState(false)
+
+  const loadStatus = useCallback(() => {
+    setStatusError(null)
+    return api.sttStatus()
+      .then(setStatus)
+      .catch((err) => setStatusError(err instanceof Error ? err.message : "Could not load voice settings."))
+  }, [])
 
   useEffect(() => {
-    api.sttStatus().then(setStatus).catch(() => {})
-  }, [])
+    void loadStatus()
+  }, [loadStatus])
 
   // Poll for download progress
   useEffect(() => {
     if (!status?.downloading) return
     const timer = setInterval(() => {
-      api.sttStatus().then(setStatus).catch(() => {})
+      api.sttStatus()
+        .then((next) => {
+          setStatus(next)
+          setStatusError(null)
+        })
+        .catch((err) => setStatusError(err instanceof Error ? err.message : "Could not refresh download progress."))
     }, 1500)
     return () => clearInterval(timer)
   }, [status?.downloading])
 
   function handleRemoveLanguage(code: string) {
-    if (!status || status.languages.length <= 1) return
+    if (!status || saving || status.languages.length <= 1) return
     const next = status.languages.filter((l) => l !== code)
     setSaving(true)
+    setActionError(null)
     api.sttUpdateConfig(next)
       .then(() => setStatus((prev) => prev ? { ...prev, languages: next } : prev))
-      .catch(() => {})
+      .catch((err) => setActionError(err instanceof Error ? err.message : "Could not save transcription languages."))
       .finally(() => setSaving(false))
   }
 
   function handleAddLanguage() {
-    if (!addLang || !status || status.languages.includes(addLang)) return
+    if (!addLang || !status || saving || status.languages.includes(addLang)) return
     const next = [...status.languages, addLang]
     setSaving(true)
-    setAddLang("")
+    setActionError(null)
     api.sttUpdateConfig(next)
-      .then(() => setStatus((prev) => prev ? { ...prev, languages: next } : prev))
-      .catch(() => {})
+      .then(() => {
+        setStatus((prev) => prev ? { ...prev, languages: next } : prev)
+        // A rejected save must leave the selection available for retry.
+        setAddLang("")
+      })
+      .catch((err) => setActionError(err instanceof Error ? err.message : "Could not save transcription languages."))
       .finally(() => setSaving(false))
   }
 
   function handleDownload() {
+    if (downloadPending) return
+    setDownloadPending(true)
+    setActionError(null)
     api.sttDownload()
       .then(() => setStatus((prev) => prev ? { ...prev, downloading: true, progress: 0 } : prev))
-      .catch(() => {})
+      .catch((err) => setActionError(err instanceof Error ? err.message : "Could not start the model download."))
+      .finally(() => setDownloadPending(false))
   }
 
-  if (!status) return null
+  if (!status) return (
+    <Section title="Voice Input">
+      {statusError ? (
+        <div role="alert" className="text-[var(--system-red)]">
+          Could not load voice settings: {statusError}
+          <button type="button" onClick={() => void loadStatus()} className="ml-2 underline">Retry</button>
+        </div>
+      ) : <div role="status">Loading voice settings...</div>}
+    </Section>
+  )
 
   const availableLangs = Object.entries(WHISPER_LANGUAGES)
     .filter(([code]) => !status.languages.includes(code))
@@ -65,6 +98,12 @@ export function SttSettingsSection() {
 
   return (
     <Section title="Voice Input">
+      {(actionError || statusError) && (
+        <div role="alert" className="mb-[var(--space-3)] text-[length:var(--text-footnote)] text-[var(--system-red)]">
+          {actionError || statusError}
+          {statusError && <button type="button" onClick={() => void loadStatus()} className="ml-2 underline">Retry</button>}
+        </div>
+      )}
       {/* Status row */}
       <div className="flex items-center gap-[var(--space-3)] mb-[var(--space-4)]">
         <div
@@ -91,9 +130,10 @@ export function SttSettingsSection() {
       {!status.available && !status.downloading && (
         <button
           onClick={handleDownload}
+          disabled={downloadPending}
           className="w-full p-[var(--space-3)] rounded-[var(--radius-md)] bg-[var(--accent)] text-[var(--accent-contrast)] border-none cursor-pointer text-[length:var(--text-footnote)] font-[var(--weight-semibold)] mb-[var(--space-4)]"
         >
-          Download Whisper Small (~500MB)
+          {downloadPending ? "Starting download..." : "Download Whisper Small (~500MB)"}
         </button>
       )}
 
@@ -154,6 +194,8 @@ export function SttSettingsSection() {
             {/* Add language */}
             <div className="flex gap-[var(--space-2)]">
               <select
+                aria-label="Add transcription language"
+                disabled={saving}
                 value={addLang}
                 onChange={(e) => setAddLang(e.target.value)}
                 className="flex-1 bg-[var(--bg-secondary)] border border-[var(--separator)] rounded-[var(--radius-sm)] px-[10px] py-[6px] text-[length:var(--text-footnote)] cursor-pointer"

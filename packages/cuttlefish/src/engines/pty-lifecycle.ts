@@ -73,6 +73,7 @@ export class PtyLifecycleManager {
       lastTurnEndedAt: turnRunning ? 0 : Date.now(),
     });
     this.opts.onAdopt?.(sessionId);
+    this.enforceIdleCap();
   }
 
   getWarm(sessionId: string): PtyHandle | undefined {
@@ -101,6 +102,7 @@ export class PtyLifecycleManager {
     if (e.viewerCount === 0) {
       e.viewingEndedAt = Date.now();
       this.reevaluate(sessionId);
+      this.enforceIdleCap();
     }
   }
 
@@ -115,6 +117,7 @@ export class PtyLifecycleManager {
     e.turnRunning = false;
     e.lastTurnEndedAt = Date.now();
     this.reevaluate(sessionId);
+    this.enforceIdleCap();
   }
 
   /** Engine-side release hook: invoked for EVERY released session (manual release,
@@ -174,6 +177,12 @@ export class PtyLifecycleManager {
       if (!e.turnRunning && e.viewerCount === 0) count++;
     }
     return count;
+  }
+
+  /** Running/viewed PTYs are exempt until they become idle; enforce the same
+   *  eligible LRU bound on those transitions as on initial idle adoption. */
+  private enforceIdleCap(): void {
+    while (this.idleWarmCount() > Math.max(0, this.opts.maxLivePtys)) this.evictLru();
   }
 
   /** Idle warm-PTY eviction: pick the eligible entry (no viewer, no running turn)

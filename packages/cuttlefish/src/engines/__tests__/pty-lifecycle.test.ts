@@ -104,6 +104,44 @@ describe("PtyLifecycleManager", () => {
     expect(nextIdle.killed).toBe(false);
   });
 
+  it("enforces the idle cap as concurrent turns complete, preserving the newest idle PTY", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1000);
+    const cleaned: string[] = [];
+    const m = new PtyLifecycleManager({ maxLivePtys: 1, onCleanup: (id) => cleaned.push(id) });
+    const a = fakeHandle(), b = fakeHandle(), c = fakeHandle();
+    m.adopt("a", a, { turnRunning: true });
+    m.adopt("b", b, { turnRunning: true });
+    m.adopt("c", c, { turnRunning: true });
+    expect([a.killed, b.killed, c.killed]).toEqual([false, false, false]);
+    m.turnEnded("a");
+    vi.setSystemTime(1010);
+    m.turnEnded("b");
+    vi.setSystemTime(1020);
+    m.turnEnded("c");
+    expect(m.livePids()).toEqual([c.pid]);
+    expect(cleaned).toEqual(["a", "b"]);
+    expect(c.killed).toBe(false);
+    m.dispose();
+  });
+
+  it("enforces the idle cap when the last viewer leaves, sparing running and viewed PTYs", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1000);
+    const m = new PtyLifecycleManager({ maxLivePtys: 1 });
+    const idle = fakeHandle(), running = fakeHandle(), viewed = fakeHandle(), otherViewer = fakeHandle();
+    m.adopt("idle", idle);
+    m.adopt("running", running, { turnRunning: true });
+    m.adopt("viewed", viewed, { viewerCount: 1 });
+    m.adopt("other-viewer", otherViewer, { viewerCount: 1 });
+    vi.setSystemTime(1010);
+    m.viewerLeave("viewed");
+    expect(idle.killed).toBe(true);
+    expect([running.killed, viewed.killed, otherViewer.killed]).toEqual([false, false, false]);
+    expect(m.getWarm("viewed")).toBe(viewed);
+    m.dispose();
+  });
+
   it("killAll kills every live PTY", () => {
     const m = new PtyLifecycleManager({ maxLivePtys: 8 });
     const a = fakeHandle(), b = fakeHandle();

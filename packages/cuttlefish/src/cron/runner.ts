@@ -103,7 +103,16 @@ export async function runCronJob(
     // does not mean the turn succeeded; engine errors are recorded on the session.
     const finalSessionId = routeResult?.sessionId ?? null;
     const finalSession = finalSessionId ? getSession(finalSessionId) : undefined;
-    const sessionFailed = finalSession?.status === "error" || Boolean(finalSession?.lastError);
+    // Absence of an error is not completion: checkpoints and missing sessions
+    // must not become successful cron history or suppress failure alerts.
+    let completionError: string | null = null;
+    if (!finalSession) completionError = "Cron run did not produce a completed session";
+    else if (finalSession.lastError) completionError = finalSession.lastError;
+    else if (finalSession.status !== "idle") {
+      completionError = finalSession.status === "error"
+        ? "session ended in error" : `Session did not complete (status: ${finalSession.status})`;
+    }
+    const sessionFailed = completionError !== null;
     const finalEntry: CronRunEntry = {
       runId,
       timestamp: finishedAt,
@@ -114,7 +123,7 @@ export async function runCronJob(
       status: sessionFailed ? "error" : "success",
       trigger,
       durationMs,
-      error: sessionFailed ? (finalSession?.lastError ?? "session ended in error") : null,
+      error: completionError,
       resultPreview: null,
     };
     if (opts.shouldRecordTerminal?.() === false) {

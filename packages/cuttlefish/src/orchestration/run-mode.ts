@@ -123,7 +123,7 @@ export async function runOrchestrationTask(opts: RunOrchestrationTaskOptions): P
   const brief = buildCoordinatorTaskBrief({
     taskId: task.taskId,
     coordinatorId: task.coordinatorId,
-    coordinatorTemplate: task.coordinatorTemplate,
+    coordinatorTemplate: task.coordinatorTemplate ?? task.template,
     requiredRoles: task.requiredRoles,
     optionalRoles: task.optionalRoles,
     allowedWorkerIds: task.allowedWorkerIds,
@@ -191,14 +191,14 @@ export async function runAllocatedOrchestrationTask(opts: RunAllocatedOrchestrat
   opts.allocation.runId = runId;
 
   const sessions: OrchestrationRunSession[] = [];
-  const baseCwd = resolveTaskBaseCwd(opts.task.cwd, opts.context.getConfig());
   const laneWorktrees = new Map<string, WorktreeHandle>();
   const reviewBundles: ReviewBundleHandle[] = [];
-  const roleDefinitions = new Map(runtime.config.roles.map((role) => [role.id, role]));
-  const reviewPolicyByRole = new Map(opts.reviewPolicy.explanations.map((explanation) => [explanation.role, explanation]));
-  let implementationWorkspace: ImplementationWorkspace | undefined;
 
   try {
+    const baseCwd = resolveTaskBaseCwd(opts.task.cwd, opts.context.getConfig());
+    const roleDefinitions = new Map(runtime.config.roles.map((role) => [role.id, role]));
+    const reviewPolicyByRole = new Map(opts.reviewPolicy.explanations.map((explanation) => [explanation.role, explanation]));
+    let implementationWorkspace: ImplementationWorkspace | undefined;
     for (const lease of opts.allocation.leases) {
       const worker = requireWorker(runtime.listWorkers(), lease.workerId);
       const role = roleDefinitions.get(lease.role);
@@ -247,6 +247,11 @@ export async function runAllocatedOrchestrationTask(opts: RunAllocatedOrchestrat
         throw err;
       }
     }
+  } catch (err) {
+    // Setup and dispatch exceptions are terminal failures too, even when no
+    // role session was created to report an error result.
+    finalizeOrchestrationRunFailed(runId, err instanceof Error ? err.message : String(err));
+    throw err;
   } finally {
     for (const bundle of reviewBundles) {
       try {
@@ -261,6 +266,11 @@ export async function runAllocatedOrchestrationTask(opts: RunAllocatedOrchestrat
       } catch (err) {
         logger.warn(`Orchestration worktree cleanup failed for ${handle.path}: ${err instanceof Error ? err.message : err}`);
       }
+    }
+    // All roles are leased up front. An early role failure skips the later
+    // turns, so their leases never reach the per-turn release path.
+    for (const lease of opts.allocation.leases) {
+      releaseLeaseSafely(runtime, lease);
     }
   }
 

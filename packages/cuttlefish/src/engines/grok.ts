@@ -586,7 +586,8 @@ export class GrokEngine implements InterruptibleEngine {
         resolve({
           sessionId: resolvedSessionId,
           result: resultText,
-          error: resultText.trim() ? undefined : (turnError ?? undefined),
+          // Parsed errors are terminal; partial answer text cannot clear them.
+          error: turnError ?? undefined,
           numTurns: 1,
           ...(typeof lastContextTokens === "number" ? { contextTokens: lastContextTokens } : {}),
         });
@@ -708,7 +709,8 @@ export class GrokEngine implements InterruptibleEngine {
           resolve({
             sessionId: resolvedSessionId,
             result: resultText,
-            error: resultText.trim() ? undefined : (turnError ?? undefined),
+            // Parsed errors are terminal; partial answer text cannot clear them.
+            error: turnError ?? undefined,
             numTurns: 1,
             ...(typeof lastContextTokens === "number" ? { contextTokens: lastContextTokens } : {}),
           });

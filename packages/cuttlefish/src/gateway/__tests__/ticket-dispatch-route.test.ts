@@ -56,6 +56,47 @@ afterEach(() => {
 });
 
 describe("POST /api/org/departments/:name/tickets/:id/dispatch", () => {
+  it.each(["{bad", "null", "[]", "42", '"text"'])("rejects invalid object body %s before dispatch", async (raw) => {
+    const dispatchTicket = vi.fn(async () => ({ ok: true, sessionId: "s-dispatched" }));
+    vi.doMock("../ticket-dispatch.js", () => ({ dispatchTicket }));
+    const api = await import("../api.js");
+    const cap = makeRes();
+    const end = vi.spyOn(cap.res, "end");
+    const req = Object.assign(Readable.from([Buffer.from(raw)]), {
+      method: "POST",
+      url: "/api/org/departments/software-delivery/tickets/ticket-1/dispatch",
+      headers: { host: "localhost", "content-type": "application/json" },
+    });
+
+    await api.handleApiRequest(req as any, cap.res, {} as any);
+
+    expect(cap.status).toBe(400);
+    expect(cap.body).toMatchObject({ error: expect.any(String) });
+    expect(end).toHaveBeenCalledTimes(1);
+    expect(dispatchTicket).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])("preserves valid dispatch routing with routeToManager=%s", async (routeToManager) => {
+    const dispatchTicket = vi.fn(async () => ({ ok: true, sessionId: "s-dispatched" }));
+    vi.doMock("../ticket-dispatch.js", () => ({ dispatchTicket }));
+    const api = await import("../api.js");
+    const cap = makeRes();
+    const context = {} as any;
+
+    await api.handleApiRequest(
+      makeReq("POST", "/api/org/departments/software-delivery/tickets/ticket-1/dispatch", routeToManager ? { routeToManager: true } : {}),
+      cap.res,
+      context,
+    );
+
+    expect(cap.status).toBe(200);
+    expect(cap.body).toEqual({ status: "ok", sessionId: "s-dispatched" });
+    expect(dispatchTicket).toHaveBeenCalledExactlyOnceWith(
+      "software-delivery", "ticket-1", { source: "manual", routeToManager },
+      { context, orgDir: path.join(tmpHome, "org") },
+    );
+  });
+
   it("returns 400 when the ticket has no assignee", async () => {
     const deptDir = path.join(tmpHome, "org", "software-delivery");
     fs.mkdirSync(deptDir, { recursive: true });

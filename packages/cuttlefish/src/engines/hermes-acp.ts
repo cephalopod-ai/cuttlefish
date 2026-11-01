@@ -5,6 +5,7 @@ import type { InterruptibleEngine, EngineRunOpts, EngineResult } from "../shared
 import { logger } from "../shared/logger.js";
 import { resolveBin } from "../shared/resolve-bin.js";
 import { HermesRpc } from "./hermes-jsonrpc.js";
+import { readAcpModelSelection, selectAcpModel, type AcpModelSelection } from "./acp-model-selection.js";
 import { mapSessionUpdate, extractPromptText } from "./hermes-protocol.js";
 import { buildEngineEnv } from "../shared/engine-env.js";
 import { capAppend, ENGINE_OUTPUT_MAX } from "../shared/cap-append.js";
@@ -25,7 +26,7 @@ interface HermesProc {
   handle: ProcHandle;
   alive: boolean;
   hermesSessionId?: string;
-  currentModelId?: string;
+  modelSelection: AcpModelSelection;
   initialized: Promise<void>;
 }
 
@@ -78,6 +79,7 @@ export class HermesAcpEngine implements InterruptibleEngine {
     const entry: HermesProc = {
       handle,
       alive: true,
+      modelSelection: {},
       initialized: handle.rpc.request("initialize", { protocolVersion: 1, clientCapabilities: {} }).then(() => {}),
     };
     handle.onExit(() => {
@@ -117,7 +119,8 @@ export class HermesAcpEngine implements InterruptibleEngine {
           if (!p.hermesSessionId) {
             if (opts.resumeSessionId) {
               try {
-                await rpc.request("session/load", { sessionId: opts.resumeSessionId, cwd: opts.cwd, mcpServers: [] });
+                const loaded = await rpc.request<Record<string, unknown>>("session/load", { sessionId: opts.resumeSessionId, cwd: opts.cwd, mcpServers: [] });
+                p.modelSelection = readAcpModelSelection(loaded);
                 p.hermesSessionId = opts.resumeSessionId;
               } catch (loadErr) {
                 // Fix 3: stale/expired id — fall back to a fresh session so the
@@ -128,21 +131,18 @@ export class HermesAcpEngine implements InterruptibleEngine {
                 );
                 const ns = await rpc.request<Record<string, unknown>>("session/new", { cwd: opts.cwd, mcpServers: [] });
                 p.hermesSessionId = String(ns.sessionId);
-                const models = ns.models as Record<string, unknown> | undefined;
-                p.currentModelId = models?.currentModelId ? String(models.currentModelId) : undefined;
+                p.modelSelection = readAcpModelSelection(ns);
               }
             } else {
               const ns = await rpc.request<Record<string, unknown>>("session/new", { cwd: opts.cwd, mcpServers: [] });
               p.hermesSessionId = String(ns.sessionId);
-              const models = ns.models as Record<string, unknown> | undefined;
-              p.currentModelId = models?.currentModelId ? String(models.currentModelId) : undefined;
+              p.modelSelection = readAcpModelSelection(ns);
             }
             await rpc.request("session/set_mode", { sessionId: p.hermesSessionId, modeId: "dont_ask" }).catch(() => {});
           }
 
-          if (opts.model && opts.model !== p.currentModelId) {
-            await rpc.request("session/set_model", { sessionId: p.hermesSessionId, modelId: opts.model }).catch(() => {});
-            p.currentModelId = opts.model;
+          if (opts.model) {
+            p.modelSelection = await selectAcpModel(rpc, p.hermesSessionId!, p.modelSelection, opts.model);
           }
         })(),
         new Promise<never>((_, rej) => {
@@ -203,7 +203,7 @@ export class HermesAcpEngine implements InterruptibleEngine {
 
       const stop = String(res.stopReason ?? res.stop_reason ?? "");
       const error =
-        !resultText && (stop === "refusal" || stop === "cancelled")
+        (stop === "refusal" || stop === "cancelled")
           ? `Hermes turn ended: ${stop}`
           : undefined;
 
@@ -222,7 +222,7 @@ export class HermesAcpEngine implements InterruptibleEngine {
         sessionId: hermesSessionId || "",
         result: resultText,
         contextTokens: lastContext,
-        error: resultText ? undefined : msg,
+        error: msg,
       };
     } finally {
       if (watchdog) clearTimeout(watchdog);

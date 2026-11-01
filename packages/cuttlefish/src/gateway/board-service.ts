@@ -244,6 +244,24 @@ function assertValidBoardTicket(ticket: unknown, index: number): asserts ticket 
 
 function assertValidBoardTickets(tickets: unknown[]): asserts tickets is BoardTicket[] {
   tickets.forEach(assertValidBoardTicket);
+  const duplicateIds = duplicateBoardTicketIds(tickets);
+  if (duplicateIds.size > 0) {
+    throw new Error(`tickets must have unique ids; duplicate id "${[...duplicateIds][0]}"`);
+  }
+}
+
+/** Reject every member of an ambiguous identity group instead of choosing a winner. */
+function duplicateBoardTicketIds(tickets: unknown[]): Set<string> {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const ticket of tickets) {
+    if (!ticket || typeof ticket !== "object" || Array.isArray(ticket)) continue;
+    const id = (ticket as Record<string, unknown>).id;
+    if (typeof id !== "string" || !id.trim()) continue;
+    if (seen.has(id)) duplicates.add(id);
+    seen.add(id);
+  }
+  return duplicates;
 }
 
 export interface RejectedBoardTicket {
@@ -259,9 +277,13 @@ export function partitionBoardTickets(tickets: unknown[]): {
 } {
   const valid: BoardTicket[] = [];
   const rejected: RejectedBoardTicket[] = [];
+  const duplicateIds = duplicateBoardTicketIds(tickets);
   for (let i = 0; i < tickets.length; i++) {
     try {
       assertValidBoardTicket(tickets[i], i);
+      if (duplicateIds.has((tickets[i] as BoardTicket).id)) {
+        throw new Error(`tickets[${i}].id is duplicated in this save`);
+      }
       valid.push(tickets[i] as BoardTicket);
     } catch (err) {
       const t = tickets[i] && typeof tickets[i] === "object" ? tickets[i] as Record<string, unknown> : {};

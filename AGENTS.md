@@ -121,10 +121,24 @@ This monorepo's authoritative checks (run from the repo root):
 
 ```bash
 pnpm typecheck   # turbo tsc --noEmit across packages
-pnpm test        # turbo test (vitest in packages/web, node tests in packages/cuttlefish)
+pnpm test        # turbo test (Vitest across the workspace packages)
 pnpm lint        # turbo lint
 pnpm build       # turbo build (also copies packages/web/out -> packages/cuttlefish/dist/web)
 ```
+
+For routine repairs, prefer tests scoped to the changed behavior. For example:
+
+```bash
+pnpm --filter cuttlefish-cli exec vitest run src/cli/__tests__/distribution-contract.test.ts
+pnpm --filter @cuttlefish/web exec vitest run src/main.test.tsx
+```
+
+Run workspace typecheck and lint for implementation changes. Use the full
+`pnpm test` gate for broad audits, merge/release validation, or changes whose
+cross-package impact is not covered by focused tests. Run `pnpm build` when
+package contents, generated output or runtime build behavior is affected. State
+which checks passed, failed or were deferred; a partial check is partial
+validation.
 
 ## Canonical filename
 
@@ -162,5 +176,6 @@ of the published repo.
 4. Make the smallest change that completes the task; do not bundle unrelated fixes.
 5. Keep out of `control/**` and `governance/**` unless the task requires them.
 6. Write new artifacts to the paths named above; do not create parallel trees.
-7. Run `pnpm typecheck`, `pnpm test`, and `pnpm lint`.
+7. Run the applicable checks in Validation; prefer focused tests for routine repairs
+   and the full test gate for broad audits or merge/release validation.
 8. Report what passed, what failed, what you skipped, and what remains open.

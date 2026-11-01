@@ -558,9 +558,11 @@ export function duplicateSession(sourceId: string, newTitle?: string): { session
   const newSessionKey = `web:${newId}`;
   const replayOfRunId = sessionRunIdFromMeta(source.transportMeta, 'latestRunId')
     ?? sessionRunIdFromMeta(source.transportMeta, 'activeRunId');
+  // A duplicate is completed history: active or crash-quarantined fragments
+  // must not become finalized simply because the copy has no partial marker.
   const messages = db.prepare(
-    'SELECT role, content, timestamp, media, blocks FROM messages WHERE session_id = ? ORDER BY timestamp ASC',
-  ).all(sourceId) as Array<{ role: string; content: string; timestamp: number; media: string | null; blocks: string | null }>;
+    'SELECT role, content, timestamp, media, blocks, seq, tool_call FROM messages WHERE session_id = ? AND (partial IS NULL OR partial = 0) ORDER BY timestamp ASC, seq ASC, rowid ASC',
+  ).all(sourceId) as Array<{ role: string; content: string; timestamp: number; media: string | null; blocks: string | null; seq: number | null; tool_call: string | null }>;
 
   const txn = db.transaction(() => {
   const nextTransportMeta: JsonObject = {
@@ -600,10 +602,10 @@ export function duplicateSession(sourceId: string, newTitle?: string): { session
       now,
     );
     const insertMsg = db.prepare(
-      'INSERT INTO messages (id, session_id, role, content, timestamp, media, blocks) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO messages (id, session_id, role, content, timestamp, media, blocks, seq, tool_call) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     );
     for (const msg of messages) {
-      insertMsg.run(uuidv4(), newId, msg.role, msg.content, msg.timestamp, msg.media ?? null, msg.blocks ?? null);
+      insertMsg.run(uuidv4(), newId, msg.role, msg.content, msg.timestamp, msg.media ?? null, msg.blocks ?? null, msg.seq, msg.tool_call);
     }
   });
   txn();
