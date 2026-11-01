@@ -94,11 +94,6 @@ those deliberate cases.
 - `docs/a2a-federation.md`: opt-in A2A 1.0 HTTP+JSON federation, inbound and
   outbound allowlists, authentication, task-state translation, operator routes,
   interoperability evidence, and current transport limits.
-- `docs/audits/2026-08-31-roles-skills-architecture-review.md`: source-grounded
-  review of an external "MODE / ROLE / SKILLS" proposal against the shipped
-  orchestration role model and skills subsystem, with findings, courses of
-  action, and mitigations. One of the deliberately published audit files (see
-  the retention note above); records no decision.
 
 ## Session and Audit Log Summaries
 
@@ -169,13 +164,13 @@ attachments, queue recovery, delegation, checkpoints, boards, cron and archives.
 Its scoped send/recovery repairs and validation are recorded in
 `docs/audits/2026-09-05-user-workflow-dataflow-repair.md` and feature ledger 0120.
 
-One tracked baseline pair was force-added before the ignore rule and remains
-in the checkout:
+The following baseline pair was previously tracked and was removed from the
+published tree during log retention:
 
 - `docs/audits/072026/2026-07-21-sb-cut-001-gate0-baseline.md` and
   `docs/logs/session/072026/2026-07-21-sb-cut-001-gate0-baseline.md`: the
   Gate-0 collaboration-prototype baseline record (initial evidence for
-  SB-CUT-001); its findings feed the active TODO ledger.
+  SB-CUT-001). Historical versions remain available in Git history.
 
 Curated summaries of completed campaigns (for example the August 2026
 agent-skills audit and repair campaign, the July 2026 comprehensive audit and
