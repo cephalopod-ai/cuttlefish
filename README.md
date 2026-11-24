@@ -44,6 +44,8 @@ You've already installed the best agent CLIs. Cuttlefish turns that pile of term
 
 ## Quickstart
 
+Meta Muse Code is an optional subscription-backed engine. See the [Muse setup and capability guide](docs/engines-muse.md).
+
 > **Prerequisites:** Node.js **24** (the repo pins **24.13.0** via `.nvmrc` and declares `>=24 <25` in `package.json`), and at least one agent CLI installed **and signed in**. Source installs also need **pnpm 10+**. Package installation does not enforce the Node range (`engine-strict=false`); use the pinned runtime for native modules. Cuttlefish orchestrates engines and can't run a session without one.
 
 Full install matrix (npm, Homebrew, GitHub archives, Windows): **[`docs/INSTALL.md`](docs/INSTALL.md)**.

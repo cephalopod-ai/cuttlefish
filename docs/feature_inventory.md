@@ -1,5 +1,16 @@
 # Feature Inventory
 
+## Meta Muse Code engine
+
+- The `muse` engine participates in setup, onboarding, engine and model
+  selection, employee configuration, session dispatch and orchestration. It
+  uses a qualified Muse 1.4.25 subscription login and reports native text,
+  tool status, context and terminal outcomes through existing session surfaces.
+- Exact native resume, provider-model checks, sandbox verification and
+  account-level allowance observations are supported. Required MCP,
+  protected read-only turns, attachments and arbitrary CLI overrides fail
+  explicitly. See the [Muse engine guide](engines-muse.md).
+
 ## Compatibility and workflow repairs (2026-11-01)
 
 - Settings default/fallback engine choices cover all eleven supported engines,
