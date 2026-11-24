@@ -10,7 +10,7 @@ import { configureLogger, logger } from "../shared/logger.js";
 import { buildKnowledgeReadProvider } from "../knowledge/read/index.js";
 import { buildKnowledgeSink } from "../knowledge/sinks/index.js";
 import { knowledgeRelayOptions, relayPendingKnowledgeOutbox } from "../knowledge/outbox-service.js";
-import { invalidateModelRegistry, refreshAiderModels, refreshAntigravityModels, refreshCodexModels, refreshGrokModels, refreshHermesModels, refreshOllamaModels, refreshPiModels } from "../shared/models.js";
+import { invalidateModelRegistry, refreshAiderModels, refreshAntigravityModels, refreshCodexModels, refreshGrokModels, refreshHermesModels, refreshMuseModels, refreshOllamaModels, refreshPiModels } from "../shared/models.js";
 import { CLAUDE_SETTINGS_DIR, GATEWAY_INFO_FILE, HOOK_RELAY_SCRIPT, CUTTLEFISH_HOME, ORCH_DB, ORG_DIR } from "../shared/paths.js";
 import { Semaphore } from "../shared/async-lock.js";
 import { CodexEngine } from "../engines/codex.js";
@@ -20,6 +20,7 @@ import { GrokEngine } from "../engines/grok.js";
 import { GrokInteractiveEngine } from "../engines/grok-interactive.js";
 import { HermesAcpEngine } from "../engines/hermes-acp.js";
 import { HermesInteractiveEngine } from "../engines/hermes-interactive.js";
+import { MuseEngine } from "../engines/muse.js";
 import { VibeAcpEngine } from "../engines/vibe-acp.js";
 import { KiloEngine } from "../engines/kilo.js";
 import { KiroEngine } from "../engines/kiro.js";
@@ -306,12 +307,13 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
   const ollamaEngine = new OllamaEngine();
   const kiloEngine = new KiloEngine();
   const aiderEngine = new AiderEngine();
-  logger.info("Engines initialized: claude (interactive PTY), codex (headless + interactive PTY), antigravity (interactive PTY), grok (headless + interactive PTY), hermes (headless + interactive PTY), pi, kiro (headless), ollama (headless), kilo (headless), aider (headless + interactive PTY), vibe (headless ACP)");
+  logger.info("Engines initialized: claude (interactive PTY), codex (headless + interactive PTY), antigravity (interactive PTY), grok (headless + interactive PTY), hermes (headless + interactive PTY), pi, kiro (headless), ollama (headless), kilo (headless), aider (headless + interactive PTY), vibe (headless ACP), muse (MSP)");
 
   const codexEngine = new CodexEngine();
   const grokEngine = new GrokEngine();
   const hermesEngine = new HermesAcpEngine();
   const vibeEngine = new VibeAcpEngine();
+  const museEngine = new MuseEngine();
   const engines = new Map<string, Engine>();
   engines.set("claude", interactiveClaudeEngine);
   logger.info("Claude work turns: INTERACTIVE PTY (cc_entrypoint=cli, Max-subsidized)");
@@ -325,6 +327,7 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
   engines.set("kilo", kiloEngine);
   engines.set("aider", aiderEngine);
   engines.set("vibe", vibeEngine);
+  engines.set("muse", museEngine);
 
   const ptyViewEngines: Record<string, Engine & PtyViewEngine> = {
     claude: interactiveClaudeEngine,
@@ -400,7 +403,7 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
   };
 
   const refreshDynamicModels = (cfg: CuttlefishConfig): void => {
-    void Promise.all([refreshCodexModels(cfg), refreshAntigravityModels(cfg), refreshPiModels(cfg), refreshGrokModels(cfg), refreshHermesModels(cfg), refreshOllamaModels(cfg), refreshAiderModels(cfg)])
+    void Promise.all([refreshCodexModels(cfg), refreshAntigravityModels(cfg), refreshPiModels(cfg), refreshGrokModels(cfg), refreshHermesModels(cfg), refreshMuseModels(cfg), refreshOllamaModels(cfg), refreshAiderModels(cfg)])
       .finally(() => emit("engines:updated", {}));
   };
   refreshDynamicModels(currentConfig);
@@ -869,6 +872,7 @@ export async function startGateway(config: CuttlefishConfig): Promise<GatewayCle
       aiderEngine.killAll();
       aiderInteractiveEngine.killAll();
       vibeEngine.killAll();
+      museEngine.killAll();
     },
     getOrchestrationRuntime: () => orchestrationRuntime,
     ptyWss: transports.ptyWss,

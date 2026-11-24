@@ -14,7 +14,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { ErrorState } from "@/components/ui/error-state"
 
 const DANGER = 90
-const ENGINE_ORDER = ["claude", "codex", "kiro", "kilo", "antigravity", "ollama", "grok", "hermes", "pi"]
+const ENGINE_ORDER = ["claude", "codex", "kiro", "kilo", "antigravity", "ollama", "grok", "hermes", "pi", "muse"]
 
 function engineLabel(name: string) {
   const labels: Record<string, string> = {
@@ -26,6 +26,7 @@ function engineLabel(name: string) {
     ollama: "Ollama",
     grok: "Grok",
     hermes: "Hermes",
+    muse: "Meta Muse Code",
     pi: "Pi",
   }
   return labels[name] ?? name
@@ -80,6 +81,16 @@ function freshness(engine: EngineLimitEngineSnapshot) {
   if (engine.stale) return { color: "var(--system-orange)", label: `Stale · ${agoLabel(engine.refreshedAt)}` }
   if (engine.status === "live") return { color: "var(--system-green)", label: "Live" }
   if (engine.status === "snapshot") return { color: "var(--text-tertiary)", label: `Updated ${agoLabel(engine.refreshedAt)}` }
+  if (engine.authStatus === "subscription") return { color: "var(--system-green)", label: "Subscription verified" }
+  if (engine.authStatus) {
+    const labels = {
+      api_key: "API key configured",
+      signed_out: "Signed out",
+      no_subscription: "No active subscription",
+      unknown: "Authentication unknown",
+    }
+    return { color: "var(--system-orange)", label: labels[engine.authStatus] }
+  }
   if (engine.available) return { color: "var(--system-green)", label: "CLI detected" }
   return { color: "var(--text-quaternary)", label: "No data" }
 }
@@ -158,7 +169,7 @@ function EngineCard({ engine }: { engine: EngineLimitEngineSnapshot }) {
   // Cost-based providers (API-key / prepaid) have no rate-limit windows; show
   // cost + token usage instead of an empty "no windows" message.
   const isCostBased = windows.length === 0 && (hasCost || hasTokens || creditLabel)
-  const note = engine.error || (engine.stale ? "Snapshot is over 30 minutes old — may be out of date." : null)
+  const note = engine.error || (engine.stale ? "This allowance snapshot is out of date." : null)
 
   return (
     <section className="rounded-[var(--radius-lg)] bg-[var(--bg-secondary)] border border-[var(--separator)] p-[var(--space-6)]">

@@ -141,6 +141,7 @@ export interface EngineLimitEngineSnapshot {
   defaultModel?: string;
   models: ModelInfo[];
   accountPlan?: string;
+  authStatus?: "subscription" | "api_key" | "signed_out" | "no_subscription" | "unknown";
   windows?: EngineLimitWindow[];
   buckets?: EngineLimitBucket[];
   credits?: EngineLimitCredits;

@@ -17,6 +17,7 @@ import { resolveSessionWorkspace } from "../sessions/session-workspace.js";
 import { resolveEffort } from "../shared/effort.js";
 import { resolveEngineInvocation } from "../shared/engine-arg-resolver.js";
 import { runWithEngineEnvironment } from "../shared/engine-env.js";
+import { requiresResolvedMcp } from "../mcp/resolver.js";
 import { detectRateLimit } from "../shared/rateLimit.js";
 import {
   handleRateLimit,
@@ -240,7 +241,8 @@ export async function runWebSession(
     const stallLeaderCheckMs = Math.min(stallPolicy.leaderCheckMs, stallPolicy.inactivityMs);
     const stallInactivityMs = stallPolicy.inactivityMs;
     const stallHardCeilingMs = stallPolicy.hardCeilingMs;
-    const maxStallRetries = stallPolicy.maxRetries;
+    const automaticReplay = engine.executionCapabilities?.automaticReplay !== false;
+    const maxStallRetries = automaticReplay ? stallPolicy.maxRetries : 0;
     const killer = isInterruptibleEngine(engine) ? engine : null;
     const canKill = !!killer; // only engines we can interrupt get a watchdog
     let lastStreamAt = Date.now();
@@ -278,6 +280,7 @@ export async function runWebSession(
       ? (sessCfg.modelLadder as import("../shared/model-escalation.js").ModelLadder)
       : undefined;
     const attemptEscalation = async (trigger: "stall" | "usage", detail: string): Promise<boolean> => {
+      if (!automaticReplay) return false;
       const live = getSession(currentSession.id);
       if (!live) return false;
       const meta = (live.transportMeta ?? {}) as Record<string, unknown>;
@@ -577,10 +580,18 @@ export async function runWebSession(
               model: currentSession.model ?? engineConfig.model,
               effortLevel: invocation.effortLevel,
               cliFlags: invocation.cliFlags,
+              requiresMcp: currentSession.engine === "muse" && requiresResolvedMcp(config.mcp, employee),
               restrictToJudgeOnly: liveBeforeInvocation.executionBoundary?.requirement === "read_only" || isAutonomousVerdictSession(currentSession.transportMeta),
               attachments: attachments?.length ? attachments : undefined,
               ...(contextPacket?.historyMessages ? { historyMessages: contextPacket.historyMessages } : {}),
               sessionId: currentSession.id,
+              onNativeSessionReady: (nativeId) => {
+                const live = currentSessionAttempt(currentSession);
+                if (live?.status !== "running" || live.engine !== currentSession.engine) {
+                  throw new Error("Session changed before native turn dispatch.");
+                }
+                updateSession(live.id, { engineSessionId: nativeId });
+              },
               source: currentSession.source,
               onActivity: () => { lastStreamAt = Date.now(); },
               onStream: (delta) => {
@@ -684,7 +695,7 @@ export async function runWebSession(
       return;
     }
 
-    if (stalledReason && !isHumanCheckpointPaused(getSession(currentSession.id))) {
+    if (automaticReplay && stalledReason && !isHumanCheckpointPaused(getSession(currentSession.id))) {
       if (await attemptEscalation("stall", stalledReason)) return;
       const attempts = maxStallRetries + 1;
       const errMsg =
@@ -771,7 +782,7 @@ export async function runWebSession(
     else deletePartialMessages(currentSession.id);
 
     const executionBudgetExceeded = Boolean(executionBudgetReason) || result.error?.startsWith("Execution budget exceeded:");
-    const rateLimit = !quietPreempted && !executionBudgetExceeded ? detectRateLimit(result) : { limited: false as const };
+    const rateLimit = automaticReplay && !quietPreempted && !executionBudgetExceeded ? detectRateLimit(result) : { limited: false as const };
 
     if (rateLimit.limited && !isHumanCheckpointPaused(getSession(currentSession.id))) {
       recordEngineRateLimit(currentSession.engine, rateLimit.resetsAt);
@@ -975,6 +986,7 @@ export async function runWebSession(
       || latestBeforeCompletion.transportMeta?.latestRunId !== currentSession.transportMeta?.latestRunId) return;
     const checkpointPaused = isHumanCheckpointPaused(latestBeforeCompletion);
     const completedSession = updateSession(currentSession.id, {
+      engineOutcome: quietPreempted ? undefined : result,
       // A stopped/superseded turn can settle after its replacement has already
       // cleared or changed the resume id. Never let that stale completion put
       // its engine session id back onto the durable session record.

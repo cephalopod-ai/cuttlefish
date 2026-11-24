@@ -86,7 +86,7 @@ export async function handleSessionCommand(
       `Session: ${session.id}`,
       `Engine: ${session.engine}`,
       `Connector: ${session.connector || session.source}`,
-      `Model: ${session.model || deps.config.engines[session.engine as "claude" | "codex" | "antigravity" | "grok" | "pi" | "kiro" | "hermes" | "ollama" | "kilo"]?.model || "default"}`,
+      `Model: ${session.model || deps.config.engines[session.engine as "claude" | "codex" | "antigravity" | "grok" | "pi" | "kiro" | "hermes" | "ollama" | "kilo" | "muse"]?.model || "default"}`,
       `State: ${transportState}`,
       `Queue depth: ${queueDepth}`,
       `Created: ${session.createdAt}`,

@@ -131,11 +131,12 @@ export function EngineConfigurationSection({
         { name: "pi", label: "Pi", bin: "pi" },
         { name: "kiro", label: "Kiro", bin: "kiro-cli" },
         { name: "hermes", label: "Hermes", bin: "hermes" },
+        { name: "muse", label: "Meta Muse Code", bin: "muse" },
       ] as const).map(({ name, label, bin }) => {
         // Leave an absent model to the engine's configured default; registry
         // refreshes must preserve an explicit model even when it is not listed.
         const model = config.engines?.[name]?.model ?? ""
-        const persistedEffort = name === "pi" || name === "kiro" ? config.engines?.[name]?.effortLevel : undefined
+        const persistedEffort = name === "pi" || name === "kiro" || name === "muse" ? config.engines?.[name]?.effortLevel : undefined
         const effortChoices = effortOptions(name, model || undefined, [{ value: "default", label: "Default" }])
         const visibleEffortChoices = persistedEffort && !effortChoices.some((option) => option.value === persistedEffort)
           ? [...effortChoices, { value: persistedEffort, label: `${persistedEffort} (configured)` }]
@@ -161,7 +162,7 @@ export function EngineConfigurationSection({
                 ])}
               />
             </FieldRow>
-            {(name === "pi" || name === "kiro") && (
+            {(name === "pi" || name === "kiro" || name === "muse") && (
               <FieldRow label="Effort Level">
                 <SettingsSelect
                   value={persistedEffort ?? "default"}

@@ -7,7 +7,7 @@ import { createManualAdapter } from "./manual-adapter.js";
 import { createRealProviderAdapter } from "./real-adapter.js";
 import { createStubAdapter } from "./stub-adapter.js";
 
-export const LIVE_PROVIDER_IDS = ["claude", "codex", "antigravity", "grok", "hermes", "pi", "kiro"] as const satisfies readonly EngineName[];
+export const LIVE_PROVIDER_IDS = ["claude", "codex", "antigravity", "grok", "hermes", "pi", "kiro", "muse"] as const satisfies readonly EngineName[];
 
 export interface LiveProviderAdapterRegistryOptions {
   engines: ReadonlyMap<string, Engine>;

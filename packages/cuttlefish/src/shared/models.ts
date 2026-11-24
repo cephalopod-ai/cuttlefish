@@ -23,6 +23,8 @@ import {
 } from "./hermes-models.js";
 import { discoverAiderModels, knownAiderModels, type AiderModelDiscovery } from "./aider-models.js";
 import { discoverCodexModels, type CodexModelDiscovery } from "./codex-models.js";
+import { discoverMuseModels, knownMuseModels, MUSE_DEFAULT_MODEL, MUSE_EFFORT_LEVELS } from "./muse-models.js";
+import { MUSE_VERSION_PATTERN } from "../engines/muse-host.js";
 import { knownVibeModels, VIBE_EFFORT_LEVELS } from "./vibe-models.js";
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
@@ -48,7 +50,7 @@ import { discoverOllamaModels, type OllamaModelDiscovery } from "./ollama-models
  */
 
 /** Engines registered in this build (mirrors server.ts engine map). */
-export const ENGINE_NAMES = ["claude", "codex", "antigravity", "grok", "pi", "kiro", "hermes", "ollama", "kilo", "aider", "vibe"] as const;
+export const ENGINE_NAMES = ["claude", "codex", "antigravity", "grok", "pi", "kiro", "hermes", "ollama", "kilo", "aider", "vibe", "muse"] as const;
 export type EngineName = (typeof ENGINE_NAMES)[number];
 
 /** Binary name probed for each engine's availability (override via engines.<name>.bin). */
@@ -66,6 +68,7 @@ const ENGINE_BIN: Record<EngineName, string> = {
   // Vibe ships a dedicated ACP-over-stdio entrypoint distinct from the
   // interactive `vibe` binary; that's the one this engine actually spawns.
   vibe: "vibe-acp",
+  muse: "muse",
 };
 
 const EFFORT_MECHANISM: Record<EngineName, EffortMechanism> = {
@@ -80,6 +83,7 @@ const EFFORT_MECHANISM: Record<EngineName, EffortMechanism> = {
   kilo: "none",
   aider: "none",
   vibe: "none",
+  muse: "muse-msp",
 };
 
 export const CODEX_DEFAULT_MODEL = "gpt-6-astra";
@@ -102,6 +106,7 @@ const SYNTH_DEFAULTS: Record<EngineName, { supportsEffort: boolean; effortLevels
   // sentinel meaning "don't pass --model" (the engine omits the flag for it).
   aider: { supportsEffort: false, effortLevels: [], fallbackModel: "default" },
   vibe: { supportsEffort: false, effortLevels: VIBE_EFFORT_LEVELS, fallbackModel: "mistral-medium-3.5" },
+  muse: { supportsEffort: true, effortLevels: MUSE_EFFORT_LEVELS, fallbackModel: MUSE_DEFAULT_MODEL },
 };
 
 /** Optional per-engine `bin` override from config. */
@@ -114,7 +119,8 @@ export function engineAvailable(config: CuttlefishConfig, name: EngineName): boo
   const bin = ENGINE_BIN[name];
   // Unknown engine name (e.g. a typo in config.sessions.fallbackEngine) → not available.
   if (!bin) return false;
-  return isInstalled(bin, engineBinOverride(config, name));
+  const override = engineBinOverride(config, name);
+  return name === "muse" ? isInstalled(bin, override, MUSE_VERSION_PATTERN) : isInstalled(bin, override);
 }
 
 /** Type guard: is `name` one of the known engines? */
@@ -135,6 +141,7 @@ const ENGINE_INSTALL_HINT: Record<EngineName, string> = {
   kilo: "npm install -g @kilocode/cli, then run `kilo` and use /connect to add a provider",
   aider: "install Aider (`python -m pip install aider-install && aider-install`, or `pipx install aider-chat`), then set an API key (e.g. ANTHROPIC_API_KEY or OPENAI_API_KEY)",
   vibe: "install the Mistral Vibe CLI (see https://mistral.ai for install instructions), then run `vibe --setup` to authenticate",
+  muse: "install the qualified Meta Muse Code CLI and run muse login with a subscribed account",
 };
 
 /** Actionable error message for a session blocked by a missing or broken engine CLI. */
@@ -157,6 +164,23 @@ let discoveredHermesModels: HermesModelDiscovery | null = null;
 let discoveredOllamaModels: OllamaModelDiscovery | null = null;
 /** Snapshot of env-derived Aider models (null until first discovery). */
 let discoveredAiderModels: AiderModelDiscovery | null = null;
+
+let museCatalog: { bin?: string; result: Awaited<ReturnType<typeof discoverMuseModels>>; expiresAt: number } | undefined;
+
+export async function refreshMuseModels(config: CuttlefishConfig): Promise<void> {
+  const bin = config.engines.muse?.bin;
+  museCatalog = undefined;
+  try {
+    if (engineAvailable(config, "muse")) {
+      const result = await discoverMuseModels(bin);
+      museCatalog = { bin, result, expiresAt: Date.now() + 5 * 60_000 };
+    }
+  } catch {
+    // Offline discovery leaves the labeled static catalog available.
+  } finally {
+    invalidateModelRegistry();
+  }
+}
 
 export interface ModelRefreshOptions {
   quiet?: boolean;
@@ -323,6 +347,10 @@ export function invalidateModelRegistry(): void {
 /** Resolve the registry (cached). Pass the current config; cache is keyed by
  *  invalidation, not by config identity — call invalidateModelRegistry() to refresh. */
 export function getModelRegistry(config: CuttlefishConfig): ModelRegistry {
+  if (museCatalog && museCatalog.expiresAt <= Date.now()) {
+    museCatalog = undefined;
+    cached = null;
+  }
   if (!cached) cached = buildRegistry(config);
   return cached;
 }
@@ -417,12 +445,32 @@ export function buildRegistry(config: CuttlefishConfig): ModelRegistry {
       registry[name] = buildVibeEntry(config, block?.vibe, synthesized[name], available);
       continue;
     }
+    if (name === "muse") {
+      registry[name] = buildMuseEntry(config, available);
+      continue;
+    }
     const engineBlock = block?.[name];
     registry[name] = engineBlock
       ? fromEngineModelsConfig(name, engineBlock, available)
       : synthesized[name]; // engine omitted from the block → keep the synthesized entry
   }
   return registry;
+}
+
+function buildMuseEntry(config: CuttlefishConfig, available: boolean): EngineRegistryEntry {
+  const cached = museCatalog;
+  const live = cached && cached.bin === config.engines.muse?.bin && cached.expiresAt > Date.now()
+    ? cached.result : undefined;
+  const configured = config.models?.muse;
+  const models = new Map((live?.models.length ? live.models : knownMuseModels()).map((entry) => [entry.id, entry]));
+  for (const row of configured?.models ?? []) {
+    if (!models.has(row.id)) models.set(row.id, modelInfoFromConfigEntry(row));
+  }
+  const defaultModel = config.engines.muse?.model ?? configured?.default ?? live?.defaultModel ?? MUSE_DEFAULT_MODEL;
+  if (!models.has(defaultModel)) {
+    models.set(defaultModel, { id: defaultModel, label: defaultModel, supportsEffort: false, effortLevels: [] });
+  }
+  return { name: "muse", available, defaultModel, effortMechanism: "muse-msp", models: [...models.values()] };
 }
 
 /** Ollama registry entry: exact locally installed completion models > config > synthesized. */

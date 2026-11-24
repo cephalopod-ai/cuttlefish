@@ -242,6 +242,7 @@ describe("RealProviderAdapter streaming, cancellation, retention, and registry",
     const engines = new Map<string, Engine>([
       ["claude", new CompletingEngine()],
       ["codex", new CompletingEngine()],
+      ["muse", new CompletingEngine()],
     ]);
     const live = createLiveProviderAdapterRegistry({
       engines,
@@ -249,8 +250,9 @@ describe("RealProviderAdapter streaming, cancellation, retention, and registry",
       isEngineAvailable: () => true,
     });
 
-    expect(live.listIds()).toEqual(["claude", "codex", "local_echo", "manual", "mock", "stub"]);
+    expect(live.listIds()).toEqual(["claude", "codex", "local_echo", "manual", "mock", "muse", "stub"]);
     expect(live.resolve("claude")).toMatchObject({ ok: true, value: { id: "claude" } });
+    expect(live.resolve("muse")).toMatchObject({ ok: true, value: { id: "muse" } });
     expect(live.resolve("openai")).toMatchObject({ ok: false, error: { code: "adapter_not_found" } });
   });
 });

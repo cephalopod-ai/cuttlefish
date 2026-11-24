@@ -87,6 +87,7 @@ export function validateEngines(
     if (kiro?.billingAnchorDay !== undefined) validateNumber(problems, "engines.kiro.billingAnchorDay", kiro.billingAnchorDay);
   }
   if (value.hermes !== undefined) validateEngineConfig(problems, "engines.hermes", value.hermes, ["bin", "model"]);
+  if (value.muse !== undefined) validateEngineConfig(problems, "engines.muse", value.muse, ["bin", "model", "effortLevel", "childEffortOverride"]);
   if (value.vibe !== undefined) validateEngineConfig(problems, "engines.vibe", value.vibe, ["bin", "model"]);
 }
 

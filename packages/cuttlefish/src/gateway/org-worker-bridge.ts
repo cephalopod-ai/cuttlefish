@@ -60,7 +60,7 @@ export function synthesizeOrgWorkers(registry: ReadonlyMap<string, Partial<Emplo
       family: familyForEngine(engine),
       tier: stringValue(entry.rank) ?? "employee",
       capabilities: [...new Set(capabilities)],
-      tools: mcpTools(entry.mcp),
+      tools: engine === "muse" ? [] : mcpTools(entry.mcp),
       maxConcurrentTasks: 1,
       costClass: costClassForEngine(engine),
       workspacePolicy: "shared",
@@ -167,6 +167,8 @@ function familyForEngine(engine: string): string {
       return "openai";
     case "grok":
       return "xai";
+    case "muse":
+      return "meta";
     case "mock":
     case "pi":
       return "local";

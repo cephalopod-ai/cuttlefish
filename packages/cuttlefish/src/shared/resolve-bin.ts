@@ -146,7 +146,7 @@ export function resolveBin(name: string, override?: string): string {
  * available quota; those are provider-side checks that happen when the engine
  * is used.
  */
-export function isInstalled(name: string, override?: string): boolean {
+export function isInstalled(name: string, override?: string, versionPattern?: RegExp): boolean {
   let bin: string | null = null;
   if (override && override.trim()) {
     const o = override.trim();
@@ -173,11 +173,12 @@ export function isInstalled(name: string, override?: string): boolean {
   } catch {
     return false;
   }
-  const previous = probeCache.get(bin);
+  const probeKey = versionPattern ? `${bin}\0${versionPattern}` : bin;
+  const previous = probeCache.get(probeKey);
   if (previous?.identity === identity && previous.expiresAt > Date.now()) return previous.available;
   const remember = (available: boolean): boolean => {
     if (probeCache.size >= 256) probeCache.delete(probeCache.keys().next().value!);
-    probeCache.set(bin, { identity, expiresAt: Date.now() + PROBE_CACHE_MS, available });
+    probeCache.set(probeKey, { identity, expiresAt: Date.now() + PROBE_CACHE_MS, available });
     return available;
   };
 
@@ -187,6 +188,15 @@ export function isInstalled(name: string, override?: string): boolean {
   // spawns launch them natively through ConPTY. execFileSyncCompat is a plain
   // execFileSync for everything else, POSIX included.
   try {
+    if (versionPattern) {
+      const version = execFileSyncCompat(bin, ["--version"], {
+        encoding: "utf8",
+        timeout: probeTimeoutMs,
+        maxBuffer: 8192,
+        windowsHide: true,
+      });
+      return remember(versionPattern.test(version));
+    }
     execFileSyncCompat(bin, ["--version"], {
       stdio: "ignore",
       timeout: probeTimeoutMs,

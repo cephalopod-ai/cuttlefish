@@ -44,6 +44,9 @@ export async function engineHasHeadroom(
   if (status.state === "exhausted") {
     return { ok: false, provider: worker.provider, reason: "usage_exhausted", status, minRemainingPercent };
   }
+  if (worker.provider === "muse" && status.state === "unknown" && minRemainingPercent > 0) {
+    return { ok: false, provider: worker.provider, reason: "usage_unknown", status, minRemainingPercent };
+  }
   if (typeof status.remainingPercent === "number" && status.remainingPercent < minRemainingPercent) {
     return { ok: false, provider: worker.provider, reason: "usage_below_min_remaining", status, minRemainingPercent };
   }

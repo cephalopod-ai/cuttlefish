@@ -17,7 +17,7 @@ export interface PortalConfig {
  */
 
 /** How an engine conveys reasoning-effort to its CLI. */
-export type EffortMechanism = "claude-flag" | "codex-config" | "grok-flag" | "pi-flag" | "kiro-flag" | "none";
+export type EffortMechanism = "claude-flag" | "codex-config" | "grok-flag" | "pi-flag" | "kiro-flag" | "muse-msp" | "none";
 
 /** A single model and its capabilities, as exposed to the UI / validation. */
 export interface ModelInfo {
@@ -90,6 +90,7 @@ export interface EngineLimitEngineSnapshot {
   defaultModel?: string;
   models: ModelInfo[];
   accountPlan?: string;
+  authStatus?: "subscription" | "api_key" | "signed_out" | "no_subscription" | "unknown";
   windows?: EngineLimitWindow[];
   buckets?: EngineLimitBucket[];
   credits?: EngineLimitCredits;

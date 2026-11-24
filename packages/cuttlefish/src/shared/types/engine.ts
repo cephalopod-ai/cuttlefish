@@ -3,7 +3,7 @@ import type { StreamDelta } from "./chat.js";
 export interface Engine {
   name: string;
   /** Adapter capability, independent of its name/model. Does not certify OS isolation. */
-  executionCapabilities?: { readOnly: boolean };
+  executionCapabilities?: { readOnly: boolean; automaticReplay?: boolean };
   run(opts: EngineRunOpts): Promise<EngineResult>;
 }
 
@@ -43,8 +43,12 @@ export interface EngineRunOpts {
   historyMessages?: EngineHistoryMessage[];
   cliFlags?: string[];
   mcpConfigPath?: string;
+  /** Dispatch requires the employee's resolved MCP servers to be available to this turn. */
+  requiresMcp?: boolean;
   onStream?: (delta: StreamDelta) => void;
   onActivity?: () => void;
+  /** Bind a verified native session before submitting the first side-effecting turn. */
+  onNativeSessionReady?: (nativeId: string) => void;
   sessionId?: string;
   source?: string;
   onLateRecovery?: (info: { result: string; sessionId: string }) => void;
@@ -61,8 +65,20 @@ export interface EngineResult {
   durationMs?: number;
   numTurns?: number;
   contextTokens?: number;
+  tokenUsage?: EngineTokenUsage;
+  transport?: string;
+  model?: string;
+  effortLevel?: string;
   error?: string;
   rateLimit?: EngineRateLimitInfo;
+}
+
+export interface EngineTokenUsage {
+  source?: "terminal" | "observed_model_calls";
+  inputTokens?: number;
+  outputTokens?: number;
+  cachedTokens?: number;
+  reasoningTokens?: number;
 }
 
 export type EngineFailureReason =
