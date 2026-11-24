@@ -11,9 +11,22 @@ export async function extractErrorMessage(res: Response): Promise<string> {
   return `API error: ${res.status}`
 }
 
+export class ApiError extends Error {
+  status: number
+  constructor(status: number, message: string) {
+    super(message)
+    this.name = "ApiError"
+    this.status = status
+  }
+}
+
+async function throwApiError(res: Response): Promise<never> {
+  throw new ApiError(res.status, await extractErrorMessage(res))
+}
+
 export async function get<T>(path: string): Promise<T> {
   const res = await authFetch(path)
-  if (!res.ok) throw new Error(await extractErrorMessage(res))
+  if (!res.ok) await throwApiError(res)
   return res.json()
 }
 
@@ -24,13 +37,13 @@ export async function post<T>(path: string, body?: unknown): Promise<T> {
     credentials: "include",
     body: body ? JSON.stringify(body) : undefined,
   })
-  if (!res.ok) throw new Error(await extractErrorMessage(res))
+  if (!res.ok) await throwApiError(res)
   return res.json()
 }
 
 export async function del<T>(path: string): Promise<T> {
   const res = await authFetch(path, { method: "DELETE" })
-  if (!res.ok) throw new Error(await extractErrorMessage(res))
+  if (!res.ok) await throwApiError(res)
   return res.json()
 }
 
@@ -41,7 +54,7 @@ export async function put<T>(path: string, body: unknown): Promise<T> {
     credentials: "include",
     body: JSON.stringify(body),
   })
-  if (!res.ok) throw new Error(await extractErrorMessage(res))
+  if (!res.ok) await throwApiError(res)
   return res.json()
 }
 
@@ -52,7 +65,7 @@ export async function patch<T>(path: string, body: unknown): Promise<T> {
     credentials: "include",
     body: JSON.stringify(body),
   })
-  if (!res.ok) throw new Error(await extractErrorMessage(res))
+  if (!res.ok) await throwApiError(res)
   return res.json()
 }
 

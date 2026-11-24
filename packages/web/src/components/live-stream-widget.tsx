@@ -192,9 +192,13 @@ export function LiveStreamWidget() {
 
   const handleCopy = useCallback(async () => {
     const text = entries.map(formatCopyLine).join("\n")
-    await navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      setCopied(false)
+    }
   }, [entries])
 
   /* ── DOM event listener ───────────────────────────────────── */

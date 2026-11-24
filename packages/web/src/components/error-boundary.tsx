@@ -40,8 +40,8 @@ export class ErrorBoundary extends Component<Props, State> {
     return { error }
   }
 
-  componentDidCatch(error: Error) {
-    console.error(`[ErrorBoundary${this.props.label ? ` ${this.props.label}` : ""}]`, error.message)
+  componentDidCatch(error: Error, info?: { componentStack?: string | null }) {
+    console.error(`[ErrorBoundary${this.props.label ? ` ${this.props.label}` : ""}]`, error, info?.componentStack)
   }
 
   componentDidUpdate(prev: Props) {

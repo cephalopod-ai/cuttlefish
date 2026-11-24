@@ -7,10 +7,15 @@ import { recordDroppedNotification } from "../shared/process-health.js";
 export function createGatewayNotificationSink(context: ApiContext): SessionNotificationSink {
   return {
     async sendSessionNotification(sessionId, message, displayMessage, sourceChildSessionId, sourceRunId) {
-      if (sourceChildSessionId) {
-        await dispatchSessionNotification(sessionId, message, displayMessage, context, { sourceChildSessionId, sourceRunId });
-      } else {
-        await dispatchSessionNotification(sessionId, message, displayMessage, context);
+      try {
+        if (sourceChildSessionId) {
+          await dispatchSessionNotification(sessionId, message, displayMessage, context, { sourceChildSessionId, sourceRunId });
+        } else {
+          await dispatchSessionNotification(sessionId, message, displayMessage, context);
+        }
+      } catch (err) {
+        logger.warn(`[callbacks] Session notification for "${sessionId}" dropped: ${err instanceof Error ? err.message : String(err)}`);
+        recordDroppedNotification(`session "${sessionId}" notification failed`);
       }
     },
 

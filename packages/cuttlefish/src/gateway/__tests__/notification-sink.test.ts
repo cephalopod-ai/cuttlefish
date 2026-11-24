@@ -51,6 +51,15 @@ describe("createGatewayNotificationSink", () => {
     expect(sendMessage).toHaveBeenCalledWith({ channel: "alerts" }, "hello");
   });
 
+  it("swallows engine-missing rejections instead of propagating them", async () => {
+    vi.mocked(dispatchSessionNotification).mockRejectedValueOnce(new Error('Engine "codex" not available'));
+    const sink = createGatewayNotificationSink(context());
+
+    await expect(sink.sendSessionNotification("parent-1", "message", "display")).resolves.toBeUndefined();
+
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("dropped"));
+  });
+
   it("logs a visible warning when the configured connector is not running", async () => {
     const sink = createGatewayNotificationSink(context());
 

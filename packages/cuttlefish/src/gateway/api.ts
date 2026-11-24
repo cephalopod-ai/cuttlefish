@@ -152,8 +152,8 @@ export async function handleApiRequest(
     notFound(res);
   } catch (err) {
     if (err instanceof ApprovalAuthorityError) { json(res, { error: err.message, code: "approval_authority_denied" }, 409); return; }
-    const msg = err instanceof Error ? err.message : String(err);
-    logger.error(`API error: ${msg}`);
-    serverError(res, msg);
+    const detail = err instanceof Error ? err.message : String(err);
+    logger.error(`API error: ${detail}`);
+    serverError(res, "Internal server error", "internal_error");
   }
 }

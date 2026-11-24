@@ -139,6 +139,11 @@ export async function handleArtifactRoutes(
       return true;
     }
     const stat = fs.statSync(absPath);
+    const MAX_ARTIFACT_HASH_BYTES = 64 * 1024 * 1024;
+    if (stat.size > MAX_ARTIFACT_HASH_BYTES) {
+      badRequest(res, "artifact file too large");
+      return true;
+    }
     // The id is used as a storage path segment (FILES_DIR/<id>) by the files
     // routes, so a separator or `..` would let a delete/move escape FILES_DIR.
     const providedId = typeof body.id === "string" && body.id.trim() ? body.id.trim() : null;

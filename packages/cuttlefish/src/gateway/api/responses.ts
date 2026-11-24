@@ -31,6 +31,6 @@ export function badRequest(res: ServerResponse, message: string): void {
   json(res, { error: message }, 400);
 }
 
-export function serverError(res: ServerResponse, message: string): void {
-  json(res, { error: message }, 500);
+export function serverError(res: ServerResponse, message: string, code = "internal_error"): void {
+  json(res, { error: message, code }, 500);
 }

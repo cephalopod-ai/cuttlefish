@@ -121,12 +121,15 @@ export async function handleSystemRoutes(
     const stat = fs.statSync(logFile);
     const readSize = Math.min(stat.size, maxBytes);
     const fd = fs.openSync(logFile, "r");
-    const buf = Buffer.alloc(readSize);
-    fs.readSync(fd, buf, 0, readSize, stat.size - readSize);
-    fs.closeSync(fd);
-    const allLines = redactText(buf.toString("utf-8")).split("\n").filter(Boolean);
-    json(res, { lines: allLines.slice(-n) });
-    return true;
+    try {
+      const buf = Buffer.alloc(readSize);
+      fs.readSync(fd, buf, 0, readSize, stat.size - readSize);
+      const allLines = redactText(buf.toString("utf-8")).split("\n").filter(Boolean);
+      json(res, { lines: allLines.slice(-n) });
+      return true;
+    } finally {
+      fs.closeSync(fd);
+    }
   }
 
   if (method === "GET" && pathname === "/api/onboarding") {
