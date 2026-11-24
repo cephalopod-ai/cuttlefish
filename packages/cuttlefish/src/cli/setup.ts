@@ -29,6 +29,7 @@ import { initDb } from "../sessions/registry.js";
 import { getPackageVersion } from "../shared/version.js";
 import { assertSafeDestructiveHome } from "./instances.js";
 import { SKILLS_NPX_SPEC } from "./skills.js";
+import { MUSE_VERSION, MUSE_VERSION_PATTERN } from "../engines/muse-host.js";
 import { selectSetupEngine, type SetupEngine } from "./setup-engine.js";
 
 const execFileAsync = promisify(execFile);
@@ -304,6 +305,8 @@ engines:
   vibe:
     bin: vibe-acp
     model: mistral-medium-3.5
+  muse:
+    bin: muse
 # Model + capability registry — single source of truth for the UI selectors.
 # Add a model here (id + label + capability flags); no code change needed.
 # effortLevels gate the effort picker (empty = no effort support). Omit the block
@@ -546,11 +549,18 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
     info("Install the Mistral Vibe CLI (see https://mistral.ai), then run `vibe --setup` to authenticate.");
   }
 
+  const musePath = whichBin("muse");
+  const museVersion = musePath ? runVersion(musePath) : undefined;
+  const qualifiedMuse = museVersion ? MUSE_VERSION_PATTERN.test(museVersion) : false;
+  if (qualifiedMuse) ok("Muse Code " + MUSE_VERSION + " found. Verify subscription with a browser login.");
+  else if (musePath) warn("Muse Code " + MUSE_VERSION + " is required for Cuttlefish Muse sessions.");
+  else info("Optional: install Muse Code from https://dev.meta.ai/docs/muse-code.");
+
   // 5. Loudly warn if NO engine is installed — the gateway will start, but it
   //     cannot run any session until at least one engine CLI is on PATH.
-  if (!claudePath && !codexPath && !antigravityPath && !grokPath && !piPath && !kiroPath && !hermesPath && !ollamaPath && !kiloPath && !aiderPath && !vibePath) {
+  if (!claudePath && !codexPath && !antigravityPath && !grokPath && !piPath && !kiroPath && !hermesPath && !ollamaPath && !kiloPath && !aiderPath && !vibePath && !qualifiedMuse) {
     console.log("");
-    warn("No AI engine CLI found (claude, codex, antigravity, grok, pi, kiro, hermes, ollama, kilo, aider, or vibe).");
+    warn("No AI engine CLI found (claude, codex, antigravity, grok, pi, kiro, hermes, ollama, kilo, aider, vibe, or muse).");
     warn("The gateway will start, but sessions will fail until you install one above.");
   }
 
@@ -613,7 +623,7 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
   }
   // A successful --version does NOT mean the engine is authenticated — the #1
   // silent fresh-install failure. Nudge the login step explicitly.
-  if (claudePath || codexPath || antigravityPath || grokPath || piPath || kiroPath || hermesPath || ollamaPath || kiloPath || aiderPath || vibePath) {
+  if (claudePath || codexPath || antigravityPath || grokPath || piPath || kiroPath || hermesPath || ollamaPath || kiloPath || aiderPath || vibePath || qualifiedMuse) {
     warn("A successful --version does NOT mean the engine is logged in.");
     if (claudePath) info("First run? Launch `claude` once and use /login to authenticate.");
     if (codexPath) info("First run? Launch `codex` once and sign in to authenticate.");
@@ -666,6 +676,7 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
     kiloPath ? "kilo" : undefined,
     aiderPath ? "aider" : undefined,
     vibePath ? "vibe" : undefined,
+    qualifiedMuse ? "muse" : undefined,
   ].filter((engine): engine is SetupEngine => Boolean(engine));
   let chosenEngine = selectSetupEngine(installedEngines);
 

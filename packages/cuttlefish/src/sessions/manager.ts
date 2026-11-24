@@ -35,7 +35,7 @@ import { detectRateLimit, isDeadSessionError } from "../shared/rateLimit.js";
 import { getClaudeExpectedResetAt, isLikelyNearClaudeUsageLimit } from "../shared/usageAwareness.js";
 import { checkBudget } from "../gateway/budgets.js";
 import { markTranscriptSyncedThrough } from "../gateway/external-turns.js";
-import { resolveMcpServers, writeMcpConfigFile, cleanupMcpConfigFile } from "../mcp/resolver.js";
+import { requiresResolvedMcp, resolveMcpServers, writeMcpConfigFile, cleanupMcpConfigFile } from "../mcp/resolver.js";
 import {
   handleRateLimit,
   rateLimitFallbackNotice,
@@ -439,9 +439,17 @@ export class SessionManager {
         cliFlags: invocation.cliFlags,
         restrictToJudgeOnly: session.executionBoundary?.requirement === "read_only",
         mcpConfigPath,
+        requiresMcp: session.engine === "muse" && requiresResolvedMcp(this.config.mcp, employee),
         attachments: engineAttachments.length > 0 ? engineAttachments : undefined,
         ...(contextPacket?.historyMessages ? { historyMessages: contextPacket.historyMessages } : {}),
         sessionId: session.id,
+        onNativeSessionReady: (nativeId) => {
+          const live = currentSessionAttempt(session);
+          if (live?.status !== "running" || live.engine !== session.engine) {
+            throw new Error("Session changed before native turn dispatch.");
+          }
+          updateSession(live.id, { engineSessionId: nativeId });
+        },
         source: session.source,
         onLateRecovery: ({ result: lateText, sessionId: engineSid }) => {
           const live = getSession(session.id);
@@ -470,7 +478,8 @@ export class SessionManager {
       // clear cached engine sessions from transportMeta so the next attempt starts fresh.
       // Also sets a flag so we skip the rate-limit retry loop below (a dead session
       // error can contain text like "429" that would otherwise match RATE_LIMIT_ERROR_RE).
-      const isDead = !wasInterrupted && isDeadSessionError(result);
+      const automaticReplay = engine.executionCapabilities?.automaticReplay !== false;
+      const isDead = automaticReplay && !wasInterrupted && isDeadSessionError(result);
       if (isDead) {
         logger.warn(`Dead session detected for ${session.id} — clearing stale engine IDs`);
         session = updateSession(session.id, {
@@ -485,7 +494,7 @@ export class SessionManager {
 
       // Detect rate limit / usage limit errors and auto-retry.
       // Skip entirely for dead sessions — they are not rate limits.
-      const rateLimit = (!wasInterrupted && !isDead) ? detectRateLimit(result) : { limited: false as const };
+      const rateLimit = (automaticReplay && !wasInterrupted && !isDead) ? detectRateLimit(result) : { limited: false as const };
       if (rateLimit.limited) {
         const waitEmoji = "hourglass_flowing_sand";
         const sourceEngine = session.engine;

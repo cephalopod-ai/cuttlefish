@@ -45,6 +45,19 @@ describe("engineHasHeadroom", () => {
     expect(getUsageStatus).not.toHaveBeenCalled();
   });
 
+  it("requires observed Muse headroom when a positive threshold applies", async () => {
+    const options = {
+      isEngineAvailable: () => true,
+      getUsageStatus: async () => status("muse", "unknown"),
+    };
+    expect(await engineHasHeadroom(worker("muse"), config, options)).toMatchObject({
+      ok: false, reason: "usage_unknown",
+    });
+    expect(await engineHasHeadroom(worker("muse"), config, { ...options, minRemainingPercent: 0 })).toMatchObject({
+      ok: true, reason: "usage_unknown",
+    });
+  });
+
   it("leaves inert and unknown providers untouched so simulation stays pure", async () => {
     const getUsageStatus = vi.fn(async () => status("local_echo", "exhausted", 0));
     const result = await engineHasHeadroom(worker("local_echo"), config, {

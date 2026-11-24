@@ -185,8 +185,8 @@ export async function getEngineUsageStatus(
   let snapshot: SnapshotLike | undefined;
   try {
     const resp = await collectEngineLimits(config, { engine });
-    const s = resp.engines[engine] as unknown as SnapshotLike & { status?: string };
-    if (s && s.available && (s.status === "live" || s.status === "snapshot")) snapshot = s;
+    const s = resp.engines[engine];
+    if (s && s.available && (s.status === "live" || s.status === "snapshot") && (engine !== "muse" || !s.stale)) snapshot = s;
   } catch { /* snapshot best-effort; recorded clock still applies */ }
   return statusFromInputs(engine, { recordedReset, snapshot, lowPercent });
 }

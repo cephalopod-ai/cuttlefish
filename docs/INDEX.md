@@ -86,6 +86,7 @@ those deliberate cases.
   subcommands by destructiveness, interactivity, and suitability for automated sweeps;
   supersedes any generated surface-metadata that conflicts with it.
 - `docs/engines-hermes.md`: Hermes engine behavior and caveats.
+- [Meta Muse Code](engines-muse.md) covers setup, billing, transport selection and verified capabilities.
 - `docs/TWILIO_SMS.md`: Twilio SMS credential, sender, allowlist, and signed-webhook setup.
 - `docs/orchestration/README.md`: provider-neutral matrix orchestration
   foundation, durable scheduler state, adapter contracts, CLI dry-run/observe
@@ -96,6 +97,11 @@ those deliberate cases.
   interoperability evidence, and current transport limits.
 
 ## Session and Audit Log Summaries
+
+November 24 Muse integration added an optional MSP engine. Native macOS probes
+verified subscription status, streaming and exact session resumption. A local
+qualification report and session note document the outstanding capability gaps.
+See the [Muse guide](engines-muse.md) and [test ledger](TEST_LEDGER.md).
 
 November 1 non-security audit: a repository inventory, sampled domain reviews,
 installed-provider compatibility checks and disposable browser/protocol probes

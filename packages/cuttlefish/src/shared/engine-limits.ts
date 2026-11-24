@@ -15,14 +15,36 @@ import { readCodexAppServerResult } from "./codex-app-server.js";
 import { getModelRegistry } from "./models.js";
 import { resolveBin } from "./resolve-bin.js";
 import { nextKiroCreditResetAt, readKiroCreditLedger } from "./kiro-usage.js";
+import { MuseHost, type MuseSubscription } from "../engines/muse-host.js";
 
 type JsonRecord = Record<string, unknown>;
 
 export interface CollectEngineLimitsOptions {
   engine?: string;
+  refresh?: boolean;
 }
 
-const LIVE_LIMIT_ENGINES = new Set(["codex"]);
+const LIVE_LIMIT_ENGINES = new Set(["codex", "muse"]);
+const MUSE_USAGE_MAX_AGE_MS = 5 * 60_000;
+let museUsageProbe: { bin?: string; expiresAt: number; promise: Promise<MuseSubscription> } | undefined;
+
+function readMuseUsage(bin?: string, refresh = false): Promise<MuseSubscription> {
+  const cached = museUsageProbe;
+  if (!refresh && cached && cached.bin === bin && cached.expiresAt > Date.now()) {
+    return cached.promise;
+  }
+  const promise = (async () => {
+    const host = new MuseHost(os.tmpdir(), bin);
+    try {
+      await host.initialize();
+      return await host.subscription();
+    } finally {
+      await host.close(host.alive);
+    }
+  })();
+  museUsageProbe = { bin, expiresAt: Date.now() + 15_000, promise };
+  return promise;
+}
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -62,6 +84,46 @@ function baseSnapshot(config: CuttlefishConfig, engine: string): EngineLimitEngi
     defaultModel: entry?.defaultModel,
     models: entry?.models ?? [],
   };
+}
+
+async function collectMuseLimits(config: CuttlefishConfig, refresh?: boolean): Promise<EngineLimitEngineSnapshot> {
+  const snapshot = baseSnapshot(config, "muse");
+  if (!snapshot.available) return { ...snapshot, unsupportedReason: "Muse Code is unavailable." };
+  const source = "muse-msp";
+  try {
+    const usage = await readMuseUsage(config.engines.muse?.bin, refresh);
+    const statusText = {
+      api_key: "Muse is configured for API-key authentication.",
+      signed_out: "Muse is signed out.",
+      no_subscription: "Muse login has no active subscription.",
+      unknown: "Muse subscription status is unknown.",
+      subscription: "Muse verified an active subscription. Allowance was not reported.",
+    }[usage.status];
+    if (!usage.observedAtMs || !usage.windows) {
+      return { ...snapshot, source, authStatus: usage.status, accountPlan: usage.tier, unsupportedReason: statusText };
+    }
+    const now = Date.now();
+    const stale = now - usage.observedAtMs > MUSE_USAGE_MAX_AGE_MS
+      || usage.windows.some((window) => window.resetsAtMs <= now);
+    return {
+      ...snapshot,
+      status: stale ? "snapshot" : "live",
+      source,
+      authStatus: usage.status,
+      accountPlan: usage.tier,
+      refreshedAt: new Date(usage.observedAtMs).toISOString(),
+      stale,
+      windows: usage.windows.map(({ name, usedPercent, durationMins, resetsAtMs }) => ({
+        name,
+        usedPercent,
+        windowDurationMins: durationMins,
+        resetsAt: resetsAtMs / 1000,
+        resetsAtIso: new Date(resetsAtMs).toISOString(),
+      })),
+    };
+  } catch (error) {
+    return { ...snapshot, status: "error", source, authStatus: "unknown", error: error instanceof Error ? error.message : "Muse usage probe failed." };
+  }
 }
 
 function windowFromClaude(name: string, value: unknown, durationMins: number): EngineLimitWindow | undefined {
@@ -624,6 +686,8 @@ export async function collectEngineLimits(
       engines[name] = collectAiderLimits(config);
     } else if (name === "kiro") {
       engines[name] = collectKiroLimits(config);
+    } else if (name === "muse") {
+      engines[name] = await collectMuseLimits(config, opts.refresh);
     } else {
       engines[name] = collectUnsupported(config, name, "No limit collector is registered for this engine.");
     }

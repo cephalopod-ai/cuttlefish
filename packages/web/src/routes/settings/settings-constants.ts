@@ -41,6 +41,7 @@ export const SETTINGS_ENGINE_OPTIONS = [
   { value: "kilo", label: "Kilo" },
   { value: "aider", label: "Aider" },
   { value: "vibe", label: "Vibe" },
+  { value: "muse", label: "Meta Muse Code" },
 ] as const
 
 type SettingsEngineName = typeof SETTINGS_ENGINE_OPTIONS[number]["value"]
@@ -89,6 +90,7 @@ export interface Config {
     kilo?: { bin?: string; model?: string; effortLevel?: string }
     aider?: { bin?: string; model?: string }
     vibe?: { bin?: string; model?: string }
+    muse?: { bin?: string; model?: string; effortLevel?: string }
   }
   modelFallback?: {
     enabled?: boolean

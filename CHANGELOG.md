@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added the optional Meta Muse Code subscription engine with MSP streaming, exact
+  native resume, employee dispatch, and account allowance reporting when Muse
+  supplies it. Dispatch requires a verified subscription and native sandbox.
+
 ### Fixed
 - **A department board save no longer deletes tickets it did not mention.**
   `PUT /api/org/departments/:name/board` kept omitted tickets only when they

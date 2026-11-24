@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import type Database from 'better-sqlite3';
 import { isSessionExecutionBoundary, type ExecutionOriginKind, type ExecutionRequirement, type SessionExecutionBoundary } from '@cuttlefish/contracts';
-import type { JsonObject, ReplyContext, Session } from '../../shared/types.js';
+import type { EngineResult, JsonObject, ReplyContext, Session } from '../../shared/types.js';
 import { initDb, parseJsonObject, rowToSession } from './core.js';
 import { portalEmployeeSlug } from '../../shared/portal-slug.js';
 import { getRunLedger } from '../../run-ledger/index.js';
@@ -53,8 +53,8 @@ function withRunMeta(meta: JsonObject | null | undefined, runId: string): JsonOb
   return next;
 }
 
-function syncRunLedgerForSessionUpdate(before: Session, after: Session): void {
-  getRunLedger().syncSessionUpdate({ before, after });
+function syncRunLedgerForSessionUpdate(before: Session, after: Session, engineOutcome?: EngineResult): void {
+  getRunLedger().syncSessionUpdate({ before, after, engineOutcome });
 }
 
 function computeGroupKey(source: string, sourceRef: string, employee: string | null | undefined): string {
@@ -200,6 +200,7 @@ export function getOrCreateSessionBySessionKey(
 }
 
 export interface UpdateSessionFields {
+  engineOutcome?: EngineResult;
   executionBoundary?: SessionExecutionBoundary;
   engine?: string;
   engineSessionId?: string | null;
@@ -266,7 +267,7 @@ export function updateSession(id: string, updates: UpdateSessionFields): Session
     db.prepare(`UPDATE sessions SET ${sets.join(', ')} WHERE id = ?`).run(...values);
     const updatedRow = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId) as Record<string, unknown> | undefined;
     const after = updatedRow ? rowToSession(updatedRow) : undefined;
-    if (after) syncRunLedgerForSessionUpdate(before, after);
+    if (after) syncRunLedgerForSessionUpdate(before, after, updates.engineOutcome);
     return after;
   });
 

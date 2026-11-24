@@ -60,6 +60,14 @@ export function resolveMcpServers(
 }
 
 
+/** Explicit employee requirements still apply when a named server is missing. */
+export function requiresResolvedMcp(globalMcp: McpGlobalConfig | undefined, employee?: Employee): boolean {
+  if (employee?.mcp === false) return false;
+  if (employee?.mcp === true || (Array.isArray(employee?.mcp) && employee.mcp.length > 0)) return true;
+  return Object.keys(resolveMcpServers(globalMcp, employee).mcpServers).length > 0;
+}
+
+
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { v4 as uuidv4 } from "uuid";
-import type { Session } from "../shared/types.js";
+import type { EngineResult, Session } from "../shared/types.js";
 import { RUN_LEDGER_DB } from "../shared/paths.js";
 import {
   type CanonicalRunState,
@@ -159,6 +159,7 @@ export interface TransitionRunInput {
 export interface SessionRunSyncInput {
   before: Session;
   after: Session;
+  engineOutcome?: EngineResult;
 }
 
 export interface LinkRunInput {
@@ -547,6 +548,18 @@ export class RunLedgerStore {
             payload: {
               beforeStatus: input.before.status,
               afterStatus: input.after.status,
+              ...(input.engineOutcome?.transport ? {
+                execution: {
+                  transport: input.engineOutcome.transport,
+                  nativeSessionId: input.after.engineSessionId,
+                  employee: input.after.employee,
+                  model: input.engineOutcome.model ?? input.after.model,
+                  effortLevel: input.engineOutcome.effortLevel ?? input.after.effortLevel,
+                  durationMs: input.engineOutcome.durationMs,
+                  contextTokens: input.engineOutcome.contextTokens,
+                  tokenUsage: input.engineOutcome.tokenUsage,
+                },
+              } : {}),
             },
             errorKind: input.after.lastError ? nextState : null,
             errorMessage: input.after.lastError,

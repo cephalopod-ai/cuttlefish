@@ -730,6 +730,7 @@ describe("GET /api/status", () => {
           kilo: { bin: "__cuttlefish_missing_kilo_for_status_test__", model: "kilo-auto/free" },
           aider: { bin: "__cuttlefish_missing_aider_for_status_test__", model: "default" },
           vibe: { bin: "__cuttlefish_missing_vibe_for_status_test__", model: "mistral-medium-3.5" },
+          muse: { bin: "__cuttlefish_missing_muse_for_status_test__", model: "muse-spark-1.3" },
         },
       }),
       connectors: new Map(),

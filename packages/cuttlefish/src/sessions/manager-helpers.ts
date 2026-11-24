@@ -151,6 +151,7 @@ export async function finalizeManagedSessionTurn(input: {
   live = currentSessionAttempt(input.session);
   if (!live) return;
   const updatedSession = updateSession(input.session.id, {
+    engineOutcome: input.wasInterrupted ? undefined : input.result,
     ...(input.result.sessionId?.trim() ? { engineSessionId: input.result.sessionId } : {}),
     ...(typeof input.result.contextTokens === "number" ? { lastContextTokens: input.result.contextTokens } : {}),
     status: isHumanCheckpointPaused(live) ? "waiting" : input.wasInterrupted

@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { IncomingMessage as HttpRequest, ServerResponse } from "node:http";
 import * as yaml from "js-yaml";
-import { getModelRegistry, invalidateModelRegistry, refreshAntigravityModels, refreshCodexModels, refreshGrokModels, refreshHermesModels, refreshOllamaModels, refreshPiModels } from "../../../shared/models.js";
+import { ENGINE_NAMES, getModelRegistry, isKnownEngine, invalidateModelRegistry, refreshAntigravityModels, refreshCodexModels, refreshGrokModels, refreshHermesModels, refreshMuseModels, refreshOllamaModels, refreshPiModels } from "../../../shared/models.js";
 import { collectEngineLimits } from "../../../shared/engine-limits.js";
 import { CONFIG_PATH, CUTTLEFISH_HOME, LOGS_DIR, TMP_DIR } from "../../../shared/paths.js";
 import { saveConfigAtomic, validateConfigShape } from "../../../shared/config.js";
@@ -11,7 +11,6 @@ import { logger } from "../../../shared/logger.js";
 import { redactText } from "../../../shared/redact.js";
 import { downloadModel, getSttStatus, resolveLanguages, transcribe as sttTranscribe, WHISPER_LANGUAGES } from "../../../stt/stt.js";
 import { onboardingNeeded, applyEngineChoice } from "../../onboarding-policy.js";
-import { isKnownEngine } from "../../../shared/models.js";
 import { readJsonBody, readBodyRaw, BodyTooLargeError } from "../../http-helpers.js";
 import { safeWriteFile } from "../../../shared/safe-write.js";
 import type { ApiContext } from "../context.js";
@@ -42,6 +41,7 @@ export async function handleSystemRoutes(
     await refreshPiModels(config);
     await refreshGrokModels(config);
     await refreshHermesModels(config);
+    await refreshMuseModels(config);
     await refreshOllamaModels(config);
     context.emit("engines:updated", {});
     json(res, { default: config.engines.default, engines: getModelRegistry(config) });
@@ -56,7 +56,7 @@ export async function handleSystemRoutes(
 
   if (method === "POST" && pathname === "/api/engine-limits/refresh") {
     const engine = url.searchParams.get("engine") || undefined;
-    json(res, await collectEngineLimits(context.getConfig(), { engine }));
+    json(res, await collectEngineLimits(context.getConfig(), { engine, refresh: true }));
     return true;
   }
 
@@ -171,7 +171,7 @@ export async function handleSystemRoutes(
     // engines.default with no sibling engine config, unlike every other
     // config-writing path.
     if (engine !== undefined && !isKnownEngine(engine)) {
-      badRequest(res, `Unknown engine "${engine}" (expected one of: claude, codex, antigravity, grok, pi, kiro, hermes, ollama, kilo, aider, vibe)`);
+      badRequest(res, `Unknown engine "${engine}" (expected one of: ${ENGINE_NAMES.join(", ")})`);
       return true;
     }
 

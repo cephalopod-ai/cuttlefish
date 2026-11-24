@@ -242,6 +242,7 @@ export interface CuttlefishConfig {
     kiro?: { bin?: string; model?: string; effortLevel?: string; creditBudget?: number; billingAnchorDay?: number };
     /** Vibe (Mistral AI's `vibe-acp` CLI) engine. `bin` optional — PATH-resolved. No effort. */
     vibe?: { bin?: string; model?: string };
+    muse?: { bin?: string; model?: string; effortLevel?: string; childEffortOverride?: string };
   };
   models?: ModelsConfig;
   connectors: Record<string, any> & {

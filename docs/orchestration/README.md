@@ -547,8 +547,8 @@ The default adapter registry remains inert and registers only:
 opt-in parity infrastructure. They are not the production orchestration
 execution contract. If explicitly constructed by tests or future experiments,
 live adapters receive the gateway's existing engine `Map` as a dependency and
-register only existing Cuttlefish engine ids (`claude`, `codex`, `antigravity`,
-`grok`, `hermes`, `pi`, `kiro`) that are present in the injected map; unknown
+register supported Cuttlefish engine ids (`claude`, `codex`, `antigravity`,
+`grok`, `hermes`, `pi`, `kiro`, `muse`) that are present in the injected map; unknown
 providers still fail closed with `adapter_not_found`.
 
 Live adapter behavior is intentionally narrow:
@@ -573,6 +573,8 @@ session path.
 reuses the existing `usage-status.ts` engine limit snapshots and the
 `boardWorker.usage.minRemainingPercent` default. Known live engines are filtered
 when unavailable, exhausted, or below the configured remaining-percent floor.
+Muse also requires a fresh observation when the configured floor is positive.
+See the [Muse engine guide](../engines-muse.md) for its runtime limits.
 Inert providers such as `local_echo` are allowed through so dry-runs and
 simulation remain deterministic.
 
