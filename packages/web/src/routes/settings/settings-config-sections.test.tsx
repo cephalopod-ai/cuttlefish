@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest"
 import { GatewayWorkspacesSection, RecoveryFallbacksSection } from "./settings-config-sections"
 import type { Config } from "./settings-constants"
 
-const supportedEngines = ["claude", "codex", "antigravity", "grok", "pi", "kiro", "hermes", "ollama", "kilo", "aider", "vibe"] as const
+const supportedEngines = ["claude", "codex", "antigravity", "grok", "pi", "kiro", "hermes", "ollama", "kilo", "aider", "vibe", "muse"] as const
 
 describe("settings engine selection", () => {
   it.each(supportedEngines)("displays and allows the supported %s default and fallback", (engine) => {
