@@ -167,6 +167,21 @@ describe("migrate: AI session launcher", () => {
     // The prompt is the last positional arg and references the migration.
     expect(argsArray[argsArray.length - 1]).toContain("migration");
   });
+
+  it("refuses an engine without a migration invocation instead of handing it Claude's flags", async () => {
+    const { loadConfig } = await import("../../shared/config.js");
+    vi.mocked(loadConfig).mockReturnValueOnce({ engines: { default: "muse", muse: { bin: "muse" } } } as never);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { runMigrate } = await import("../migrate.js");
+
+    await runMigrate({});
+
+    expect(mockExecFileSync).not.toHaveBeenCalled();
+    expect(fs.writeFileSync).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(errorSpy.mock.calls.flat().join("\n")).toContain('cannot drive the "muse" engine');
+    errorSpy.mockRestore();
+  });
 });
 
 describe("migrate: post-run verification (FSR-CF-018)", () => {

@@ -146,7 +146,7 @@ export function resolveBin(name: string, override?: string): string {
  * available quota; those are provider-side checks that happen when the engine
  * is used.
  */
-export function isInstalled(name: string, override?: string, versionPattern?: RegExp): boolean {
+export function isInstalled(name: string, override?: string, versionPattern?: RegExp, env?: NodeJS.ProcessEnv): boolean {
   let bin: string | null = null;
   if (override && override.trim()) {
     const o = override.trim();
@@ -191,9 +191,13 @@ export function isInstalled(name: string, override?: string, versionPattern?: Re
     if (versionPattern) {
       const version = execFileSyncCompat(bin, ["--version"], {
         encoding: "utf8",
+        // Without an explicit stdio, execFileSync forwards the child's stderr
+        // to the gateway's own stderr.
+        stdio: ["ignore", "pipe", "ignore"],
         timeout: probeTimeoutMs,
         maxBuffer: 8192,
         windowsHide: true,
+        ...(env ? { env } : {}),
       });
       return remember(versionPattern.test(version));
     }

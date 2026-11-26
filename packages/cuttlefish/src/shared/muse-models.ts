@@ -4,6 +4,8 @@ import type { ModelInfo } from "./types.js";
 
 export const MUSE_DEFAULT_MODEL = "muse-spark-1.3";
 export const MUSE_EFFORT_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"];
+/** MSP ReasoningEffort is a closed vocabulary; discovery keeps every tier the host advertises. */
+const MUSE_PROTOCOL_EFFORT_LEVELS = ["none", ...MUSE_EFFORT_LEVELS, "ultra"];
 
 function model(id: string, label: string): ModelInfo {
   return { id, label, supportsEffort: true, effortLevels: [...MUSE_EFFORT_LEVELS] };
@@ -30,7 +32,7 @@ export async function discoverMuseModels(bin?: string): Promise<{ defaultModel?:
       const row = museRecord(raw);
       if (row.providerId !== "meta" || typeof row.modelId !== "string" || row.modelId.endsWith("-contributor")) continue;
       const efforts = Array.isArray(row.variants)
-        ? row.variants.filter((level): level is string => typeof level === "string" && MUSE_EFFORT_LEVELS.includes(level))
+        ? row.variants.filter((level): level is string => typeof level === "string" && MUSE_PROTOCOL_EFFORT_LEVELS.includes(level))
         : [];
       const option = typeof row.displayLabel === "string" ? row.displayLabel : row.modelId;
       models.push({

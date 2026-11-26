@@ -29,7 +29,7 @@ import { initDb } from "../sessions/registry.js";
 import { getPackageVersion } from "../shared/version.js";
 import { assertSafeDestructiveHome } from "./instances.js";
 import { SKILLS_NPX_SPEC } from "./skills.js";
-import { MUSE_VERSION, MUSE_VERSION_PATTERN } from "../engines/muse-host.js";
+import { MUSE_VERSION, MUSE_VERSION_PATTERN, museEnvironment } from "../engines/muse-host.js";
 import { selectSetupEngine, type SetupEngine } from "./setup-engine.js";
 
 const execFileAsync = promisify(execFile);
@@ -89,9 +89,9 @@ function whichBin(name: string): string | null {
   return isInstalled(name) ? resolveBin(name) : null;
 }
 
-function runVersion(bin: string): string | null {
+function runVersion(bin: string, env?: NodeJS.ProcessEnv): string | null {
   try {
-    return execFileSyncCompat(bin, ["--version"], { encoding: "utf-8", timeout: 10_000, windowsHide: true }).trim();
+    return execFileSyncCompat(bin, ["--version"], { encoding: "utf-8", timeout: 10_000, windowsHide: true, ...(env ? { env } : {}) }).trim();
   } catch {
     return null;
   }
@@ -550,7 +550,7 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
   }
 
   const musePath = whichBin("muse");
-  const museVersion = musePath ? runVersion(musePath) : undefined;
+  const museVersion = musePath ? runVersion(musePath, museEnvironment()) : undefined;
   const qualifiedMuse = museVersion ? MUSE_VERSION_PATTERN.test(museVersion) : false;
   if (qualifiedMuse) ok("Muse Code " + MUSE_VERSION + " found. Verify subscription with a browser login.");
   else if (musePath) warn("Muse Code " + MUSE_VERSION + " is required for Cuttlefish Muse sessions.");

@@ -92,6 +92,9 @@ function writeClaudeMigrateSettings(): { settingsPath: string; tempDir: string }
   return { settingsPath, tempDir };
 }
 
+/** Engines with a known one-shot migration invocation in {@link buildMigrateArgs}. */
+const MIGRATE_ENGINES = new Set(["claude", "codex", "grok", "kilo", "ollama"]);
+
 function buildMigrateArgs(engine: string, prompt: string, model?: string, claudeSettingsPath?: string): string[] {
   switch (engine) {
     case "kilo":
@@ -207,6 +210,15 @@ export async function runMigrate(opts: { check?: boolean; auto?: boolean }): Pro
 
   const config = loadConfig();
   const defaultEngine = config.engines.default ?? "claude";
+  // Any other engine used to fall through to Claude's argv, handing Claude's
+  // permission-bypass flags to a different CLI (e.g. Muse, Pi, Hermes).
+  if (!MIGRATE_ENGINES.has(defaultEngine)) {
+    console.error(`${RED}Error:${RESET} cuttlefish migrate cannot drive the "${defaultEngine}" engine.`);
+    console.error(`Supported engines: ${[...MIGRATE_ENGINES].join(", ")}. The staged files are still in ${MIGRATIONS_DIR}`);
+    console.error(`Apply them with a supported engine, or follow ${path.join(SKILLS_DIR, "migrate", "SKILL.md")} manually.\n`);
+    process.exit(1);
+    return;
+  }
   const engineConfig = config.engines[defaultEngine] ?? config.engines.claude;
   const claudeMigrateSettings = defaultEngine === "claude" ? writeClaudeMigrateSettings() : undefined;
 

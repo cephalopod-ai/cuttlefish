@@ -98,6 +98,17 @@ those deliberate cases.
 
 ## Session and Audit Log Summaries
 
+November 25 Muse integration audit: two review passes over every change since
+the November 1 audit, checked against the MSP schema exported from the installed
+Muse 1.4.25 and against its launcher. Eleven Muse defects and one pre-existing
+`cuttlefish migrate` defect were repaired with regression tests. The defects
+included truncated answers reported as complete, dropped field-less deltas,
+ignored approval refreshes, a catalog expiry that rejected discovered models,
+and launcher self-updates removing the pinned build. See the
+[Muse guide](engines-muse.md), [CHANGELOG.md](../CHANGELOG.md) and
+[test ledger](TEST_LEDGER.md). Local-only detail:
+`docs/audits/2026-11-25-muse-integration-audit.md`.
+
 November 24 Muse integration added an optional MSP engine. Native macOS probes
 verified subscription status, streaming and exact session resumption. A local
 qualification report and session note document the outstanding capability gaps.

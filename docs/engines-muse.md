@@ -6,6 +6,10 @@ Cuttlefish includes the optional `muse` engine for text turns on a Muse Code sub
 
 Setup and dashboard engine pickers mark Muse available when its executable passes the version probe. Use an absolute path for an explicit executable override. Existing defaults stay in place. Fresh setup can select Muse explicitly and selects it automatically when Muse is the only usable CLI.
 
+The official `muse` launcher checks for a new build hourly whenever it runs, installs it in the background and deletes the previous `muse-bin-*` build. Cuttlefish sets `MUSE_NO_AUTO_UPDATE=1` for the Muse processes it starts, including version probes and limit polls, so its own activity does not replace the qualified build. Muse commands run outside Cuttlefish keep the operator's update setting. Export `MUSE_NO_AUTO_UPDATE=1` in the operator's shell as well to keep 1.4.25 installed. Any other Muse version makes the engine unavailable until the adapter is requalified.
+
+`cuttlefish migrate` cannot drive Muse. With Muse as the default engine it stops before launching anything and leaves the staged migrations in place.
+
 Merge an optional engine entry into `config.yaml`.
 
 ```yaml
@@ -16,7 +20,7 @@ engines:
     effortLevel: medium
 ```
 
-An employee uses the same engine selection and reporting fields as other employees. Configure `mcp: false` for a Muse employee if the global configuration supplies MCP servers.
+An employee uses the same engine selection and reporting fields as other employees. Configure `mcp: false` for a Muse employee if the global configuration supplies MCP servers. This includes the built-in browser server, which is on by default whenever an `mcp:` block exists. Without it, dispatch fails with an error that names this setting. A session without an employee follows the global MCP configuration.
 
 ```yaml
 name: muse-engineer
@@ -33,7 +37,7 @@ persona: |
   Report validation and any unresolved work to your manager.
 ```
 
-`POST /api/engines/refresh` refreshes model choices without running inference. Cuttlefish prefers the provider catalog from `model/list` and tries the CLI's `exec --list-models` catalog when the host has no live rows. Static Spark 1.3, Wonder 1.0 and Spark 1.2 entries carry a fallback label. The runtime checks that Muse selected the configured model before dispatch. Availability and effort tiers depend on account entitlement. [Meta's model catalog](https://dev.meta.ai/docs/choose-a-model).
+`POST /api/engines/refresh` refreshes model choices without running inference. Cuttlefish prefers the provider catalog from `model/list` and tries the CLI's `exec --list-models` catalog when the host has no live rows. Static Spark 1.3, Wonder 1.0 and Spark 1.2 entries carry a fallback label. A discovered catalog stays in use after five minutes. The next registry read starts one background rediscovery and replaces the catalog when that finishes. A failed rediscovery returns to the labeled static catalog. Discovered effort tiers follow the MSP vocabulary, including `none` and `ultra` where a model advertises them. The runtime checks that Muse selected the configured model before dispatch. Availability and effort tiers depend on account entitlement. [Meta's model catalog](https://dev.meta.ai/docs/choose-a-model).
 
 ## Authentication and allowance
 
@@ -48,7 +52,9 @@ Context counts and per-turn token counts are recorded when Muse reports them. Th
 - Muse owns native conversation history and compaction. Cuttlefish binds the exact native session before submitting a turn and opens a fresh native process for each turn. Continuations use the saved native ID and workspace. A failed resume surfaces an error and keeps the association. Start a new Cuttlefish session when you intend to start a fresh conversation.
 - Cuttlefish supplies current employee and workspace instructions in each turn input. The installed host silently ignored an updated MSP developer prompt on resume during qualification. This approach works for fresh and resumed turns and leaves native history with Muse.
 - The gateway submits Muse work through its normal session, employee, delegation, cron, connector and lease paths. Muse uses the assigned working directory, including an orchestration worktree. Native subagents and workflow tools are excluded from the adapter's toolset.
-- Muse uses its native sandbox and the `:ask-me` profile. Cuttlefish checks the applied permission axes and disables inherited plugin and web tooling. User hooks, configured endpoint overrides, managed settings and workspace Muse configuration cause dispatch to fail closed. The adapter admits only its qualified built-in toolset of `read_file` and `bash`. Native approval requests with a verifiable one-time rejection are denied. Cuttlefish's organizational approvals still apply to dispatch.
+- A final answer that Muse reports as `truncated` fails the turn and keeps the received text as partial output. The full answer remains in Muse's native log. Text deltas without a field path count as answer text, as the protocol defines. A message whose completed phase is commentary is left out of the result, even when its start reported a final answer.
+- Cancellation, stall interruption and gateway shutdown signal the Muse process group at once rather than after the turn's cleanup.
+- Muse uses its native sandbox and the `:ask-me` profile. Cuttlefish checks the applied permission axes and disables inherited plugin and web tooling. User hooks, configured endpoint overrides, managed settings and workspace Muse configuration cause dispatch to fail closed. The adapter admits only its qualified built-in toolset of `read_file` and `bash`. Native approval requests with a verifiable one-time rejection are denied. `approval/updated` carries no turn ID, so a refreshed requirement is denied only for an approval that this turn already received. Cuttlefish's organizational approvals still apply to dispatch.
 - Cuttlefish never automatically replays a failed Muse prompt or escalates it to another engine. If execution was interrupted, reconcile its effects before submitting another prompt. Native context recovery can fail after a provider crash, session expiration or workspace change. The adapter does not resume a different session or enable Muse auto-recovery.
 - Sessions that require Cuttlefish-enforced read-only execution, MCP, attachments or arbitrary CLI overrides fail before the prompt is sent. The installed Muse build withheld the local MCP fixture despite accepting its session definition. Shared native skill synchronization, operator grants for native tools, raw terminal view and multimodal inputs remain unqualified.
 

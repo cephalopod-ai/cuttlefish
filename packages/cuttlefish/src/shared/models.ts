@@ -24,7 +24,7 @@ import {
 import { discoverAiderModels, knownAiderModels, type AiderModelDiscovery } from "./aider-models.js";
 import { discoverCodexModels, type CodexModelDiscovery } from "./codex-models.js";
 import { discoverMuseModels, knownMuseModels, MUSE_DEFAULT_MODEL, MUSE_EFFORT_LEVELS } from "./muse-models.js";
-import { MUSE_VERSION_PATTERN } from "../engines/muse-host.js";
+import { MUSE_VERSION_PATTERN, museEnvironment } from "../engines/muse-host.js";
 import { knownVibeModels, VIBE_EFFORT_LEVELS } from "./vibe-models.js";
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
@@ -120,7 +120,7 @@ export function engineAvailable(config: CuttlefishConfig, name: EngineName): boo
   // Unknown engine name (e.g. a typo in config.sessions.fallbackEngine) → not available.
   if (!bin) return false;
   const override = engineBinOverride(config, name);
-  return name === "muse" ? isInstalled(bin, override, MUSE_VERSION_PATTERN) : isInstalled(bin, override);
+  return name === "muse" ? isInstalled(bin, override, MUSE_VERSION_PATTERN, museEnvironment()) : isInstalled(bin, override);
 }
 
 /** Type guard: is `name` one of the known engines? */
@@ -165,20 +165,29 @@ let discoveredOllamaModels: OllamaModelDiscovery | null = null;
 /** Snapshot of env-derived Aider models (null until first discovery). */
 let discoveredAiderModels: AiderModelDiscovery | null = null;
 
+const MUSE_CATALOG_TTL_MS = 5 * 60_000;
 let museCatalog: { bin?: string; result: Awaited<ReturnType<typeof discoverMuseModels>>; expiresAt: number } | undefined;
+let museCatalogGeneration = 0;
+let museCatalogRevalidation: Promise<void> | undefined;
 
 export async function refreshMuseModels(config: CuttlefishConfig): Promise<void> {
   const bin = config.engines.muse?.bin;
-  museCatalog = undefined;
+  // Only the newest refresh may publish, so a slow older discovery cannot
+  // overwrite a newer catalog or a newer "unavailable" result.
+  const generation = ++museCatalogGeneration;
+  let next: typeof museCatalog;
   try {
     if (engineAvailable(config, "muse")) {
       const result = await discoverMuseModels(bin);
-      museCatalog = { bin, result, expiresAt: Date.now() + 5 * 60_000 };
+      next = { bin, result, expiresAt: Date.now() + MUSE_CATALOG_TTL_MS };
     }
   } catch {
     // Offline discovery leaves the labeled static catalog available.
   } finally {
-    invalidateModelRegistry();
+    if (generation === museCatalogGeneration) {
+      museCatalog = next;
+      invalidateModelRegistry();
+    }
   }
 }
 
@@ -347,9 +356,11 @@ export function invalidateModelRegistry(): void {
 /** Resolve the registry (cached). Pass the current config; cache is keyed by
  *  invalidation, not by config identity — call invalidateModelRegistry() to refresh. */
 export function getModelRegistry(config: CuttlefishConfig): ModelRegistry {
-  if (museCatalog && museCatalog.expiresAt <= Date.now()) {
-    museCatalog = undefined;
-    cached = null;
+  if (museCatalog && museCatalog.expiresAt <= Date.now() && !museCatalogRevalidation) {
+    // Revalidate in the background and keep serving the last verified catalog.
+    // Dropping it at expiry made live-only Muse model ids fail session and
+    // employee validation until an operator refreshed engines by hand.
+    museCatalogRevalidation = refreshMuseModels(config).finally(() => { museCatalogRevalidation = undefined; });
   }
   if (!cached) cached = buildRegistry(config);
   return cached;
@@ -459,8 +470,8 @@ export function buildRegistry(config: CuttlefishConfig): ModelRegistry {
 
 function buildMuseEntry(config: CuttlefishConfig, available: boolean): EngineRegistryEntry {
   const cached = museCatalog;
-  const live = cached && cached.bin === config.engines.muse?.bin && cached.expiresAt > Date.now()
-    ? cached.result : undefined;
+  // An expired catalog is still served while getModelRegistry revalidates it.
+  const live = cached && cached.bin === config.engines.muse?.bin ? cached.result : undefined;
   const configured = config.models?.muse;
   const models = new Map((live?.models.length ? live.models : knownMuseModels()).map((entry) => [entry.id, entry]));
   for (const row of configured?.models ?? []) {

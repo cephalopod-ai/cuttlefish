@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EngineRunOpts } from "../../shared/types.js";
 import { runWithEngineEnvironment } from "../../shared/engine-env.js";
 import { MuseEngine } from "../muse.js";
+import { discoverMuseModels } from "../../shared/muse-models.js";
 
 const io = vi.hoisted(() => ({ spawn: vi.fn(), exec: vi.fn(), stop: vi.fn() }));
 vi.mock("../../shared/windows-exec.js", () => ({
@@ -41,7 +42,11 @@ interface Fixture {
   oversized?: boolean;
   holdTurn?: boolean;
   approval?: boolean;
+  approvalUpdate?: boolean;
   observedUsage?: boolean;
+  fieldlessDelta?: boolean;
+  truncated?: boolean;
+  phaseFlip?: boolean;
 }
 
 class Peer extends EventEmitter {
@@ -135,6 +140,16 @@ class Peer extends EventEmitter {
         if (this.fixture.holdTurn) break;
         this.emitTurn(params.commandId);
         break;
+      case "model/list":
+        this.reply(req, {
+          providerId: "meta", source: "providerCatalog", profileId: "default",
+          models: [
+            { providerId: "meta", modelId: "muse-spark-1.3", displayLabel: "Muse Spark 1.3", isDefault: true, contextLimit: 262144,
+              variants: ["none", "low", "max", "ultra", "bogus"] },
+            { providerId: "meta", modelId: "muse-spark-1.3-contributor", displayLabel: "Contributor", isDefault: false, variants: ["low"] },
+          ],
+        });
+        break;
       case "approval/decide":
         this.reply(req, { approvalId: params.approvalId, commandId: params.commandId, status: "accepted", terminal: true });
         break;
@@ -155,8 +170,14 @@ class Peer extends EventEmitter {
 
   private emitTurn(turnId: unknown): void {
     const item = { itemId: "answer", kind: "agentMessage", turnId, messagePhase: "finalAnswer" };
+    if (this.fixture.phaseFlip) {
+      const draft = { itemId: "draft", kind: "agentMessage", turnId, messagePhase: "finalAnswer" };
+      this.notify("item/started", { item: { ...draft, text: "" } });
+      this.notify("item/delta", { itemId: "draft", field: "text", delta: "Thinking aloud" });
+      this.notify("item/completed", { item: { ...draft, messagePhase: "commentary", text: "Thinking aloud", status: "completed" } });
+    }
     this.notify("item/started", { item: { ...item, text: "" } });
-    this.notify("item/delta", { itemId: "answer", field: "text", delta: "Hello 🐙" }, true);
+    this.notify("item/delta", { itemId: "answer", ...(this.fixture.fieldlessDelta ? {} : { field: "text" }), delta: "Hello 🐙" }, true);
     this.notify("item/completed", { item: { ...item, turnId: "nested", text: "wrong", status: "completed" } });
     this.notify("session/contextUsage", { usedTokens: 0 });
     if (this.fixture.approval) {
@@ -168,11 +189,24 @@ class Peer extends EventEmitter {
         ],
       });
     }
+    if (this.fixture.approvalUpdate) {
+      // ApprovalUpdatedParams carries no turnId (MSP schema).
+      const update = (approvalId: string, sourceIndex: number) => this.notify("approval/updated", {
+        approvalId, currentRequirementId: { approvalId, sourceIndex }, change: { kind: "stageResolved" },
+        availableChoices: [{ choiceId: `deny-${approvalId}-${sourceIndex}`, decision: "denied", scope: "once" }],
+      });
+      update("approval", 1);
+      update("foreign-approval", 0);
+      this.notify("approval/updated", {
+        approvalId: "approval", currentRequirementId: { approvalId: "approval", sourceIndex: 2 },
+        change: { kind: "alreadyTerminal" }, availableChoices: [],
+      });
+    }
     if (this.fixture.malformed) { this.stdout.write("broken JSON\n"); return; }
     if (this.fixture.oversized) { this.stdout.write(Buffer.alloc(2 * 1024 * 1024 + 1, 65)); return; }
     if (!this.fixture.noFinal) {
       this.notify("item/completed", {
-        item: { ...item, status: "completed", text: this.fixture.conflict ? "Changed" : "Hello 🐙!" },
+        item: { ...item, status: "completed", text: this.fixture.conflict ? "Changed" : "Hello 🐙!", ...(this.fixture.truncated ? { truncated: true } : {}) },
       });
     }
     if (this.fixture.observedUsage) {
@@ -245,6 +279,9 @@ describe("Muse MSP engine", () => {
     for (const key of ["META_API_KEY", "model_api_key", "MUSE_HOME", "CUTTLEFISH_SESSION_TOKEN"]) {
       expect(env).not.toHaveProperty(key);
     }
+    // Cuttlefish's own launches must not let the launcher replace the pinned build.
+    expect(env).toMatchObject({ MUSE_NO_AUTO_UPDATE: "1" });
+    expect(io.exec.mock.calls[0][2].env).toMatchObject({ MUSE_NO_AUTO_UPDATE: "1" });
     const request = peers[0].requests.find((event) => event.method === "turn/start");
     expect(request?.params).toMatchObject({ reasoningEffort: "minimal", input: [{ type: "text", text: expect.stringContaining("Assigned employee") }] });
   });
@@ -275,6 +312,12 @@ describe("Muse MSP engine", () => {
     expect(io.spawn).not.toHaveBeenCalled();
   });
 
+  it("measures the prompt budget after JSON escaping, before launching", async () => {
+    // Under the raw-byte budget, but escaping doubles it past the frame budget.
+    expect((await run({ prompt: '"'.repeat(700_000) })).error).toMatch(/input limit/);
+    expect(io.spawn).not.toHaveBeenCalled();
+  });
+
   it("does not silently replace a missing native session", async () => {
     fixture.resumeFailure = true;
     expect(await run({ resumeSessionId: nativeId })).toMatchObject({ sessionId: nativeId, error: expect.stringContaining("exact native session") });
@@ -297,6 +340,32 @@ describe("Muse MSP engine", () => {
       .toMatchObject({ approvalId: "approval", choiceId: "denial-id-from-peer" });
   });
 
+  it("denies refreshed requirements of this turn's approvals and ignores others", async () => {
+    fixture.approval = true;
+    fixture.approvalUpdate = true;
+    expect((await run()).error).toBeUndefined();
+    const decisions = peers[0].requests.filter((req) => req.method === "approval/decide").map((req) => req.params);
+    expect(decisions).toEqual([
+      expect.objectContaining({ approvalId: "approval", choiceId: "denial-id-from-peer", requirementId: { approvalId: "approval", sourceIndex: 0 } }),
+      expect.objectContaining({ approvalId: "approval", choiceId: "deny-approval-1", requirementId: { approvalId: "approval", sourceIndex: 1 } }),
+    ]);
+  });
+
+  it("streams deltas that omit the field path, which MSP defines as text", async () => {
+    fixture.fieldlessDelta = true;
+    const stream = vi.fn();
+    expect((await run({ onStream: stream })).result).toBe("Hello 🐙!");
+    expect(stream.mock.calls.map(([event]) => event).filter((event) => event.type === "text").map((event) => event.content))
+      .toEqual(["Hello 🐙", "!"]);
+  });
+
+  it("drops an answer whose completed phase is commentary", async () => {
+    fixture.phaseFlip = true;
+    const result = await run();
+    expect(result.error).toBeUndefined();
+    expect(result.result).toBe("Hello 🐙!");
+  });
+
   it("deduplicates reported model-call usage when a terminal total is absent", async () => {
     fixture.observedUsage = true;
     expect((await run()).tokenUsage).toEqual({ inputTokens: 11, outputTokens: 2, source: "observed_model_calls" });
@@ -308,6 +377,7 @@ describe("Muse MSP engine", () => {
     [{ noFinal: true }, /without a complete final/],
     [{ duplicateTerminal: true }, /duplicate terminal/],
     [{ conflict: true }, /conflicts with streamed/],
+    [{ truncated: true }, /truncated the final answer/],
     [{ malformed: true }, /invalid JSON-RPC/],
     [{ oversized: true }, /oversized JSON-RPC/],
   ])("preserves partial output on %j", async (options, error) => {
@@ -315,6 +385,20 @@ describe("Muse MSP engine", () => {
     const result = await run();
     expect(result.result).toContain("Hello 🐙");
     expect(result.error).toMatch(error);
+  });
+
+  it("terminates the host as soon as it is cancelled during a CLI preflight", async () => {
+    let release: (() => void) | undefined;
+    io.exec.mockImplementation((_bin, _args, _options, cb) => {
+      release = () => cb(null, '{"sources":[{"state":"absent"}]}');
+    });
+    const pending = run();
+    await vi.waitFor(() => expect(release).toBeDefined());
+    engine.kill("session", "operator cancelled");
+    expect(io.stop.mock.calls[0]?.[0]).toBe(peers[0]);
+    release!();
+    expect(await pending).toMatchObject({ error: "operator cancelled" });
+    expect(methods()).not.toContain("session/start");
   });
 
   it("cancels a held turn, fences concurrent IDs, and permits an independent session", async () => {
@@ -330,6 +414,15 @@ describe("Muse MSP engine", () => {
     engine.kill("session", "operator cancelled");
     expect(await first).toMatchObject({ error: "operator cancelled", sessionId: nativeId });
     expect(engine.isAlive("session")).toBe(false);
+    expect(peers[0].closed).toBe(true);
+  });
+
+  it("discovers every advertised MSP effort tier and drops Contributor rows", async () => {
+    const discovered = await discoverMuseModels("/explicit/muse");
+    expect(discovered).toEqual({
+      defaultModel: "muse-spark-1.3",
+      models: [{ id: "muse-spark-1.3", label: "Muse Spark 1.3", supportsEffort: true, effortLevels: ["none", "low", "max", "ultra"], contextWindow: 262144 }],
+    });
     expect(peers[0].closed).toBe(true);
   });
 });

@@ -87,7 +87,7 @@ export interface EngineRegistryEntry {
   name: string;
   available: boolean;
   defaultModel: string;
-  effortMechanism: "claude-flag" | "codex-config" | "grok-flag" | "pi-flag" | "none";
+  effortMechanism: "claude-flag" | "codex-config" | "grok-flag" | "pi-flag" | "kiro-flag" | "muse-msp" | "none";
   models: ModelInfo[];
 }
 export interface EnginesResponse {

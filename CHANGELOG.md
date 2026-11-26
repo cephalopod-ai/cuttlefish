@@ -9,6 +9,36 @@
   supplies it. Dispatch requires a verified subscription and native sandbox.
 
 ### Fixed
+- **Muse answers cut by the host now fail the turn.** A final answer that
+  Muse reported as `truncated` was returned as the complete result. The turn
+  now fails and keeps the received text as partial output.
+- **Muse streams deltas without a field path.** MSP defines an absent
+  `item/delta` field as `text`; those deltas were dropped, so the answer only
+  appeared when the item completed.
+- **Refreshed Muse approval requirements are denied.** `approval/updated` has
+  no turn ID, so every refresh was ignored and the turn waited for the
+  three-minute inactivity timeout. Refreshes for an approval that the turn
+  already received are now denied.
+- **Muse no longer drops discovered models after five minutes.** The live
+  catalog was replaced by the static fallback when it expired, so new sessions
+  and employee edits rejected discovered model IDs until an operator refreshed
+  engines. The catalog stays in use while one background rediscovery runs.
+  Discovered `none` and `ultra` effort tiers are kept.
+- **Cuttlefish no longer updates the pinned Muse build.** The launcher's
+  hourly self-update, which deletes the previous build, also ran for
+  Cuttlefish's own probes. Muse processes started by Cuttlefish now set
+  `MUSE_NO_AUTO_UPDATE=1`.
+- **Stopping a Muse turn ends its process immediately.** Cancellation and
+  shutdown waited for the turn's cleanup, which could still be waiting up to
+  five seconds on a CLI preflight.
+- **Smaller Muse fixes.** The prompt limit is measured after JSON escaping, so
+  an oversized prompt is rejected before Muse is started. The MCP refusal names
+  the `mcp: false` setting. The version probe no longer writes Muse's stderr
+  to the gateway's stderr.
+- **`cuttlefish migrate` refuses engines it cannot drive.** Engines other than
+  Claude, Codex, Grok, Kilo and Ollama received Claude's
+  `--dangerously-skip-permissions` arguments. Migrate now stops and leaves the
+  staged files in place.
 - **A department board save no longer deletes tickets it did not mention.**
   `PUT /api/org/departments/:name/board` kept omitted tickets only when they
   came from a session, so a save whose only ticket was rejected answered

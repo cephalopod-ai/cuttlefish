@@ -21,7 +21,8 @@ export function museCount(value: unknown): number | undefined {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 }
 
-function museEnvironment(): Record<string, string> {
+/** Child environment for every Cuttlefish-launched Muse process, probes included. */
+export function museEnvironment(): Record<string, string> {
   const env = buildEngineEnv({ NO_COLOR: "1" });
   for (const key of Object.keys(env)) {
     const name = key.toUpperCase();
@@ -32,6 +33,12 @@ function museEnvironment(): Record<string, string> {
       delete env[key];
     }
   }
+  // The official `muse` launcher checks for a new build hourly on any
+  // invocation, installs it in the background and deletes every other
+  // muse-bin-* build. The adapter is pinned to MUSE_VERSION, so Cuttlefish's
+  // own turns, probes and limit polls must not be what replaces the qualified
+  // build. Operator-run `muse` commands keep the operator's own update setting.
+  env.MUSE_NO_AUTO_UPDATE = "1";
   return env;
 }
 
@@ -270,15 +277,25 @@ export class MuseHost {
     this.stopListeners.clear();
   }
 
+  /**
+   * Signal the host's process group now. Cancellation and gateway shutdown use
+   * this instead of waiting for the run's cleanup, which may still be awaiting
+   * a CLI probe or file check that `stop()` does not interrupt.
+   */
+  terminate(signal: NodeJS.Signals = "SIGTERM"): void {
+    // After exit the group id may be recycled; never signal a reaped host.
+    if (!this.exited) killChildTree(this.proc, signal);
+  }
+
   async close(graceful: boolean): Promise<void> {
     if (graceful) this.proc.stdin.end();
-    else killChildTree(this.proc);
+    else this.terminate();
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       await Promise.race([
         this.closed,
         new Promise<void>((resolve) => {
-          timer = setTimeout(() => { killChildTree(this.proc, "SIGKILL"); resolve(); }, SHUTDOWN_TIMEOUT_MS);
+          timer = setTimeout(() => { this.terminate("SIGKILL"); resolve(); }, SHUTDOWN_TIMEOUT_MS);
         }),
       ]);
     } finally {

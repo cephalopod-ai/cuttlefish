@@ -34,6 +34,8 @@ export class MuseTurn {
   private answers = new Map<string, AnswerItem>();
   private tools = new Set<string>();
   private approvals = new Map<string, Promise<void>>();
+  /** Approval ids opened for this turn. `approval/updated` carries no turnId. */
+  private turnApprovals = new Set<string>();
   private observedUsage = new Map<string, EngineTokenUsage>();
   private retainedChars = 0;
   private streamedItems = 0;
@@ -115,13 +117,23 @@ export class MuseTurn {
       this.observedUsage.set(receipt, tokenUsage(params.usage) ?? {});
       return;
     }
-    if (method === "approval/requested" || method === "approval/updated") {
+    if (method === "approval/requested") {
       this.respondToApproval(params);
+      return;
+    }
+    if (method === "approval/updated") {
+      // The schema's ApprovalUpdatedParams has no turnId. Scope the refresh by
+      // the approval id this turn already admitted, and only decide when a
+      // pending requirement still offers choices.
+      if (typeof params.approvalId !== "string" || !this.turnApprovals.has(params.approvalId)) return;
+      if (!Array.isArray(params.availableChoices) || params.availableChoices.length === 0) return;
+      this.respondToApproval({ ...params, turnId: this.id });
       return;
     }
     if (method === "userInput/requested") throw new Error("Muse requested interactive input which Cuttlefish cannot provide");
     if (method === "item/delta") {
-      if (typeof params.itemId !== "string" || params.field !== "text" || typeof params.delta !== "string") return;
+      // MSP: an absent `field` means "text" (ItemDeltaParams.field).
+      if (typeof params.itemId !== "string" || (params.field ?? "text") !== "text" || typeof params.delta !== "string") return;
       const item = this.answers.get(params.itemId);
       if (item && !item.completed) this.append(item, params.delta);
       return;
@@ -157,7 +169,12 @@ export class MuseTurn {
       }
       return;
     }
-    if (item.kind !== "agentMessage" || item.messagePhase === "commentary") return;
+    if (item.kind !== "agentMessage") return;
+    if (item.messagePhase === "commentary") {
+      // MSP: the completed phase wins over a phase reported at item/started.
+      if (method === "item/completed") this.answers.delete(id);
+      return;
+    }
     let answer = this.answers.get(id);
     if (!answer) {
       if (this.answers.size >= MAX_ITEMS) throw new Error("Muse exceeded the answer item limit");
@@ -169,6 +186,9 @@ export class MuseTurn {
       return;
     }
     if (typeof item.text !== "string" || item.status !== "completed") return;
+    // `truncated` means the host's surface budget cut agentMessage.text; the
+    // full answer exists only in Muse's log. Never report a cut answer as final.
+    if (item.truncated === true) throw new Error("Muse truncated the final answer");
     if (!item.text.startsWith(answer.text)) throw new Error("Muse final answer conflicts with streamed text");
     this.stream(answer);
     this.append(answer, item.text.slice(answer.text.length));
@@ -203,6 +223,7 @@ export class MuseTurn {
     const key = `${approvalId}:${sourceIndex}`;
     if (this.approvals.has(key)) return true;
     if (this.approvals.size >= MAX_ITEMS) throw new Error("Muse exceeded the approval event limit");
+    this.turnApprovals.add(approvalId);
     const command = commandId();
     const decision = this.host.request("approval/decide", {
       approvalId,

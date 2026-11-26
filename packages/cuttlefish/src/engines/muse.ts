@@ -19,11 +19,15 @@ interface ActiveMuseRun {
 function validateRequest(opts: EngineRunOpts): void {
   if (opts.restrictToJudgeOnly) throw new Error("Muse cannot verify Cuttlefish's restricted execution requirements");
   if (opts.attachments?.length) throw new Error("Muse attachments are not supported");
-  if (opts.mcpConfigPath || opts.requiresMcp) throw new Error("Muse cannot enforce this session's required MCP configuration");
+  if (opts.mcpConfigPath || opts.requiresMcp) {
+    throw new Error("Muse cannot enforce this session's required MCP configuration. Set mcp: false on the Muse employee or remove the global MCP servers.");
+  }
   if (opts.cliFlags?.length) throw new Error("Muse does not accept employee CLI overrides");
   if (opts.resumeSessionId && !NATIVE_ID.test(opts.resumeSessionId)) throw new Error("Invalid native Muse session identifier");
   if (opts.model?.endsWith("-contributor")) throw new Error("Muse Contributor models are disabled");
-  if (Buffer.byteLength(opts.prompt) + Buffer.byteLength(opts.systemPrompt ?? "") > ENGINE_LINE_BUF_MAX / 2) {
+  // Measure the JSON-encoded size: escaping (quotes, newlines, control
+  // characters) can multiply raw bytes, and the turn/start frame is JSON.
+  if (Buffer.byteLength(JSON.stringify(opts.prompt)) + Buffer.byteLength(JSON.stringify(opts.systemPrompt ?? "")) > ENGINE_LINE_BUF_MAX / 2) {
     throw new Error("Muse prompt and instructions exceed the input limit");
   }
 }
@@ -212,6 +216,7 @@ export class MuseEngine implements InterruptibleEngine {
     if (!run || run.cancellation) return;
     run.cancellation = reason;
     run.host?.stop(reason);
+    run.host?.terminate();
   }
 
   isAlive(sessionId: string): boolean {
